@@ -1,5 +1,5 @@
 import { Minus, Plus, User, Users } from 'lucide-react-native'
-import {  Text, TouchableOpacity, View } from 'react-native'
+import {  Text, TouchableOpacity, View, TextInput } from 'react-native'
 
 import { BORDER, RADIUS, SPACING } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
@@ -10,13 +10,21 @@ interface PlayerCountSelectorProps {
   setMaxPlayers: (n: number) => void
   playMode: 'singles' | 'doubles'
   setPlayMode: (v: 'singles' | 'doubles') => void
+  
+  // Sub-court props
+  subCourtCount: number
+  selectedSubCourts: number[]
+  onSubCourtsChange: (nums: number[]) => void
 }
 
 export function PlayerCountSelector({ 
   maxPlayers, 
   setMaxPlayers,
   playMode,
-  setPlayMode
+  setPlayMode,
+  subCourtCount,
+  selectedSubCourts,
+  onSubCourtsChange
 }: PlayerCountSelectorProps) {
   const theme = useAppTheme()
 
@@ -29,6 +37,22 @@ export function PlayerCountSelector({
     if (maxPlayers > min) setMaxPlayers(maxPlayers - 1)
   }
 
+  const courts = Array.from({ length: subCourtCount || 1 }, (_, i) => i + 1)
+  const isAllSelected = selectedSubCourts.length === subCourtCount
+
+  const handleToggleAll = () => {
+    if (isAllSelected) onSubCourtsChange([])
+    else onSubCourtsChange(courts)
+  }
+
+  const handleSelectCourt = (num: number) => {
+    if (selectedSubCourts.includes(num)) {
+      onSubCourtsChange(selectedSubCourts.filter(n => n !== num))
+    } else {
+      onSubCourtsChange([...selectedSubCourts, num])
+    }
+  }
+
   return (
     <View style={{ borderRadius: RADIUS.xl, borderWidth: BORDER.base, borderColor: theme.outlineVariant, backgroundColor: theme.surfaceContainerLow, padding: SPACING.lg, marginBottom: 16 }}>
       {/* 1. Hình thức thi đấu */}
@@ -37,8 +61,8 @@ export function PlayerCountSelector({
       </Text>
       <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
         {[
-          { value: 'singles', label: 'Đơn (2)', icon: User, defaultPlayers: 2 },
-          { value: 'doubles', label: 'Đôi (4)', icon: Users, defaultPlayers: 4 },
+          { value: 'singles', label: 'ĐƠN', icon: User, defaultPlayers: 2 },
+          { value: 'doubles', label: 'ĐÔI', icon: Users, defaultPlayers: 4 },
         ].map(({ value, label, icon: Icon, defaultPlayers }) => {
           const isSelected = playMode === value
           return (
@@ -46,10 +70,7 @@ export function PlayerCountSelector({
               key={value}
               onPress={() => {
                 setPlayMode(value as any)
-                // Also reset max players to default if current is too low
-                if (maxPlayers < defaultPlayers) {
-                  setMaxPlayers(defaultPlayers)
-                }
+                if (maxPlayers < defaultPlayers) setMaxPlayers(defaultPlayers)
               }}
               style={{
                 flex: 1,
@@ -69,7 +90,7 @@ export function PlayerCountSelector({
                 fontSize: 15, 
                 color: isSelected ? theme.onPrimary : theme.onSurface 
               }}>
-                {value === 'singles' ? 'ĐƠN' : 'ĐÔI'}
+                {label}
               </Text>
             </TouchableOpacity>
           )
@@ -78,24 +99,74 @@ export function PlayerCountSelector({
 
       <View style={{ height: 1, backgroundColor: theme.outlineVariant, marginBottom: 16, opacity: 0.5 }} />
 
-      {/* 2. Số người tối đa */}
+      {/* 2. Sử dụng sân con */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <View style={{ flex: 1, paddingRight: 12 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, letterSpacing: 1.2, color: theme.primary }}>
+            {'SỬ DỤNG SÂN CON'}
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onSurfaceVariant, marginTop: 2 }}>
+            Chọn sân con trong cụm sân
+          </Text>
+        </View>
+
+        <View style={{ 
+          flexDirection: 'row', 
+          alignItems: 'center', 
+          borderRadius: RADIUS.md, 
+          borderWidth: BORDER.base, 
+          borderColor: theme.outlineVariant, 
+          backgroundColor: theme.surfaceContainerLowest, 
+          paddingHorizontal: 8, 
+          paddingVertical: 4,
+          width: 110
+        }}>
+          <TextInput
+            value={selectedSubCourts.join(', ')}
+            onChangeText={(text) => {
+              // Parse numbers from string like "1, 2, 3" or "1 2 3"
+              const nums = text.split(/[\s,]+/)
+                .map(s => parseInt(s.trim()))
+                .filter(n => !isNaN(n) && n > 0 && n <= subCourtCount)
+              
+              // Remove duplicates and sort
+              onSubCourtsChange([...new Set(nums)].sort((a, b) => a - b))
+            }}
+            placeholder="1, 2..."
+            placeholderTextColor={theme.outline}
+            keyboardType="numbers-and-punctuation"
+            style={{ 
+              flex: 1, 
+              fontFamily: SCREEN_FONTS.headline, 
+              fontSize: 18, 
+              color: theme.primary, 
+              textAlign: 'center',
+              padding: 0
+            }}
+          />
+        </View>
+      </View>
+
+      <View style={{ height: 1, backgroundColor: theme.outlineVariant, marginBottom: 16, opacity: 0.5 }} />
+
+      {/* 3. Số người tối đa */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, letterSpacing: 1.2, color: theme.primary }}>
             {'SỐ NGƯỜI TỐI ĐA'}
           </Text>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onSurfaceVariant, marginTop: 2 }}>
-            Tổng số người có thể tham gia kèo
+            Tổng số người có thể tham gia
           </Text>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <TouchableOpacity
             onPress={decrement}
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
+              width: 32,
+              height: 32,
+              borderRadius: 16,
               backgroundColor: theme.surface,
               borderWidth: 1,
               borderColor: theme.outlineVariant,
@@ -103,14 +174,14 @@ export function PlayerCountSelector({
               justifyContent: 'center'
             }}
           >
-            <Minus size={20} color={theme.primary} />
+            <Minus size={18} color={theme.primary} />
           </TouchableOpacity>
 
           <Text style={{ 
             fontFamily: SCREEN_FONTS.headline, 
-            fontSize: 24, 
+            fontSize: 22, 
             color: theme.primary,
-            minWidth: 30,
+            minWidth: 28,
             textAlign: 'center'
           }}>
             {maxPlayers}
@@ -119,9 +190,9 @@ export function PlayerCountSelector({
           <TouchableOpacity
             onPress={increment}
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
+              width: 32,
+              height: 32,
+              borderRadius: 16,
               backgroundColor: theme.surface,
               borderWidth: 1,
               borderColor: theme.outlineVariant,
@@ -129,7 +200,7 @@ export function PlayerCountSelector({
               justifyContent: 'center'
             }}
           >
-            <Plus size={20} color={theme.primary} />
+            <Plus size={18} color={theme.primary} />
           </TouchableOpacity>
         </View>
       </View>

@@ -28,7 +28,7 @@ import {
 } from 'lucide-react-native'
 import { useAppTheme } from '@/lib/theme-context'
 import { StatusBar } from 'expo-status-bar'
-import { MainHeader } from '@/components/design/MainHeader'
+import { HomeGreetingHeader } from '@/components/home/HomeGreetingHeader'
 import { useState, useEffect, useCallback } from 'react'
 import { 
   Text, 
@@ -40,6 +40,7 @@ import {
   ActivityIndicator,
   Share
 } from 'react-native'
+import { WebContainer } from '@/components/design/WebContainer'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Image } from 'expo-image'
 import { SCREEN_FONTS, AppFontSet } from '@/constants/typography'
@@ -55,6 +56,7 @@ import { fetchCourtDetailApi } from '@/features/player/court/api'
 import { getSessionSkillLabel } from '@/lib/skillAssessment'
 import { formatRelativeDate } from '@/utils/formatters'
 import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
+import { DashboardStatsStrip, buildDashboardStats } from '@/components/dashboard/DashboardStatsStrip'
 
 export default function HostDashboardScreen() {
   const theme = useAppTheme()
@@ -66,6 +68,7 @@ export default function HostDashboardScreen() {
   const [court, setCourt] = useState<any>(null)
   const [sessions, setSessions] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const [profile, setProfile] = useState<any>(null)
   const { switchToPlayer } = useRoleSwitcher()
 
   async function handleLogout() {
@@ -85,36 +88,51 @@ export default function HostDashboardScreen() {
     setLoading(true)
 
     try {
+      // 0. Fetch Host Profile
+      const { data: profileData } = await supabase
+        .from('players')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle()
+      
+      if (profileData) setProfile(profileData)
+
       // Host dashboard now focused strictly on sessions organized by this user
       setCourt(null)
 
-      // 2. Fetch sessions created by THIS Host
-      const { data: hostSessionData, error: sessionErr } = await supabase
-        .from('owner_sessions')
-        .select(`
-          *,
-          session:id (
+      // 2. Fetch sessions using RPC for better reliability
+      console.log('[HostDashboard] Fetching sessions via RPC for userId:', userId)
+      const { data: mySessionsData, error: sessionErr } = await supabase.rpc('get_my_sessions_overview')
+      
+      if (sessionErr) throw sessionErr
+
+      // Filter only those where we are the host
+      const hostSessions = (mySessionsData ?? []).filter((s: any) => s.role === 'host')
+      
+      console.log('[HostDashboard] Found host sessions count:', hostSessions.length)
+      
+      // Need to fetch full detail for these sessions (slot, court, session_players)
+      // or map the RPC data if it's sufficient. 
+      // The RPC returns basic info, we need the join for the UI.
+      if (hostSessions.length > 0) {
+        const sessionIds = hostSessions.map((s: any) => s.id)
+        const { data: fullSessions, error: fullErr } = await supabase
+          .from('sessions')
+          .select(`
             *,
             slot:slot_id(
               start_time, end_time,
               court:court_id(*)
             ),
             session_players!session_id(player_id, status)
-          )
-        `)
-        .eq('owner_id', userId)
-        .order('created_at', { ascending: false })
-      
-      if (sessionErr) throw sessionErr
-
-      if (hostSessionData) {
-        const flattened = hostSessionData.map(os => ({
-          ...(os.session || {}),
-          ...os,
-          id: os.id,
-          status: os.session?.status || 'open'
-        }))
-        setSessions(flattened)
+          `)
+          .in('id', sessionIds)
+          .order('created_at', { ascending: false })
+          
+        if (fullErr) throw fullErr
+        setSessions(fullSessions || [])
+      } else {
+        setSessions([])
       }
     } catch (err) {
       console.error('Error fetching host dashboard data:', err)
@@ -152,7 +170,8 @@ export default function HostDashboardScreen() {
     const subCourts = session.sub_court_numbers || []
     const isPlaying = session.status === 'playing'
     const isCompleted = session.status === 'completed' || session.status === 'finished' || session.status === 'archived'
-    const isDone = isCompleted || session.status === 'done'
+    const isCancelled = session.status === 'cancelled'
+    const isDone = isCompleted || session.status === 'done' || isCancelled
     
     // Skill Level Labels
     const skillLabel = getSessionSkillLabel(session.elo_min, session.elo_max)
@@ -173,6 +192,10 @@ export default function HostDashboardScreen() {
       statusLabel = 'THI ĐẤU'
       statusBg = '#fef3c7'
       statusText = '#b45309'
+    } else if (isCancelled) {
+      statusLabel = 'ĐÃ HỦY'
+      statusBg = theme.surfaceContainerHighest
+      statusText = theme.outline
     } else if (isDone) {
       statusLabel = 'KẾT THÚC'
       statusBg = theme.surfaceContainerHighest
@@ -181,8 +204,8 @@ export default function HostDashboardScreen() {
 
     const formatLabel = formatType === 'round_robin' ? 'ROUND ROBIN' : 'SOCIAL PLAY'
 
-    // We check both session.owner_id and our stored userId for maximum accuracy
-    const hostId = session.owner_id || session.owner_id || userId
+    // We check both session.host_id and our stored userId for maximum accuracy
+    const hostId = session.host_id || userId
     const nonHostConfirmedCount = session.session_players?.filter((p: any) => 
       p.status === 'confirmed' && p.player_id !== hostId
     ).length || 0
@@ -235,19 +258,31 @@ export default function HostDashboardScreen() {
         </View>
 
         <View style={{ paddingHorizontal: 14, paddingTop: 9, paddingBottom: 8 }}>
-          {/* Title Row */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <Text style={{ 
-              flex: 1,
-              fontFamily: SCREEN_FONTS.headline, 
-              fontSize: 20, 
-              color: theme.onSurface, 
-              textTransform: 'uppercase',
-            }}>
-              {session.title || (formatType === 'round_robin' ? 'GIẢI ROUND ROBIN' : 'KÈO GIAO LƯU SOCIAL')}
-            </Text>
+          {/* Title Row: Court Name as Primary Title */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ 
+                fontFamily: SCREEN_FONTS.headline, 
+                fontSize: 30, 
+                color: theme.onSurface, 
+                textTransform: 'uppercase',
+                lineHeight: 34
+              }} numberOfLines={1}>
+                {session.slot?.court?.name || 'KÈO PICKLEBALL'}
+              </Text>
+              
+              <Text style={{ 
+                fontFamily: SCREEN_FONTS.medium, 
+                fontSize: 12, 
+                color: theme.onSurfaceVariant,
+                marginTop: 1,
+                letterSpacing: 0.3
+              }}>
+                {session.title || (formatType === 'round_robin' ? 'Giải Round Robin' : 'Kèo giao lưu Social')}
+              </Text>
+            </View>
             
-            <View style={{ alignItems: 'flex-end', marginLeft: 12 }}>
+            <View style={{ alignItems: 'flex-end', marginLeft: 12, paddingTop: 2 }}>
               <Text style={{ 
                 fontFamily: SCREEN_FONTS.headline, 
                 fontSize: 20, 
@@ -264,7 +299,8 @@ export default function HostDashboardScreen() {
           <View style={{ 
             flexDirection: 'row', 
             alignItems: 'center', 
-            marginBottom: 6
+            marginBottom: 6,
+            marginTop: 8
           }}>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -275,14 +311,6 @@ export default function HostDashboardScreen() {
                   {formatDate(start, 'HH:mm')} - {formatDate(end, 'HH:mm')}
                 </Text>
               </View>
-              {session.slot?.court?.name && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
-                  <MapPin size={12} color={theme.onSurfaceVariant} />
-                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurfaceVariant }} numberOfLines={1}>
-                    {session.slot.court.name}
-                  </Text>
-                </View>
-              )}
             </View>
             
             <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -451,232 +479,93 @@ export default function HostDashboardScreen() {
     )
   }
 
+  const hostedSessions = sessions.filter(s => ['completed', 'finished', 'archived', 'done'].includes(s.status))
+  const hostedCount = hostedSessions.length
+  const totalFillRate = hostedSessions.reduce((acc, s) => acc + ((s.confirmed_count || 0) / (s.max_players || 1)) * 100, 0)
+  const avgFillRate = hostedCount > 0 ? totalFillRate / hostedCount : 0
+  const reliability = profile?.reliability_score ?? 100
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <StatusBar style="dark" />
       
-      <MainHeader 
-        title="Quản lý trận đấu"
-        brandedSubtitle="PICKLEMATCH"
-        rightElement={
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <TouchableOpacity 
-              onPress={handleSwitchToPlayer}
-              style={{ 
-                height: 40, 
-                borderRadius: 12, 
-                backgroundColor: theme.secondaryContainer, 
-                paddingHorizontal: 12,
-                flexDirection: 'row',
-                alignItems: 'center', 
-                justifyContent: 'center',
-                gap: 8,
-                borderWidth: BORDER.hairline,
-                borderColor: theme.outlineVariant,
-                ...LAYOUT_SHADOW.xs
-              }}
-            >
-              <RotateCcw size={16} color={theme.primary} />
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: theme.primary }}>PLAYER</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              onPress={() => router.push('/host/settings')}
-              style={{ 
-                width: 40, 
-                height: 40, 
-                borderRadius: 12, 
-                backgroundColor: theme.surface, 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                borderWidth: BORDER.hairline,
-                borderColor: theme.outlineVariant,
-                ...LAYOUT_SHADOW.xs
-              }}
-            >
-              <Settings size={18} color={theme.primary} />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              onPress={handleLogout}
-              style={{ 
-                width: 40, 
-                height: 40, 
-                borderRadius: 12, 
-                backgroundColor: theme.surface, 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                borderWidth: BORDER.hairline,
-                borderColor: theme.error + '30',
-                ...LAYOUT_SHADOW.xs
-              }}
-            >
-              <LogOut size={18} color={theme.error} />
-            </TouchableOpacity>
-          </View>
-        }
-        style={{ paddingBottom: 8 }}
-      />
+      <View style={{ backgroundColor: '#FDFBF7', zIndex: 10 }}>
+        <HomeGreetingHeader 
+          name={profile?.name ?? 'Host'} 
+          role="host"
+          onRoleChange={() => switchToPlayer()}
+          profilePhotoUrl={profile?.avatar_url}
+          onPhotoPress={onOpenProfile}
+          rating={4.8}
+          sessionCount={sessions.length}
+        />
+        <WebContainer>
+          <DashboardStatsStrip 
+            items={buildDashboardStats({ 
+              hostedCount, 
+              fillRate: avgFillRate, 
+              reliability 
+            })} 
+          />
+        </WebContainer>
+      </View>
 
       <ScrollView 
         stickyHeaderIndices={[2]} 
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        style={{ zIndex: 1 }}
+        contentContainerStyle={{ paddingBottom: 100, overflow: 'visible' }}
       >
-        {/* Hero Card: Court Info (Applying Player Upcoming Card Design) */}
-      <View style={{ paddingHorizontal: 16, marginTop: 10 }}>
-        <View style={{ 
-          backgroundColor: theme.primary, 
-          borderRadius: 16, 
-          overflow: 'hidden', 
-          ...LAYOUT_SHADOW.md 
-        }}>
-          <LinearGradient
-            colors={[theme.heroGradientStart, theme.primary]}
-            start={{ x: 0.1, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ paddingTop: 18, paddingHorizontal: 20, paddingBottom: 16, position: 'relative' }}
-          >
-            {/* Main Content Row: Court Info */}
-            <View style={{ marginBottom: 10 }}>
-              <Text 
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                style={{ 
-                  color: theme.onPrimary, 
-                  fontFamily: AppFontSet.headline, 
-                  fontSize: 26, 
-                  lineHeight: 28, 
-                  textTransform: 'uppercase' 
-                }}
-              >
-                {court?.name || 'HỒ SƠ HOST CHUYÊN NGHIỆP'}
-              </Text>
-            </View>
-
-            {/* Address Row with Rating Pill */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 10 }}>
-                <MapPin size={14} color="white" />
-                <Text numberOfLines={1} style={{ color: 'white', fontFamily: SCREEN_FONTS.body, fontSize: 13, flex: 1 }}>
-                  {court ? [court?.address, court?.district, court?.city].filter(Boolean).join(', ') : 'Sẵn sàng tổ chức kèo tại mọi cụm sân.'}
-                </Text>
-              </View>
-
-              {court && (
-                <View style={{ 
-                  backgroundColor: theme.heroPillBg, 
-                  borderRadius: 10, 
-                  paddingHorizontal: 8, 
-                  paddingVertical: 3,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 4
-                }}>
-                  <Star size={10} color="#FFD700" fill="#FFD700" />
-                  <Text style={{ color: theme.heroCountdownText, fontFamily: SCREEN_FONTS.bold, fontSize: 12 }}>
-                    {court?.rating?.toFixed(1) || '4.1'}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* Hours & Actions Row */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Clock size={14} color="white" />
-                <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.body, fontSize: 13 }}>
-                  {court ? `${(court?.hours_open || '05:30').slice(0, 5)} - ${(court?.hours_close || '22:00').slice(0, 5)}` : 'Hoạt động tự do'}
-                </Text>
-              </View>
-
-              {court && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <TouchableOpacity 
-                    onPress={() => router.push(`/host/court-detail/${court?.id}`)}
-                    style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: RADIUS.full, paddingHorizontal: 12, paddingVertical: 6 }}
-                  >
-                    <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.headline, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      XEM CHI TIẾT
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          </LinearGradient>
-        </View>
-      </View>
-
-      {/* Performance Summary Card - Fine-tuned */}
-      <View style={{ paddingHorizontal: 24, marginTop: 16 }}>
+        <WebContainer>
+          <View style={{ height: 28 }} />
+ 
+      {/* Minimalist Performance Bar */}
+      <View style={{ marginTop: 12 }}>
         {(() => {
           const upcomingSessions = sessions.filter(s => {
-            const isPast = s.status === 'completed' || s.status === 'finished' || s.status === 'archived' || s.status === 'done'
-            return !isPast
+            const endTime = s.slot?.end_time ? new Date(s.slot.end_time).getTime() : 0
+            const now = Date.now()
+            const isPastTime = endTime > 0 && endTime < now
+            const isPastStatus = ['completed', 'finished', 'archived', 'done', 'cancelled'].includes(s.status)
+            return !(isPastTime || isPastStatus)
           })
           
+          if (upcomingSessions.length === 0) return null
+
           const openCount = upcomingSessions.length
           let totalConfirmed = 0
           let totalMax = 0
-          let urgentCount = 0
 
           upcomingSessions.forEach(s => {
             const confirmed = s.session_players?.filter((p: any) => p.status === 'confirmed').length || 0
             const max = s.is_unlimited ? 16 : (s.max_players || 16)
             totalConfirmed += confirmed
             totalMax += max
-            if (confirmed < max / 2 && !s.is_unlimited) urgentCount++
           })
 
           const occupancy = totalMax > 0 ? Math.round((totalConfirmed / totalMax) * 100) : 0
-          const amberColor = '#D97706' // Brighter Amber for better UI match
 
           return (
-            <View style={{ 
-              backgroundColor: 'white', 
-              borderRadius: RADIUS.lg, 
-              paddingHorizontal: 14,
-              paddingVertical: 10, 
-              ...LAYOUT_SHADOW.sm,
-              borderWidth: 1,
-              borderColor: theme.outlineVariant
-            }}>
-              {/* Row 1: Status & Percentage */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 6 }}>
+            <View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#16a34a' }} />
-                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 14, color: '#1A2B3B' }}>
-                    {openCount} kèo đang mở <Text style={{ color: '#6B7280', fontFamily: SCREEN_FONTS.body, fontSize: 13 }}>· {totalConfirmed}/{totalMax}</Text>
+                  <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: theme.primary }} />
+                  <Text style={{ fontFamily: SCREEN_FONTS.medium, fontSize: 12, color: theme.onSurfaceVariant }}>
+                    {openCount} kèo đang mở <Text style={{ opacity: 0.5 }}>({totalConfirmed}/{totalMax})</Text>
                   </Text>
                 </View>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: amberColor, lineHeight: 20 }}>
-                  {occupancy}%
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: theme.primary }}>
+                  {occupancy}% Lấp đầy
                 </Text>
               </View>
-
-              {/* Row 2: Progress Bar */}
-              <View style={{ height: 3, backgroundColor: '#F3F4F6', borderRadius: 1.5, overflow: 'hidden' }}>
-                <View style={{ width: `${occupancy}%`, height: '100%', backgroundColor: amberColor, borderRadius: 1.5 }} />
-              </View>
-
-              {/* Row 3: Labels & Warnings */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, alignItems: 'center' }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: '#6B7280' }}>
-                  Lấp đầy trung bình
-                </Text>
-                {urgentCount > 0 && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <AlertTriangle size={12} color={amberColor} />
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: amberColor }}>
-                      {urgentCount} kèo trống
-                    </Text>
-                  </View>
-                )}
+              <View style={{ height: 2, backgroundColor: theme.outlineVariant + '40', borderRadius: 1, overflow: 'hidden' }}>
+                <View style={{ width: `${occupancy}%`, height: '100%', backgroundColor: theme.primary, borderRadius: 1 }} />
               </View>
             </View>
           )
         })()}
       </View>
+
 
       {/* Pill Tab Selector */}
       <View style={{ paddingHorizontal: 24, marginTop: 20 }}>
@@ -728,13 +617,17 @@ export default function HostDashboardScreen() {
       </View>
 
       {/* Content */}
-      <View style={{ padding: 24, paddingTop: 10 }}>
+      <View style={{ paddingVertical: 24, paddingTop: 10 }}>
         {loading ? (
           <ActivityIndicator color={theme.primary} style={{ marginTop: 40 }} />
         ) : sessions.length > 0 ? (
           (() => {
             const filteredSessions = sessions.filter(s => {
-              const isPast = s.status === 'completed' || s.status === 'finished' || s.status === 'archived' || s.status === 'done'
+              const endTime = s.slot?.end_time ? new Date(s.slot.end_time).getTime() : 0
+              const now = Date.now()
+              const isPastTime = endTime > 0 && endTime < now
+              const isPastStatus = ['completed', 'finished', 'archived', 'done', 'cancelled'].includes(s.status)
+              const isPast = isPastTime || isPastStatus
               return activeTab === 'upcoming' ? !isPast : isPast
             })
             
@@ -866,7 +759,8 @@ export default function HostDashboardScreen() {
           </View>
         )}
       </View>
-    </ScrollView>
+    </WebContainer>
+  </ScrollView>
 
       {/* FAB */}
       <TouchableOpacity
@@ -881,6 +775,7 @@ export default function HostDashboardScreen() {
           backgroundColor: theme.primary,
           alignItems: 'center',
           justifyContent: 'center',
+          zIndex: 9999,
           ...LAYOUT_SHADOW.fab
         }}
       >

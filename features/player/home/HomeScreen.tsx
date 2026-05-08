@@ -18,6 +18,8 @@ import { useAuth } from '@/lib/useAuth'
 import { SPACING } from '@/constants/screenLayout'
 import { STRINGS } from '@/constants/strings'
 import { withAlpha } from '@/lib/utils/ui'
+import { WebContainer } from '@/components/design/WebContainer'
+import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
 
 const CAROUSEL_SECTION_HEIGHT = 430
 const COURT_CAROUSEL_HEIGHT = 272
@@ -107,6 +109,7 @@ export function HomeScreen() {
   const insets = useSafeAreaInsets()
   const theme = useAppTheme()
   const { userId, isLoading: isAuthLoading } = useAuth()
+  const { switchToHost } = useRoleSwitcher()
   const [personalizedIndex, setPersonalizedIndex] = useState(0)
   const [rescueIndex, setRescueIndex] = useState(0)
   const [courtIndex, setCourtIndex] = useState(0)
@@ -173,9 +176,13 @@ export function HomeScreen() {
         }
         alwaysBounceVertical={true}
       >
-        <HomeGreetingHeader name={profile?.name ?? STRINGS.common.you} statusPrompt={statusPrompt} />
-
-        <View style={{ paddingHorizontal: SPACING.xl }}>
+        <WebContainer>
+          <HomeGreetingHeader 
+            name={profile?.name ?? STRINGS.common.you} 
+            role="player"
+            onRoleChange={() => switchToHost()}
+            profilePhotoUrl={profile?.avatar_url}
+          />
           <HomeStreakCard current={displayWinStreak} />
 
           <PostMatchInboxSection pendingMatches={pendingMatches} postMatchActions={postMatchActions} marginTopClassName="mt-3" />
@@ -228,7 +235,7 @@ export function HomeScreen() {
             onIndexChange={setCourtIndex}
             renderCard={renderCourtCard}
           />
-        </View>
+        </WebContainer>
       </ScrollView>
 
       <ExpandingCreateButton isFAB />

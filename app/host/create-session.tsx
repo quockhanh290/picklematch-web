@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/useAuth'
+import { WebContainer } from '@/components/design/WebContainer'
 
 export default function HostCreateSessionScreen() {
   const theme = useAppTheme()
@@ -85,7 +86,7 @@ export default function HostCreateSessionScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
         style={{ flex: 1 }}
       >
-        <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 10 }}>
+        <WebContainer maxWidth={800} style={{ flex: 1, paddingTop: 10 }}>
           {step === 1 && (
             <HostCreateSessionStep1
               onBack={() => router.back()}
@@ -102,7 +103,7 @@ export default function HostCreateSessionScreen() {
               onToggleStartPicker={() => setShowStartPicker(!showStartPicker)}
               onToggleEndPicker={() => setShowEndPicker(!showEndPicker)}
               onCloseStartPicker={() => setShowStartPicker(false)}
-              onCloseEndPicker={controller.onCloseEndPicker}
+              onCloseEndPicker={() => setShowEndPicker(false)}
               defaultPickerValue={controller.defaultPickerValue}
               timeError={timeError}
               format={format}
@@ -178,7 +179,7 @@ export default function HostCreateSessionScreen() {
               playMode={playMode}
             />
           )}
-        </View>
+        </WebContainer>
       </KeyboardAvoidingView>
 
       <AppDialog

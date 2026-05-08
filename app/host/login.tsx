@@ -21,6 +21,8 @@ import {
   View,
 } from 'react-native'
 
+import { WebContainer } from '@/components/design/WebContainer'
+
 function OTPDots({ value }: { value: string }) {
   const theme = useAppTheme()
   return (
@@ -162,6 +164,7 @@ export default function HostLoginScreen() {
         contentContainerStyle={{ flexGrow: 1 }}
         keyboardShouldPersistTaps="handled"
       >
+        <WebContainer maxWidth={600}>
         <View style={{ 
           backgroundColor: theme.primary, 
           paddingTop: insets.top + 40,
@@ -279,6 +282,7 @@ export default function HostLoginScreen() {
             </View>
           </View>
         </View>
+        </WebContainer>
       </ScrollView>
       <AppDialog visible={Boolean(dialogConfig)} config={dialogConfig} onClose={() => setDialogConfig(null)} />
     </KeyboardAvoidingView>

@@ -19,6 +19,7 @@ import { SessionMetaCard } from '@/components/session/SessionMetaCard'
 import { SmartJoinButton } from '@/components/session/SmartJoinButton'
 import { SessionResultBanner } from '@/components/session/SessionResultBanner'
 import { SessionActionButtons } from '@/components/session/SessionActionButtons'
+import { WebContainer } from '@/components/design/WebContainer'
 
 import { useSessionArrangement } from '@/hooks/useSessionArrangement'
 import { useSessionDetail } from '@/hooks/useSessionDetail'
@@ -253,10 +254,10 @@ export default function SessionDetailScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
         contentContainerStyle={{
           paddingBottom: 48 + insets.bottom,
-          paddingHorizontal: SPACING.xl,
           paddingTop: 12,
         }}
       >
+        <WebContainer>
 
         <SessionMetaCard
           skillLevelId={getEloBandForSessionRange(session.elo_min, session.elo_max).levelId}
@@ -372,6 +373,7 @@ export default function SessionDetailScreen() {
             )}
           </View>
         ) : null}
+        </WebContainer>
       </ScrollView>
 
       <JoinRequestModal

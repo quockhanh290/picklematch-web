@@ -188,80 +188,11 @@ export function HostCreateSessionStep2({
           setMaxPlayers={setMaxPlayers} 
           playMode={playMode}
           setPlayMode={setPlayMode}
+          subCourtCount={subCourtCount}
+          selectedSubCourts={selectedSubCourts}
+          onSubCourtsChange={onSubCourtsChange}
         />
 
-        {/* Sub-court Selector (Refined) */}
-        <View style={{ 
-          marginBottom: 16, 
-          padding: SPACING.lg, 
-          backgroundColor: theme.surfaceContainerLow, 
-          borderRadius: RADIUS.xl, 
-          borderWidth: BORDER.base, 
-          borderColor: theme.outlineVariant 
-        }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <View>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, letterSpacing: 1.2, color: theme.primary }}>
-                SỬ DỤNG SÂN CON SỐ
-              </Text>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onSurfaceVariant, marginTop: 2 }}>
-                Đã chọn: {selectedSubCourts.length} / {subCourtCount} sân
-              </Text>
-            </View>
-            <TouchableOpacity 
-              onPress={handleToggleAll}
-              style={{ 
-                paddingHorizontal: 12, 
-                paddingVertical: 6, 
-                borderRadius: RADIUS.full, 
-                backgroundColor: isAllSelected ? theme.primaryContainer : theme.surface,
-                borderWidth: BORDER.hairline,
-                borderColor: theme.outlineVariant
-              }}
-            >
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: theme.primary }}>
-                {isAllSelected ? 'BỎ CHỌN HẾT' : 'CHỌN TẤT CẢ'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          
-          <View style={{ 
-            flexDirection: 'row', 
-            flexWrap: 'wrap', 
-            gap: 10, 
-            justifyContent: 'center'
-          }}>
-            {courts.map((num) => {
-              const isSelected = selectedSubCourts.includes(num)
-              return (
-                <TouchableOpacity
-                  key={num}
-                  activeOpacity={0.8}
-                  onPress={() => handleSelectCourt(num)}
-                  style={{
-                    width: 46,
-                    height: 46,
-                    borderRadius: RADIUS.sm,
-                    backgroundColor: isSelected ? theme.primary : theme.surfaceContainerLowest,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderWidth: BORDER.medium,
-                    borderColor: isSelected ? theme.primary : theme.outlineVariant,
-                    ...SHADOW.xs
-                  }}
-                >
-                  <Text style={{ 
-                    color: isSelected ? theme.onPrimary : theme.onSurfaceVariant, 
-                    fontFamily: SCREEN_FONTS.headline,
-                    fontSize: 18
-                  }}>
-                    {num}
-                  </Text>
-                </TouchableOpacity>
-              )
-            })}
-          </View>
-        </View>
 
         <View style={{ borderRadius: RADIUS.xl, borderWidth: BORDER.base, borderColor: theme.outlineVariant, backgroundColor: theme.surfaceContainerLow, padding: SPACING.lg, marginBottom: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
