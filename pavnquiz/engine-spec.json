@@ -1,0 +1,104 @@
+{
+  "source": "https://quiz.pvna.vn/",
+  "engine_version": "reverse-engineered-2026-05-03",
+  "answer_scale": [1,2,3,4,5],
+  "screening_thresholds": {
+    "beginner_max": 2.3,
+    "intermediate_max": 3.5
+  },
+  "age_multiplier": {
+    "1": 1.0,
+    "2": 1.0,
+    "3": 0.97,
+    "4": 0.94,
+    "5": 0.91
+  },
+  "pvna_floor_after_age_adjust": {
+    "nam": 2.6,
+    "nu": 2.1
+  },
+  "questions": [
+    {"id":"ageGroup","weight":0.0,"phase":"screening"},
+    {"id":"racketSportsBackground","weight":1.0,"phase":"screening"},
+    {"id":"pickleballExperience","weight":1.0,"phase":"screening"},
+    {"id":"rallyAbility","weight":1.5,"phase":"screening"},
+
+    {"id":"serveBasic","weight":1.2,"phase":"beginner"},
+    {"id":"returnBasic","weight":1.2,"phase":"beginner"},
+    {"id":"nvzUnderstanding","weight":1.0,"phase":"beginner"},
+
+    {"id":"dinkConsistency","weight":1.5,"phase":"intermediate"},
+    {"id":"dinkControl","weight":1.3,"phase":"intermediate"},
+    {"id":"thirdShotDrop","weight":1.8,"phase":"intermediate"},
+    {"id":"backhandSoft","weight":1.2,"phase":"intermediate"},
+    {"id":"backhandDrive","weight":1.0,"phase":"intermediate"},
+    {"id":"volleyHandBattles","weight":1.3,"phase":"intermediate"},
+    {"id":"footworkPositioning","weight":1.2,"phase":"intermediate"},
+    {"id":"transitionZone","weight":1.4,"phase":"intermediate"},
+
+    {"id":"backhandSlide","weight":1.3,"phase":"advanced"},
+    {"id":"speedupCounter","weight":1.5,"phase":"advanced"},
+    {"id":"advancedShots","weight":0.8,"phase":"advanced"},
+    {"id":"twoHandedAdvantage","weight":0.6,"phase":"advanced"},
+    {"id":"strategyTeamwork","weight":1.2,"phase":"advanced"},
+    {"id":"competitionLevel","weight":1.3,"phase":"advanced"},
+    {"id":"consistencyUnderPressure","weight":1.3,"phase":"advanced"},
+    {"id":"pointConstruction","weight":1.2,"phase":"advanced"},
+
+    {"id":"errorRate","weight":1.5,"phase":"all"}
+  ],
+  "branching": {
+    "screening_questions": ["ageGroup","racketSportsBackground","pickleballExperience","rallyAbility"],
+    "beginner_path": ["serveBasic","returnBasic","nvzUnderstanding","dinkConsistency","thirdShotDrop"],
+    "intermediate_path": ["dinkConsistency","dinkControl","thirdShotDrop","backhandSoft","backhandDrive","volleyHandBattles","footworkPositioning","transitionZone","speedupCounter","competitionLevel"],
+    "advanced_path": ["dinkConsistency","dinkControl","thirdShotDrop","backhandSoft","backhandDrive","volleyHandBattles","footworkPositioning","transitionZone","backhandSlide","speedupCounter","advancedShots","twoHandedAdvantage","strategyTeamwork","competitionLevel","consistencyUnderPressure","pointConstruction"],
+    "always_append": ["errorRate"]
+  },
+  "formula": {
+    "raw_score": "(sum(answer_value * weight) / sum(5 * weight)) * 5, excluding ageGroup",
+    "level_lookup": "choose level where scoreMin <= raw_score < scoreMax; fallback last level",
+    "adjusted_pvna": "max(parseFloat(level.pvna.split('-')[0]) * age_multiplier[ageGroup], gender_floor).toFixed(1)"
+  },
+  "levels": {
+    "nam": [
+      {"scoreMin":0.0,"scoreMax":1.6,"pvna":"2.6","name":"Beginner","dupr":"2.0-2.5"},
+      {"scoreMin":1.6,"scoreMax":1.9,"pvna":"2.7","name":"Novice I","dupr":"2.5-2.75"},
+      {"scoreMin":1.9,"scoreMax":2.15,"pvna":"2.8","name":"Novice II","dupr":"2.75-3.0"},
+      {"scoreMin":2.15,"scoreMax":2.35,"pvna":"2.9","name":"Novice III","dupr":"3.0-3.25"},
+      {"scoreMin":2.35,"scoreMax":2.55,"pvna":"3.0","name":"Intermediate I","dupr":"3.25-3.5"},
+      {"scoreMin":2.55,"scoreMax":2.75,"pvna":"3.1","name":"Intermediate II","dupr":"3.5-3.75"},
+      {"scoreMin":2.75,"scoreMax":2.95,"pvna":"3.2","name":"Intermediate III","dupr":"3.75-4.0"},
+      {"scoreMin":2.95,"scoreMax":3.15,"pvna":"3.3","name":"Intermediate+","dupr":"4.0-4.25"},
+      {"scoreMin":3.15,"scoreMax":3.35,"pvna":"3.4","name":"Advanced I","dupr":"4.25-4.5"},
+      {"scoreMin":3.35,"scoreMax":3.55,"pvna":"3.5","name":"Advanced II","dupr":"4.5-4.75"},
+      {"scoreMin":3.55,"scoreMax":3.75,"pvna":"3.6","name":"Advanced+","dupr":"4.75-5.0"},
+      {"scoreMin":3.75,"scoreMax":3.95,"pvna":"3.7","name":"Expert I","dupr":"5.0-5.15"},
+      {"scoreMin":3.95,"scoreMax":4.15,"pvna":"3.8","name":"Expert II","dupr":"5.15-5.3"},
+      {"scoreMin":4.15,"scoreMax":4.4,"pvna":"4.0","name":"Expert+","dupr":"5.3-5.5"},
+      {"scoreMin":4.4,"scoreMax":4.6,"pvna":"4.3","name":"Elite I","dupr":"5.5-5.65"},
+      {"scoreMin":4.6,"scoreMax":4.8,"pvna":"4.6","name":"Elite II","dupr":"5.65-5.8"},
+      {"scoreMin":4.8,"scoreMax":4.92,"pvna":"5.0","name":"Pro I","dupr":"5.8-5.9"},
+      {"scoreMin":4.92,"scoreMax":5.0,"pvna":"5.5","name":"Pro II","dupr":"5.9-6.0+"}
+    ],
+    "nu": [
+      {"scoreMin":0.0,"scoreMax":1.6,"pvna":"2.1","name":"Beginner","dupr":"1.5-2.0"},
+      {"scoreMin":1.6,"scoreMax":1.9,"pvna":"2.2","name":"Novice I","dupr":"2.0-2.25"},
+      {"scoreMin":1.9,"scoreMax":2.15,"pvna":"2.3","name":"Novice II","dupr":"2.25-2.5"},
+      {"scoreMin":2.15,"scoreMax":2.35,"pvna":"2.4","name":"Novice III","dupr":"2.5-2.75"},
+      {"scoreMin":2.35,"scoreMax":2.55,"pvna":"2.5","name":"Intermediate I","dupr":"2.75-3.0"},
+      {"scoreMin":2.55,"scoreMax":2.75,"pvna":"2.6","name":"Intermediate II","dupr":"3.0-3.25"},
+      {"scoreMin":2.75,"scoreMax":2.95,"pvna":"2.7","name":"Intermediate III","dupr":"3.25-3.5"},
+      {"scoreMin":2.95,"scoreMax":3.15,"pvna":"2.8","name":"Intermediate+","dupr":"3.5-3.75"},
+      {"scoreMin":3.15,"scoreMax":3.35,"pvna":"2.9","name":"Advanced I","dupr":"3.75-4.0"},
+      {"scoreMin":3.35,"scoreMax":3.55,"pvna":"3.0","name":"Advanced II","dupr":"4.0-4.25"},
+      {"scoreMin":3.55,"scoreMax":3.75,"pvna":"3.2","name":"Advanced+","dupr":"4.25-4.5"},
+      {"scoreMin":3.75,"scoreMax":3.95,"pvna":"3.4","name":"Expert I","dupr":"4.5-4.7"},
+      {"scoreMin":3.95,"scoreMax":4.15,"pvna":"3.5","name":"Expert II","dupr":"4.7-4.9"},
+      {"scoreMin":4.15,"scoreMax":4.4,"pvna":"3.8","name":"Expert+","dupr":"4.9-5.1"},
+      {"scoreMin":4.4,"scoreMax":4.6,"pvna":"4.0","name":"Elite I","dupr":"5.1-5.3"},
+      {"scoreMin":4.6,"scoreMax":4.8,"pvna":"4.3","name":"Elite II","dupr":"5.3-5.5"},
+      {"scoreMin":4.8,"scoreMax":4.92,"pvna":"4.6","name":"Pro I","dupr":"5.5-5.7"},
+      {"scoreMin":4.92,"scoreMax":5.0,"pvna":"5.0","name":"Pro II","dupr":"5.7-5.9+"}
+    ]
+  }
+}

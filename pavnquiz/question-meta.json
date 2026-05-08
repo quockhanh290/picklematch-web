@@ -1,0 +1,122 @@
+[
+    {
+        "id":  "ageGroup",
+        "weight":  0,
+        "phase":  "screening"
+    },
+    {
+        "id":  "racketSportsBackground",
+        "weight":  1,
+        "phase":  "screening"
+    },
+    {
+        "id":  "pickleballExperience",
+        "weight":  1,
+        "phase":  "screening"
+    },
+    {
+        "id":  "rallyAbility",
+        "weight":  1.5,
+        "phase":  "screening"
+    },
+    {
+        "id":  "serveBasic",
+        "weight":  1.2,
+        "phase":  "beginner"
+    },
+    {
+        "id":  "returnBasic",
+        "weight":  1.2,
+        "phase":  "beginner"
+    },
+    {
+        "id":  "nvzUnderstanding",
+        "weight":  1,
+        "phase":  "beginner"
+    },
+    {
+        "id":  "dinkConsistency",
+        "weight":  1.5,
+        "phase":  "intermediate"
+    },
+    {
+        "id":  "dinkControl",
+        "weight":  1.3,
+        "phase":  "intermediate"
+    },
+    {
+        "id":  "thirdShotDrop",
+        "weight":  1.8,
+        "phase":  "intermediate"
+    },
+    {
+        "id":  "backhandSoft",
+        "weight":  1.2,
+        "phase":  "intermediate"
+    },
+    {
+        "id":  "backhandDrive",
+        "weight":  1,
+        "phase":  "intermediate"
+    },
+    {
+        "id":  "volleyHandBattles",
+        "weight":  1.3,
+        "phase":  "intermediate"
+    },
+    {
+        "id":  "footworkPositioning",
+        "weight":  1.2,
+        "phase":  "intermediate"
+    },
+    {
+        "id":  "transitionZone",
+        "weight":  1.4,
+        "phase":  "intermediate"
+    },
+    {
+        "id":  "backhandSlide",
+        "weight":  1.3,
+        "phase":  "advanced"
+    },
+    {
+        "id":  "speedupCounter",
+        "weight":  1.5,
+        "phase":  "advanced"
+    },
+    {
+        "id":  "advancedShots",
+        "weight":  0.8,
+        "phase":  "advanced"
+    },
+    {
+        "id":  "twoHandedAdvantage",
+        "weight":  0.6,
+        "phase":  "advanced"
+    },
+    {
+        "id":  "strategyTeamwork",
+        "weight":  1.2,
+        "phase":  "advanced"
+    },
+    {
+        "id":  "competitionLevel",
+        "weight":  1.3,
+        "phase":  "advanced"
+    },
+    {
+        "id":  "consistencyUnderPressure",
+        "weight":  1.3,
+        "phase":  "advanced"
+    },
+    {
+        "id":  "pointConstruction",
+        "weight":  1.2,
+        "phase":  "advanced"
+    },
+    {
+        "id":  "errorRate",
+        "weight":  1.5,
+        "phase":  "all"
+    }
+]

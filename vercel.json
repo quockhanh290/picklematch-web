@@ -1,0 +1,14 @@
+{
+  "installCommand": "npm ci",
+  "buildCommand": "npx expo export --platform web --output-dir web-build",
+  "outputDirectory": "web-build",
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}

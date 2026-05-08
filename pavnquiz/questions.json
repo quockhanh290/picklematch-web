@@ -1,0 +1,37 @@
+{
+  "pack": "pvna-quiz-recreate",
+  "version": "2026-05-03",
+  "source": "https://quiz.pvna.vn/",
+  "answerScale": [1,2,3,4,5],
+  "genderValues": ["nam","nu"],
+  "questions": [
+    {"id":"ageGroup","title":"Do tuoi cua ban?","description":"Do tuoi anh huong den the luc va toc do phan xa","phase":"screening","weight":0,"options":[{"value":1,"label":"Duoi 19"},{"value":2,"label":"19-34"},{"value":3,"label":"35-49"},{"value":4,"label":"50-64"},{"value":5,"label":"65+"}]},
+    {"id":"racketSportsBackground","title":"Nen tang mon dung vot?","description":"Kinh nghiem tennis/cau long/bong ban","phase":"screening","weight":1,"options":[{"value":1,"label":"Chua tung choi"},{"value":2,"label":"Duoi 2 nam"},{"value":3,"label":"2-5 nam"},{"value":4,"label":"5-10 nam"},{"value":5,"label":"10+ nam/thi dau"}]},
+    {"id":"pickleballExperience","title":"Thoi gian choi pickleball?","description":"Muc do kinh nghiem thuc te","phase":"screening","weight":1,"options":[{"value":1,"label":"Duoi 2 thang"},{"value":2,"label":"2-6 thang"},{"value":3,"label":"6-12 thang"},{"value":4,"label":"1-2 nam"},{"value":5,"label":"2+ nam/thi dau"}]},
+    {"id":"rallyAbility","title":"Rally thuong dai bao lau?","description":"Kha nang duy tri chuoi bong","phase":"screening","weight":1.5,"options":[{"value":1,"label":"1-4 duong bong"},{"value":2,"label":"4-8 duong bong"},{"value":3,"label":"8-15 duong bong"},{"value":4,"label":"15-25 duong bong"},{"value":5,"label":"25+ duong bong"}]},
+
+    {"id":"serveBasic","title":"Serve cua ban?","description":"Do on dinh va do sau","phase":"beginner","weight":1.2,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"returnBasic","title":"Return cua ban?","description":"Kha nang tra giao bong","phase":"beginner","weight":1.2,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"nvzUnderstanding","title":"Hieu NVZ (Kitchen)?","description":"Luat va chien thuat NVZ","phase":"beginner","weight":1,"options":[{"value":1,"label":"Chua hieu"},{"value":2,"label":"Co ban"},{"value":3,"label":"Kha"},{"value":4,"label":"Tot"},{"value":5,"label":"Ranh"}]},
+
+    {"id":"dinkConsistency","title":"Dink consistency?","description":"Do on dinh dink","phase":"intermediate","weight":1.5,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"dinkControl","title":"Dink control?","description":"Direction/depth/pace","phase":"intermediate","weight":1.3,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"thirdShotDrop","title":"Third shot drop?","description":"Drop tu baseline vao NVZ","phase":"intermediate","weight":1.8,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"backhandSoft","title":"Backhand dink/drop?","description":"Backhand soft game","phase":"intermediate","weight":1.2,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"backhandDrive","title":"Backhand drive/attack?","description":"Backhand hard game","phase":"intermediate","weight":1,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"volleyHandBattles","title":"Volley & hand battles?","description":"Phan xa va doi volley","phase":"intermediate","weight":1.3,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"footworkPositioning","title":"Footwork & positioning?","description":"Di chuyen/chon vi tri","phase":"intermediate","weight":1.2,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"transitionZone","title":"Xu ly transition zone?","description":"Mid-court reset/drop/drive","phase":"intermediate","weight":1.4,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+
+    {"id":"backhandSlide","title":"Backhand slide & variations?","description":"Slide dink/drop va angle","phase":"advanced","weight":1.3,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"speedupCounter","title":"Speed-up & counter attack?","description":"Tang toc va phan cong","phase":"advanced","weight":1.5,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"advancedShots","title":"ATP/Erne/around-the-post?","description":"Shot nang cao","phase":"advanced","weight":0.8,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"twoHandedAdvantage","title":"Two-handed backhand (nang cao)?","description":"Su dung 2 tay cho BH","phase":"advanced","weight":0.6,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"strategyTeamwork","title":"Chien thuat & phoi hop doi?","description":"Pattern/communication/adjust","phase":"advanced","weight":1.2,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"competitionLevel","title":"Kinh nghiem thi dau giai?","description":"Muc do giai da thi dau","phase":"advanced","weight":1.3,"options":[{"value":1,"label":"Chua thi dau"},{"value":2,"label":"Giai CLB/dia phuong"},{"value":3,"label":"Giai vung/tinh"},{"value":4,"label":"Giai quoc gia"},{"value":5,"label":"Giai quoc te"}]},
+    {"id":"consistencyUnderPressure","title":"Consistency duoi ap luc?","description":"Giu hieu suat luc quan trong","phase":"advanced","weight":1.3,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+    {"id":"pointConstruction","title":"Point construction & game IQ?","description":"Xay dung diem co chu dich","phase":"advanced","weight":1.2,"options":[{"value":1,"label":"Rat yeu"},{"value":2,"label":"Yeu"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Tot"},{"value":5,"label":"Rat tot"}]},
+
+    {"id":"errorRate","title":"Ti le loi tu danh hong?","description":"Unforced errors","phase":"all","weight":1.5,"options":[{"value":1,"label":"Rat cao"},{"value":2,"label":"Cao"},{"value":3,"label":"Trung binh"},{"value":4,"label":"Thap"},{"value":5,"label":"Rat thap"}]}
+  ]
+}

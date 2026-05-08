@@ -1,0 +1,717 @@
+import React, { useEffect, useMemo, useState } from 'react'
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native'
+import Slider from '@react-native-community/slider'
+import { useLocalSearchParams, router } from 'expo-router'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
+import { AppButton, AppLoading, SecondaryNavbar, BrandedFooter } from '@/components/design'
+import { MatchSessionCard } from '@/components/home/MatchSessionCard'
+import { useAppTheme } from '@/lib/theme-context'
+import { useSessionDetail } from '@/hooks/useSessionDetail'
+import { useAuth } from '@/lib/useAuth'
+import { formatTimeRange } from '@/lib/sessionDetail'
+import { getEloBandForSessionRange } from '@/lib/eloSystem'
+import { getSessionSkillLabel, pvnaToElo } from '@/lib/skillAssessment'
+import { getStatusLabel, type MatchSession } from '@/lib/homeFeed'
+import { SCREEN_FONTS } from '@/constants/typography'
+import { RADIUS, SPACING, SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
+import { supabase } from '@/lib/supabase'
+import { RegistrationSuccessView } from '@/components/register/RegistrationSuccessView'
+
+const REGISTER_INFO_STORAGE_PREFIX = 'zalo_player_info:'
+const REGISTER_INFO_TTL_MS = 24 * 60 * 60 * 1000
+
+function getRegisterInfoStorageKey(sessionId: string) {
+  return `${REGISTER_INFO_STORAGE_PREFIX}${sessionId}`
+}
+
+type StoredRegisterInfo = {
+  name?: string
+  phone?: string
+  gender?: 'male' | 'female'
+  pvna?: string
+  elo?: number
+  savedAt?: number
+}
+
+
+const normalizePhoneInput = (value: string) => value.replace(/\D/g, '').slice(0, 11)
+
+const normalizePhoneForSubmit = (value: string) => {
+  const digits = value.replace(/\D/g, '')
+  if (digits.startsWith('84')) return `0${digits.slice(2)}`
+  return digits
+}
+
+const validateName = (value: string) => {
+  const cleaned = value.trim().replace(/\s+/g, ' ')
+  if (!cleaned) return 'Vui lòng nhập họ và tên.'
+  if (cleaned.length < 2) return 'Họ tên cần tối thiểu 2 ký tự.'
+  if (!/^[\p{L}\s'.-]+$/u.test(cleaned)) return 'Họ tên chỉ nên gồm chữ cái.'
+  return null
+}
+
+const validatePhone = (value: string) => {
+  const digits = value.replace(/\D/g, '')
+  if (!digits) return 'Vui lòng nhập số điện thoại.'
+  if (digits.startsWith('0') && digits.length === 10) return null
+  if (digits.startsWith('84') && digits.length === 11) return null
+  return 'SĐT không hợp lệ. Dùng 10 số (0xxxxxxxxx) hoặc 84xxxxxxxxx.'
+}
+
+export default function ZaloRegisterScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>()
+  const { userId } = useAuth()
+  const theme = useAppTheme()
+
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [gender, setGender] = useState<'male' | 'female'>('male')
+  const [pvna, setPvna] = useState('2.5')
+  const [submitting, setSubmitting] = useState(false)
+  const [statusMsg, setStatusMsg] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
+  const [success, setSuccess] = useState(false)
+  const [isNewbie, setIsNewbie] = useState(false)
+  const [nameTouched, setNameTouched] = useState(false)
+  const [phoneTouched, setPhoneTouched] = useState(false)
+
+  useEffect(() => {
+    if (!id) return
+    const loadSavedData = async () => {
+      try {
+        const storageKey = getRegisterInfoStorageKey(id)
+        const savedData = await AsyncStorage.getItem(storageKey)
+        if (!savedData) return
+        const parsed = JSON.parse(savedData) as StoredRegisterInfo
+        const savedAt = parsed?.savedAt ?? 0
+        if (!savedAt || Date.now() - savedAt > REGISTER_INFO_TTL_MS) {
+          await AsyncStorage.removeItem(storageKey)
+          return
+        }
+        if (parsed?.name) setName(parsed.name)
+        if (parsed?.phone) setPhone(parsed.phone)
+        if (parsed?.gender) setGender(parsed.gender)
+        if (parsed?.pvna) setPvna(parsed.pvna)
+        else if (parsed?.elo) setPvna('2.5')
+      } catch (e) {
+        console.warn('Failed to load saved data', e)
+      }
+    }
+    void loadSavedData()
+  }, [id])
+
+  const { loading, session, error, fetchSession } = useSessionDetail(id, userId)
+
+  const sessionSkillLabel = useMemo(
+    () => (session ? getSessionSkillLabel(session.elo_min, session.elo_max) : ''),
+    [session]
+  )
+
+  const nameError = useMemo(() => validateName(name), [name])
+  const phoneError = useMemo(() => validatePhone(phone), [phone])
+  const _canSubmit = !nameError && !phoneError && !submitting
+
+  const pvnaRange = useMemo(() => {
+    if (gender === 'female') {
+      return { min: 2.1, max: 5.0, step: 0.1 }
+    }
+    return { min: 2.0, max: 5.5, step: 0.1 }
+  }, [gender])
+
+  const pvnaValue = useMemo(() => {
+    const parsed = parseFloat(pvna)
+    if (Number.isNaN(parsed)) return pvnaRange.min
+    return Math.max(pvnaRange.min, Math.min(pvnaRange.max, Math.round(parsed * 10) / 10))
+  }, [pvna, pvnaRange.min, pvnaRange.max])
+
+  useEffect(() => {
+    if (!isNewbie) {
+      setPvna(pvnaValue.toFixed(1))
+    }
+  }, [pvnaValue, isNewbie])
+
+  const toggleNewbie = () => {
+    const next = !isNewbie
+    setIsNewbie(next)
+    if (next) {
+      setPvna(pvnaRange.min.toFixed(1))
+    }
+  }
+
+  const FORMAT_LABELS: Record<string, string> = {
+    social: 'SOCIAL FUN',
+    round_robin: 'ROUND ROBIN',
+    open_play: 'OPEN PLAY',
+  }
+
+  const formatPrice = (pricePerPerson: number) => {
+    if (pricePerPerson <= 0) return 'Miễn phí'
+    return `${Math.round(pricePerPerson / 1000)}K`
+  }
+
+  const previewMatch: MatchSession = useMemo(() => {
+    if (!session) return null as any
+
+    const ownerDetails = session.owner_sessions?.[0] || session.owner_sessions || {}
+    const subCourts = session.sub_court_numbers || ownerDetails.sub_court_numbers || []
+
+    return {
+      id: session.id,
+      title: session.title || 'Kèo chủ sân',
+      bookingId: session.booking_reference || 'OWNER',
+      courtName: session.slot.court.name,
+      courtId: session.slot.court.id,
+      address: session.slot.court.city
+        ? `${session.slot.court.address}, ${session.slot.court.city}`
+        : session.slot.court.address,
+      matchScore: 100,
+      matchHint: FORMAT_LABELS[ownerDetails.format_type || 'social'],
+      skillLabel: sessionSkillLabel,
+      timeLabel: formatTimeRange(session.slot.start_time, session.slot.end_time),
+      priceLabel: formatPrice(
+        session.total_cost || 
+        ownerDetails.total_cost || 
+        ownerDetails.format_metadata?.cost_per_person || 
+        (session.slot.price / (session.max_players || 4))
+      ),
+      openSlotsLabel: `Đã có ${session.session_players?.length || 0} người tham gia`,
+      statusLabel: getStatusLabel(session.court_booking_status, session.status),
+      courtBookingConfirmed: session.court_booking_status === 'confirmed',
+      isBooked: true,
+      isRanked: session.is_ranked,
+      requireApproval: ownerDetails.require_approval || session.require_approval,
+      activePlayers: session.session_players?.length || 0,
+      maxPlayers: session.max_players,
+      levelId: getEloBandForSessionRange(session.elo_min, session.elo_max).levelId,
+      host: session.host,
+      players: session.session_players || [],
+      urgent: false,
+      joined: false,
+      subCourtLabel: subCourts.length > 0 ? `Sân ${subCourts.join(', ')}` : '',
+    } as any
+  }, [session, sessionSkillLabel])
+
+  const [regStatus, setRegStatus] = useState<string | null>(null)
+
+  const handleRegister = async () => {
+    setErrorMsg('')
+    if (!id) {
+      setErrorMsg('Không tìm thấy mã kèo thi đấu.')
+      return
+    }
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(id)) {
+      setErrorMsg(`Mã kèo không hợp lệ: ${id}`)
+      return
+    }
+
+    setSubmitting(true)
+    setStatusMsg('Đang chuẩn bị dữ liệu...')
+
+    try {
+      const cleanedName = name.trim().replace(/\s+/g, ' ')
+      const submitPhone = normalizePhoneForSubmit(phone)
+      const elo = Math.round(pvnaToElo(pvnaValue))
+
+      console.log('[ZaloRegister] RPC Start:', { id, cleanedName, submitPhone, gender, elo })
+      setStatusMsg('Đang kết nối Database (vui lòng đợi)...')
+      
+      const rpcPromise = supabase.rpc('register_and_join_session', {
+        p_session_id: id,
+        p_name: cleanedName,
+        p_phone: submitPhone,
+        p_gender: gender,
+        p_elo: elo,
+        p_pvna: pvnaValue,
+      })
+
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('KẾT NỐI QUÁ HẠN: Server không phản hồi sau 15 giây.')), 15000)
+      )
+
+      const { data, error: joinError } = await Promise.race([rpcPromise, timeoutPromise]) as any
+
+      if (joinError) {
+        console.error('[ZaloRegister] DB Error:', joinError)
+        setErrorMsg(`Lỗi kết nối: ${joinError.message || 'Không xác định'}`)
+        setSubmitting(false)
+        return
+      }
+
+      if (data?.error) {
+        setErrorMsg(data.error)
+        setSubmitting(false)
+        return
+      }
+
+      setRegStatus(data?.status || 'confirmed')
+      setStatusMsg('Đang lưu thông tin cá nhân...')
+      
+      if (id) {
+        await AsyncStorage.setItem(
+          getRegisterInfoStorageKey(id),
+          JSON.stringify({
+            name: cleanedName,
+            phone: submitPhone,
+            gender,
+            pvna: pvnaValue.toFixed(1),
+            savedAt: Date.now(),
+          } satisfies StoredRegisterInfo)
+        )
+      }
+
+      setStatusMsg('Thành công!')
+      setSuccess(true)
+      void fetchSession()
+    } catch (err: any) {
+      console.error('[ZaloRegister] Final Catch:', err)
+      setErrorMsg(err.message || 'Đã có lỗi xảy ra, vui lòng thử lại.')
+    } finally {
+      setSubmitting(false)
+      setTimeout(() => setStatusMsg(''), 3000)
+    }
+  }
+
+  if (loading) return <AppLoading fullScreen />
+
+  if (error || !session) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: theme.background,
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 24,
+        }}
+      >
+        <Text
+          style={{
+            color: theme.onSurfaceVariant,
+            fontFamily: SCREEN_FONTS.body,
+            textAlign: 'center',
+          }}
+        >
+          {error || 'Không tìm thấy thông tin kèo này.'}
+        </Text>
+        <AppButton label="Quay lại" onPress={() => router.replace('/')} style={{ marginTop: 24 }} />
+      </View>
+    )
+  }
+
+  if (success) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background }}>
+        <SecondaryNavbar title="ĐĂNG KÝ THÀNH CÔNG" onBackPress={() => router.replace('/')} />
+        <RegistrationSuccessView 
+          session={previewMatch} 
+          onBackHome={() => router.replace('/')} 
+          status={regStatus}
+        />
+      </View>
+    )
+  }
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={{ flex: 1, backgroundColor: theme.background }}
+    >
+      <SecondaryNavbar title="ĐĂNG KÝ VÀO KÈO" onBackPress={() => router.back()} />
+
+      <ScrollView contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 100 }}>
+        <MatchSessionCard 
+          item={previewMatch} 
+          variant="standard" 
+          showFullAddress 
+          isOwnerDetail 
+          isPreview={false}
+          fullCourtName={true}
+        />
+
+        {/* NEW FORM CARD */}
+        <View style={{
+          backgroundColor: theme.surface,
+          borderRadius: 16,
+          borderWidth: 0.5,
+          borderColor: theme.border,
+          overflow: 'hidden',
+          marginTop: 24,
+          ...LAYOUT_SHADOW.sm,
+        }}>
+          {/* Form header */}
+          <View style={{
+            paddingTop: 14,
+            paddingHorizontal: 16,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 16,
+          }}>
+            <View style={{
+              width: 30, height: 30, borderRadius: 8,
+              backgroundColor: theme.primaryLight,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text style={{ fontSize: 14 }}>👤</Text>
+            </View>
+            <Text style={{
+              fontFamily: SCREEN_FONTS.headlineBlack,
+              fontSize: 20, color: theme.onSurface, lineHeight: 22,
+            }}>THÔNG TIN NGƯỜI CHƠI</Text>
+          </View>
+
+          {/* Form body */}
+          <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 14 }}>
+            
+            {/* FIELD: Họ và tên */}
+            <View>
+              <Text style={{
+                fontFamily: SCREEN_FONTS.label,
+                fontSize: 13, fontWeight: '600',
+                color: theme.onSurface, marginBottom: 6,
+              }}>Họ và tên</Text>
+
+              <View style={{ position: 'relative' }}>
+                <Text style={{
+                  position: 'absolute', left: 14, top: 12,
+                  fontSize: 15, zIndex: 1,
+                }}>👤</Text>
+                <TextInput
+                  style={{
+                    backgroundColor: theme.surfaceAlt,
+                    borderRadius: 8, borderWidth: 0,
+                    paddingVertical: 12,
+                    paddingLeft: 40, paddingRight: 14,
+                    fontSize: 15, color: theme.onSurface,
+                    fontFamily: SCREEN_FONTS.body,
+                  }}
+                  placeholder="Họ và tên"
+                  placeholderTextColor={theme.onSurfaceVariant}
+                  value={name}
+                  onChangeText={setName}
+                  onBlur={() => setNameTouched(true)}
+                />
+              </View>
+
+              <Text style={{
+                fontSize: 12, color: theme.onSurfaceVariant,
+                marginTop: 4, lineHeight: 16,
+                fontFamily: SCREEN_FONTS.body,
+              }}>
+                {nameTouched && nameError ? nameError : "Dùng đúng họ tên để chủ sân dễ xác nhận."}
+              </Text>
+            </View>
+
+            <View style={{ height: 0.5, backgroundColor: '#F0EDE5' }} />
+
+            {/* FIELD: Số điện thoại */}
+            <View>
+              <Text style={{
+                fontFamily: SCREEN_FONTS.label,
+                fontSize: 13, fontWeight: '600',
+                color: theme.onSurface, marginBottom: 6,
+              }}>Số điện thoại</Text>
+
+              <View style={{ position: 'relative' }}>
+                <Text style={{
+                  position: 'absolute', left: 14, top: 12,
+                  fontSize: 15, zIndex: 1,
+                }}>📱</Text>
+                <TextInput
+                  style={{
+                    backgroundColor: theme.surfaceAlt,
+                    borderRadius: 8, borderWidth: 0,
+                    paddingVertical: 12,
+                    paddingLeft: 40, paddingRight: 14,
+                    fontSize: 15, color: theme.onSurface,
+                    fontFamily: SCREEN_FONTS.body,
+                  }}
+                  placeholder="0912333333"
+                  placeholderTextColor={theme.onSurfaceVariant}
+                  keyboardType="phone-pad"
+                  value={phone}
+                  onChangeText={(text) => setPhone(normalizePhoneInput(text))}
+                  onBlur={() => setPhoneTouched(true)}
+                />
+              </View>
+
+              <Text style={{
+                fontSize: 12, color: theme.onSurfaceVariant,
+                marginTop: 4, lineHeight: 16,
+                fontFamily: SCREEN_FONTS.body,
+              }}>
+                {phoneTouched && phoneError ? phoneError : "Nhập 10 số bắt đầu bằng 0 hoặc 84xxxxxxxx."}
+              </Text>
+            </View>
+
+            <View style={{ height: 0.5, backgroundColor: '#F0EDE5' }} />
+
+            {/* FIELD: Giới tính */}
+            <View>
+              <Text style={{
+                fontFamily: SCREEN_FONTS.label,
+                fontSize: 13, fontWeight: '600',
+                color: theme.onSurface, marginBottom: 6,
+              }}>Giới tính</Text>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {[
+                  { id: 'male', label: 'Nam' },
+                  { id: 'female', label: 'Nữ' }
+                ].map(opt => (
+                  <TouchableOpacity
+                    key={opt.id}
+                    onPress={() => setGender(opt.id as any)}
+                    style={{
+                      flex: 1, paddingVertical: 12,
+                      borderRadius: 8, alignItems: 'center',
+                      backgroundColor: gender === opt.id ? theme.primary : theme.surface,
+                      borderWidth: 1.5,
+                      borderColor: gender === opt.id ? theme.primary : theme.border,
+                    }}>
+                    <Text style={{
+                      fontFamily: SCREEN_FONTS.label,
+                      fontSize: 15, fontWeight: '600',
+                      color: gender === opt.id ? theme.onPrimary : theme.onSurfaceVariant,
+                    }}>{opt.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={{ height: 0.5, backgroundColor: '#F0EDE5' }} />
+
+            <View>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center',
+                justifyContent: 'space-between', marginBottom: 8,
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{
+                    fontFamily: SCREEN_FONTS.label,
+                    fontSize: 13, fontWeight: '600',
+                    color: theme.onSurface,
+                  }}>Điểm trình PVNA</Text>
+                  
+                  <TouchableOpacity
+                    onPress={toggleNewbie}
+                    style={{
+                      backgroundColor: isNewbie ? theme.primary : theme.surface,
+                      borderWidth: 1,
+                      borderColor: isNewbie ? theme.primary : theme.border,
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      borderRadius: 999,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: isNewbie ? theme.onPrimary : theme.onSurfaceVariant,
+                        fontFamily: SCREEN_FONTS.label,
+                        fontSize: 11,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Người mới
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {/* Value badge */}
+                  <View style={{
+                    backgroundColor: theme.primaryLight,
+                    paddingHorizontal: 10, paddingVertical: 2, borderRadius: 6,
+                  }}>
+                    <Text style={{
+                      fontFamily: SCREEN_FONTS.headlineBlack,
+                      fontSize: 20, color: theme.primary, lineHeight: 20,
+                    }}>{isNewbie ? 'NEWBIE' : pvnaValue.toFixed(1)}</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Slider below the header row */}
+
+              <Slider
+                minimumValue={pvnaRange.min}
+                maximumValue={pvnaRange.max}
+                step={0.1}
+                value={pvnaValue}
+                onValueChange={(val) => setPvna((Math.round(val * 10) / 10).toFixed(1))}
+                minimumTrackTintColor={isNewbie ? theme.border : theme.primary}
+                maximumTrackTintColor={theme.border}
+                thumbTintColor={isNewbie ? theme.border : theme.primary}
+                disabled={isNewbie}
+              />
+
+              {/* Scale labels */}
+              <View style={{
+                flexDirection: 'row', justifyContent: 'space-between', marginTop: 4,
+                opacity: isNewbie ? 0.4 : 1,
+              }}>
+                {[pvnaRange.min, 3.2, 4.3, pvnaRange.max].map((v, i) => (
+                  <Text key={i} style={{
+                    fontSize: 11,
+                    color: !isNewbie && Math.abs(pvnaValue - v) < 0.2 ? theme.primary : theme.onSurfaceVariant,
+                    fontWeight: !isNewbie && Math.abs(pvnaValue - v) < 0.2 ? '700' : '400',
+                    fontFamily: SCREEN_FONTS.body,
+                  }}>{v.toFixed(1)}</Text>
+                ))}
+              </View>
+
+              <Text style={{
+                fontSize: 11, color: theme.onSurfaceVariant,
+                marginTop: 8, lineHeight: 16,
+                fontFamily: SCREEN_FONTS.body,
+              }}>
+                {isNewbie ? "* Bạn đã chọn chế độ Người mới chơi." : "Kéo thanh trượt để chọn mức phù hợp. Nếu mới chơi, chọn thấp trong khoảng."}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* CTA SECTION */}
+        <View style={{ paddingHorizontal: 16, marginTop: 24 }}>
+          {statusMsg ? (
+            <Text style={{ textAlign: 'center', color: theme.primary, fontFamily: SCREEN_FONTS.label, fontSize: 13, marginBottom: 10 }}>
+              {statusMsg}
+            </Text>
+          ) : null}
+
+          {errorMsg ? (
+            <Text style={{ textAlign: 'center', color: theme.error, fontFamily: SCREEN_FONTS.label, fontSize: 13, marginBottom: 10 }}>
+              {errorMsg}
+            </Text>
+          ) : null}
+
+          <TouchableOpacity
+            style={{
+              backgroundColor: theme.primary,
+              borderRadius: 999, padding: 16,
+              flexDirection: 'row',
+              alignItems: 'center', justifyContent: 'center', gap: 8,
+              opacity: submitting ? 0.7 : 1,
+              ...LAYOUT_SHADOW.sm
+            }}
+            onPress={handleRegister}
+            disabled={submitting}
+          >
+            {submitting ? (
+              <ActivityIndicator color={theme.onPrimary} size="small" />
+            ) : (
+              <Text style={{ fontSize: 16, color: 'white' }}>✓</Text>
+            )}
+            <Text style={{
+              fontFamily: SCREEN_FONTS.bold,
+              fontSize: 16, fontWeight: '700', color: 'white',
+            }}>{submitting ? 'ĐANG XỬ LÝ...' : 'Xác nhận tham gia'}</Text>
+          </TouchableOpacity>
+
+          {/* Social proof below button */}
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            justifyContent: 'center', gap: 6, marginTop: 14,
+          }}>
+            <Text style={{ fontSize: 14 }}>👥</Text>
+            <Text style={{
+              fontFamily: SCREEN_FONTS.body,
+              fontSize: 12, color: theme.onSurfaceVariant,
+            }}>Đã có {session.session_players.length} người đăng ký</Text>
+          </View>
+        </View>
+        <BrandedFooter />
+      </ScrollView>
+    </KeyboardAvoidingView>
+  )
+}
+
+const _styles = StyleSheet.create({
+  inputGap: { gap: 20 },
+  formTitle: {
+    fontSize: 18,
+    fontFamily: SCREEN_FONTS.headline,
+    marginBottom: 24,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  label: {
+    fontSize: 14,
+    fontFamily: SCREEN_FONTS.headline,
+    marginBottom: 12,
+  },
+  inputBox: {
+    minHeight: 52,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 16,
+    minHeight: 44,
+  },
+  helperText: {
+    marginTop: 8,
+    fontSize: 12,
+    fontFamily: SCREEN_FONTS.body,
+  },
+  errorText: {
+    marginTop: 8,
+    fontSize: 12,
+    fontFamily: SCREEN_FONTS.body,
+  },
+  genderRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  choiceBtn: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  choiceText: {
+    fontFamily: SCREEN_FONTS.headline,
+    fontSize: 15,
+  },
+  footerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 24,
+    opacity: 0.7,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontFamily: SCREEN_FONTS.headline,
+    marginTop: 24,
+    textAlign: 'center',
+  },
+  successDesc: {
+    fontSize: 15,
+    fontFamily: SCREEN_FONTS.body,
+    marginTop: 12,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+})

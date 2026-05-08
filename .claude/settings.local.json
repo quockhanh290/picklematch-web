@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(git -C /c/Users/quock/OneDrive/picklematch-vn diff --stat HEAD)",
+      "Bash(git -C /c/Users/quock/OneDrive/picklematch-vn status --short)"
+    ]
+  }
+}
