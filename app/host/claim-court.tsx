@@ -47,9 +47,9 @@ export default function ClaimCourtScreen() {
   async function checkHostStatus() {
     if (!userId) return
 
-    const { data } = await supabase.from('owners').select('id').eq('id', userId).maybeSingle()
-    setIsHostRegistered(!!data)
-    if (data) {
+    const { data } = await supabase.from('players').select('is_host').eq('id', userId).maybeSingle()
+    setIsHostRegistered(!!data?.is_host)
+    if (data?.is_host) {
       fetchCourts()
     }
   }
@@ -64,12 +64,11 @@ export default function ClaimCourtScreen() {
       return
     }
 
-    const { error } = await supabase.from('owners').insert({
-      id: user.id,
+    const { error } = await supabase.from('players').update({
+      is_host: true,
       business_name: businessName,
-      contact_phone: contactPhone || user.phone,
-      contact_email: user.email
-    })
+      host_phone: contactPhone || user.phone,
+    }).eq('id', user.id)
 
     setRegistering(false)
     if (!error) {

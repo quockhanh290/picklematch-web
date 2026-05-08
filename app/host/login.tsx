@@ -127,14 +127,14 @@ export default function HostLoginScreen() {
         throw new Error(userErr?.message || 'Không lấy được thông tin tài khoản sau khi xác thực OTP.')
       }
 
-      const { data: Host } = await supabase.from('owners').select('id').eq('id', user.id).maybeSingle()
+      const { data: player } = await supabase.from('players').select('is_host').eq('id', user.id).maybeSingle()
 
-      if (Host) {
-        const { data: court } = await supabase.from('courts').select('id').eq('owner_id', user.id).maybeSingle()
-        if (court) router.replace('/host/dashboard')
-        else router.replace('/host/claim-court')
+      if (player?.is_host) {
+        router.replace('/host/dashboard')
       } else {
-        router.replace('/host/claim-court')
+        // If they are a player but not a host, they can still go to dashboard 
+        // and we might show a "Become a Host" state or just let them organiz
+        router.replace('/host/dashboard')
       }
     } catch (err: any) {
       setDialogConfig({

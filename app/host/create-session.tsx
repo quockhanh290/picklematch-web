@@ -52,35 +52,13 @@ export default function HostCreateSessionScreen() {
     dialogConfig, setDialogConfig,
     onDatePress, goToStep2, goToStep3, submit,
     defaultPickerValue,
-    costPerPerson
+    costPerPerson,
+    nearbyCourtsData,
+    isChoosingCourt,
+    setIsChoosingCourt
   } = controller
 
-  const [HostCourt, setHostCourt] = useState<any>(null)
-  const [fetchingCourt, setFetchingCourt] = useState(true)
-
-  useEffect(() => {
-    if (authLoading) return
-    fetchHostCourt()
-  }, [authLoading, userId])
-
-  async function fetchHostCourt() {
-    try {
-      if (!userId) return
-      const { data, error } = await supabase.from('courts').select('*').eq('owner_id', userId).single()
-      if (!error && data) {
-        setHostCourt(data)
-        if (!isEditMode && !selectedCourt) {
-          setSelectedCourt(data)
-        }
-      }
-    } catch (err) {
-      console.error('Fetch Host court error:', err)
-    } finally {
-      setFetchingCourt(false)
-    }
-  }
-
-  if (isHydrating || fetchingCourt) {
+  if (isHydrating) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.surface, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ color: theme.onSurfaceVariant }}>Đang tải dữ liệu...</Text>
@@ -124,11 +102,17 @@ export default function HostCreateSessionScreen() {
               onToggleStartPicker={() => setShowStartPicker(!showStartPicker)}
               onToggleEndPicker={() => setShowEndPicker(!showEndPicker)}
               onCloseStartPicker={() => setShowStartPicker(false)}
-              onCloseEndPicker={() => setShowEndPicker(false)}
-              defaultPickerValue={defaultPickerValue}
+              onCloseEndPicker={controller.onCloseEndPicker}
+              defaultPickerValue={controller.defaultPickerValue}
               timeError={timeError}
               format={format}
               setFormat={setFormat}
+              
+              // Court Picker
+              isChoosingCourt={isChoosingCourt}
+              setIsChoosingCourt={setIsChoosingCourt}
+              nearbyCourtsData={nearbyCourtsData}
+              setSelectedCourt={setSelectedCourt}
             />
           )}
 
@@ -150,7 +134,7 @@ export default function HostCreateSessionScreen() {
               onContinue={goToStep3}
               skillTolerance={skillTolerance}
               setTolerance={setSkillTolerance}
-              subCourtCount={HostCourt?.sub_court_count || 1}
+              subCourtCount={selectedCourt?.sub_court_count || 1}
               selectedSubCourts={selectedSubCourts}
               onSubCourtsChange={setSelectedSubCourts}
               isNewbie={isNewbie}

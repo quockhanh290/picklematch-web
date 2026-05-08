@@ -60,20 +60,19 @@ export default function DevHostLoginSection({
       return
     }
 
-    const { data: owner } = await supabase.from('owners').select('id').eq('id', user.id).maybeSingle()
+    // Ensure player is marked as host for dev convenience (upsert to handle new users)
+    await supabase.from('players').upsert({ 
+      id: user.id, 
+      is_host: true,
+      name: user.email?.split('@')[0] || 'Dev Host' 
+    }).eq('id', user.id)
     
-    if (owner) {
-      const { data: court } = await supabase.from('courts').select('id').eq('owner_id', user.id).maybeSingle()
-      setDevLoading(false)
-      if (court) {
-        router.replace('/host/dashboard')
-      } else {
-        router.replace('/host/claim-court')
-      }
-    } else {
-      setDevLoading(false)
-      router.replace('/host/claim-court')
-    }
+    // Set role in storage so AuthGate knows where to go
+    const { safeStorageSetItem } = await import('@/lib/storage')
+    await safeStorageSetItem('user_role', 'host')
+
+    setDevLoading(false)
+    router.replace('/host/dashboard')
   }
 
   return (

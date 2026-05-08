@@ -1,6 +1,6 @@
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { ScrollView, Text, TouchableOpacity, View, Pressable } from 'react-native'
+import { ScrollView, Text, TouchableOpacity, View, Pressable, TextInput, ActivityIndicator, Platform } from 'react-native'
 import { RADIUS, SPACING, BORDER, SHADOW } from '@/constants/screenLayout'
 import { SelectedCourtCard } from './SelectedCourtCard'
 import { DateStripPicker } from './DateStripPicker'
@@ -8,7 +8,7 @@ import { TimeRangePicker } from './TimeRangePicker'
 import { SectionDivider } from './SectionDivider'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import React, { useState, useRef, useEffect, useMemo } from 'react'
-import { Users, CheckCircle2, Trophy } from 'lucide-react-native'
+import { Users, CheckCircle2, Trophy, Search, X, MapPin } from 'lucide-react-native'
 
 type Format = 'social' | 'round_robin' | 'open_play'
 
@@ -32,6 +32,12 @@ type Props = {
   timeError: string | null
   format: Format | null
   setFormat: (format: Format) => void
+  
+  // Court Picker Props
+  isChoosingCourt: boolean
+  setIsChoosingCourt: (v: boolean) => void
+  nearbyCourtsData: any
+  setSelectedCourt: (court: any) => void
 }
 
 const MONTH_LABELS = ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12']
@@ -61,7 +67,11 @@ export function HostCreateSessionStep1({
   defaultPickerValue,
   timeError,
   format,
-  setFormat
+  setFormat,
+  isChoosingCourt,
+  setIsChoosingCourt,
+  nearbyCourtsData,
+  setSelectedCourt
 }: Props) {
   const theme = useAppTheme()
   const scrollRef = useRef<ScrollView | null>(null)
@@ -134,13 +144,113 @@ export function HostCreateSessionStep1({
 
         {/* Selected Court (Fixed) */}
         <View style={{ marginBottom: 24 }}>
-          <SelectedCourtCard
-            selectedCourt={selectedCourt}
-            isCourtScheduleLocked={false}
-            showCourtPicker={false}
-            setIsChoosingCourt={() => {}}
-          />
+          {selectedCourt ? (
+            <SelectedCourtCard
+              selectedCourt={selectedCourt}
+              isCourtScheduleLocked={false}
+              showCourtPicker={isChoosingCourt}
+              setIsChoosingCourt={setIsChoosingCourt}
+              onChangeCourt={() => setIsChoosingCourt(true)}
+            />
+          ) : (
+            <TouchableOpacity 
+              onPress={() => setIsChoosingCourt(true)}
+              style={{
+                height: 120,
+                borderRadius: RADIUS.lg,
+                borderWidth: BORDER.medium,
+                borderColor: theme.primary,
+                borderStyle: 'dashed',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: theme.surfaceContainerLowest
+              }}
+            >
+              <MapPin size={28} color={theme.primary} strokeWidth={2} />
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.primary, marginTop: 12 }}>BẤM ĐỂ CHỌN SÂN</Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurfaceVariant, marginTop: 4 }}>Vui lòng chọn địa điểm tổ chức kèo</Text>
+            </TouchableOpacity>
+          )}
         </View>
+
+        {isChoosingCourt && (
+          <View style={{ 
+            marginBottom: 24, 
+            borderRadius: RADIUS.xl, 
+            borderWidth: BORDER.base, 
+            borderColor: theme.outlineVariant, 
+            backgroundColor: theme.surfaceContainerLow,
+            overflow: 'hidden'
+          }}>
+            <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: theme.outlineVariant }}>
+              <View style={{ 
+                flexDirection: 'row', 
+                alignItems: 'center', 
+                backgroundColor: theme.surface, 
+                borderRadius: RADIUS.md, 
+                paddingHorizontal: 12,
+                height: 44,
+                borderWidth: 1,
+                borderColor: theme.outlineVariant
+              }}>
+                <Search size={18} color={theme.outline} />
+                <TextInput
+                  value={nearbyCourtsData.keyword}
+                  onChangeText={nearbyCourtsData.setKeyword}
+                  placeholder="Tìm tên sân hoặc địa chỉ..."
+                  placeholderTextColor={theme.outline}
+                  style={{ flex: 1, marginLeft: 8, fontFamily: SCREEN_FONTS.body, fontSize: 14, color: theme.onSurface }}
+                />
+                {nearbyCourtsData.keyword.length > 0 && (
+                  <TouchableOpacity onPress={() => nearbyCourtsData.setKeyword('')}>
+                    <X size={18} color={theme.outline} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            <View style={{ maxHeight: 300 }}>
+              <ScrollView nestedScrollEnabled>
+                {nearbyCourtsData.loading ? (
+                  <View style={{ padding: 40, alignItems: 'center' }}>
+                    <ActivityIndicator color={theme.primary} />
+                  </View>
+                ) : nearbyCourtsData.courts.length === 0 ? (
+                  <View style={{ padding: 40, alignItems: 'center' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.body, color: theme.outline }}>Không tìm thấy sân phù hợp</Text>
+                  </View>
+                ) : (
+                  nearbyCourtsData.courts.map((court: any) => (
+                    <TouchableOpacity 
+                      key={court.id} 
+                      onPress={() => {
+                        setSelectedCourt(court)
+                        setIsChoosingCourt(false)
+                      }}
+                      style={{ 
+                        padding: 16, 
+                        borderBottomWidth: 0.5, 
+                        borderColor: theme.outlineVariant,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 12,
+                        backgroundColor: selectedCourt?.id === court.id ? theme.primaryContainer : 'transparent'
+                      }}
+                    >
+                      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme.surfaceVariant, alignItems: 'center', justifyContent: 'center' }}>
+                        <MapPin size={20} color={theme.primary} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.onSurface }}>{court.name}</Text>
+                        <Text numberOfLines={1} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurfaceVariant }}>{court.address}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        )}
 
         <SectionDivider index="01/" title="Hình thức thi đấu" />
         <View style={{ gap: 10, marginBottom: 24 }}>

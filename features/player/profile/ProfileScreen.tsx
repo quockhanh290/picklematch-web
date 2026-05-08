@@ -45,6 +45,7 @@ import {
     fetchCurrentPlayerProfileDataApi, 
     clearCurrentPlayerProfileCacheApi 
 } from './api'
+import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
 
 function ProfileSectionDivider({ index, title, theme }: { index: string; title: string; theme: any }) {
   return (
@@ -144,6 +145,7 @@ export function ProfileScreen() {
   const [hostedSessionsCount, setHostedSessionsCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [dialogConfig, setDialogConfig] = useState<AppDialogConfig | null>(null)
+  const { switchToHost } = useRoleSwitcher()
 
   const init = useCallback(async () => {
     setLoading(true)
@@ -402,23 +404,35 @@ export function ProfileScreen() {
 
           <View className="mt-6">
             <ProfileSectionDivider index="04" title={STRINGS.profile.sections.account} theme={theme} />
-            <View className="flex-row gap-3">
+            <View className="gap-3">
               <TouchableOpacity
-                className="flex-1 py-4 items-center"
-                style={{ backgroundColor: theme.primary, borderRadius: RADIUS.md }}
-                onPress={() => router.push('/edit-profile' as any)}
-                activeOpacity={0.9}
+                className="w-full py-4 items-center flex-row justify-center gap-2"
+                style={{ backgroundColor: theme.secondaryContainer, borderRadius: RADIUS.md, borderWidth: 1, borderColor: theme.outlineVariant }}
+                onPress={switchToHost}
+                activeOpacity={0.8}
               >
-                <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.cta }}>{STRINGS.profile.actions.edit}</Text>
+                <UserCircle2 size={20} color={theme.primary} />
+                <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.headline, fontSize: 15 }}>CHUYỂN SANG CHẾ ĐỘ HOST</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                className="flex-1 py-4 items-center"
-                style={{ backgroundColor: theme.secondaryFixed, borderRadius: RADIUS.md }}
-                onPress={logout}
-                activeOpacity={0.9}
-              >
-                <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.cta }}>{STRINGS.profile.actions.logout}</Text>
-              </TouchableOpacity>
+
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  className="flex-1 py-4 items-center"
+                  style={{ backgroundColor: theme.primary, borderRadius: RADIUS.md }}
+                  onPress={() => router.push('/edit-profile' as any)}
+                  activeOpacity={0.9}
+                >
+                  <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.cta }}>{STRINGS.profile.actions.edit}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="flex-1 py-4 items-center"
+                  style={{ backgroundColor: theme.secondaryFixed, borderRadius: RADIUS.md }}
+                  onPress={logout}
+                  activeOpacity={0.9}
+                >
+                  <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.cta }}>{STRINGS.profile.actions.logout}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>

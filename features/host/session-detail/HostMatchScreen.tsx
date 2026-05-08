@@ -325,21 +325,21 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
                   
                   <View style={{ padding: 20 }}>
                     {/* Scoreboard Row */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                       
                       {/* Team A Section */}
                       <View style={{ alignItems: 'center', flex: 1 }}>
-                        <View style={{ alignItems: 'center', gap: 12 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                           <Pressable 
-                            onPress={() => handleUpdateScore(match.id, 'a', 1)} 
+                            onPress={() => handleUpdateScore(match.id, 'a', -1)} 
                             style={({ pressed }) => ({ 
-                              width: 40, height: 40, borderRadius: 20, 
-                              backgroundColor: '#0F6E56', alignItems: 'center', justifyContent: 'center', 
-                              ...LAYOUT_SHADOW.sm,
-                              opacity: pressed ? 0.8 : 1
+                              width: 36, height: 36, borderRadius: 18, 
+                              backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center', 
+                              borderWidth: 1, borderColor: '#E5E3DC',
+                              opacity: pressed ? 0.7 : 1
                             })}
                           >
-                            <Plus size={20} color="white" />
+                            <Minus size={18} color="#7A8884" />
                           </Pressable>
                           
                           <View style={{ 
@@ -362,18 +362,18 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
                           </View>
 
                           <Pressable 
-                            onPress={() => handleUpdateScore(match.id, 'a', -1)} 
+                            onPress={() => handleUpdateScore(match.id, 'a', 1)} 
                             style={({ pressed }) => ({ 
                               width: 36, height: 36, borderRadius: 18, 
-                              backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center', 
-                              borderWidth: 1, borderColor: '#E5E3DC',
-                              opacity: pressed ? 0.7 : 1
+                              backgroundColor: '#0F6E56', alignItems: 'center', justifyContent: 'center', 
+                              ...LAYOUT_SHADOW.sm,
+                              opacity: pressed ? 0.8 : 1
                             })}
                           >
-                            <Minus size={18} color="#7A8884" />
+                            <Plus size={18} color="white" />
                           </Pressable>
                         </View>
-                        <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 12, textAlign: 'center', fontWeight: '800' }}>ĐỘI {match.team_a_no}</Text>
+                        <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 6, textAlign: 'center', fontWeight: '800' }}>ĐỘI {match.team_a_no}</Text>
                         <Text style={{ fontSize: 9, color: '#7A8884', marginTop: 2, textAlign: 'center' }} numberOfLines={1}>{getPlayerNames(match.team_a_no)}</Text>
                       </View>
 
@@ -384,17 +384,17 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
 
                       {/* Team B Section */}
                       <View style={{ alignItems: 'center', flex: 1 }}>
-                        <View style={{ alignItems: 'center', gap: 12 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                           <Pressable 
-                            onPress={() => handleUpdateScore(match.id, 'b', 1)} 
+                            onPress={() => handleUpdateScore(match.id, 'b', -1)} 
                             style={({ pressed }) => ({ 
-                              width: 40, height: 40, borderRadius: 20, 
-                              backgroundColor: '#0F6E56', alignItems: 'center', justifyContent: 'center', 
-                              ...LAYOUT_SHADOW.sm,
-                              opacity: pressed ? 0.8 : 1
+                              width: 36, height: 36, borderRadius: 18, 
+                              backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center', 
+                              borderWidth: 1, borderColor: '#E5E3DC',
+                              opacity: pressed ? 0.7 : 1
                             })}
                           >
-                            <Plus size={20} color="white" />
+                            <Minus size={18} color="#7A8884" />
                           </Pressable>
                           
                           <View style={{ 
@@ -417,24 +417,24 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
                           </View>
 
                           <Pressable 
-                            onPress={() => handleUpdateScore(match.id, 'b', -1)} 
+                            onPress={() => handleUpdateScore(match.id, 'b', 1)} 
                             style={({ pressed }) => ({ 
                               width: 36, height: 36, borderRadius: 18, 
-                              backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center', 
-                              borderWidth: 1, borderColor: '#E5E3DC',
-                              opacity: pressed ? 0.7 : 1
+                              backgroundColor: '#0F6E56', alignItems: 'center', justifyContent: 'center', 
+                              ...LAYOUT_SHADOW.sm,
+                              opacity: pressed ? 0.8 : 1
                             })}
                           >
-                            <Minus size={18} color="#7A8884" />
+                            <Plus size={18} color="white" />
                           </Pressable>
                         </View>
-                        <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 12, textAlign: 'center', fontWeight: '800' }}>ĐỘI {match.team_b_no}</Text>
+                        <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 6, textAlign: 'center', fontWeight: '800' }}>ĐỘI {match.team_b_no}</Text>
                         <Text style={{ fontSize: 9, color: '#7A8884', marginTop: 2, textAlign: 'center' }} numberOfLines={1}>{getPlayerNames(match.team_b_no)}</Text>
                       </View>
                     </View>
 
                     {/* Bottom Actions */}
-                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
                       <TouchableOpacity 
                         onPress={() => handleFinishMatch(match.id)} 
                         style={{ 

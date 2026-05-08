@@ -48,7 +48,9 @@ export function useHostCreateSessionController(editSessionId: string | null) {
   const isEditMode = Boolean(editSessionId)
   
   const [step, setStep] = useState<1 | 2 | 3>(1)
-  const { _courts, loading: _loadingCourts } = useNearbyCourts()
+  const nearbyCourtsData = useNearbyCourts()
+  const { courts: _courts, loading: _loadingCourts } = nearbyCourtsData
+  const [isChoosingCourt, setIsChoosingCourt] = useState(false)
 
   // --- States ---
   const [selectedCourt, setSelectedCourt] = useState<NearByCourt | null>(null)
@@ -395,6 +397,11 @@ export function useHostCreateSessionController(editSessionId: string | null) {
     dialogConfig, setDialogConfig,
     onDatePress, goToStep2, goToStep3, submit,
     defaultPickerValue,
-    costPerPerson: costVal // Added for Step 3
+    costPerPerson: costVal, // Added for Step 3
+    
+    // Court Picker additions
+    nearbyCourtsData,
+    isChoosingCourt,
+    setIsChoosingCourt
   }
 }

@@ -53,52 +53,42 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
     const checkStatus = async () => {
       try {
         // Check stored role preference
-        const storedRole = await safeStorageGetItem('user_role') as UserRole
+        const storedRole = await safeStorageGetItem('user_role') as UserRole || 'player'
         
-        // Parallel checks for optimization
-        const [playerRes, ownerRes] = await Promise.all([
-          supabase.from('players').select('onboarding_completed').eq('id', userId).maybeSingle(),
-          supabase.from('owners').select('id').eq('id', userId).maybeSingle()
-        ])
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('onboarding_completed')
+          .eq('id', userId)
+          .maybeSingle()
 
-        if (playerRes.error || ownerRes.error) {
-          console.error('[AuthGate] Check failed:', playerRes.error?.message || ownerRes.error?.message)
+        if (playerError) {
+          console.error('[AuthGate] Check failed:', playerError.message)
           setUserRole(null)
           setAuthStatus('unauthenticated')
           return
         }
 
-        const isOwner = !!ownerRes.data
-        const playerData = playerRes.data
-        
-        console.log(`[AuthGate] User:${userId} isOwner:${isOwner} hasPlayer:${!!playerData} storedRole:${storedRole}`)
-
-        // If user is a host, and they either prefer host role or don't have a player profile yet
-        if (isOwner && (storedRole === 'host' || !playerData)) {
-          setUserRole('host')
-          setAuthStatus('ready')
-          return
-        }
+        console.log(`[AuthGate] User:${userId} hasPlayer:${!!playerData} storedRole:${storedRole}`)
 
         if (!playerData) {
           setAuthStatus('needs_setup')
-        } else if (!playerData.onboarding_completed) {
-          // Even if onboarding is needed for player, if they are a host and were on host route, let them stay
-          if (isOwner && storedRole === 'host') {
-             setUserRole('host')
-             setAuthStatus('ready')
-          } else {
-             setAuthStatus('needs_onboarding')
-          }
-        } else {
-          // If they are both, but storedRole is host, keep host
-          if (isOwner && storedRole === 'host') {
+          return
+        } 
+        
+        if (!playerData.onboarding_completed) {
+          // If they prefer host role, maybe we let them skip player onboarding for now? 
+          // But usually we want a profile first.
+          if (storedRole === 'host') {
             setUserRole('host')
+            setAuthStatus('ready')
           } else {
-            setUserRole('player')
+            setAuthStatus('needs_onboarding')
           }
-          setAuthStatus('ready')
+          return
         }
+
+        setUserRole(storedRole)
+        setAuthStatus('ready')
       } catch (e) {
         console.error('[AuthGate] Auth status execution error:', e)
         setUserRole(null)
@@ -112,10 +102,11 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
   useEffect(() => {
     if (authStatus === 'loading' || !fontsLoaded || !navReady) return
 
-    console.log(`[AuthGate] Status:${authStatus} Role:${userRole} Path:/${segments.join('/')}`)
+    console.log(`[AuthGate] Processing - Status:${authStatus} Role:${userRole} Path:${pathname} userId:${userId}`)
 
     const replaceIfNeeded = (target: string) => {
       if (pathname !== target) {
+        console.log(`[AuthGate] Redirecting: ${pathname} -> ${target}`)
         router.replace(target as any)
       }
     }

@@ -37,7 +37,7 @@ export async function fetchCurrentPlayerProfileDataApi(options?: { force?: boole
   }
 
   const nowIso = new Date().toISOString()
-  const [playerRes, statsRes, ratingsRes, achievementsRes, historyRes, hostedCountRes, ownerRes] = await Promise.all([
+  const [playerRes, statsRes, ratingsRes, achievementsRes, historyRes, hostedCountRes] = await Promise.all([
     supabase.from('players').select('*').eq('id', user.id).single(),
     supabase.from('player_stats').select('current_win_streak, streak_fire_active').eq('player_id', user.id).maybeSingle(),
     supabase.from('ratings').select('tags, is_hidden, reveal_at').eq('rated_id', user.id).or(`is_hidden.eq.false,reveal_at.lte.${nowIso}`),
@@ -53,7 +53,6 @@ export async function fetchCurrentPlayerProfileDataApi(options?: { force?: boole
         )
       `).eq('player_id', user.id).limit(20),
     supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('host_id', user.id),
-    supabase.from('owners').select('id').eq('id', user.id).maybeSingle(),
   ])
 
   if (statsRes.error) console.warn('[Profile] player stats query failed:', statsRes.error.message)
@@ -99,7 +98,7 @@ export async function fetchCurrentPlayerProfileDataApi(options?: { force?: boole
     achievements,
     history,
     hostedSessionsCount: hostedCountRes.count ?? 0,
-    isOwner: Boolean(ownerRes?.data),
+    isOwner: Boolean(playerData?.is_host),
     // Flat convenience fields for ProfileScreen UI
     name: playerData?.name ?? '',
     skillLabel: playerData?.skill_label ?? 'Unranked',

@@ -54,6 +54,7 @@ import { useAppNav } from '@/lib/navigation/AppNavContext'
 import { fetchCourtDetailApi } from '@/features/player/court/api'
 import { getSessionSkillLabel } from '@/lib/skillAssessment'
 import { formatRelativeDate } from '@/utils/formatters'
+import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
 
 export default function HostDashboardScreen() {
   const theme = useAppTheme()
@@ -64,11 +65,16 @@ export default function HostDashboardScreen() {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming')
   const [court, setCourt] = useState<any>(null)
   const [sessions, setSessions] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const { switchToPlayer } = useRoleSwitcher()
 
   async function handleLogout() {
     await supabase.auth.signOut()
     router.replace('/host/login')
+  }
+
+  async function handleSwitchToPlayer() {
+    await switchToPlayer()
   }
 
   const fetchHostData = useCallback(async () => {
@@ -78,51 +84,43 @@ export default function HostDashboardScreen() {
     }
     setLoading(true)
 
-    const { data: courtBasic } = await supabase
-      .from('courts')
-      .select('id, name, address, city, district, images, thumbnail_url, sub_court_count, hours_open, hours_close, rating')
-      .eq('owner_id', userId)
-      .maybeSingle()
-    
-    if (courtBasic) {
-      setCourt(courtBasic) // Set basic data first for immediate display
-      
-      try {
-        const fullDetail = await fetchCourtDetailApi(courtBasic.id)
-        if (fullDetail) {
-          setCourt(fullDetail) // Enhance with full details once loaded
-        }
-      } catch (err) {
-        console.error('Error fetching full court detail:', err)
-      }
-      
-      const courtId = courtBasic.id
-      // Fetch through owner_sessions to ensure we only get professional managed sessions
-      const { data: hostSessionData, error } = await supabase
+    try {
+      // Host dashboard now focused strictly on sessions organized by this user
+      setCourt(null)
+
+      // 2. Fetch sessions created by THIS Host
+      const { data: hostSessionData, error: sessionErr } = await supabase
         .from('owner_sessions')
         .select(`
           *,
           session:id (
             *,
-            slot:slot_id(start_time, end_time),
+            slot:slot_id(
+              start_time, end_time,
+              court:court_id(*)
+            ),
             session_players!session_id(player_id, status)
           )
         `)
-        .eq('court_id', courtId)
+        .eq('owner_id', userId)
         .order('created_at', { ascending: false })
       
-      if (!error && hostSessionData) {
-        // Flatten the structure for easier rendering
+      if (sessionErr) throw sessionErr
+
+      if (hostSessionData) {
         const flattened = hostSessionData.map(os => ({
           ...(os.session || {}),
           ...os,
-          id: os.id, // Ensure we use the main session ID
+          id: os.id,
           status: os.session?.status || 'open'
         }))
         setSessions(flattened)
       }
+    } catch (err) {
+      console.error('Error fetching host dashboard data:', err)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [userId])
 
   useFocusEffect(
@@ -268,13 +266,23 @@ export default function HostDashboardScreen() {
             alignItems: 'center', 
             marginBottom: 6
           }}>
-            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
-              <View style={{ backgroundColor: dayBadgeBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginRight: 8 }}>
-                <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 9.5 }}>{dateLabel.toUpperCase()}</Text>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ backgroundColor: dayBadgeBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginRight: 8 }}>
+                  <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 9.5 }}>{dateLabel.toUpperCase()}</Text>
+                </View>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>
+                  {formatDate(start, 'HH:mm')} - {formatDate(end, 'HH:mm')}
+                </Text>
               </View>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>
-                {formatDate(start, 'HH:mm')} - {formatDate(end, 'HH:mm')}
-              </Text>
+              {session.slot?.court?.name && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                  <MapPin size={12} color={theme.onSurfaceVariant} />
+                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurfaceVariant }} numberOfLines={1}>
+                    {session.slot.court.name}
+                  </Text>
+                </View>
+              )}
             </View>
             
             <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -453,6 +461,26 @@ export default function HostDashboardScreen() {
         rightElement={
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity 
+              onPress={handleSwitchToPlayer}
+              style={{ 
+                height: 40, 
+                borderRadius: 12, 
+                backgroundColor: theme.secondaryContainer, 
+                paddingHorizontal: 12,
+                flexDirection: 'row',
+                alignItems: 'center', 
+                justifyContent: 'center',
+                gap: 8,
+                borderWidth: BORDER.hairline,
+                borderColor: theme.outlineVariant,
+                ...LAYOUT_SHADOW.xs
+              }}
+            >
+              <RotateCcw size={16} color={theme.primary} />
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: theme.primary }}>PLAYER</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
               onPress={() => router.push('/host/settings')}
               style={{ 
                 width: 40, 
@@ -522,7 +550,7 @@ export default function HostDashboardScreen() {
                   textTransform: 'uppercase' 
                 }}
               >
-                {court?.name || 'TRANG HOÀNG PICKLEBALL CLUB'}
+                {court?.name || 'HỒ SƠ HOST CHUYÊN NGHIỆP'}
               </Text>
             </View>
 
@@ -531,25 +559,26 @@ export default function HostDashboardScreen() {
               <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 10 }}>
                 <MapPin size={14} color="white" />
                 <Text numberOfLines={1} style={{ color: 'white', fontFamily: SCREEN_FONTS.body, fontSize: 13, flex: 1 }}>
-                  {[court?.address, court?.district, court?.city].filter(Boolean).join(', ')}
+                  {court ? [court?.address, court?.district, court?.city].filter(Boolean).join(', ') : 'Sẵn sàng tổ chức kèo tại mọi cụm sân.'}
                 </Text>
               </View>
 
-              {/* Rating Pill: Moved here */}
-              <View style={{ 
-                backgroundColor: theme.heroPillBg, 
-                borderRadius: 10, 
-                paddingHorizontal: 8, 
-                paddingVertical: 3,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 4
-              }}>
-                <Star size={10} color="#FFD700" fill="#FFD700" />
-                <Text style={{ color: theme.heroCountdownText, fontFamily: SCREEN_FONTS.bold, fontSize: 12 }}>
-                  {court?.rating?.toFixed(1) || '4.1'}
-                </Text>
-              </View>
+              {court && (
+                <View style={{ 
+                  backgroundColor: theme.heroPillBg, 
+                  borderRadius: 10, 
+                  paddingHorizontal: 8, 
+                  paddingVertical: 3,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4
+                }}>
+                  <Star size={10} color="#FFD700" fill="#FFD700" />
+                  <Text style={{ color: theme.heroCountdownText, fontFamily: SCREEN_FONTS.bold, fontSize: 12 }}>
+                    {court?.rating?.toFixed(1) || '4.1'}
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Hours & Actions Row */}
@@ -557,20 +586,22 @@ export default function HostDashboardScreen() {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Clock size={14} color="white" />
                 <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.body, fontSize: 13 }}>
-                  {(court?.hours_open || '05:30').slice(0, 5)} - {(court?.hours_close || '22:00').slice(0, 5)}
+                  {court ? `${(court?.hours_open || '05:30').slice(0, 5)} - ${(court?.hours_close || '22:00').slice(0, 5)}` : 'Hoạt động tự do'}
                 </Text>
               </View>
 
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <TouchableOpacity 
-                  onPress={() => router.push(`/host/court-detail/${court?.id}`)}
-                  style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: RADIUS.full, paddingHorizontal: 12, paddingVertical: 6 }}
-                >
-                  <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.headline, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                    XEM CHI TIẾT
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              {court && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity 
+                    onPress={() => router.push(`/host/court-detail/${court?.id}`)}
+                    style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: RADIUS.full, paddingHorizontal: 12, paddingVertical: 6 }}
+                  >
+                    <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.headline, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      XEM CHI TIẾT
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </LinearGradient>
         </View>
