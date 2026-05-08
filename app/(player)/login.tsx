@@ -81,8 +81,8 @@ async function sendOTP() {
   if (isPlayerLoginDisabled) {
     setDialogConfig({
       title: 'Tạm khóa đăng nhập người chơi',
-      message: 'Phiên bản web hiện chỉ hỗ trợ flow Chủ sân. Vui lòng đăng nhập ở màn Chủ sân.',
-      actions: [{ label: 'Đi tới Chủ sân', onPress: () => router.replace('/owner/login') }],
+      message: 'Phiên bản web hiện chỉ hỗ trợ flow Host. Vui lòng đăng nhập ở màn Host.',
+      actions: [{ label: 'Đi tới Host', onPress: () => router.replace('/host/login') }],
     })
     return
   }
@@ -117,8 +117,8 @@ async function verifyOTP() {
   if (isPlayerLoginDisabled) {
     setDialogConfig({
       title: 'Tạm khóa đăng nhập người chơi',
-      message: 'Phiên bản web hiện chỉ hỗ trợ flow Chủ sân. Vui lòng đăng nhập ở màn Chủ sân.',
-      actions: [{ label: 'Đi tới Chủ sân', onPress: () => router.replace('/owner/login') }],
+      message: 'Phiên bản web hiện chỉ hỗ trợ flow Host. Vui lòng đăng nhập ở màn Host.',
+      actions: [{ label: 'Đi tới Host', onPress: () => router.replace('/host/login') }],
     })
     return
   }
@@ -273,14 +273,14 @@ const sanitizedPhone = phone.replace(/\D/g, '')
                 <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: theme.primary }}>NGƯỜI CHƠI</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                onPress={() => router.push('/owner/login')}
+                onPress={() => router.push('/host/login')}
                 style={{ 
                   flex: 1, 
                   paddingVertical: 10, 
                   alignItems: 'center'
                 }}
               >
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: theme.onSurfaceVariant }}>CHỦ SÂN</Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: theme.onSurfaceVariant }}>HOST</Text>
               </TouchableOpacity>
             </View>
 
@@ -459,7 +459,7 @@ const sanitizedPhone = phone.replace(/\D/g, '')
             </Text>
 
             <TouchableOpacity 
-              onPress={() => router.push('/owner/login')}
+              onPress={() => router.push('/host/login')}
               style={{ marginTop: 12 }}
             >
               <Text style={{ 
@@ -468,7 +468,7 @@ const sanitizedPhone = phone.replace(/\D/g, '')
                 fontSize: 13,
                 textDecorationLine: 'underline'
               }}>
-                {STRINGS.owner_flow.login_link}
+                {STRINGS.host_flow.login_link}
               </Text>
             </TouchableOpacity>
             

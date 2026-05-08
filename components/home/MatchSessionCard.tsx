@@ -2,7 +2,7 @@ import React from 'react'
 import type { MatchSession } from '@/lib/homeFeed'
 import { PlayerHeroMatchSessionCard } from './match-card/player/PlayerHeroMatchSessionCard'
 import { PlayerSuggestedSessionCard } from './match-card/player/PlayerSuggestedSessionCard'
-import { OwnerSuggestedSessionCard } from './match-card/owner/OwnerSuggestedSessionCard'
+import { HostSuggestedSessionCard } from './match-card/host/HostSuggestedSessionCard'
 import { PlayerUrgentFillCard } from './match-card/player/PlayerUrgentFillCard'
 import { PlayerSessionListCard } from './match-card/player/PlayerSessionListCard'
 
@@ -14,7 +14,7 @@ export function MatchSessionCard({
   actionLabel,
   accentMode = 'default',
   showFullAddress,
-  isOwnerDetail,
+  isHostDetail,
   isPreview,
   fullCourtName,
   showPlayerList,
@@ -26,7 +26,7 @@ export function MatchSessionCard({
   actionLabel: string
   accentMode?: 'default' | 'rescue'
   showFullAddress?: boolean
-  isOwnerDetail?: boolean
+  isHostDetail?: boolean
   isPreview?: boolean
   fullCourtName?: boolean
   showPlayerList?: boolean
@@ -38,9 +38,9 @@ export function MatchSessionCard({
   }
 
   if (accentMode === 'default') {
-    if (isOwnerDetail) {
+    if (isHostDetail) {
       return (
-        <OwnerSuggestedSessionCard 
+        <HostSuggestedSessionCard 
           item={item} 
           isPreview={isPreview} 
           fullCourtName={fullCourtName}

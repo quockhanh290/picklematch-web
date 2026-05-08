@@ -6,7 +6,7 @@ import { safeStorageGetItem } from '@/lib/storage'
 import { Platform } from 'react-native'
 
 export type AuthStatus = 'loading' | 'unauthenticated' | 'needs_setup' | 'needs_onboarding' | 'ready'
-export type UserRole = 'player' | 'owner' | null
+export type UserRole = 'player' | 'host' | null
 
 interface AuthGateProps {
   children: React.ReactNode
@@ -25,12 +25,12 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
   const firstSegment = segments[0] ?? ''
   const secondSegment = segments[1] ?? ''
   const isWeb = Platform.OS === 'web'
-  const isOwnerLoginRoute = firstSegment === 'owner' && secondSegment === 'login'
+  const isHostLoginRoute = firstSegment === 'host' && secondSegment === 'login'
   const isRegisterRoute = firstSegment === 'register'
-  const isPublicRoute = firstSegment === 'login' || isOwnerLoginRoute || isRegisterRoute
+  const isPublicRoute = firstSegment === 'login' || isHostLoginRoute || isRegisterRoute
   const isOnboardingRoute = firstSegment === 'onboarding'
   const isProfileSetupRoute = firstSegment === 'profile-setup'
-  const isOwnerRoute = firstSegment === 'owner'
+  const isHostRoute = firstSegment === 'host'
   const isPlayerRoute = firstSegment === '(player)' || firstSegment === '(tabs)'
 
   useEffect(() => {
@@ -73,9 +73,9 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
         
         console.log(`[AuthGate] User:${userId} isOwner:${isOwner} hasPlayer:${!!playerData} storedRole:${storedRole}`)
 
-        // If user is an owner, and they either prefer owner role or don't have a player profile yet
-        if (isOwner && (storedRole === 'owner' || !playerData)) {
-          setUserRole('owner')
+        // If user is a host, and they either prefer host role or don't have a player profile yet
+        if (isOwner && (storedRole === 'host' || !playerData)) {
+          setUserRole('host')
           setAuthStatus('ready')
           return
         }
@@ -83,17 +83,17 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
         if (!playerData) {
           setAuthStatus('needs_setup')
         } else if (!playerData.onboarding_completed) {
-          // Even if onboarding is needed for player, if they are an owner and were on owner route, let them stay
-          if (isOwner && storedRole === 'owner') {
-             setUserRole('owner')
+          // Even if onboarding is needed for player, if they are a host and were on host route, let them stay
+          if (isOwner && storedRole === 'host') {
+             setUserRole('host')
              setAuthStatus('ready')
           } else {
              setAuthStatus('needs_onboarding')
           }
         } else {
-          // If they are both, but storedRole is owner, keep owner
-          if (isOwner && storedRole === 'owner') {
-            setUserRole('owner')
+          // If they are both, but storedRole is host, keep host
+          if (isOwner && storedRole === 'host') {
+            setUserRole('host')
           } else {
             setUserRole('player')
           }
@@ -123,32 +123,32 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
     // Prevent infinite loops and handle redirects
     if (authStatus === 'unauthenticated' && !isPublicRoute) {
       if (isWeb) {
-        replaceIfNeeded('/owner/login')
+        replaceIfNeeded('/host/login')
       } else {
         replaceIfNeeded('/login')
       }
-    } else if (authStatus === 'needs_setup' && !isProfileSetupRoute && !isOwnerRoute && !isPublicRoute) {
+    } else if (authStatus === 'needs_setup' && !isProfileSetupRoute && !isHostRoute && !isPublicRoute) {
       replaceIfNeeded('/profile-setup')
-    } else if (authStatus === 'needs_onboarding' && !isOnboardingRoute && !isOwnerRoute && !isPublicRoute) {
+    } else if (authStatus === 'needs_onboarding' && !isOnboardingRoute && !isHostRoute && !isPublicRoute) {
       replaceIfNeeded('/onboarding')
     } else if (authStatus === 'ready') {
       // 1. If at login screen or root, go to appropriate dashboard
       if (isPublicRoute || segments.length === 0) {
-        if (isWeb && (isOwnerLoginRoute || isRegisterRoute)) {
+        if (isWeb && (isHostLoginRoute || isRegisterRoute)) {
           return
         }
         if (isWeb) {
-          replaceIfNeeded('/owner/dashboard')
-        } else if (userRole === 'owner') {
-          replaceIfNeeded('/owner/dashboard')
+          replaceIfNeeded('/host/dashboard')
+        } else if (userRole === 'host') {
+          replaceIfNeeded('/host/dashboard')
         } else {
           replaceIfNeeded('/(tabs)')
         }
       } 
-      // 2. If Role is Owner but we are on a Player route, force redirect to Owner
-      else if (userRole === 'owner' && isPlayerRoute) {
-        console.log('[AuthGate] Forced redirect: Owner role on Player route')
-        replaceIfNeeded('/owner/dashboard')
+      // 2. If Role is Host but we are on a Player route, force redirect to Host
+      else if (userRole === 'host' && isPlayerRoute) {
+        console.log('[AuthGate] Forced redirect: Host role on Player route')
+        replaceIfNeeded('/host/dashboard')
       }
     }
   }, [authStatus, fontsLoaded, navReady, pathname, segments, userRole, router])

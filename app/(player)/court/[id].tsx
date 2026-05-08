@@ -431,7 +431,7 @@ export default function CourtDetailScreen() {
                   <AppButton 
                     label="Tạo kèo ngay" 
                     variant="secondary"
-                    onPress={() => { if (__DEV__) router.push(`/owner/web-quick-start?step=create&courtId=${id}`) }}
+                    onPress={() => { if (__DEV__) router.push(`/host/web-quick-start?step=create&courtId=${id}`) }}
                     style={{ marginTop: 24, backgroundColor: 'white' }}
                   />
                 </View>
