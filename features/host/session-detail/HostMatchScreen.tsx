@@ -130,6 +130,19 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
     }
   }
 
+  const getMatchFormat = (tANo: number, tBNo: number) => {
+    const pA = teamGroups[String(tANo)] || []
+    const pB = teamGroups[String(tBNo)] || []
+    const all = [...pA, ...pB]
+    const males = all.filter(p => String(p.gender || '').toLowerCase() === 'male' || String(p.gender || '').toLowerCase() === 'nam').length
+    const females = all.filter(p => String(p.gender || '').toLowerCase() === 'female' || String(p.gender || '').toLowerCase() === 'nữ').length
+    
+    if (males === 4) return '4M'
+    if (females === 4) return '4F'
+    if (males === 2 && females === 2) return '2M2F'
+    return 'OTHER'
+  }
+
   const handleCreateMatch = async (teamA: number, teamB: number) => {
     setSubmitting(true)
     const { error } = await supabase.from('session_matches').insert({
@@ -147,28 +160,67 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
   }
 
   const handleCreateAllMatches = async () => {
-    const schedulingTeams = teamIds.length % 2 === 0 ? teamIds : [...teamIds, '0']
+    const schedulingTeams = teamIds.length % 2 === 0 ? [...teamIds] : [...teamIds, '0']
     const numRounds = schedulingTeams.length - 1
-    const message = `Tạo lịch thi đấu cho tất cả các đội?`
+    const message = `Tạo lịch thi đấu tự động cho tất cả các đội? Hệ thống sẽ ưu tiên xáo trộn để đa dạng hóa các trận Nam/Nữ/Mixed.`
     
     const performCreate = async () => {
       setSubmitting(true)
-      // Logic for Circle Method simplified here for brevity, matching Modal logic
+      
+      // 1. Generate all match pairings using Circle Method
+      const matchPool: { tA: number, tB: number, format: string }[] = []
+      const currentTeams = [...schedulingTeams]
+      
       for (let round = 0; round < numRounds; round++) {
-        for (let i = 0; i < schedulingTeams.length / 2; i++) {
-          const tA = Number(schedulingTeams[i])
-          const tB = Number(schedulingTeams[schedulingTeams.length - 1 - i])
+        for (let i = 0; i < currentTeams.length / 2; i++) {
+          const tA = Number(currentTeams[i])
+          const tB = Number(currentTeams[currentTeams.length - 1 - i])
           if (tA !== 0 && tB !== 0) {
-            await supabase.from('session_matches').insert({
-              session_id: sessionId, team_a_no: tA, team_b_no: tB, status: 'playing',
-              players_snapshot: { team_a: teamGroups[String(tA)]?.map(p => p.id), team_b: teamGroups[String(tB)]?.map(p => p.id) }
-            })
-            await new Promise(r => setTimeout(r, 50))
+            matchPool.push({ tA, tB, format: getMatchFormat(tA, tB) })
           }
         }
-        const last = schedulingTeams.pop()!
-        schedulingTeams.splice(1, 0, last)
+        // Rotate
+        const last = currentTeams.pop()!
+        currentTeams.splice(1, 0, last)
       }
+
+      // 2. Diversity Sort: Re-order matches to avoid consecutive/simultaneous formats
+      const finalSchedule: typeof matchPool = []
+      const remainingMatches = [...matchPool]
+      let lastFormats: string[] = [] // Keep track of the last few formats (to handle multi-court)
+      const maxHistory = Math.max(2, (players.length / 4)) // Roughly the number of concurrent matches possible
+
+      while (remainingMatches.length > 0) {
+        // Find a match that hasn't appeared recently
+        let bestIdx = remainingMatches.findIndex(m => !lastFormats.includes(m.format))
+        if (bestIdx === -1) bestIdx = 0 // Fallback to first if all formats recently used
+
+        const picked = remainingMatches.splice(bestIdx, 1)[0]
+        finalSchedule.push(picked)
+        
+        lastFormats.push(picked.format)
+        if (lastFormats.length > maxHistory) lastFormats.shift()
+      }
+
+      // 3. Batch Insert into Supabase
+      const insertData = finalSchedule.map(m => ({
+        session_id: sessionId,
+        team_a_no: m.tA,
+        team_b_no: m.tB,
+        status: 'playing',
+        players_snapshot: {
+          team_a: teamGroups[String(m.tA)]?.map(p => p.id),
+          team_b: teamGroups[String(m.tB)]?.map(p => p.id)
+        }
+      }))
+
+      const { error } = await supabase.from('session_matches').insert(insertData)
+      
+      if (error) {
+        console.error('[CreateAllMatches] Error:', error)
+        Alert.alert('Lỗi', 'Không thể tạo lịch thi đấu tự động.')
+      }
+      
       setSubmitting(false)
       onUpdated()
     }

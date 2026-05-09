@@ -243,6 +243,13 @@ export default function ZaloRegisterScreen() {
       return
     }
 
+    if (nameError || phoneError) {
+      setNameTouched(true)
+      setPhoneTouched(true)
+      setErrorMsg(nameError || phoneError || 'Vui lòng kiểm tra lại thông tin.')
+      return
+    }
+
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (!uuidRegex.test(id)) {
       setErrorMsg(`Mã kèo không hợp lệ: ${id}`)
@@ -539,6 +546,77 @@ export default function ZaloRegisterScreen() {
 
             <View style={{ height: 0.5, backgroundColor: '#F0EDE5' }} />
 
+            {/* PREFERENCES SECTION */}
+            <View>
+              <Text style={{
+                fontFamily: SCREEN_FONTS.label,
+                fontSize: 13, fontWeight: '600',
+                color: theme.onSurface, marginBottom: 12,
+              }}>Sở thích ghép cặp (không bắt buộc)</Text>
+              
+              <View style={{ gap: 16 }}>
+                {/* Partner Preference */}
+                <View>
+                  <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, marginBottom: 8, fontFamily: SCREEN_FONTS.body }}>Bạn đồng hành (Partner)</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[
+                      { id: 'any', label: 'Bất kỳ', icon: '🚻' },
+                      { id: 'male', label: 'Nam', icon: '♂' },
+                      { id: 'female', label: 'Nữ', icon: '♀' },
+                    ].map((opt) => (
+                      <TouchableOpacity
+                        key={opt.id}
+                        onPress={() => setPartnerPref(opt.id as any)}
+                        style={{
+                          flex: 1, paddingVertical: 10,
+                          borderRadius: 8, alignItems: 'center',
+                          backgroundColor: partnerPref === opt.id ? theme.primary : theme.surfaceAlt,
+                          borderWidth: 1,
+                          borderColor: partnerPref === opt.id ? theme.primary : 'transparent',
+                        }}>
+                        <Text style={{
+                          fontFamily: SCREEN_FONTS.label,
+                          fontSize: 13,
+                          color: partnerPref === opt.id ? theme.onPrimary : theme.onSurfaceVariant,
+                        }}>{opt.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Opponent Preference */}
+                <View>
+                  <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, marginBottom: 8, fontFamily: SCREEN_FONTS.body }}>Đối thủ (Opponent)</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[
+                      { id: 'any', label: 'Bất kỳ', icon: '🚻' },
+                      { id: 'male', label: 'Nam', icon: '♂' },
+                      { id: 'female', label: 'Nữ', icon: '♀' },
+                    ].map((opt) => (
+                      <TouchableOpacity
+                        key={opt.id}
+                        onPress={() => setOpponentPref(opt.id as any)}
+                        style={{
+                          flex: 1, paddingVertical: 10,
+                          borderRadius: 8, alignItems: 'center',
+                          backgroundColor: opponentPref === opt.id ? theme.primary : theme.surfaceAlt,
+                          borderWidth: 1,
+                          borderColor: opponentPref === opt.id ? theme.primary : 'transparent',
+                        }}>
+                        <Text style={{
+                          fontFamily: SCREEN_FONTS.label,
+                          fontSize: 13,
+                          color: opponentPref === opt.id ? theme.onPrimary : theme.onSurfaceVariant,
+                        }}>{opt.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            <View style={{ height: 0.5, backgroundColor: '#F0EDE5' }} />
+
             <View>
               <View style={{
                 flexDirection: 'row', alignItems: 'center',
@@ -553,21 +631,24 @@ export default function ZaloRegisterScreen() {
                   
                   <TouchableOpacity
                     onPress={toggleNewbie}
+                    activeOpacity={0.8}
                     style={{
-                      backgroundColor: isNewbie ? theme.primary : theme.surface,
-                      borderWidth: 1,
-                      borderColor: isNewbie ? theme.primary : theme.border,
-                      paddingHorizontal: 10,
-                      paddingVertical: 4,
-                      borderRadius: 999,
+                      backgroundColor: isNewbie ? theme.primary : theme.primaryLight,
+                      borderWidth: 1.5,
+                      borderColor: theme.primary,
+                      paddingHorizontal: 12,
+                      paddingVertical: 5,
+                      borderRadius: RADIUS.full,
+                      flexDirection: 'row',
+                      alignItems: 'center',
                     }}
                   >
                     <Text
                       style={{
-                        color: isNewbie ? theme.onPrimary : theme.onSurfaceVariant,
+                        color: isNewbie ? theme.onPrimary : theme.primary,
                         fontFamily: SCREEN_FONTS.label,
-                        fontSize: 11,
-                        textTransform: 'uppercase',
+                        fontSize: 12,
+                        fontWeight: '700',
                       }}
                     >
                       Người mới
@@ -625,77 +706,22 @@ export default function ZaloRegisterScreen() {
               }}>
                 {isNewbie ? "* Bạn đã chọn chế độ Người mới chơi." : "Kéo thanh trượt để chọn mức phù hợp. Nếu mới chơi, chọn thấp trong khoảng."}
               </Text>
-            </View>
 
-            <View style={{ height: 0.5, backgroundColor: '#F0EDE5' }} />
-
-            {/* PREFERENCES SECTION */}
-            <View>
-              <Text style={{
-                fontFamily: SCREEN_FONTS.label,
-                fontSize: 13, fontWeight: '600',
-                color: theme.onSurface, marginBottom: 12,
-              }}>SỞ THÍCH GHÉP CẶP (KHÔNG BẮT BUỘC)</Text>
-              
-              <View style={{ gap: 16 }}>
-                {/* Partner Preference */}
-                <View>
-                  <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, marginBottom: 8, fontFamily: SCREEN_FONTS.body }}>Bạn đồng hành (Partner)</Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {[
-                      { id: 'any', label: 'Bất kỳ', icon: '🚻' },
-                      { id: 'male', label: 'Nam', icon: '♂' },
-                      { id: 'female', label: 'Nữ', icon: '♀' },
-                    ].map((opt) => (
-                      <TouchableOpacity
-                        key={opt.id}
-                        onPress={() => setPartnerPref(opt.id as any)}
-                        style={{
-                          flex: 1, paddingVertical: 10,
-                          borderRadius: 8, alignItems: 'center',
-                          backgroundColor: partnerPref === opt.id ? theme.primary : theme.surfaceAlt,
-                          borderWidth: 1,
-                          borderColor: partnerPref === opt.id ? theme.primary : 'transparent',
-                        }}>
-                        <Text style={{
-                          fontFamily: SCREEN_FONTS.headline,
-                          fontSize: 12,
-                          color: partnerPref === opt.id ? theme.onPrimary : theme.onSurfaceVariant,
-                        }}>{opt.icon} {opt.label.toUpperCase()}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                {/* Opponent Preference */}
-                <View>
-                  <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, marginBottom: 8, fontFamily: SCREEN_FONTS.body }}>Đối thủ (Opponent)</Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {[
-                      { id: 'any', label: 'Bất kỳ', icon: '🚻' },
-                      { id: 'male', label: 'Nam', icon: '♂' },
-                      { id: 'female', label: 'Nữ', icon: '♀' },
-                    ].map((opt) => (
-                      <TouchableOpacity
-                        key={opt.id}
-                        onPress={() => setOpponentPref(opt.id as any)}
-                        style={{
-                          flex: 1, paddingVertical: 10,
-                          borderRadius: 8, alignItems: 'center',
-                          backgroundColor: opponentPref === opt.id ? theme.primary : theme.surfaceAlt,
-                          borderWidth: 1,
-                          borderColor: opponentPref === opt.id ? theme.primary : 'transparent',
-                        }}>
-                        <Text style={{
-                          fontFamily: SCREEN_FONTS.headline,
-                          fontSize: 12,
-                          color: opponentPref === opt.id ? theme.onPrimary : theme.onSurfaceVariant,
-                        }}>{opt.icon} {opt.label.toUpperCase()}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </View>
+              <TouchableOpacity 
+                onPress={() => router.push({
+                  pathname: '/onboarding',
+                  params: { phone: normalizePhoneForSubmit(phone), name: name.trim() }
+                } as any)}
+                activeOpacity={0.7}
+                style={{ marginTop: 12, paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: '#F0EDE5', borderStyle: 'dashed' }}
+              >
+                <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, lineHeight: 18, fontFamily: SCREEN_FONTS.body }}>
+                  Bạn không biết điểm trình của mình? {' '}
+                  <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.label, textDecorationLine: 'underline' }}>
+                    Làm ngay bài đánh giá của PVNA để biết trình độ
+                  </Text>
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -724,7 +750,7 @@ export default function ZaloRegisterScreen() {
               ...LAYOUT_SHADOW.sm
             }}
             onPress={handleRegister}
-            disabled={submitting}
+            disabled={!_canSubmit}
           >
             {submitting ? (
               <ActivityIndicator color={theme.onPrimary} size="small" />

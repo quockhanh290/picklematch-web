@@ -19,7 +19,7 @@ export type PvnaQuestion = {
 
 export type PvnaQuizState = {
   answers: Record<PvnaQuestionId, number>;
-  gender: 'nam' | 'nu';
+  gender: 'male' | 'female';
 };
 
 export type PvnaResult = {

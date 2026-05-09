@@ -2,7 +2,7 @@ import { AppDialogConfig } from '@/components/design'
 import { supabase } from '@/lib/supabase'
 import { router } from 'expo-router'
 import { useAppTheme } from '@/lib/theme-context'
-import { Code2, LockKeyhole, Mail } from 'lucide-react-native'
+import { Code2, Lock, Mail } from 'lucide-react-native'
 import { useState } from 'react'
 import { Pressable, Text, TextInput, View } from 'react-native'
 import { SCREEN_FONTS } from '@/constants/typography'
@@ -171,7 +171,7 @@ export default function DevLoginSection({
               className="mr-3 h-10 w-10 items-center justify-center rounded-full"
               style={{ backgroundColor: 'rgba(255,255,255,0.4)' }}
             >
-              <LockKeyhole size={18} color={DEV.emeraldDark} />
+              <Lock size={18} color={DEV.emeraldDark} />
             </View>
             <TextInput
               testID="dev-player-password-input"

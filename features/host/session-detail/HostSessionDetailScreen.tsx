@@ -188,9 +188,9 @@ export function HostSessionDetailScreen({
     setDialogConfig({
       title: 'Hoàn tất Check-in',
       message,
-      buttons: [
-        { text: 'Hủy', style: 'cancel', onPress: () => setDialogConfig(null) },
-        { text: 'Tiếp tục', style: 'default', onPress: confirmAction }
+      actions: [
+        { label: 'Hủy', tone: 'secondary', onPress: () => setDialogConfig(null) },
+        { label: 'Tiếp tục', tone: 'primary', onPress: confirmAction }
       ]
     })
   }

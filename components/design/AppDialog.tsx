@@ -27,7 +27,12 @@ export function AppDialog({ visible, config, onClose }: Props) {
   const theme = useAppTheme()
   if (!config) return null
 
-  const actions = config.actions.slice(0, 3)
+  const actionsRaw = (config as any).actions || (config as any).buttons || []
+  const actions: AppDialogAction[] = actionsRaw.map((a: any) => ({
+    label: a.label || a.text || 'OK',
+    onPress: a.onPress,
+    tone: a.tone || (a.style === 'cancel' || a.style === 'destructive' ? 'danger' : 'primary')
+  })).slice(0, 3)
 
   const handleActionPress = async (action: AppDialogAction) => {
     onClose()

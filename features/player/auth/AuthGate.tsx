@@ -27,8 +27,8 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
   const isWeb = Platform.OS === 'web'
   const isHostLoginRoute = firstSegment === 'host' && secondSegment === 'login'
   const isRegisterRoute = firstSegment === 'register'
-  const isPublicRoute = firstSegment === 'login' || isHostLoginRoute || isRegisterRoute
-  const isOnboardingRoute = firstSegment === 'onboarding'
+  const isOnboardingRoute = firstSegment === 'onboarding' || (firstSegment === '(player)' && secondSegment === 'onboarding')
+  const isPublicRoute = firstSegment === 'login' || isHostLoginRoute || isRegisterRoute || isOnboardingRoute
   const isProfileSetupRoute = firstSegment === 'profile-setup'
   const isHostRoute = firstSegment === 'host'
   const isPlayerRoute = firstSegment === '(player)' || firstSegment === '(tabs)'

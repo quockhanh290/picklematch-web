@@ -14,8 +14,8 @@
     "5": 0.91
   },
   "pvna_floor_after_age_adjust": {
-    "nam": 2.6,
-    "nu": 2.1
+    "male": 2.6,
+    "female": 2.1
   },
   "questions": [
     {"id":"ageGroup","weight":0.0,"phase":"screening"},
@@ -60,7 +60,7 @@
     "adjusted_pvna": "max(parseFloat(level.pvna.split('-')[0]) * age_multiplier[ageGroup], gender_floor).toFixed(1)"
   },
   "levels": {
-    "nam": [
+    "male": [
       {"scoreMin":0.0,"scoreMax":1.6,"pvna":"2.6","name":"Beginner","dupr":"2.0-2.5"},
       {"scoreMin":1.6,"scoreMax":1.9,"pvna":"2.7","name":"Novice I","dupr":"2.5-2.75"},
       {"scoreMin":1.9,"scoreMax":2.15,"pvna":"2.8","name":"Novice II","dupr":"2.75-3.0"},
@@ -80,7 +80,7 @@
       {"scoreMin":4.8,"scoreMax":4.92,"pvna":"5.0","name":"Pro I","dupr":"5.8-5.9"},
       {"scoreMin":4.92,"scoreMax":5.0,"pvna":"5.5","name":"Pro II","dupr":"5.9-6.0+"}
     ],
-    "nu": [
+    "female": [
       {"scoreMin":0.0,"scoreMax":1.6,"pvna":"2.1","name":"Beginner","dupr":"1.5-2.0"},
       {"scoreMin":1.6,"scoreMax":1.9,"pvna":"2.2","name":"Novice I","dupr":"2.0-2.25"},
       {"scoreMin":1.9,"scoreMax":2.15,"pvna":"2.3","name":"Novice II","dupr":"2.25-2.5"},

@@ -70,27 +70,54 @@ export default function ProfileSetup() {
   }
 
   return (
-    <View className="flex-1" style={{ backgroundColor: theme.background }}>
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
       <SecondaryNavbar 
-        title="HOÀN THIỆN HỒ SƠ" 
+        title="THIẾT LẬP HỒ SƠ" 
         onBackPress={() => {
           if (router.canGoBack()) router.back()
           else router.replace('/login')
         }} 
       />
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-
-        <View className="px-5 py-6">
-          <Text className="text-[11px] uppercase tracking-[2px] mb-2" style={{ color: theme.primary, fontFamily: SCREEN_FONTS.cta }}>Bắt đầu</Text>
-          <Text className="text-3xl mb-3" style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.headline }}>Tạo hồ sơ của bạn</Text>
-          <Text className="text-sm leading-6" style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.body }}>
-            Điền vài thông tin cơ bản trước, rồi app sẽ gợi ý mức khởi điểm phù hợp cho bạn ở bước tiếp theo.
+      <ScrollView 
+        contentContainerStyle={{ paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={{ paddingHorizontal: 20, paddingTop: 32, paddingBottom: 24 }}>
+          <Text style={{ 
+            color: theme.primary, 
+            fontFamily: SCREEN_FONTS.cta, 
+            fontSize: 11, 
+            letterSpacing: 2, 
+            textTransform: 'uppercase',
+            marginBottom: 8 
+          }}>
+            Bước 1: Cơ bản
+          </Text>
+          <Text style={{ 
+            color: theme.onSurface, 
+            fontFamily: SCREEN_FONTS.headline, 
+            fontSize: 32, 
+            lineHeight: 38,
+            marginBottom: 12 
+          }}>
+            TẠO HỒ SƠ CỦA BẠN
+          </Text>
+          <Text style={{ 
+            color: theme.onSurfaceVariant, 
+            fontFamily: SCREEN_FONTS.body, 
+            fontSize: 15, 
+            lineHeight: 24 
+          }}>
+            Hãy cho cộng đồng biết bạn là ai. Thông tin này giúp chúng mình gợi ý những kèo đấu phù hợp nhất với bạn.
           </Text>
         </View>
 
-        <View className="px-5">
-          <SectionCard title="Thông tin cơ bản" subtitle="Thông tin này sẽ được dùng để hiển thị hồ sơ và gợi ý kèo phù hợp." className="mb-4">
-            <View className="gap-4">
+        <View style={{ px: 20, gap: 20, paddingHorizontal: 20 }}>
+          <SectionCard 
+            title="Thông tin định danh" 
+            subtitle="Tên và thành phố giúp mọi người nhận ra bạn trên sân."
+          >
+            <View style={{ gap: 20, marginTop: 8 }}>
               <AppInput
                 label="Tên / Nickname"
                 placeholder="Ví dụ: Minh Pickle"
@@ -103,6 +130,58 @@ export default function ProfileSetup() {
                 value={city}
                 onChangeText={setCity}
               />
+
+              <View style={{ marginTop: 8 }}>
+                <Text style={{ 
+                  fontFamily: SCREEN_FONTS.label, 
+                  fontSize: 13, 
+                  color: theme.onSurface,
+                  marginBottom: 12
+                }}>
+                  Giới tính
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  {[
+                    { id: 'nam', label: 'Nam', icon: '♂' },
+                    { id: 'nu', label: 'Nữ', icon: '♀' }
+                  ].map(opt => (
+                    <TouchableOpacity
+                      key={opt.id}
+                      activeOpacity={0.8}
+                      onPress={() => setGender(opt.id as any)}
+                      style={{
+                        flex: 1,
+                        height: 54,
+                        borderRadius: RADIUS.md,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        backgroundColor: gender === opt.id ? theme.primary : theme.surfaceAlt,
+                        borderWidth: 1.5,
+                        borderColor: gender === opt.id ? theme.primary : 'transparent',
+                      }}
+                    >
+                      <Text style={{ fontSize: 18 }}>{opt.icon}</Text>
+                      <Text style={{ 
+                        color: gender === opt.id ? theme.onPrimary : theme.onSurface,
+                        fontFamily: SCREEN_FONTS.label,
+                        fontSize: 15
+                      }}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </SectionCard>
+
+          <SectionCard 
+            title="Giới thiệu một chút" 
+            subtitle="Phong cách chơi hoặc mục tiêu của bạn."
+          >
+            <View style={{ marginTop: 8 }}>
               <AppInput
                 label="Mô tả bản thân"
                 placeholder="Ví dụ: Đam mê Pickleball với lối chơi năng lượng..."
@@ -114,23 +193,30 @@ export default function ProfileSetup() {
             </View>
           </SectionCard>
 
-          <SectionCard title="Bước tiếp theo" className="mb-6">
-            <Text className="text-sm leading-6" style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.body }}>
-              Sau bước này, bạn sẽ trả lời vài câu hỏi ngắn về thói quen chơi. Hệ thống sẽ tự đề xuất mức khởi điểm và đánh dấu tài khoản provisional để tiếp tục hiệu chỉnh sau vài trận đầu.
-            </Text>
-          </SectionCard>
-
-          <AppButton label="Tiếp tục" onPress={saveProfile} loading={loading} />
+          <View style={{ marginTop: 12 }}>
+            <AppButton 
+              label="Tiếp tục" 
+              onPress={saveProfile} 
+              loading={loading} 
+            />
+          </View>
 
           <TouchableOpacity 
-            activeOpacity={0.88} 
-            className="mt-4 items-center" 
+            activeOpacity={0.7} 
+            style={{ marginTop: 16, alignItems: 'center', paddingVertical: 12 }} 
             onPress={() => {
               if (router.canGoBack()) router.back()
               else router.replace('/login')
             }}
           >
-            <Text className="text-sm font-semibold" style={{ color: theme.primary }}>Quay lại</Text>
+            <Text style={{ 
+              color: theme.outline, 
+              fontFamily: SCREEN_FONTS.label, 
+              fontSize: 14,
+              textDecorationLine: 'underline' 
+            }}>
+              Quay lại đăng nhập
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

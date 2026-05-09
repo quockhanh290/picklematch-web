@@ -25,6 +25,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null)
   const [hasOngoingMatches, setHasOngoingMatches] = useState(false)
   const [checkingMatches, setCheckingMatches] = useState(false)
+  const [keepPartners, setKeepPartners] = useState(false)
 
   // Sync state when players change or mount
   React.useEffect(() => {
@@ -54,16 +55,111 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
 
   const teamOptions = Array.from({ length: targetNumTeams }, (_, i) => i + 1)
 
+  const calculateTotalSatisfaction = (currentPlayers: ArrangementPlayer[]) => {
+    let score = 0
+    const teams = new Map<number, ArrangementPlayer[]>()
+    currentPlayers.forEach(p => {
+      if (p.team > 0) {
+        if (!teams.has(p.team)) teams.set(p.team, [])
+        teams.get(p.team)!.push(p)
+      }
+    })
+
+    currentPlayers.forEach(p => {
+      if (p.team <= 0) return
+      const partner = teams.get(p.team)?.find(o => o.id !== p.id)
+      const opponents = currentPlayers.filter(o => o.team > 0 && o.team !== p.team)
+
+      // Partner Preference
+      if (p.metadata?.partner_gender_pref && p.metadata.partner_gender_pref !== 'any' && partner) {
+        const partnerGender = String(partner.gender || '').toLowerCase()
+        const pref = p.metadata.partner_gender_pref
+        if ((pref === 'female' && (partnerGender === 'female' || partnerGender === 'nữ')) ||
+            (pref === 'male' && (partnerGender === 'male' || partnerGender === 'nam'))) {
+          score += 10
+        }
+      }
+
+      // Opponent Preference
+      if (p.metadata?.opponent_gender_pref && p.metadata.opponent_gender_pref !== 'any' && opponents.length > 0) {
+        const pref = p.metadata.opponent_gender_pref
+        const matchedOpponent = opponents.some(o => {
+          const oGender = String(o.gender || '').toLowerCase()
+          return (pref === 'female' && (oGender === 'female' || oGender === 'nữ')) ||
+                 (pref === 'male' && (oGender === 'male' || oGender === 'nam'))
+        })
+        if (matchedOpponent) score += 5
+      }
+    })
+    return score
+  }
+
   const autoBalanceTeams = () => {
+    if (keepPartners) {
+      // MODE: Keep existing partners but re-assign teams to balance match difficulty
+      const teamsMap = new Map<number, ArrangementPlayer[]>()
+      arrangedPlayers.forEach(p => {
+        if (p.team > 0) {
+          if (!teamsMap.has(p.team)) teamsMap.set(p.team, [])
+          teamsMap.get(p.team)!.push(p)
+        }
+      })
+      
+      const existingTeams = Array.from(teamsMap.values()).map(players => ({
+        players,
+        avgElo: players.reduce((acc, p) => acc + (p.pvna || 0), 0) / players.length
+      }))
+      
+      const waitingPlayers = arrangedPlayers.filter(p => p.team <= 0)
+      
+      // Shuffle and then pick best of several tries
+      let bestResult: ArrangementPlayer[] = []
+      let bestScore = -1
+
+      for (let round = 0; round < 20; round++) {
+        let currentTry: ArrangementPlayer[] = []
+        const shuffledTeams = [...existingTeams].sort(() => Math.random() - 0.5)
+        
+        shuffledTeams.forEach((t, idx) => {
+          const newTeamNo = idx + 1
+          t.players.forEach(p => {
+            currentTry.push({ ...p, team: newTeamNo <= targetNumTeams ? newTeamNo : 0 })
+          })
+        })
+        waitingPlayers.forEach(p => currentTry.push({ ...p, team: 0 }))
+
+        const currentScore = calculateTotalSatisfaction(currentTry)
+        // Also consider skill balance between opponents in matches (T1 vs T2, T3 vs T4)
+        let skillBalancePenalty = 0
+        for (let i = 1; i < targetNumTeams; i += 2) {
+          const t1 = shuffledTeams[i-1]
+          const t2 = shuffledTeams[i]
+          if (t1 && t2) {
+            skillBalancePenalty += Math.abs(t1.avgElo - t2.avgElo) * 10
+          }
+        }
+
+        const finalScore = currentScore - skillBalancePenalty
+        if (finalScore > bestScore) {
+          bestScore = finalScore
+          bestResult = currentTry
+        }
+      }
+      
+      setArrangedPlayers(bestResult)
+      return
+    }
+
+    // MODE: Change partners (Traditional Auto-balance)
+    // 1. Initial Skill-based Balance (Greedy Snake/High-Low)
     const sorted = [...arrangedPlayers].sort((a, b) => {
       const valA = a.pvna ?? (a.elo / 100)
       const valB = b.pvna ?? (b.elo / 100)
       return valB - valA
     })
 
-    const result: ArrangementPlayer[] = []
+    let initialResult: ArrangementPlayer[] = []
     const playersPerTeam = 2 
-    
     let left = 0
     let right = sorted.length - 1
     const used = new Set()
@@ -71,7 +167,6 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
     for (let t = 1; t <= targetNumTeams; t++) {
       for (let i = 0; i < playersPerTeam; i++) {
         if (used.size >= sorted.length) break
-        
         let pickedIdx = -1
         if (i % 2 === 0) {
           while (left < sorted.length && used.has(sorted[left].id)) left++
@@ -80,35 +175,118 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
           while (right >= 0 && used.has(sorted[right].id)) right--
           if (right >= 0 && right >= left) pickedIdx = right
         }
-
         if (pickedIdx !== -1) {
           const p = sorted[pickedIdx]
-          result.push({ ...p, team: t })
+          initialResult.push({ ...p, team: t })
           used.add(p.id)
         }
       }
     }
+    sorted.forEach(p => { if (!used.has(p.id)) initialResult.push({ ...p, team: 0 }) })
 
-    sorted.forEach(p => {
-      if (!used.has(p.id)) {
-        result.push({ ...p, team: 0 })
+    // 2. Optimization Phase: Smart Randomized Swapping
+    // Instead of picking the absolute best, we try many combinations and pick one that is 
+    // "Great" (High satisfaction + Good balance) but potentially different each time.
+    let candidates: { players: ArrangementPlayer[], score: number }[] = []
+    
+    for (let round = 0; round < 50; round++) {
+      let currentTry = round === 0 ? [...initialResult] : [...initialResult].sort(() => Math.random() - 0.5)
+      
+      // If not the first round, do a quick skill-based re-assignment
+      if (round > 0) {
+        const tempUsed = new Set()
+        let tempResult: ArrangementPlayer[] = []
+        const currentSorted = [...currentTry].sort((a, b) => (b.pvna || 0) - (a.pvna || 0))
+        
+        // Simple assignment
+        let tNo = 1
+        let pCount = 0
+        currentSorted.forEach(p => {
+          if (tNo <= targetNumTeams) {
+            tempResult.push({ ...p, team: tNo })
+            pCount++
+            if (pCount >= 2) { tNo++; pCount = 0; }
+          } else {
+            tempResult.push({ ...p, team: 0 })
+          }
+        })
+        currentTry = tempResult
       }
-    })
 
-    setArrangedPlayers(result)
+      // Small random swaps to improve satisfaction
+      for (let swap = 0; swap < 10; swap++) {
+        const idx1 = Math.floor(Math.random() * currentTry.length)
+        const idx2 = Math.floor(Math.random() * currentTry.length)
+        const p1 = currentTry[idx1]; const p2 = currentTry[idx2]
+        
+        if (p1.team > 0 && p2.team > 0 && p1.team !== p2.team) {
+          const skillDiff = Math.abs((p1.pvna || 0) - (p2.pvna || 0))
+          if (skillDiff <= 0.4) { // Tight skill constraint for balance
+            const t1 = p1.team
+            currentTry[idx1] = { ...p1, team: p2.team }
+            currentTry[idx2] = { ...p2, team: t1 }
+          }
+        }
+      }
+
+      const score = calculateTotalSatisfaction(currentTry)
+      candidates.push({ players: currentTry, score })
+    }
+
+    // Sort candidates by score and pick randomly from the top 5
+    candidates.sort((a, b) => b.score - a.score)
+    const bestCandidates = candidates.slice(0, 5)
+    const finalPick = bestCandidates[Math.floor(Math.random() * bestCandidates.length)]
+    
+    setArrangedPlayers(finalPick.players)
   }
 
   const shuffleTeams = () => {
-    const shuffled = [...arrangedPlayers].sort(() => Math.random() - 0.5)
-    const playersPerTeam = 2
+    let result: ArrangementPlayer[] = []
     
-    const result = shuffled.map((p, idx) => {
-      const teamIdx = Math.floor(idx / playersPerTeam) + 1
-      return {
-        ...p,
-        team: teamIdx <= targetNumTeams ? teamIdx : 0
-      }
-    })
+    if (keepPartners) {
+      // 1. Group existing teams
+      const teamsMap = new Map<number, ArrangementPlayer[]>()
+      arrangedPlayers.forEach(p => {
+        if (p.team > 0) {
+          if (!teamsMap.has(p.team)) teamsMap.set(p.team, [])
+          teamsMap.get(p.team)!.push(p)
+        }
+      })
+      
+      const waitingPlayers = arrangedPlayers.filter(p => p.team <= 0)
+      const existingTeams = Array.from(teamsMap.values())
+      
+      // 2. Shuffle the teams themselves
+      const shuffledTeams = [...existingTeams].sort(() => Math.random() - 0.5)
+      
+      // 3. Assign to new team numbers while keeping members together
+      shuffledTeams.forEach((teamPlayers, idx) => {
+        const newTeamNo = idx + 1
+        teamPlayers.forEach(p => {
+          result.push({ ...p, team: newTeamNo <= targetNumTeams ? newTeamNo : 0 })
+        })
+      })
+      
+      // 4. Handle players who were waiting or don't fit in new team count
+      waitingPlayers.forEach(p => {
+        if (!result.find(rp => rp.id === p.id)) {
+          result.push({ ...p, team: 0 })
+        }
+      })
+    } else {
+      // Standard shuffle (Change partners)
+      const shuffled = [...arrangedPlayers].sort(() => Math.random() - 0.5)
+      const playersPerTeam = 2
+      
+      result = shuffled.map((p, idx) => {
+        const teamIdx = Math.floor(idx / playersPerTeam) + 1
+        return {
+          ...p,
+          team: teamIdx <= targetNumTeams ? teamIdx : 0
+        }
+      })
+    }
 
     setArrangedPlayers(result)
   }
@@ -250,6 +428,48 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
                 ))}
               </View>
             </ScrollView>
+          </View>
+
+          {/* Rotation Settings */}
+          <View style={{ 
+            flexDirection: 'row', 
+            alignItems: 'center', 
+            justifyContent: 'space-between', 
+            backgroundColor: '#F5F1E8',
+            padding: 12,
+            borderRadius: 12,
+            marginBottom: 16
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 18 }}>🔄</Text>
+              <View>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '700' }}>Chế độ xoay vòng</Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884' }}>
+                  {keepPartners ? 'Giữ nguyên các cặp đã ghép' : 'Đổi cặp ngẫu nhiên mỗi lượt'}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity 
+              onPress={() => setKeepPartners(!keepPartners)}
+              activeOpacity={0.8}
+              style={{
+                width: 50,
+                height: 26,
+                borderRadius: 13,
+                backgroundColor: keepPartners ? '#0F6E56' : '#D5D2C8',
+                padding: 2,
+                justifyContent: 'center'
+              }}
+            >
+              <View style={{
+                width: 22,
+                height: 22,
+                borderRadius: 11,
+                backgroundColor: 'white',
+                alignSelf: keepPartners ? 'flex-end' : 'flex-start',
+                ...LAYOUT_SHADOW.xs
+              }} />
+            </TouchableOpacity>
           </View>
 
           {/* Action Buttons */}
