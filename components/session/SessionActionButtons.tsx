@@ -119,13 +119,11 @@ const HostPastSessionView = ({ theme }: { theme: any }) => (
   </View>
 )
 
-const HostFinalizedSessionView = ({ id, hasRated, theme }: { id: string; hasRated: boolean; theme: any }) => {
-  const { onViewMatchResult, onRateSession } = useSessionNav()
-  const label = hasRated ? STRINGS.session.buttons.view_result : STRINGS.session.buttons.rate_match
-  const action = hasRated
-    ? () => onViewMatchResult(id)
-    : () => onRateSession(id)
-  const Icon = hasRated ? Trophy : Star
+const HostFinalizedSessionView = ({ id, theme }: { id: string; theme: any }) => {
+  const { onViewMatchResult } = useSessionNav()
+  const label = STRINGS.session.buttons.view_result
+  const action = () => onViewMatchResult(id)
+  const Icon = Trophy
 
   return (
     <TouchableOpacity
@@ -420,23 +418,46 @@ const HostActions = ({
   hideInputResult,
   theme
 }: any) => {
-  if (isAfterEnd && !session?.is_ranked) {
+  const parseRobustDate = (d: any) => {
+    let str = String(d).trim()
+    str = str.replace(/^[^\d]+/, '')
+    let t = new Date(str).getTime()
+    if (!isNaN(t)) return t
+    str = str.replace(/\//g, '-')
+    const dateMatch = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(.*)/)
+    if (dateMatch) {
+      str = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}${dateMatch[4]}`
+      str = str.replace(' ', 'T')
+      t = new Date(str).getTime()
+      if (!isNaN(t)) return t
+    }
+    return 0
+  }
+  
+  const now = Date.now()
+  const startTime = parseRobustDate(session.slot?.start_time)
+  const endTime = parseRobustDate(session.slot?.end_time)
+  
+  const isWayPastStart = startTime > 0 && (now - startTime) > (12 * 3600000)
+  
+  // Re-calculate everything internally to be 100% sure
+  const internalIsPastEnd = (endTime > 0 && endTime <= now) || 
+                            ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion', 'cancelled_no_players', 'failed_to_fill'].includes(session.status) ||
+                            isWayPastStart
+  const internalIsDuringMatch = startTime > 0 && startTime <= now && !internalIsPastEnd
+  
+  const actualIsPastEnd = internalIsPastEnd || isAfterEnd || isFinalized
+  const effectiveIsDuringMatch = internalIsDuringMatch || (isDuringMatch && !actualIsPastEnd)
+
+  if (actualIsPastEnd && !session?.is_ranked) {
     return <HostPastSessionView theme={theme} />
   }
 
   if (isFinalized) {
-    return <HostFinalizedSessionView id={id} hasRated={hasRated} theme={theme} />
+    return <HostFinalizedSessionView id={id} theme={theme} />
   }
 
-  if (isResultSubmitted) {
-    return <HostSubmittedSessionView id={id} session={session} theme={theme} />
-  }
-
-  if (isAwaitingResult && !isInvalidPlayerCount && !hideInputResult) {
-    return <HostAwaitingResultView id={id} isPartial={isPartialPlayerCount} count={confirmedPlayerCount} max={maxPlayers} theme={theme} />
-  }
-
-  if (isDuringMatch) {
+  if (effectiveIsDuringMatch) {
     return (
       <View
         style={{
@@ -824,7 +845,7 @@ export const SessionActionButtons: React.FC<SessionActionButtonsProps> = ({
   const isValidCount = confirmedPlayerCount >= 2 && isEven && confirmedPlayerCount <= maxPlayers
     
   const sessionStatus = session?.status
-  const isEnded = isAfterEnd || sessionStatus === 'done' || sessionStatus === 'pending_completion' || sessionStatus === 'pending_results'
+  const isEnded = isAfterEnd || ['done', 'pending_completion', 'pending_results', 'completed', 'finished', 'archived', 'cancelled_no_players', 'failed_to_fill'].includes(sessionStatus)
   const isInvalidPlayerCount = isEnded && !isValidCount
   const isPartialPlayerCount = isEnded && isValidCount && confirmedPlayerCount < maxPlayers
 

@@ -99,51 +99,66 @@ export function PlayerCountSelector({
 
       <View style={{ height: 1, backgroundColor: theme.outlineVariant, marginBottom: 16, opacity: 0.5 }} />
 
-      {/* 2. Sử dụng sân con */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <View style={{ flex: 1, paddingRight: 12 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, letterSpacing: 1.2, color: theme.primary }}>
-            {'SỬ DỤNG SÂN CON'}
-          </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onSurfaceVariant, marginTop: 2 }}>
-            Chọn sân con trong cụm sân
-          </Text>
+      <View style={{ marginBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <View>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, letterSpacing: 1.2, color: theme.primary }}>
+              {'SỬ DỤNG SÂN CON'}
+            </Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onSurfaceVariant, marginTop: 2 }}>
+              Chọn các sân sử dụng cho kèo này (1-16)
+            </Text>
+          </View>
+          
+          <TouchableOpacity 
+            onPress={() => {
+              if (selectedSubCourts.length === 16) onSubCourtsChange([1])
+              else onSubCourtsChange(Array.from({ length: 16 }, (_, i) => i + 1))
+            }}
+            style={{ backgroundColor: theme.surfaceContainerLowest, paddingHorizontal: 10, paddingVertical: 4, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: theme.outlineVariant }}
+          >
+            <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 10, color: theme.primary }}>
+              {selectedSubCourts.length === 16 ? 'BỎ CHỌN HẾT' : 'CHỌN TẤT CẢ'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
-          borderRadius: RADIUS.md, 
-          borderWidth: BORDER.base, 
-          borderColor: theme.outlineVariant, 
-          backgroundColor: theme.surfaceContainerLowest, 
-          paddingHorizontal: 8, 
-          paddingVertical: 4,
-          width: 110
-        }}>
-          <TextInput
-            value={selectedSubCourts.join(', ')}
-            onChangeText={(text) => {
-              // Parse numbers from string like "1, 2, 3" or "1 2 3"
-              const nums = text.split(/[\s,]+/)
-                .map(s => parseInt(s.trim()))
-                .filter(n => !isNaN(n) && n > 0 && n <= subCourtCount)
-              
-              // Remove duplicates and sort
-              onSubCourtsChange([...new Set(nums)].sort((a, b) => a - b))
-            }}
-            placeholder="1, 2..."
-            placeholderTextColor={theme.outline}
-            keyboardType="numbers-and-punctuation"
-            style={{ 
-              flex: 1, 
-              fontFamily: SCREEN_FONTS.headline, 
-              fontSize: 18, 
-              color: theme.primary, 
-              textAlign: 'center',
-              padding: 0
-            }}
-          />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {Array.from({ length: 16 }, (_, i) => i + 1).map((num) => {
+            const isSelected = selectedSubCourts.includes(num)
+            return (
+              <TouchableOpacity
+                key={num}
+                onPress={() => {
+                  if (isSelected) {
+                    if (selectedSubCourts.length > 1) {
+                      onSubCourtsChange(selectedSubCourts.filter(n => n !== num))
+                    }
+                  } else {
+                    onSubCourtsChange([...selectedSubCourts, num].sort((a, b) => a - b))
+                  }
+                }}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: isSelected ? theme.primary : theme.surfaceContainerLowest,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1.5,
+                  borderColor: isSelected ? theme.primary : theme.outlineVariant,
+                }}
+              >
+                <Text style={{ 
+                  fontFamily: SCREEN_FONTS.bold, 
+                  fontSize: 14, 
+                  color: isSelected ? theme.onPrimary : theme.onSurfaceVariant 
+                }}>
+                  {num}
+                </Text>
+              </TouchableOpacity>
+            )
+          })}
         </View>
       </View>
 

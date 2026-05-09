@@ -336,7 +336,7 @@ export default function ZaloRegisterScreen() {
           item={previewMatch} 
           variant="standard" 
           showFullAddress 
-          isOwnerDetail 
+          isHostDetail 
           isPreview={false}
           fullCourtName={true}
         />

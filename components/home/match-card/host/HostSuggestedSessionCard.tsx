@@ -99,7 +99,7 @@ export function HostSuggestedSessionCard({
             event.stopPropagation()
             const courtId = item.courtId || (item as any).courtId
             if (courtId) {
-              router.push(`/(player)/court/${courtId}`)
+              onOpenCourt(courtId)
             }
           }}
         >
@@ -138,14 +138,14 @@ export function HostSuggestedSessionCard({
         {/* MOVED CHIPS: Day, Sub-court, Skill */}
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <View style={{ backgroundColor: dayInfo.badgeColor, borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2 }}>
-              <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.cta, fontSize: 10, lineHeight: 14, textTransform: 'uppercase' }}>
+            <View style={{ backgroundColor: dayInfo.badgeColor, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 }}>
+              <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.headline, fontSize: 11, textTransform: 'uppercase' }}>
                 {dayInfo.badgeLabel}
               </Text>
             </View>
             {item.subCourtLabel ? (
-              <View style={{ backgroundColor: dayInfo.badgeColor, borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2 }}>
-                <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.cta, fontSize: 10, lineHeight: 14, textTransform: 'uppercase' }}>
+              <View style={{ backgroundColor: theme.primary, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 }}>
+                <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.headline, fontSize: 11, textTransform: 'uppercase' }}>
                   {item.subCourtLabel}
                 </Text>
               </View>

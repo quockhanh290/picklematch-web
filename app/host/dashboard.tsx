@@ -24,12 +24,20 @@ import {
   Bell,
   User,
   UserPlus,
-  ArrowUpRight
+  ArrowUpRight,
+  TrendingUp
 } from 'lucide-react-native'
 import { useAppTheme } from '@/lib/theme-context'
 import { StatusBar } from 'expo-status-bar'
 import { HomeGreetingHeader } from '@/components/home/HomeGreetingHeader'
 import { useState, useEffect, useCallback } from 'react'
+import { formatDistance } from '@/utils/formatters'
+import { 
+  parseSessionStartDate, 
+  parseSessionEndDate, 
+  getSuggestedDayInfo, 
+  formatClock 
+} from '@/lib/home/matchCardHelpers'
 import { 
   Text, 
   TouchableOpacity, 
@@ -44,11 +52,12 @@ import { WebContainer } from '@/components/design/WebContainer'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Image } from 'expo-image'
 import { SCREEN_FONTS, AppFontSet } from '@/constants/typography'
-import { RADIUS, SPACING, BORDER, SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
+import { RADIUS, SPACING, BORDER, BUTTON, SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
 import { STRINGS } from '@/constants/strings'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { format as formatDate } from 'date-fns'
 import { vi } from 'date-fns/locale'
+import { MaterialCommunityIcons } from '@expo/vector-icons'
 
 import { useSessionNav } from '@/lib/navigation/SessionNavContext'
 import { useAppNav } from '@/lib/navigation/AppNavContext'
@@ -57,6 +66,7 @@ import { getSessionSkillLabel } from '@/lib/skillAssessment'
 import { formatRelativeDate } from '@/utils/formatters'
 import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
 import { DashboardStatsStrip, buildDashboardStats } from '@/components/dashboard/DashboardStatsStrip'
+import { BrandedFooter } from '@/components/design/BrandedFooter'
 
 export default function HostDashboardScreen() {
   const theme = useAppTheme()
@@ -64,12 +74,35 @@ export default function HostDashboardScreen() {
   const { onOpenSession } = useSessionNav()
   const { onOpenProfile, onCreateSession } = useAppNav()
   const insets = useSafeAreaInsets()
+  const isWeb = Platform.OS === 'web'
   const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming')
   const [court, setCourt] = useState<any>(null)
   const [sessions, setSessions] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [profile, setProfile] = useState<any>(null)
   const { switchToPlayer } = useRoleSwitcher()
+
+  const parseRobustDate = (d: any) => {
+    let str = String(d).trim()
+    // Remove leading non-digits (e.g., "Thứ Sáu, 08/05/2026" -> "08/05/2026")
+    str = str.replace(/^[^\d]+/, '')
+    
+    // Try ISO first
+    let t = new Date(str).getTime()
+    if (!isNaN(t)) return t
+
+    // Try Vietnamese/Custom DD/MM/YYYY
+    str = str.replace(/\//g, '-')
+    const dateMatch = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(.*)/)
+    if (dateMatch) {
+      str = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}${dateMatch[4]}`
+      str = str.replace(' ', 'T')
+      t = new Date(str).getTime()
+      if (!isNaN(t)) return t
+    }
+    
+    return 0
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -120,6 +153,7 @@ export default function HostDashboardScreen() {
           .from('sessions')
           .select(`
             *,
+            owner_sessions(sub_court_numbers),
             slot:slot_id(
               start_time, end_time,
               court:court_id(*)
@@ -147,6 +181,23 @@ export default function HostDashboardScreen() {
       fetchHostData()
     }, [authLoading, fetchHostData])
   )
+  const upcomingFiltered = sessions.filter(s => {
+    const startTs = parseRobustDate(s.slot?.start_time)
+    const endTs = parseRobustDate(s.slot?.end_time)
+    const now = Date.now()
+    const isWayPastStart = startTs > 0 && (now - startTs) > (12 * 3600000)
+    const isPastTime = endTs > 0 && endTs <= now
+    const confirmedCount = s.session_players?.filter((p: any) => p.status === 'confirmed' || p.status === 'checked_in').length || 0
+    const minPlayers = s.min_players || 2
+    const isAfterEnd = isPastTime || isWayPastStart
+    const isInvalidPlayerCount = !s.is_unlimited && confirmedCount < minPlayers && isAfterEnd
+    const isPastStatus = ['completed', 'finished', 'archived', 'done', 'cancelled', 'pending_results', 'pending_completion', 'failed_to_fill', 'cancelled_no_players'].includes(s.status)
+    const isPast = isPastTime || isPastStatus || isWayPastStart || isInvalidPlayerCount
+    return !isPast
+  }).sort((a, b) => parseRobustDate(a.slot?.start_time) - parseRobustDate(b.slot?.start_time))
+
+  const nextSession = upcomingFiltered[0]
+  const nextSessionId = nextSession?.id
 
   const handleShareSession = async (session: any) => {
     try {
@@ -164,19 +215,35 @@ export default function HostDashboardScreen() {
   }
 
   const renderSessionCard = (session: any) => {
-    const start = session.slot?.start_time ? new Date(session.slot.start_time) : new Date()
-    const end = session.slot?.end_time ? new Date(session.slot.end_time) : new Date()
+    const startTimestamp = parseRobustDate(session.slot?.start_time)
+    const endTimestamp = parseRobustDate(session.slot?.end_time)
+    const now = Date.now()
+    
+    const start = new Date(startTimestamp)
+    const end = new Date(endTimestamp)
+    
+    const confirmedCount = session.session_players?.filter((p: any) => p.status === 'confirmed' || p.status === 'checked_in').length || 0
+    const maxPlayers = session.is_unlimited ? 16 : (session.max_players || 16)
+    const minPlayers = session.min_players || 2
+    const pricePerPerson = session.total_cost > 0 ? `${Math.round(session.total_cost / 1000)}K` : 'Miễn phí'
+    
+    const isWayPastStart = startTimestamp > 0 && (now - startTimestamp) > (12 * 3600000)
+    const isPastEnd = (endTimestamp > 0 && endTimestamp <= now) || isWayPastStart
+    const isInvalidPlayerCount = !session.is_unlimited && confirmedCount < minPlayers && isPastEnd
+    
+    const isPlaying = session.status === 'playing' && !isPastEnd
+    const isCancelled = session.status === 'cancelled' || session.status === 'cancelled_no_players' || session.status === 'failed_to_fill' || isInvalidPlayerCount
+    const isCompleted = ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion'].includes(session.status) || (isPastEnd && !isCancelled)
+    const isDone = isCompleted || isCancelled
+    
+    // Format variables for rendering (restoring original context)
     const formatType = session.format_type || 'social'
-    const subCourts = session.sub_court_numbers || []
-    const isPlaying = session.status === 'playing'
-    const isCompleted = session.status === 'completed' || session.status === 'finished' || session.status === 'archived'
-    const isCancelled = session.status === 'cancelled'
-    const isDone = isCompleted || session.status === 'done' || isCancelled
+    const ownerSessions = session.owner_sessions
+    const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
+    const subCourts = ownerDetails.sub_court_numbers || session.sub_court_numbers || []
     
     // Skill Level Labels
     const skillLabel = getSessionSkillLabel(session.elo_min, session.elo_max)
-    const confirmedCount = session.session_players?.filter((p: any) => p.status === 'confirmed').length || 0
-    const pricePerPerson = session.total_cost > 0 ? `${Math.round(session.total_cost / 1000)}K` : 'Miễn phí'
 
     // Day Badge Logic
     const dateLabel = formatRelativeDate(start)
@@ -184,34 +251,40 @@ export default function HostDashboardScreen() {
     if (dateLabel === 'Hôm nay') dayBadgeBg = theme.primary
     else if (dateLabel === 'Ngày mai') dayBadgeBg = theme.onSurfaceVariant
 
-    // Status Chip Logic
-    let statusLabel = 'ĐANG MỞ'
-    let statusBg = theme.primaryContainer
-    let statusText = theme.primary
-    if (isPlaying) {
-      statusLabel = 'THI ĐẤU'
-      statusBg = '#fef3c7'
-      statusText = '#b45309'
-    } else if (isCancelled) {
-      statusLabel = 'ĐÃ HỦY'
-      statusBg = theme.surfaceContainerHighest
-      statusText = theme.outline
-    } else if (isDone) {
-      statusLabel = 'KẾT THÚC'
-      statusBg = theme.surfaceContainerHighest
-      statusText = theme.onSurfaceVariant
+    // Enhanced Color System
+    const COLORS = {
+      teal: '#0F6E56',
+      darkTeal: '#064E3B',
+      amber: '#D97706',
+      coral: '#D85A30',
+      gray: '#6B7280'
     }
 
-    const formatLabel = formatType === 'round_robin' ? 'ROUND ROBIN' : 'SOCIAL PLAY'
+    const fillRatio = confirmedCount / maxPlayers
+    const isFull = fillRatio >= 1
+    const isUnderfilled = fillRatio < 0.6 && !isDone && !isPlaying && !isCancelled
 
-    // We check both session.host_id and our stored userId for maximum accuracy
-    const hostId = session.host_id || userId
-    const nonHostConfirmedCount = session.session_players?.filter((p: any) => 
-      p.status === 'confirmed' && p.player_id !== hostId
-    ).length || 0
+    let statusLabel = 'ĐANG MỞ'
+    let statusBg = COLORS.teal
     
-    const isEmpty = nonHostConfirmedCount === 0 && !isDone
-    const alertColor = theme.rescueAccent || '#D85A30' // Using system rescueAccent for coral alerts
+    if (isPlaying) {
+      statusLabel = 'THI ĐẤU'
+      statusBg = COLORS.darkTeal
+    } else if (isCancelled) {
+      statusLabel = 'ĐÃ HỦY'
+      statusBg = COLORS.gray
+    } else if (isDone) {
+      statusLabel = 'KẾT THÚC'
+      statusBg = COLORS.gray
+    } else if (isFull) {
+      statusLabel = 'ĐÃ ĐẦY'
+      statusBg = COLORS.amber
+    } else if (isUnderfilled) {
+      statusLabel = 'CẦN THÊM NGƯỜI'
+      statusBg = COLORS.coral
+    }
+
+    const statusColor = statusBg
 
     return (
       <TouchableOpacity
@@ -229,7 +302,7 @@ export default function HostDashboardScreen() {
       >
         {/* Top Accent Bar */}
         <View style={{ 
-          backgroundColor: isEmpty ? alertColor : theme.primary, 
+          backgroundColor: statusBg, 
           paddingHorizontal: 14, 
           paddingVertical: 5,
           flexDirection: 'row',
@@ -241,20 +314,24 @@ export default function HostDashboardScreen() {
               width: 6, 
               height: 6, 
               borderRadius: 3, 
-              backgroundColor: statusLabel === 'THI ĐẤU' ? '#FF4B4B' : 'white' 
+              backgroundColor: 'white' 
             }} />
             <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 9.5, letterSpacing: 0.5 }}>
-              {isEmpty ? 'CHƯA CÓ NGƯỜI' : statusLabel}
+              {statusLabel}
             </Text>
           </View>
-          
-          <View style={{ flexDirection: 'row', gap: 4 }}>
-            {(subCourts.length > 0 ? subCourts : [1]).map((num: number) => (
-              <View key={num} style={{ backgroundColor: 'transparent', paddingHorizontal: 7, paddingVertical: 1, borderRadius: 5 }}>
-                <Text style={{ fontSize: 9, fontFamily: SCREEN_FONTS.bold, color: 'white' }}>SÂN {num}</Text>
-              </View>
-            ))}
-          </View>
+
+          {subCourts.length > 0 && (
+            <Text style={{ 
+              color: 'white', 
+              fontFamily: SCREEN_FONTS.bold, 
+              fontSize: 9.5, 
+              letterSpacing: 0.5,
+              opacity: 0.95
+            }}>
+              {`SÂN ${subCourts.join(', ')}`}
+            </Text>
+          )}
         </View>
 
         <View style={{ paddingHorizontal: 14, paddingTop: 9, paddingBottom: 8 }}>
@@ -263,22 +340,22 @@ export default function HostDashboardScreen() {
             <View style={{ flex: 1 }}>
               <Text style={{ 
                 fontFamily: SCREEN_FONTS.headline, 
-                fontSize: 30, 
+                fontSize: 20, 
                 color: theme.onSurface, 
                 textTransform: 'uppercase',
-                lineHeight: 34
+                lineHeight: 24
               }} numberOfLines={1}>
-                {session.slot?.court?.name || 'KÈO PICKLEBALL'}
+                {session.title || (formatType === 'round_robin' ? 'Giải Round Robin' : 'Kèo giao lưu Social')}
               </Text>
               
               <Text style={{ 
-                fontFamily: SCREEN_FONTS.medium, 
+                fontFamily: SCREEN_FONTS.body, 
                 fontSize: 12, 
                 color: theme.onSurfaceVariant,
-                marginTop: 1,
+                marginTop: 2,
                 letterSpacing: 0.3
               }}>
-                {session.title || (formatType === 'round_robin' ? 'Giải Round Robin' : 'Kèo giao lưu Social')}
+                {session.slot?.court?.name || 'KÈO PICKLEBALL'}
               </Text>
             </View>
             
@@ -286,7 +363,7 @@ export default function HostDashboardScreen() {
               <Text style={{ 
                 fontFamily: SCREEN_FONTS.headline, 
                 fontSize: 20, 
-                color: session.total_cost <= 0 ? theme.primary : theme.onSurface 
+                color: theme.onSurface 
               }}>
                 {pricePerPerson}
               </Text>
@@ -314,16 +391,16 @@ export default function HostDashboardScreen() {
             </View>
             
             <View style={{ flexDirection: 'row', gap: 6 }}>
-              <View style={{ backgroundColor: isDone ? theme.outlineVariant : '#E1F5EE', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: isDone ? theme.outlineVariant : '#0F6E5630' }}>
-                <Text style={{ color: isDone ? theme.outline : '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 10 }}>NAM</Text>
-                <Text style={{ color: isDone ? theme.outline : '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 10 }}>
-                  {skillLabel.split('/')[0].replace('♂', '').replace(/\(Nam\)|\(nam\)|Trình|trình/g, '').trim()}
+              <View style={{ backgroundColor: isDone ? theme.outlineVariant : '#E1F5EE', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: isDone ? theme.outlineVariant : '#0F6E5630' }}>
+                <Text style={{ color: isDone ? theme.outline : '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NAM</Text>
+                <Text style={{ color: isDone ? theme.outline : '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
+                  {(skillLabel || '').split('/')[0]?.replace('♂', '').replace(/\(Nam\)|\(nam\)|Trình|trình/g, '').trim()}
                 </Text>
               </View>
-              <View style={{ backgroundColor: isDone ? theme.outlineVariant : '#FAECE7', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: isDone ? theme.outlineVariant : '#993C1D30' }}>
-                <Text style={{ color: isDone ? theme.outline : '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 10 }}>NỮ</Text>
-                <Text style={{ color: isDone ? theme.outline : '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 10 }}>
-                  {(skillLabel.split('/')[1] || skillLabel).replace('♀', '').replace(/\(Nữ\)|\(nữ\)|Trình|trình/g, '').trim()}
+              <View style={{ backgroundColor: isDone ? theme.outlineVariant : '#FAECE7', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: isDone ? theme.outlineVariant : '#993C1D30' }}>
+                <Text style={{ color: isDone ? theme.outline : '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NỮ</Text>
+                <Text style={{ color: isDone ? theme.outline : '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
+                  {((skillLabel || '').split('/')[1] || skillLabel || '').replace('♀', '').replace(/\(Nữ\)|\(nữ\)|Trình|trình/g, '').trim()}
                 </Text>
               </View>
             </View>
@@ -370,51 +447,58 @@ export default function HostDashboardScreen() {
           })()}
         </View>
 
-        {/* Footer Section: Player Capacity */}
+        {/* Footer Section: Compact Player Capacity & Detail Button */}
         <View style={{ 
           paddingHorizontal: 14, 
-          paddingTop: 8,
-          paddingBottom: 4,
-          backgroundColor: theme.surfaceAlt
+          paddingVertical: 6,
+          backgroundColor: theme.surfaceAlt,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderTopWidth: 1,
+          borderTopColor: theme.outlineVariant + '20'
         }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {(() => {
-              const maxPlayers = session.is_unlimited ? 16 : (session.max_players || 16)
-              const remaining = maxPlayers - confirmedCount
-              const isFull = remaining <= 0
-              const isUrgent = confirmedCount < maxPlayers / 2 && !isFull
-              
-              const statusColor = isFull 
-                ? theme.successText 
-                : (isUrgent ? '#d97706' : theme.primary) // Amber-600 for urgent
-              
-              const statusText = isFull ? 'Đã đầy' : `Còn trống ${remaining}`
+          {(() => {
+            const maxPlayers = session.is_unlimited ? 16 : (session.max_players || 16)
+            const remaining = maxPlayers - confirmedCount
+            const isFull = remaining <= 0
+            const isUrgent = confirmedCount < maxPlayers / 2 && !isFull
+            
+            const statusColor = isFull 
+              ? theme.successText 
+              : (isUrgent ? '#d97706' : theme.primary)
 
-              return (
-                <>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                    <Users size={14} color={statusColor} />
-                    <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>
-                      {confirmedCount}/{session.is_unlimited ? '∞' : session.max_players} người
+            return (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Users size={14} color={theme.onSurfaceVariant} />
+                    <Text style={{ 
+                      fontFamily: SCREEN_FONTS.medium, 
+                      fontSize: 12, 
+                      color: theme.onSurfaceVariant,
+                      marginRight: 2
+                    }}>
+                      {confirmedCount}/{session.is_unlimited ? '∞' : session.max_players}
                     </Text>
                   </View>
 
-                  {/* Segmented Progress Bar (Enhanced) */}
-                  <View style={{ flexDirection: 'row', gap: 3, height: 6, width: 130 }}>
+                  {/* Segmented Progress Bar (Roundash) */}
+                  <View style={{ flexDirection: 'row', gap: 3, height: 5, width: 90 }}>
                     {(() => {
-                      const displayMax = Math.min(maxPlayers, 20)
+                      const displayMax = 10
                       const segments = []
                       for (let i = 0; i < displayMax; i++) {
-                        const isActive = i < confirmedCount
+                        const isActive = i < (confirmedCount / maxPlayers) * displayMax
                         segments.push(
                           <View 
                             key={i} 
                             style={{ 
                               flex: 1, 
                               height: '100%', 
-                              borderRadius: 3, 
+                              borderRadius: 4, 
                               backgroundColor: isActive ? statusColor : theme.outlineVariant,
-                              opacity: isActive ? 1 : 0.4
+                              opacity: isActive ? 1 : 0.3
                             }} 
                           />
                         )
@@ -422,68 +506,62 @@ export default function HostDashboardScreen() {
                       return segments
                     })()}
                   </View>
-                </>
-              )
-            })()}
-          </View>
-        </View>
+                </View>
 
-        {/* CTA Section */}
-        <View style={{ paddingHorizontal: 14, paddingBottom: 12, paddingTop: 2, backgroundColor: theme.surfaceAlt, flexDirection: 'row', gap: 10 }}>
-          <View style={{ 
-            flex: 1,
-            backgroundColor: 'transparent', 
-            paddingVertical: 10, 
-            borderRadius: 10, 
-            flexDirection: 'row',
-            alignItems: 'center', 
-            justifyContent: 'center',
-            gap: 6,
-            borderWidth: 1,
-            borderColor: isDone ? theme.outlineVariant : (isEmpty ? alertColor : theme.primary),
-            ...LAYOUT_SHADOW.xs
-          }}>
-            {isDone ? (
-              <Activity size={16} color={theme.onSurfaceVariant} />
-            ) : (
-              <LayoutGrid size={16} color={isEmpty ? alertColor : theme.primary} />
-            )}
-            <Text style={{ 
-              color: isDone ? theme.onSurfaceVariant : (isEmpty ? alertColor : theme.primary), 
-              fontFamily: SCREEN_FONTS.headline, 
-              fontSize: 13, 
-              letterSpacing: 0.5 
-            }}>
-              {isDone ? 'CHI TIẾT' : 'QUẢN LÝ'}
-            </Text>
-          </View>
-          
-          <TouchableOpacity 
-            onPress={() => handleShareSession(session)}
-            style={{
-              width: 38,
-              height: 38,
-              backgroundColor: theme.surface,
-              borderRadius: 10,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderWidth: 1,
-              borderColor: theme.outlineVariant,
-              ...LAYOUT_SHADOW.xs
-            }}
-          >
-            <Share2 size={18} color={isDone ? theme.onSurfaceVariant : (isEmpty ? alertColor : theme.primary)} />
-          </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => onOpenSession(session.id)}
+                  style={{ 
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: statusColor + '10', // Tint matching top strip
+                    paddingHorizontal: 10, 
+                    paddingVertical: 5, 
+                    borderRadius: 20,
+                    gap: 2
+                  }}
+                >
+                  <Text style={{ 
+                    color: statusColor, 
+                    fontFamily: SCREEN_FONTS.headline, 
+                    fontSize: 10,
+                    textTransform: 'uppercase'
+                  }}>
+                    Chi tiết
+                  </Text>
+                  <ChevronRight size={12} color={statusColor} />
+                </TouchableOpacity>
+              </>
+            )
+          })()}
         </View>
       </TouchableOpacity>
     )
   }
 
-  const hostedSessions = sessions.filter(s => ['completed', 'finished', 'archived', 'done'].includes(s.status))
-  const hostedCount = hostedSessions.length
-  const totalFillRate = hostedSessions.reduce((acc, s) => acc + ((s.confirmed_count || 0) / (s.max_players || 1)) * 100, 0)
-  const avgFillRate = hostedCount > 0 ? totalFillRate / hostedCount : 0
-  const reliability = profile?.reliability_score ?? 100
+  // Calculate performance metrics
+  const completedSessions = sessions.filter(s => 
+    ['completed', 'finished', 'archived', 'done'].includes(s.status)
+  )
+  
+  // Calculate total unique confirmed players
+  const confirmedPlayers = new Set()
+  sessions.forEach(s => {
+    s.session_players?.forEach((p: any) => {
+      if (p.status === 'confirmed' || p.status === 'checked_in') {
+        confirmedPlayers.add(p.player_id)
+      }
+    })
+  })
+  
+  const stats = {
+    hostedCount: sessions.length,
+    fillRate: sessions.length > 0 
+      ? (sessions.reduce((acc, s) => acc + (s.confirmed_count || 0), 0) / 
+         sessions.reduce((acc, s) => acc + (s.max_players || 1), 0)) * 100
+      : 0,
+    rating: profile?.rating ?? 4.8,
+    totalPlayers: confirmedPlayers.size
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
@@ -501,72 +579,90 @@ export default function HostDashboardScreen() {
         />
         <WebContainer>
           <DashboardStatsStrip 
-            items={buildDashboardStats({ 
-              hostedCount, 
-              fillRate: avgFillRate, 
-              reliability 
-            })} 
+            items={buildDashboardStats(stats)} 
           />
         </WebContainer>
       </View>
-
-      <ScrollView 
+<ScrollView 
         stickyHeaderIndices={[2]} 
         showsVerticalScrollIndicator={false}
         style={{ zIndex: 1 }}
         contentContainerStyle={{ paddingBottom: 100, overflow: 'visible' }}
       >
         <WebContainer>
-          <View style={{ height: 28 }} />
- 
-      {/* Minimalist Performance Bar */}
-      <View style={{ marginTop: 12 }}>
-        {(() => {
-          const upcomingSessions = sessions.filter(s => {
-            const endTime = s.slot?.end_time ? new Date(s.slot.end_time).getTime() : 0
-            const now = Date.now()
-            const isPastTime = endTime > 0 && endTime < now
-            const isPastStatus = ['completed', 'finished', 'archived', 'done', 'cancelled'].includes(s.status)
-            return !(isPastTime || isPastStatus)
-          })
-          
-          if (upcomingSessions.length === 0) return null
+          <View style={{ height: 28 }} />          {/* Performance Overview Card */}
+          {(() => {
+            const upcomingSessions = sessions.filter(s => {
+              const endTime = s.slot?.end_time ? new Date(s.slot.end_time).getTime() : 0
+              const now = Date.now()
+              const isPastTime = endTime > 0 && endTime < now
+              const isPastStatus = ['completed', 'finished', 'archived', 'done', 'cancelled'].includes(s.status)
+              return !(isPastTime || isPastStatus)
+            })
+            
+            if (upcomingSessions.length === 0) return null
 
-          const openCount = upcomingSessions.length
-          let totalConfirmed = 0
-          let totalMax = 0
+            const totalConfirmed = upcomingSessions.reduce((acc, s) => acc + (s.confirmed_count || 0), 0)
+            const totalMax = upcomingSessions.reduce((acc, s) => acc + (s.max_players || 0), 0)
+            const fillPercentage = totalMax > 0 ? (totalConfirmed / totalMax) * 100 : 0
+            
+            const barColor = fillPercentage < 60 ? '#D85A30' : (fillPercentage >= 100 ? '#D97706' : '#0F6E56')
 
-          upcomingSessions.forEach(s => {
-            const confirmed = s.session_players?.filter((p: any) => p.status === 'confirmed').length || 0
-            const max = s.is_unlimited ? 16 : (s.max_players || 16)
-            totalConfirmed += confirmed
-            totalMax += max
-          })
-
-          const occupancy = totalMax > 0 ? Math.round((totalConfirmed / totalMax) * 100) : 0
-
-          return (
-            <View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: theme.primary }} />
-                  <Text style={{ fontFamily: SCREEN_FONTS.medium, fontSize: 12, color: theme.onSurfaceVariant }}>
-                    {openCount} kèo đang mở <Text style={{ opacity: 0.5 }}>({totalConfirmed}/{totalMax})</Text>
-                  </Text>
+            return (
+              <View style={{ 
+                marginTop: 20,
+                paddingHorizontal: 24,
+              }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <MaterialCommunityIcons name="trending-up" size={22} color={barColor} />
+                    <View>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.onSurface }}>
+                        Tỉ lệ lấp đầy hôm nay
+                      </Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurfaceVariant }}>
+                        Dựa trên {upcomingSessions.length} kèo sắp tới
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 18, color: barColor }}>
+                      {Math.round(fillPercentage)}%
+                    </Text>
+                    <Text style={{ fontFamily: SCREEN_FONTS.medium, fontSize: 10, color: theme.onSurfaceVariant }}>
+                      {totalConfirmed}/{totalMax} Slots
+                    </Text>
+                  </View>
                 </View>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: theme.primary }}>
-                  {occupancy}% Lấp đầy
-                </Text>
-              </View>
-              <View style={{ height: 2, backgroundColor: theme.outlineVariant + '40', borderRadius: 1, overflow: 'hidden' }}>
-                <View style={{ width: `${occupancy}%`, height: '100%', backgroundColor: theme.primary, borderRadius: 1 }} />
-              </View>
-            </View>
-          )
-        })()}
-      </View>
 
-
+                {/* Segmented Performance Bar (Roundash) */}
+                <View style={{ flexDirection: 'row', gap: 4, height: 6 }}>
+                  {(() => {
+                    const displayMax = 10
+                    const segments = []
+                    const barColor = fillPercentage < 60 ? '#D85A30' : (fillPercentage >= 100 ? '#D97706' : '#0F6E56')
+                    
+                    for (let i = 0; i < displayMax; i++) {
+                      const isActive = i < (fillPercentage / 100) * displayMax
+                      segments.push(
+                        <View 
+                          key={i} 
+                          style={{ 
+                            flex: 1, 
+                            height: '100%', 
+                            borderRadius: 4, 
+                            backgroundColor: isActive ? barColor : '#F1EFE9',
+                            opacity: isActive ? 1 : 0.5
+                          }} 
+                        />
+                      )
+                    }
+                    return segments
+                  })()}
+                </View>
+              </View>
+            )
+          })()}
       {/* Pill Tab Selector */}
       <View style={{ paddingHorizontal: 24, marginTop: 20 }}>
         <View style={{ 
@@ -618,31 +714,352 @@ export default function HostDashboardScreen() {
 
       {/* Content */}
       <View style={{ paddingVertical: 24, paddingTop: 10 }}>
-        {loading ? (
+        {activeTab === 'upcoming' && nextSession && (() => {
+          // Map raw session to MatchSession-like structure for the card
+          const maxPlayers = nextSession.is_unlimited ? 16 : (nextSession.max_players || 16)
+          const confirmedCount = nextSession.session_players?.filter((p: any) => p.status === 'confirmed' || p.status === 'checked_in').length || 0
+          
+          const item = {
+            ...nextSession,
+            startTime: nextSession.slot?.start_time,
+            endTime: nextSession.slot?.end_time,
+            timeLabel: '', // Helper fallback
+            courtName: nextSession.slot?.court?.name || 'KÈO PICKLEBALL',
+            address: nextSession.slot?.court?.address || 'Chưa cập nhật địa chỉ',
+            priceLabel: nextSession.total_cost > 0 ? `${Math.round(nextSession.total_cost / 1000)}K` : 'Miễn phí',
+            activePlayers: confirmedCount,
+            maxPlayers: maxPlayers,
+            skillLabel: getSessionSkillLabel(nextSession.elo_min, nextSession.elo_max),
+            courtBookingConfirmed: true,
+          }
+
+          const startDate = parseSessionStartDate(item)
+          const endDate = parseSessionEndDate(item, startDate)
+          const dayInfo = getSuggestedDayInfo(startDate, theme)
+          const addressLabel = item.address
+          const levelMatchesUser = true
+
+          // Enhanced Color System
+          const COLORS = {
+            teal: '#0F6E56',
+            darkTeal: '#064E3B',
+            amber: '#D97706',
+            coral: '#D85A30',
+            gray: '#6B7280'
+          }
+
+          const isPastEnd = endDate.getTime() <= Date.now()
+          const isPlaying = nextSession.status === 'playing' && !isPastEnd
+          const isCancelled = nextSession.status === 'cancelled'
+          const isDone = ['completed', 'finished', 'archived', 'done'].includes(nextSession.status) || (isPastEnd && !isCancelled)
+          const fillRatio = confirmedCount / maxPlayers
+          const isFull = fillRatio >= 1
+          const isUnderfilled = fillRatio < 0.6 && !isDone && !isPlaying && !isCancelled
+          
+          let statusLabel = 'ĐANG MỞ'
+          let statusBg = COLORS.teal
+          
+          if (isPlaying) {
+            statusLabel = 'THI ĐẤU'
+            statusBg = COLORS.darkTeal
+          } else if (isCancelled) {
+            statusLabel = 'ĐÃ HỦY'
+            statusBg = COLORS.gray
+          } else if (isDone) {
+            statusLabel = 'KẾT THÚC'
+            statusBg = COLORS.gray
+          } else if (isFull) {
+            statusLabel = 'ĐÃ ĐẦY'
+            statusBg = COLORS.amber
+          } else if (isUnderfilled) {
+            statusLabel = 'CẦN THÊM NGƯỜI'
+            statusBg = COLORS.coral
+          }
+
+          const statusColor = statusBg // Use consistent color
+
+          const sessionTitle = nextSession.title || (nextSession.format_type === 'round_robin' ? 'Giải Round Robin' : 'Kèo giao lưu Social')
+          
+          return (
+            <View style={{ marginBottom: 32, paddingHorizontal: 24 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 10 }}>
+                <Text style={{ 
+                  fontFamily: SCREEN_FONTS.headline, 
+                  fontSize: 14, 
+                  color: theme.primary, 
+                  letterSpacing: 1,
+                  textTransform: 'uppercase'
+                }}>
+                  KÈO TIẾP THEO
+                </Text>
+                <View style={{ flex: 1, height: 1, backgroundColor: theme.primary, opacity: 0.2 }} />
+              </View>
+              
+              <TouchableOpacity
+                onPress={() => onOpenSession(item.id)}
+                style={{
+                  backgroundColor: theme.surface,
+                  borderWidth: BORDER.hairline,
+                  borderColor: theme.outlineVariant,
+                  borderRadius: 16,
+                  overflow: 'hidden',
+                  ...LAYOUT_SHADOW.sm
+                }}
+              >
+                <View
+                  style={{
+                    backgroundColor: statusBg,
+                    paddingHorizontal: 16,
+                    paddingVertical: SPACING.xs,
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6 }}>
+                    <View style={{ width: 5, height: 5, borderRadius: RADIUS.full, backgroundColor: theme.onPrimary }} />
+                    <Text
+                      style={{
+                        color: theme.onPrimary,
+                        fontFamily: SCREEN_FONTS.cta,
+                        fontSize: 11,
+                        lineHeight: 15,
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      {statusLabel}
+                    </Text>
+                  </View>
+                  {(() => {
+                    const ownerSessions = nextSession.owner_sessions
+                    const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
+                    const subCourts = ownerDetails.sub_court_numbers || nextSession.sub_court_numbers || []
+                    
+                    if (!subCourts || subCourts.length === 0) return null
+                    return (
+                      <Text style={{ 
+                        color: 'white', 
+                        fontFamily: SCREEN_FONTS.bold, 
+                        fontSize: 9.5, 
+                        letterSpacing: 0.5,
+                        opacity: 0.95
+                      }}>
+                        {`SÂN ${subCourts.join(', ')}`}
+                      </Text>
+                    )
+                  })()}
+                </View>
+
+                <View style={{ paddingTop: 8, paddingHorizontal: 16, paddingBottom: 6 }}>
+                  <Text
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                    style={{
+                      color: theme.onSurface,
+                      fontFamily: AppFontSet.headline,
+                      fontSize: 24,
+                      lineHeight: 28,
+                      letterSpacing: 0,
+                      marginBottom: 2,
+                      paddingTop: 2,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {sessionTitle}
+                  </Text>
+
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ 
+                    fontFamily: SCREEN_FONTS.body, 
+                    fontSize: 12, 
+                    color: theme.onSurfaceVariant,
+                    marginTop: 2,
+                    letterSpacing: 0.3
+                  }}>
+                    {nextSession.slot?.court?.name || 'KÈO PICKLEBALL'}
+                  </Text>
+                </View>
+
+                <View style={{ backgroundColor: theme.surfaceContainerLow, paddingTop: 8, paddingHorizontal: 16, paddingBottom: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 8 }}>
+                      <View style={{ backgroundColor: dayInfo.badgeColor, borderRadius: 3, paddingHorizontal: 7, paddingVertical: 2 }}>
+                        <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.cta, fontSize: 12, lineHeight: 16 }}>
+                          {dayInfo.badgeLabel}
+                        </Text>
+                      </View>
+                    </View>
+           
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <View style={{ backgroundColor: '#E1F5EE', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: '#0F6E5630' }}>
+                        <Text style={{ color: '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NAM</Text>
+                        <Text style={{ color: '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
+                          {(item.skillLabel || '').split('/')[0]?.replace('♂', '').replace(/\(Nam\)|\(nam\)|Trình|trình/g, '').trim()}
+                        </Text>
+                      </View>
+                      <View style={{ backgroundColor: '#FAECE7', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: '#993C1D30' }}>
+                        <Text style={{ color: '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NỮ</Text>
+                        <Text style={{ color: '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
+                          {((item.skillLabel || '').split('/')[1] || item.skillLabel || '').replace('♀', '').replace(/\(Nữ\)|\(nữ\)|Trình|trình/g, '').trim()}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                    <View>
+                      <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 }}>
+                        THỜI GIAN
+                      </Text>
+                      <Text
+                        style={{
+                          color: theme.onSurface,
+                          fontFamily: AppFontSet.headline,
+                          fontSize: 26,
+                          lineHeight: 26,
+                          letterSpacing: 0,
+                        }}
+                      >
+                        {formatClock(startDate)}
+                      </Text>
+                      <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 14, marginTop: 2 }}>
+                        {`đến ${formatClock(endDate)}`}
+                      </Text>
+                    </View>
+           
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 }}>
+                        CHI PHÍ
+                      </Text>
+                      <Text style={{ color: theme.onSurface, fontFamily: AppFontSet.headline, fontSize: 20, lineHeight: 20 }}>
+                        {item.priceLabel}
+                      </Text>
+                      <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.body, fontSize: 10, lineHeight: 14, marginTop: 1 }}>
+                        {item.priceLabel === 'Miễn phí' ? '' : '/ người'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    {/* Segmented Progress Bar (Roundash) with Icon */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Users size={14} color={theme.onSurfaceVariant} />
+                      <Text style={{ 
+                        fontFamily: SCREEN_FONTS.medium, 
+                        fontSize: 12, 
+                        color: theme.onSurfaceVariant,
+                        marginRight: 2
+                      }}>
+                        {`${item.activePlayers}/${item.maxPlayers}`}
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 3, height: 5, width: 100 }}>
+                        {(() => {
+                          const displayMax = 10
+                          const segments = []
+                          for (let i = 0; i < displayMax; i++) {
+                            const isActive = i < (item.activePlayers / item.maxPlayers) * displayMax
+                            segments.push(
+                              <View 
+                                key={i} 
+                                style={{ 
+                                  flex: 1, 
+                                  height: '100%', 
+                                  borderRadius: 4, 
+                                  backgroundColor: isActive ? statusColor : theme.outlineVariant,
+                                  opacity: isActive ? 1 : 0.4
+                                }} 
+                              />
+                            )
+                          }
+                          return segments
+                        })()}
+                      </View>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => onOpenSession(item.id)}
+                      style={{ 
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: statusColor + '10', 
+                        paddingHorizontal: 12, 
+                        paddingVertical: 6, 
+                        borderRadius: 20,
+                        gap: 4
+                      }}
+                    >
+                      <Text style={{ 
+                        color: statusColor, 
+                        fontFamily: SCREEN_FONTS.headline, 
+                        fontSize: 11, 
+                        lineHeight: 16, 
+                        textTransform: 'uppercase' 
+                      }}>
+                        Chi tiết
+                      </Text>
+                      <ChevronRight size={14} color={statusColor} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )
+        })()}
+        
+        <View style={{ paddingHorizontal: 24 }}>
+          {loading ? (
           <ActivityIndicator color={theme.primary} style={{ marginTop: 40 }} />
         ) : sessions.length > 0 ? (
           (() => {
             const filteredSessions = sessions.filter(s => {
-              const endTime = s.slot?.end_time ? new Date(s.slot.end_time).getTime() : 0
+              const startTs = parseRobustDate(s.slot?.start_time)
+              const endTs = parseRobustDate(s.slot?.end_time)
               const now = Date.now()
-              const isPastTime = endTime > 0 && endTime < now
-              const isPastStatus = ['completed', 'finished', 'archived', 'done', 'cancelled'].includes(s.status)
-              const isPast = isPastTime || isPastStatus
+              
+              const isWayPastStart = startTs > 0 && (now - startTs) > (12 * 3600000)
+              const isPastTime = endTs > 0 && endTs <= now
+              
+              const confirmedCount = s.session_players?.filter((p: any) => p.status === 'confirmed' || p.status === 'checked_in').length || 0
+              const minPlayers = s.min_players || 2
+              const isAfterEnd = isPastTime || isWayPastStart
+              const isInvalidPlayerCount = !s.is_unlimited && confirmedCount < minPlayers && isAfterEnd
+              
+              const isPastStatus = [
+                'completed', 'finished', 'archived', 'done', 'cancelled', 
+                'pending_results', 'pending_completion', 'failed_to_fill', 
+                'cancelled_no_players'
+              ].includes(s.status)
+              
+              const isPast = isPastTime || isPastStatus || isWayPastStart || isInvalidPlayerCount
+              
+              // Exclude the nextSession if it's currently highlighted in upcoming tab
+              if (activeTab === 'upcoming' && s.id === nextSessionId) return false
+              
               return activeTab === 'upcoming' ? !isPast : isPast
             })
             
             if (filteredSessions.length === 0) {
               return (
-                <View style={{ alignItems: 'center', marginTop: 40 }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.body, color: theme.onSurfaceVariant }}>Không có kèo nào trong mục này.</Text>
+                <View style={{ alignItems: 'center', marginTop: 40, paddingHorizontal: 40 }}>
+                  <Text style={{ 
+                    fontFamily: SCREEN_FONTS.medium, 
+                    color: theme.onSurfaceVariant, 
+                    textAlign: 'center',
+                    lineHeight: 20
+                  }}>
+                    {activeTab === 'upcoming' 
+                      ? (nextSessionId 
+                          ? 'Bạn đã xem hết danh sách kèo sắp tới.\nTiếp tục tạo thêm kèo mới nhé!' 
+                          : 'Chưa có kèo nào sắp diễn ra.\nTạo kèo mới để bắt đầu ngay!')
+                      : 'Chưa có dữ liệu kèo trong lịch sử.'}
+                  </Text>
                 </View>
               )
             }
 
             // Sort chronologically
             filteredSessions.sort((a, b) => {
-              const timeA = new Date(a.slot?.start_time || 0).getTime()
-              const timeB = new Date(b.slot?.start_time || 0).getTime()
+              const timeA = parseRobustDate(a.slot?.start_time)
+              const timeB = parseRobustDate(b.slot?.start_time)
               return activeTab === 'upcoming' ? timeA - timeB : timeB - timeA
             })
 
@@ -710,7 +1127,8 @@ export default function HostDashboardScreen() {
             const laterSessions: any[] = []
 
             filteredSessions.forEach(s => {
-              const sDate = new Date(s.slot?.start_time || 0)
+              const startTs = parseRobustDate(s.slot?.start_time)
+              const sDate = new Date(startTs || 0)
               const sDateStr = formatDate(sDate, 'yyyy-MM-dd')
               
               if (sDateStr === todayStr) todaySessions.push(s)
@@ -758,29 +1176,11 @@ export default function HostDashboardScreen() {
             <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 14, color: theme.onSurfaceVariant, textAlign: 'center', marginTop: 8 }}>Nhấn nút '+' để tạo kèo mới.</Text>
           </View>
         )}
+        </View>
       </View>
     </WebContainer>
-  </ScrollView>
-
-      {/* FAB */}
-      <TouchableOpacity
-        onPress={onCreateSession}
-        style={{
-          position: 'absolute',
-          bottom: insets.bottom + 24,
-          right: 24,
-          width: 64,
-          height: 64,
-          borderRadius: RADIUS.full,
-          backgroundColor: theme.primary,
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          ...LAYOUT_SHADOW.fab
-        }}
-      >
-        <Plus size={32} color="white" />
-      </TouchableOpacity>
+        <BrandedFooter />
+      </ScrollView>
     </View>
   )
 }

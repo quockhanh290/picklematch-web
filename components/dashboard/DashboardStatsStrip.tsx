@@ -1,9 +1,8 @@
 import type { LucideIcon } from 'lucide-react-native'
-import { ShieldCheck, TrendingUp, Zap } from 'lucide-react-native'
-import { Text, View, Platform } from 'react-native'
+import { Star, TrendingUp, Users, Zap } from 'lucide-react-native'
+import { Platform, Text, View } from 'react-native'
 
 import { SCREEN_FONTS } from '@/constants/typography'
-import { getShadowStyle } from '@/lib/designSystem'
 import { useAppTheme } from '@/lib/theme-context'
 
 export type DashboardStatItem = {
@@ -16,16 +15,18 @@ export type DashboardStatItem = {
 const iconStroke = 2.7
 
 export function buildDashboardStats(
-  stats: { 
-    hostedCount: number; 
-    fillRate: number; 
-    reliability: number 
+  stats: {
+    hostedCount: number;
+    fillRate: number;
+    rating: number;
+    totalPlayers: number;
   }
 ): DashboardStatItem[] {
   return [
     { id: 'hosted', label: 'Số kèo', value: String(stats.hostedCount).padStart(2, '0'), icon: TrendingUp },
+    { id: 'players', label: 'Người chơi', value: String(stats.totalPlayers), icon: Users },
     { id: 'fill', label: 'Lấp đầy', value: `${Math.round(stats.fillRate)}%`, icon: Zap },
-    { id: 'reputation', label: 'Uy tín', value: `${Math.round(stats.reliability)}%`, icon: ShieldCheck },
+    { id: 'rating', label: 'Đánh giá', value: stats.rating.toFixed(1), icon: Star },
   ]
 }
 
@@ -37,12 +38,12 @@ export function DashboardStatsStrip({ items }: { items: DashboardStatItem[] }) {
     <View
       style={{
         marginTop: -12,
-        marginBottom: -22, // Adjusted for smaller height
+        marginBottom: -22,
         zIndex: 999,
         flexDirection: 'row',
-        borderRadius: 12,
+        borderRadius: 16,
         borderWidth: 1,
-        paddingHorizontal: 12,
+        paddingHorizontal: 16,
         paddingVertical: 8,
         backgroundColor: 'white',
         borderColor: '#F1EFE9',
@@ -65,37 +66,37 @@ export function DashboardStatsStrip({ items }: { items: DashboardStatItem[] }) {
 
         return (
           <View key={item.id} style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ flex: 1, paddingHorizontal: 6 }}>
+            <View style={{ flex: 1, paddingHorizontal: 8 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon size={12} color={iconColor} />
-                <Text 
-                  style={{ 
-                    marginLeft: 4, 
-                    fontSize: 9, 
-                    textTransform: 'uppercase', 
-                    letterSpacing: 0.5,
-                    color: theme.onSurfaceVariant, 
+                <Icon size={16} color={iconColor} strokeWidth={iconStroke} />
+                <Text
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 12,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.8,
+                    color: theme.onSurfaceVariant,
                     fontFamily: SCREEN_FONTS.headline
                   }}
                 >
                   {item.label}
                 </Text>
               </View>
-              <Text 
-                style={{ 
-                  marginTop: 2, 
-                  textAlign: 'center', 
-                  fontSize: 16, 
-                  color: valueColor, 
-                  fontFamily: SCREEN_FONTS.headline, 
-                  lineHeight: 20 
+              <Text
+                style={{
+                  marginTop: 4,
+                  textAlign: 'center',
+                  fontSize: 24,
+                  color: valueColor,
+                  fontFamily: SCREEN_FONTS.headline,
+                  lineHeight: 30
                 }}
               >
                 {item.value}
               </Text>
             </View>
             {index < items.length - 1 ? (
-              <View style={{ height: 24, width: 1, backgroundColor: theme.outlineVariant, opacity: 0.3 }} />
+              <View style={{ height: 32, width: 1, backgroundColor: theme.outlineVariant, opacity: 0.5 }} />
             ) : null}
           </View>
         )

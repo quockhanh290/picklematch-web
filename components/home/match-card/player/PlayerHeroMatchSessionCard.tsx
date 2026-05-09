@@ -198,9 +198,8 @@ export function PlayerHeroMatchSessionCard({ item }: PlayerHeroMatchSessionCardP
           {visiblePlayers.map((player, index) => {
             const avatar = getAvatarColor(player.id)
             return (
-              <Pressable
+              <View
                 key={player.id}
-                onPress={(event) => openPlayerProfile(player.id, event)}
                 style={{
                   width: 28,
                   height: 28,
@@ -217,7 +216,7 @@ export function PlayerHeroMatchSessionCard({ item }: PlayerHeroMatchSessionCardP
                 <Text style={{ color: avatar.fg, fontFamily: SCREEN_FONTS.cta, fontSize: 10, lineHeight: 13 }}>
                   {player.initials}
                 </Text>
-              </Pressable>
+              </View>
             )
           })}
 

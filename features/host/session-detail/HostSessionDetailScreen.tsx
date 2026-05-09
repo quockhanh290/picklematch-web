@@ -54,7 +54,29 @@ export function HostSessionDetailScreen({
   // For testing: allow check-in anytime if not completed
   const canCheckIn = !session.check_in_completed
   const isCheckInCompleted = session.check_in_completed === true
-  const isAfterEnd = new Date(session.slot.end_time).getTime() <= Date.now()
+  const parseRobustDate = (d: any) => {
+    let str = String(d).trim()
+    // Remove leading non-digits (e.g., "Thứ Sáu, 08/05/2026" -> "08/05/2026")
+    str = str.replace(/^[^\d]+/, '')
+    
+    // Try standard parsing
+    let t = new Date(str).getTime()
+    if (!isNaN(t)) return t
+
+    // Try Vietnamese/Custom DD-MM-YYYY
+    str = str.replace(/\//g, '-')
+    const dateMatch = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(.*)/)
+    if (dateMatch) {
+      str = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}${dateMatch[4]}`
+      str = str.replace(' ', 'T')
+      t = new Date(str).getTime()
+      if (!isNaN(t)) return t
+    }
+    return 0
+  }
+  const startTs = parseRobustDate(session.slot.start_time)
+  const isWayPastStart = startTs > 0 && (Date.now() - startTs) > (12 * 3600000)
+  const isAfterEnd = parseRobustDate(session.slot.end_time) <= Date.now() || ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion'].includes(session.status) || isWayPastStart
   const confirmedPlayerCount = (session?.session_players ?? []).filter((p: any) => p.status === 'confirmed').length
   const minPlayers = session?.min_players || 2
   const isInvalidPlayerCount = !session?.is_unlimited && confirmedPlayerCount < minPlayers && isAfterEnd
@@ -208,7 +230,7 @@ export function HostSessionDetailScreen({
     timeLabel: formatTimeRange(session.slot.start_time, session.slot.end_time),
     priceLabel: formatPrice(Number(HostDetails.total_cost ?? session.total_cost ?? 0)),
     openSlotsLabel: `Đã có ${session.session_players?.length || 0} người tham gia`,
-    statusLabel: getStatusLabel(session.court_booking_status, session.status),
+    statusLabel: isAfterEnd ? 'KẾT THÚC' : getStatusLabel(session.court_booking_status, session.status),
     courtBookingConfirmed: session.court_booking_status === 'confirmed',
     isBooked: true,
     isRanked: session.is_ranked,
@@ -310,7 +332,7 @@ export function HostSessionDetailScreen({
 
         {/* Format Selector REMOVED */}
 
-        {true /* TEMPORARY FOR TESTING */ && (
+        {session.is_ranked && !isAfterEnd && (
           <TouchableOpacity 
             onPress={() => router.push(`/host/session/${id}/recap` as any)}
             style={{ 
@@ -332,7 +354,7 @@ export function HostSessionDetailScreen({
           </TouchableOpacity>
         )}
 
-        {canCheckIn && !isCheckInCompleted && !isCancelled && (
+        {canCheckIn && !isCheckInCompleted && !isCancelled && !isAfterEnd && (
           <View style={{ marginTop: 12 }}>
             {!isCheckInMode ? (
               <TouchableOpacity 
@@ -459,9 +481,11 @@ export function HostSessionDetailScreen({
               session={session}
               isHost={isHost}
               hasJoined={false}
-              isAfterEnd={new Date(session.slot.end_time).getTime() <= Date.now()}
-              isDuringMatch={new Date(session.slot.start_time).getTime() <= Date.now() && new Date(session.slot.end_time).getTime() > Date.now()}
+              isAfterEnd={isAfterEnd}
+              isDuringMatch={parseRobustDate(session.slot.start_time) <= Date.now() && !isAfterEnd}
               isCancelled={isCancelled}
+              isFinalized={['completed', 'finished', 'archived', 'done'].includes(session.status)}
+              isAwaitingResult={isAfterEnd && session.is_ranked && !['completed', 'finished', 'archived', 'done'].includes(session.status)}
               viewerSessionPlayer={null}
               hostPrimaryMode="edit"
               hostPrimaryDisabled={false}
@@ -473,7 +497,10 @@ export function HostSessionDetailScreen({
               editPathname="/host/create-session"
               onArrangementPress={() => setShowArrangement(true)}
               checkInCompleted={isCheckInCompleted}
-              hideInputResult={true}
+              hideInputResult={false}
+              confirmedPlayerCount={confirmedPlayerCount}
+              maxPlayers={session.max_players}
+              isInvalidPlayerCount={isInvalidPlayerCount}
             />
           </View>
         )}

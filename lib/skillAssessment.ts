@@ -153,7 +153,7 @@ export function getSessionSkillLabel(eloMin: number, eloMax: number) {
   const formatRange = (min: number, max: number) => {
     if (max >= 5.5) return `${min.toFixed(1)}+`
     if (Math.abs(min - max) < 0.05) return min.toFixed(1)
-    return `${min.toFixed(1)}-${max.toFixed(1)}`
+    return `${min.toFixed(1)} - ${max.toFixed(1)}`
   }
 
   const labelNam = formatRange(minNam, maxNam)

@@ -22,7 +22,7 @@ interface PlayerSuggestedSessionCardProps {
 
 export function PlayerSuggestedSessionCard({ item, fullCourtName }: PlayerSuggestedSessionCardProps) {
   const theme = useAppTheme()
-  const { onOpenSession } = useSessionNav()
+  const { onOpenSession, onOpenCourt } = useSessionNav()
   const startDate = parseSessionStartDate(item)
   const endDate = parseSessionEndDate(item, startDate)
   const dayInfo = getSuggestedDayInfo(startDate, theme)
@@ -86,7 +86,7 @@ export function PlayerSuggestedSessionCard({ item, fullCourtName }: PlayerSugges
             event.stopPropagation()
             const courtId = item.courtId || (item as any).courtId
             if (courtId) {
-              router.push(`/(player)/court/${courtId}`)
+              onOpenCourt(courtId)
             }
           }}
         >

@@ -197,7 +197,7 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
           item={session} 
           variant="standard" 
           showFullAddress 
-          isOwnerDetail 
+          isHostDetail 
           isPreview={false} 
           fullCourtName={true}
         />
