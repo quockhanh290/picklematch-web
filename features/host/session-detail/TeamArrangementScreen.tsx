@@ -473,7 +473,21 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
                   </View>
 
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, fontWeight: '600', color: '#1A2E2A' }} numberOfLines={1}>{player.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, fontWeight: '600', color: '#1A2E2A' }} numberOfLines={1}>{player.name}</Text>
+                      
+                      {/* Preferences */}
+                      {player.metadata?.partner_gender_pref && player.metadata.partner_gender_pref !== 'any' && (
+                        <View style={{ backgroundColor: player.metadata.partner_gender_pref === 'female' ? '#FAECE7' : '#E1F5EE', paddingHorizontal: 4, borderRadius: 4 }}>
+                          <Text style={{ fontSize: 8, color: player.metadata.partner_gender_pref === 'female' ? '#993C1D' : '#0F6E56', fontWeight: '800' }}>🤝{player.metadata.partner_gender_pref === 'male' ? 'M' : 'F'}</Text>
+                        </View>
+                      )}
+                      {player.metadata?.opponent_gender_pref && player.metadata.opponent_gender_pref !== 'any' && (
+                        <View style={{ backgroundColor: player.metadata.opponent_gender_pref === 'female' ? '#FAECE7' : '#E1F5EE', paddingHorizontal: 4, borderRadius: 4 }}>
+                          <Text style={{ fontSize: 8, color: player.metadata.opponent_gender_pref === 'female' ? '#993C1D' : '#0F6E56', fontWeight: '800' }}>⚔️{player.metadata.opponent_gender_pref === 'male' ? 'M' : 'F'}</Text>
+                        </View>
+                      )}
+                    </View>
                     <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884' }}>Trình {Number(player.pvna || 0).toFixed(2)}</Text>
                   </View>
 

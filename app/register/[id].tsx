@@ -31,8 +31,8 @@ import { RegistrationSuccessView } from '@/components/register/RegistrationSucce
 const REGISTER_INFO_STORAGE_PREFIX = 'zalo_player_info:'
 const REGISTER_INFO_TTL_MS = 24 * 60 * 60 * 1000
 
-function getRegisterInfoStorageKey(sessionId: string) {
-  return `${REGISTER_INFO_STORAGE_PREFIX}${sessionId}`
+function getRegisterInfoStorageKey() {
+  return `${REGISTER_INFO_STORAGE_PREFIX}v2`
 }
 
 type StoredRegisterInfo = {
@@ -85,12 +85,25 @@ export default function ZaloRegisterScreen() {
   const [isNewbie, setIsNewbie] = useState(false)
   const [nameTouched, setNameTouched] = useState(false)
   const [phoneTouched, setPhoneTouched] = useState(false)
+  const [showPlayerList, setShowPlayerList] = useState(false)
+  const [partnerPref, setPartnerPref] = useState<'any' | 'male' | 'female'>('any')
+  const [opponentPref, setOpponentPref] = useState<'any' | 'male' | 'female'>('any')
 
   useEffect(() => {
+    // Load sticky preferences from localStorage
+    try {
+      const savedPartnerPref = localStorage.getItem('pm_partner_pref')
+      const savedOpponentPref = localStorage.getItem('pm_opponent_pref')
+      if (savedPartnerPref) setPartnerPref(savedPartnerPref as any)
+      if (savedOpponentPref) setOpponentPref(savedOpponentPref as any)
+    } catch (e) {
+      console.warn('Failed to load preferences from localStorage', e)
+    }
+
     if (!id) return
     const loadSavedData = async () => {
       try {
-        const storageKey = getRegisterInfoStorageKey(id)
+        const storageKey = getRegisterInfoStorageKey()
         const savedData = await AsyncStorage.getItem(storageKey)
         if (!savedData) return
         const parsed = JSON.parse(savedData) as StoredRegisterInfo
@@ -165,6 +178,25 @@ export default function ZaloRegisterScreen() {
 
     const ownerDetails = session.owner_sessions?.[0] || session.owner_sessions || {}
     const subCourts = session.sub_court_numbers || ownerDetails.sub_court_numbers || []
+    
+    // Ensure host is in the participants list for display
+    const rawPlayers = session.session_players || []
+    const hostId = session.host?.id
+    const isHostInPlayers = rawPlayers.some((p: any) => (p.player_id === hostId || p.id === hostId))
+    
+    const displayPlayers = [...rawPlayers]
+    if (session.host && !isHostInPlayers) {
+      displayPlayers.unshift({
+        id: session.host.id,
+        player_id: session.host.id,
+        name: session.host.name || 'Chủ kèo',
+        gender: session.host.gender,
+        pvna: session.host.pvna,
+        elo: session.host.elo,
+        status: 'confirmed',
+        is_host: true
+      })
+    }
 
     return {
       id: session.id,
@@ -185,17 +217,17 @@ export default function ZaloRegisterScreen() {
         ownerDetails.format_metadata?.cost_per_person || 
         (session.slot.price / (session.max_players || 4))
       ),
-      openSlotsLabel: `Đã có ${session.session_players?.length || 0} người tham gia`,
+      openSlotsLabel: `Đã có ${displayPlayers.length} người tham gia`,
       statusLabel: getStatusLabel(session.court_booking_status, session.status),
       courtBookingConfirmed: session.court_booking_status === 'confirmed',
       isBooked: true,
       isRanked: session.is_ranked,
       requireApproval: ownerDetails.require_approval || session.require_approval,
-      activePlayers: session.session_players?.length || 0,
+      activePlayers: displayPlayers.length,
       maxPlayers: session.max_players,
       levelId: getEloBandForSessionRange(session.elo_min, session.elo_max).levelId,
       host: session.host,
-      players: session.session_players || [],
+      players: displayPlayers,
       urgent: false,
       joined: false,
       subCourtLabel: subCourts.length > 0 ? `Sân ${subCourts.join(', ')}` : '',
@@ -235,6 +267,10 @@ export default function ZaloRegisterScreen() {
         p_gender: gender,
         p_elo: elo,
         p_pvna: pvnaValue,
+        p_metadata: {
+          partner_gender_pref: partnerPref,
+          opponent_gender_pref: opponentPref
+        }
       })
 
       const timeoutPromise = new Promise((_, reject) => 
@@ -261,7 +297,7 @@ export default function ZaloRegisterScreen() {
       
       if (id) {
         await AsyncStorage.setItem(
-          getRegisterInfoStorageKey(id),
+          getRegisterInfoStorageKey(),
           JSON.stringify({
             name: cleanedName,
             phone: submitPhone,
@@ -270,6 +306,14 @@ export default function ZaloRegisterScreen() {
             savedAt: Date.now(),
           } satisfies StoredRegisterInfo)
         )
+        
+        // Save sticky preferences for next time
+        try {
+          localStorage.setItem('pm_partner_pref', partnerPref)
+          localStorage.setItem('pm_opponent_pref', opponentPref)
+        } catch (e) {
+          console.warn('Failed to save preferences to localStorage', e)
+        }
       }
 
       setStatusMsg('Thành công!')
@@ -339,6 +383,8 @@ export default function ZaloRegisterScreen() {
           isHostDetail 
           isPreview={false}
           fullCourtName={true}
+          showPlayerList={showPlayerList}
+          onTogglePlayerList={() => setShowPlayerList(!showPlayerList)}
         />
 
         {/* NEW FORM CARD */}
@@ -579,6 +625,77 @@ export default function ZaloRegisterScreen() {
               }}>
                 {isNewbie ? "* Bạn đã chọn chế độ Người mới chơi." : "Kéo thanh trượt để chọn mức phù hợp. Nếu mới chơi, chọn thấp trong khoảng."}
               </Text>
+            </View>
+
+            <View style={{ height: 0.5, backgroundColor: '#F0EDE5' }} />
+
+            {/* PREFERENCES SECTION */}
+            <View>
+              <Text style={{
+                fontFamily: SCREEN_FONTS.label,
+                fontSize: 13, fontWeight: '600',
+                color: theme.onSurface, marginBottom: 12,
+              }}>SỞ THÍCH GHÉP CẶP (KHÔNG BẮT BUỘC)</Text>
+              
+              <View style={{ gap: 16 }}>
+                {/* Partner Preference */}
+                <View>
+                  <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, marginBottom: 8, fontFamily: SCREEN_FONTS.body }}>Bạn đồng hành (Partner)</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[
+                      { id: 'any', label: 'Bất kỳ', icon: '🚻' },
+                      { id: 'male', label: 'Nam', icon: '♂' },
+                      { id: 'female', label: 'Nữ', icon: '♀' },
+                    ].map((opt) => (
+                      <TouchableOpacity
+                        key={opt.id}
+                        onPress={() => setPartnerPref(opt.id as any)}
+                        style={{
+                          flex: 1, paddingVertical: 10,
+                          borderRadius: 8, alignItems: 'center',
+                          backgroundColor: partnerPref === opt.id ? theme.primary : theme.surfaceAlt,
+                          borderWidth: 1,
+                          borderColor: partnerPref === opt.id ? theme.primary : 'transparent',
+                        }}>
+                        <Text style={{
+                          fontFamily: SCREEN_FONTS.headline,
+                          fontSize: 12,
+                          color: partnerPref === opt.id ? theme.onPrimary : theme.onSurfaceVariant,
+                        }}>{opt.icon} {opt.label.toUpperCase()}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Opponent Preference */}
+                <View>
+                  <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, marginBottom: 8, fontFamily: SCREEN_FONTS.body }}>Đối thủ (Opponent)</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[
+                      { id: 'any', label: 'Bất kỳ', icon: '🚻' },
+                      { id: 'male', label: 'Nam', icon: '♂' },
+                      { id: 'female', label: 'Nữ', icon: '♀' },
+                    ].map((opt) => (
+                      <TouchableOpacity
+                        key={opt.id}
+                        onPress={() => setOpponentPref(opt.id as any)}
+                        style={{
+                          flex: 1, paddingVertical: 10,
+                          borderRadius: 8, alignItems: 'center',
+                          backgroundColor: opponentPref === opt.id ? theme.primary : theme.surfaceAlt,
+                          borderWidth: 1,
+                          borderColor: opponentPref === opt.id ? theme.primary : 'transparent',
+                        }}>
+                        <Text style={{
+                          fontFamily: SCREEN_FONTS.headline,
+                          fontSize: 12,
+                          color: opponentPref === opt.id ? theme.onPrimary : theme.onSurfaceVariant,
+                        }}>{opt.icon} {opt.label.toUpperCase()}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </View>
             </View>
           </View>
         </View>

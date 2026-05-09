@@ -217,6 +217,12 @@ export function HostRosterSection({
     const handleManualStatusUpdate = async (player: ArrangementPlayer, newStatus: 'confirmed' | 'waiting' | 'remove') => {
       if (!sessionId) return
 
+      // Safety check: Host cannot be removed
+      if (player.id === hostId && newStatus === 'remove') {
+        Alert.alert('Thông báo', 'Chủ kèo không thể bị loại bỏ khỏi danh sách.')
+        return
+      }
+
       const confirmMsg = newStatus === 'confirmed' 
         ? `Xác nhận ${player.name} tham gia chính thức?`
         : newStatus === 'waiting'
@@ -270,6 +276,7 @@ export function HostRosterSection({
       const { bg, text } = getAvatarColor(player.name || '')
       const skillLevel = Number(player.pvna || 0)
       const checkInStatus = player.status === 'confirmed' ? localStatuses[player.id] || (player as any).checkInStatus || 'pending' : null
+      const isHostPlayer = player.id === hostId
 
       return (
         <View key={player.id} style={{
@@ -314,67 +321,120 @@ export function HostRosterSection({
             }} numberOfLines={1}>
               {player.name}
             </Text>
-            <Text style={{ fontSize: 11, color: '#7A8884', fontFamily: SCREEN_FONTS.label }}>
-              {isFemale ? 'Nữ' : 'Nam'}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 11, color: '#7A8884', fontFamily: SCREEN_FONTS.label }}>
+                {isFemale ? 'Nữ' : 'Nam'}
+              </Text>
+
+              {/* Preference Badges */}
+              {player.metadata?.partner_gender_pref && player.metadata.partner_gender_pref !== 'any' && (
+                <View style={{ 
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  gap: 2, 
+                  backgroundColor: player.metadata.partner_gender_pref === 'female' ? '#FAECE7' : '#E1F5EE', 
+                  paddingHorizontal: 4, 
+                  paddingVertical: 1,
+                  borderRadius: 4,
+                  borderWidth: 0.5,
+                  borderColor: player.metadata.partner_gender_pref === 'female' ? '#993C1D30' : '#0F6E5630'
+                }}>
+                  <Text style={{ fontSize: 8 }}>🤝</Text>
+                  <Text style={{ 
+                    fontSize: 8, 
+                    fontWeight: '800', 
+                    color: player.metadata.partner_gender_pref === 'female' ? '#993C1D' : '#0F6E56',
+                    fontFamily: SCREEN_FONTS.headline
+                  }}>
+                    {player.metadata.partner_gender_pref === 'male' ? 'NAM' : 'NỮ'}
+                  </Text>
+                </View>
+              )}
+
+              {player.metadata?.opponent_gender_pref && player.metadata.opponent_gender_pref !== 'any' && (
+                <View style={{ 
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  gap: 2, 
+                  backgroundColor: player.metadata.opponent_gender_pref === 'female' ? '#FAECE7' : '#E1F5EE', 
+                  paddingHorizontal: 4, 
+                  paddingVertical: 1,
+                  borderRadius: 4,
+                  borderWidth: 0.5,
+                  borderColor: player.metadata.opponent_gender_pref === 'female' ? '#993C1D30' : '#0F6E5630'
+                }}>
+                  <Text style={{ fontSize: 8 }}>⚔️</Text>
+                  <Text style={{ 
+                    fontSize: 8, 
+                    fontWeight: '800', 
+                    color: player.metadata.opponent_gender_pref === 'female' ? '#993C1D' : '#0F6E56',
+                    fontFamily: SCREEN_FONTS.headline
+                  }}>
+                    {player.metadata.opponent_gender_pref === 'male' ? 'NAM' : 'NỮ'}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
 
           {/* Management Actions */}
           {isEditMode && (
             <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginLeft: 'auto' }}>
-              {isReserve ? (
-                <TouchableOpacity 
-                  onPress={() => handleManualStatusUpdate(player, 'confirmed')}
-                  style={{
-                    backgroundColor: '#E1F5EE',
-                    paddingHorizontal: 8,
-                    paddingVertical: 7,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: '#0F6E5630',
-                    minWidth: 80,
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text style={{ color: '#0F6E56', fontSize: 10, fontFamily: SCREEN_FONTS.headline, fontWeight: '700', lineHeight: 12 }}>XÁC NHẬN</Text>
-                </TouchableOpacity>
-              ) : (
-                !isCheckInMode && (
+              <>
+                {isReserve ? (
                   <TouchableOpacity 
-                    onPress={() => handleManualStatusUpdate(player, 'waiting')}
+                    onPress={() => handleManualStatusUpdate(player, 'confirmed')}
                     style={{
-                      backgroundColor: '#FAECE7',
+                      backgroundColor: '#E1F5EE',
                       paddingHorizontal: 8,
                       paddingVertical: 7,
                       borderRadius: 8,
                       borderWidth: 1,
-                      borderColor: '#D85A3030',
+                      borderColor: '#0F6E5630',
                       minWidth: 80,
                       alignItems: 'center',
                     }}
                   >
-                    <Text style={{ color: '#D85A30', fontSize: 10, fontFamily: SCREEN_FONTS.headline, fontWeight: '700', lineHeight: 12 }}>DỰ BỊ</Text>
+                    <Text style={{ color: '#0F6E56', fontSize: 10, fontFamily: SCREEN_FONTS.headline, fontWeight: '700', lineHeight: 12 }}>XÁC NHẬN</Text>
                   </TouchableOpacity>
-                )
-              )}
+                ) : (
+                  !isCheckInMode && (
+                    <TouchableOpacity 
+                      onPress={() => handleManualStatusUpdate(player, 'waiting')}
+                      style={{
+                        backgroundColor: '#FAECE7',
+                        paddingHorizontal: 8,
+                        paddingVertical: 7,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: '#D85A3030',
+                        minWidth: 80,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Text style={{ color: '#D85A30', fontSize: 10, fontFamily: SCREEN_FONTS.headline, fontWeight: '700', lineHeight: 12 }}>DỰ BỊ</Text>
+                    </TouchableOpacity>
+                  )
+                )}
 
-              {!isCheckInMode && (
-                <TouchableOpacity 
-                  onPress={() => handleManualStatusUpdate(player, 'remove')}
-                  style={{
-                    backgroundColor: '#fee2e2',
-                    paddingHorizontal: 8,
-                    paddingVertical: 7,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: '#dc262630',
-                    minWidth: 80,
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text style={{ color: '#dc2626', fontSize: 10, fontFamily: SCREEN_FONTS.headline, fontWeight: '700', lineHeight: 12 }}>LOẠI BỎ</Text>
-                </TouchableOpacity>
-              )}
+                {!isCheckInMode && !isHostPlayer && (
+                  <TouchableOpacity 
+                    onPress={() => handleManualStatusUpdate(player, 'remove')}
+                    style={{
+                      backgroundColor: '#fee2e2',
+                      paddingHorizontal: 8,
+                      paddingVertical: 7,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#dc262630',
+                      minWidth: 80,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ color: '#dc2626', fontSize: 10, fontFamily: SCREEN_FONTS.headline, fontWeight: '700', lineHeight: 12 }}>LOẠI BỎ</Text>
+                  </TouchableOpacity>
+                )}
+              </>
             </View>
           )}
 

@@ -317,8 +317,13 @@ export function HostSuggestedSessionCard({
                             {pInitials}
                           </Text>
                         </View>
-                        <View style={{ flex: 1 }}>
+                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.headline, fontSize: 15 }}>{pName}</Text>
+                          {p.is_host && (
+                            <View style={{ backgroundColor: theme.primary + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                              <Text style={{ color: theme.primary, fontSize: 9, fontFamily: SCREEN_FONTS.headline }}>CHỦ KÈO</Text>
+                            </View>
+                          )}
                         </View>
                         
                         {(pGender || pSkill) ? (

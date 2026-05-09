@@ -33,6 +33,9 @@ export type ArrangementSessionPlayer = {
   player_id: string
   team_no?: number | null
   player?: ArrangementSourcePlayer | null
+  status?: string | null
+  check_in_status?: string | null
+  metadata?: any
 }
 
 export type ArrangementHost = ArrangementSourcePlayer & {
@@ -52,6 +55,8 @@ export type ArrangementPlayer = {
   pvna?: number | null
   status?: string | null
   noShowCount?: number | null
+  checkInStatus?: string | null
+  metadata?: any
 }
 
 export type ArrangementSession = {
@@ -142,7 +147,8 @@ export function buildArrangementPlayers(session: ArrangementSession) {
       team: hostInPlayers?.team_no || 0,
       status: hostInPlayers?.status || 'confirmed',
       noShowCount: session.host.no_show_count,
-      checkInStatus: hostInPlayers?.check_in_status
+      checkInStatus: hostInPlayers?.check_in_status,
+      metadata: hostInPlayers?.metadata
     })
   }
 
@@ -160,7 +166,8 @@ export function buildArrangementPlayers(session: ArrangementSession) {
       team: entry.team_no || 0,
       status: entry.status || 'confirmed',
       noShowCount: entry.player?.no_show_count,
-      checkInStatus: entry.check_in_status
+      checkInStatus: entry.check_in_status,
+      metadata: entry.metadata
     })
   }
 

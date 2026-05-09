@@ -45,6 +45,7 @@ export function HostSessionDetailScreen({
   const insets = useSafeAreaInsets()
   const [dialogConfig, setDialogConfig] = useState<AppDialogConfig | null>(null)
   const [isCheckInMode, setIsCheckInMode] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
 
 
 
@@ -149,57 +150,99 @@ export function HostSessionDetailScreen({
               
               let pickedIdx = -1
               if (i % 2 === 0) {
-                while (left < presentPlayers.length && used.has(presentPlayers[left].id)) left++
-                if (left < presentPlayers.length) pickedIdx = left
+                pickedIdx = left++
               } else {
-                while (right >= 0 && used.has(presentPlayers[right].id)) right--
-                if (right >= 0 && right >= left) pickedIdx = right
+                pickedIdx = right--
               }
-
-              if (pickedIdx !== -1) {
+              
+              if (pickedIdx >= 0 && pickedIdx < presentPlayers.length) {
                 const p = presentPlayers[pickedIdx]
-                assignments.push({ player_id: p.id, team_no: teamIdx })
                 result.push(p)
-                used.add(p.id)
+                assignments.push({
+                  player_id: p.id,
+                  team_no: teamIdx
+                })
               }
             }
-            if (teamIdx < numTeams) teamIdx++
-            else break // Safety
+            teamIdx++
           }
 
-          console.log('[CheckIn] Saving system-balanced pairs:', assignments)
-          const { error: saveError } = await supabase.rpc('save_session_teams', {
+          console.log('[CheckIn] Saving system arrangements...', assignments.length)
+          const { error: arrangementError } = await supabase.rpc('save_session_arrangements', {
             p_session_id: id,
             p_assignments: assignments
           })
-          if (saveError) {
-            console.error('[CheckIn] Save Teams Error:', saveError)
-            throw saveError
+
+          if (arrangementError) {
+            console.error('[CheckIn] Arrangement Error:', arrangementError)
+            throw arrangementError
           }
-          console.log('[CheckIn] Teams saved successfully')
         }
-        
-        setIsCheckInMode(false)
+
         onRefresh()
-        console.log('[CheckIn] All steps completed')
       } catch (err: any) {
-        console.error('[CheckIn] Caught Exception:', err)
-        const errMsg = err?.message || 'Không thể hoàn tất check-in hoặc tự động chia đội.'
+        Alert.alert('Lỗi', err.message || 'Không thể hoàn tất check-in')
+      }
+    }
+
+    setDialogConfig({
+      title: 'Hoàn tất Check-in',
+      message,
+      buttons: [
+        { text: 'Hủy', style: 'cancel', onPress: () => setDialogConfig(null) },
+        { text: 'Tiếp tục', style: 'default', onPress: confirmAction }
+      ]
+    })
+  }
+
+  const handleCancelSession = async () => {
+    console.log('[CancelSession] Button pressed for session:', id)
+    const confirmMessage = 'Bạn có chắc chắn muốn hủy kèo này không? Hành động này không thể hoàn tác.'
+    
+    const proceedWithCancellation = async () => {
+      setIsCancelling(true)
+      try {
+        console.log('[CancelSession] Updating session status to cancelled...')
+        const { error } = await supabase
+          .from('sessions')
+          .update({ status: 'cancelled' })
+          .eq('id', id)
+        
+        if (error) throw error
+        
+        console.log('[CancelSession] Success')
+        if (Platform.OS === 'web') {
+          window.alert('Kèo đã được hủy thành công.')
+        } else {
+          Alert.alert('Thành công', 'Kèo đã được hủy.')
+        }
+        router.back()
+      } catch (err: any) {
+        console.error('[CancelSession] Error:', err)
+        const errMsg = err.message || 'Không thể hủy kèo'
         if (Platform.OS === 'web') {
           window.alert('Lỗi: ' + errMsg)
         } else {
           Alert.alert('Lỗi', errMsg)
         }
+      } finally {
+        setIsCancelling(false)
       }
     }
 
     if (Platform.OS === 'web') {
-      if (window.confirm(message)) await confirmAction()
+      if (window.confirm(confirmMessage)) {
+        await proceedWithCancellation()
+      }
     } else {
-      Alert.alert('Xác nhận hoàn tất', message, [
-        { text: 'QUAY LẠI', style: 'cancel' },
-        { text: 'XÁC NHẬN', onPress: confirmAction }
-      ])
+      Alert.alert(
+        'Xác nhận hủy kèo',
+        confirmMessage,
+        [
+          { text: 'Bỏ qua', style: 'cancel' },
+          { text: 'Hủy kèo', style: 'destructive', onPress: proceedWithCancellation }
+        ]
+      )
     }
   }
   const subCourts = session.sub_court_numbers || HostDetails.sub_court_numbers || []
@@ -491,9 +534,9 @@ export function HostSessionDetailScreen({
               hostPrimaryDisabled={false}
               hostActionBusy={false}
               savingArrangement={false}
-              leaving={false}
+              leaving={isCancelling}
               onSaveArrangement={() => {}}
-              leaveSession={() => {}}
+              leaveSession={handleCancelSession}
               editPathname="/host/create-session"
               onArrangementPress={() => setShowArrangement(true)}
               checkInCompleted={isCheckInCompleted}
