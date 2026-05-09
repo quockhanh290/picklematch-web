@@ -236,6 +236,20 @@ export default function ZaloRegisterScreen() {
 
   const [regStatus, setRegStatus] = useState<string | null>(null)
 
+  const handleGoToAssessment = () => {
+    if (nameError || phoneError) {
+      setNameTouched(true)
+      setPhoneTouched(true)
+      setErrorMsg(nameError || phoneError || 'Vui lòng nhập họ tên và SĐT trước khi đánh giá.')
+      return
+    }
+
+    router.push({
+      pathname: '/onboarding',
+      params: { phone: normalizePhoneForSubmit(phone), name: name.trim() }
+    } as any)
+  }
+
   const handleRegister = async () => {
     setErrorMsg('')
     if (!id) {
@@ -708,10 +722,7 @@ export default function ZaloRegisterScreen() {
               </Text>
 
               <TouchableOpacity 
-                onPress={() => router.push({
-                  pathname: '/onboarding',
-                  params: { phone: normalizePhoneForSubmit(phone), name: name.trim() }
-                } as any)}
+                onPress={handleGoToAssessment}
                 activeOpacity={0.7}
                 style={{ marginTop: 12, paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: '#F0EDE5', borderStyle: 'dashed' }}
               >
