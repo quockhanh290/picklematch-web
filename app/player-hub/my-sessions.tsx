@@ -1,0 +1,14 @@
+import React from 'react'
+import { MySessionsScreen } from '@/features/player/my-sessions/MySessionsScreen'
+import { useAuth } from '@/lib/useAuth'
+import { AppLoading } from '@/components/design'
+
+export default function MySessionsRoute() {
+  const { userId, loading } = useAuth()
+
+  if (loading) {
+    return <AppLoading fullScreen />
+  }
+
+  return <MySessionsScreen userId={userId!} />
+}

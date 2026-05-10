@@ -26,12 +26,12 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
   const secondSegment = segments[1] ?? ''
   const isWeb = Platform.OS === 'web'
   const isHostLoginRoute = firstSegment === 'host' && secondSegment === 'login'
-  const isRegisterRoute = firstSegment === 'register'
+  const isRegisterRoute = firstSegment === 'register' || (firstSegment === '(player)' && secondSegment === 'register')
   const isOnboardingRoute = firstSegment === 'onboarding' || (firstSegment === '(player)' && secondSegment === 'onboarding')
-  const isPublicRoute = firstSegment === 'login' || isHostLoginRoute || isRegisterRoute || isOnboardingRoute
-  const isProfileSetupRoute = firstSegment === 'profile-setup'
+  const isPublicRoute = firstSegment === 'login' || (firstSegment === '(player)' && secondSegment === 'login') || isHostLoginRoute || isRegisterRoute || isOnboardingRoute
+  const isProfileSetupRoute = firstSegment === 'profile-setup' || (firstSegment === '(player)' && secondSegment === 'profile-setup')
   const isHostRoute = firstSegment === 'host'
-  const isPlayerRoute = firstSegment === '(player)' || firstSegment === '(tabs)'
+  const isPlayerRoute = firstSegment === '(player)' || firstSegment === '(tabs)' || firstSegment === 'player-hub'
 
   useEffect(() => {
     if (!fontsLoaded || !isLoading || authStatus !== 'loading') return
@@ -57,18 +57,16 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
         
         const { data: playerData, error: playerError } = await supabase
           .from('players')
-          .select('onboarding_completed')
+          .select('*')
           .eq('id', userId)
           .maybeSingle()
 
         if (playerError) {
-          console.error('[AuthGate] Check failed:', playerError.message)
+          console.error('[AuthGate] ❌ Player fetch failed:', playerError)
           setUserRole(null)
           setAuthStatus('unauthenticated')
           return
         }
-
-        console.log(`[AuthGate] User:${userId} hasPlayer:${!!playerData} storedRole:${storedRole}`)
 
         if (!playerData) {
           setAuthStatus('needs_setup')
@@ -76,9 +74,7 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
         } 
         
         if (!playerData.onboarding_completed) {
-          // If they prefer host role, maybe we let them skip player onboarding for now? 
-          // But usually we want a profile first.
-          if (storedRole === 'host') {
+          if (storedRole === 'host' && (playerData as any).is_host) {
             setUserRole('host')
             setAuthStatus('ready')
           } else {
@@ -87,7 +83,13 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
           return
         }
 
-        setUserRole(storedRole)
+        const actualIsHost = !!(playerData as any).is_host
+        if (storedRole === 'host' && !actualIsHost) {
+          setUserRole('player')
+          await safeStorageSetItem('user_role', 'player')
+        } else {
+          setUserRole(storedRole)
+        }
         setAuthStatus('ready')
       } catch (e) {
         console.error('[AuthGate] Auth status execution error:', e)
@@ -101,8 +103,6 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
 
   useEffect(() => {
     if (authStatus === 'loading' || !fontsLoaded || !navReady) return
-
-    console.log(`[AuthGate] Processing - Status:${authStatus} Role:${userRole} Path:${pathname} userId:${userId}`)
 
     const replaceIfNeeded = (target: string) => {
       if (pathname !== target) {
@@ -118,27 +118,31 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
       } else {
         replaceIfNeeded('/login')
       }
-    } else if (authStatus === 'needs_setup' && !isProfileSetupRoute && !isHostRoute && !isPublicRoute) {
+    } else if (authStatus === 'needs_setup' && !isProfileSetupRoute) {
+      console.log('[AuthGate] Force redirect to profile-setup (authenticated but no player record)')
       replaceIfNeeded('/profile-setup')
-    } else if (authStatus === 'needs_onboarding' && !isOnboardingRoute && !isHostRoute && !isPublicRoute) {
+    } else if (authStatus === 'needs_onboarding' && !isOnboardingRoute) {
+      console.log('[AuthGate] Force redirect to onboarding (authenticated but incomplete profile)')
       replaceIfNeeded('/onboarding')
-    } else if (authStatus === 'ready') {
+    } else if (authStatus === 'ready' && userRole !== null) {
       // 1. If at login screen or root, go to appropriate dashboard
       if (isPublicRoute || segments.length === 0) {
-        if (isWeb && (isHostLoginRoute || isRegisterRoute)) {
+        if (isWeb && (firstSegment === 'login' || (firstSegment === '(player)' && secondSegment === 'login') || isHostLoginRoute || isRegisterRoute)) {
+          if (userRole === 'host') {
+            replaceIfNeeded('/host/dashboard')
+          } else {
+            replaceIfNeeded('/player-hub/profile')
+          }
           return
         }
-        if (isWeb) {
-          replaceIfNeeded('/host/dashboard')
-        } else if (userRole === 'host') {
+        if (userRole === 'host') {
           replaceIfNeeded('/host/dashboard')
         } else {
-          replaceIfNeeded('/(tabs)')
+          replaceIfNeeded(isWeb ? '/player-hub/profile' : '/(tabs)')
         }
       } 
       // 2. If Role is Host but we are on a Player route, force redirect to Host
-      else if (userRole === 'host' && isPlayerRoute) {
-        console.log('[AuthGate] Forced redirect: Host role on Player route')
+      else if (userRole === 'host' && isPlayerRoute && !__DEV__) {
         replaceIfNeeded('/host/dashboard')
       }
     }

@@ -174,7 +174,7 @@ export function SmartJoinButton({
     )
   }
 
-  const isDirectJoin = matchStatus === 'MATCHED' && !hostRequiresApproval
+  const isDirectJoin = !hostRequiresApproval && matchStatus !== 'WAITLIST'
 
   const palette = isDirectJoin
     ? {

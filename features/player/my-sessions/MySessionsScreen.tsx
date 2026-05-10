@@ -6,12 +6,14 @@ import {
   RefreshControl,
   Share,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native'
 import {
   ChevronDown,
   ChevronRight,
   SlidersHorizontal,
+  RotateCcw,
 } from 'lucide-react-native'
 import { router } from 'expo-router'
 import { MainHeader } from '@/components/design'
@@ -19,12 +21,12 @@ import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, SPACING, BORDER } from '@/constants/screenLayout'
 import { MySessionCard, type SessionTab } from '@/components/sessions/MySessionCard'
+import { NextSessionCard } from '@/components/sessions/NextSessionCard'
 import { MySessionsEmptyState } from '@/components/sessions/MySessionsEmptyState'
 import { ExpandingCreateButton } from '@/components/sessions/ExpandingCreateButton'
 import { useMySessions, HISTORY_PAGE_SIZE } from './hooks/useMySessions'
 
-import { HistoryFilterModal } from './components/HistoryFilterModal'
-import { HistorySection, HistoryRow, MySession } from './types'
+import { HistorySection, SessionRow, MySession } from './types'
 import { 
   formatDatePart, 
   formatTimeRange, 
@@ -34,9 +36,10 @@ import {
 
 const TAB_OPTIONS: { key: SessionTab; label: string }[] = [
   { key: 'upcoming', label: 'Sắp đánh' },
-  { key: 'pending', label: 'Chờ duyệt' },
   { key: 'history', label: 'Lịch sử' },
 ]
+
+import { WebContainer } from '@/components/design/WebContainer'
 
 export function MySessionsScreen() {
   const theme = useAppTheme()
@@ -48,23 +51,13 @@ export function MySessionsScreen() {
     setActiveTab,
     sessionsByTab,
     filteredHistorySessions,
-    historyStatusFilter,
-    setHistoryStatusFilter,
-    historyRoleFilter,
-    setHistoryRoleFilter,
-    historyTimeFilter,
-    setHistoryTimeFilter,
-    historyRatingFilter,
-    setHistoryRatingFilter,
-    historyResultFilter,
-    setHistoryResultFilter,
     historyVisibleCount,
     setHistoryVisibleCount,
     historyExpandedMonths,
     setHistoryExpandedMonths,
   } = useMySessions()
 
-  const [historyFilterModalVisible, setHistoryFilterModalVisible] = useState(false)
+
 
   const visibleHistorySessions = useMemo(
     () => filteredHistorySessions.slice(0, historyVisibleCount),
@@ -89,8 +82,8 @@ export function MySessionsScreen() {
     return Array.from(map.values())
   }, [visibleHistorySessions])
 
-  const historyRows = useMemo<HistoryRow[]>(() => {
-    const rows: HistoryRow[] = [{ type: 'filters', key: 'history-filters' }]
+  const historyRows = useMemo<SessionRow[]>(() => {
+    const rows: SessionRow[] = []
     historySections.forEach((section) => {
       rows.push({
         type: 'month',
@@ -113,21 +106,60 @@ export function MySessionsScreen() {
     return rows
   }, [historyExpandedMonths, historySections])
 
-  const listData = activeTab === 'history' ? historyRows : sessionsByTab[activeTab]
+  const upcomingRows = useMemo<SessionRow[]>(() => {
+    const upcoming = sessionsByTab.upcoming
+    if (upcoming.length === 0) return []
+
+    const rows: SessionRow[] = []
+    
+    // Sort chronologically
+    const sorted = [...upcoming].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+    
+    // Next session (highlighted)
+    const nextSession = sorted[0]
+    rows.push({ type: 'next-session', key: 'next-session', session: nextSession })
+
+    const others = sorted.slice(1)
+    if (others.length === 0) return rows
+
+    // Grouping logic
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const tomorrow = today + 86400000
+    const dayAfterTomorrow = tomorrow + 86400000
+
+    const todaySessions: MySession[] = []
+    const tomorrowSessions: MySession[] = []
+    const laterSessions: MySession[] = []
+
+    others.forEach(s => {
+      const sDate = new Date(s.start_time)
+      const sTime = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate()).getTime()
+      
+      if (sTime === today) todaySessions.push(s)
+      else if (sTime === tomorrow) tomorrowSessions.push(s)
+      else laterSessions.push(s)
+    })
+
+    const addSection = (label: string, data: MySession[]) => {
+      if (data.length === 0) return
+      rows.push({ type: 'section-header', key: `header-${label}`, label, count: data.length })
+      data.forEach(s => {
+        rows.push({ type: 'session', key: `upcoming-${s.id}`, session: s })
+      })
+    }
+
+    addSection('Hôm nay', todaySessions)
+    addSection('Ngày mai', tomorrowSessions)
+    addSection('Sắp tới', laterSessions)
+
+    return rows
+  }, [sessionsByTab.upcoming])
+
+  const listData = activeTab === 'history' ? historyRows : upcomingRows
   const canLoadMoreHistory = historyVisibleCount < filteredHistorySessions.length
   const isHistoryTab = activeTab === 'history'
   
-  const activeHistoryFiltersCount = useMemo(
-    () =>
-      [
-        historyStatusFilter !== 'all',
-        historyRoleFilter !== 'all',
-        historyTimeFilter !== 'all',
-        historyRatingFilter !== 'all',
-        historyResultFilter !== 'all',
-      ].filter(Boolean).length,
-    [historyRatingFilter, historyResultFilter, historyRoleFilter, historyStatusFilter, historyTimeFilter],
-  )
 
   const monthTotalsByKey = useMemo(() => {
     const totals: Record<string, number> = {}
@@ -171,6 +203,7 @@ export function MySessionsScreen() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
+      <WebContainer style={{ flex: 1 }}>
       {loading ? (
         <View className="flex-1 items-center justify-center px-6">
           <ActivityIndicator size="large" color={theme.primary} />
@@ -187,7 +220,7 @@ export function MySessionsScreen() {
             data={listData}
             keyExtractor={(item) => ('type' in item ? `${activeTab}-${item.key}` : `${activeTab}-${item.id}`)}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: SPACING.xl, paddingTop: 0, paddingBottom: 160 }}
+            contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 0, paddingBottom: 160 }}
             refreshControl={
               <RefreshControl 
                 refreshing={refreshing} 
@@ -204,54 +237,78 @@ export function MySessionsScreen() {
             onEndReached={loadMoreHistory}
             onEndReachedThreshold={0.25}
             ListHeaderComponent={
-              <View className="mb-2">
-                <MainHeader
-                  title="Kèo của tôi"
-                  subtitle={activeTab === 'history' ? `${activeTabCount} trận đã lưu` : `${activeTabCount} kèo đang xử lý`}
-                  rightElement={<ExpandingCreateButton />}
-                  style={{ paddingHorizontal: 0 }}
-                />
+              <View style={{ marginBottom: 16 }}>
+                <View style={{ 
+                  flexDirection: 'row', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  marginTop: 24,
+                  marginBottom: 20
+                }}>
+                  <View>
+                    <Text style={{ 
+                      fontFamily: SCREEN_FONTS.headlineBlack, 
+                      fontSize: 28, 
+                      color: theme.onSurface,
+                      letterSpacing: -0.5
+                    }}>
+                      Kèo của tôi
+                    </Text>
+                    <Text style={{ 
+                      fontFamily: SCREEN_FONTS.body, 
+                      fontSize: 13, 
+                      color: theme.onSurfaceVariant,
+                      marginTop: 2
+                    }}>
+                      {activeTab === 'history' ? `${activeTabCount} trận đã thi đấu` : `${activeTabCount} kèo sắp tới`}
+                    </Text>
+                  </View>
+                </View>
 
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    gap: 4,
-                    padding: 4,
-                    backgroundColor: theme.surfaceContainerLow,
-                    borderRadius: RADIUS.lg,
-                    borderWidth: 1,
-                    borderColor: theme.outlineVariant,
-                    overflow: 'hidden',
-                  }}
-                >
+                {/* Pill Tab Selector */}
+                <View style={{ 
+                  flexDirection: 'row', 
+                  backgroundColor: theme.surfaceContainerHighest, 
+                  borderRadius: RADIUS.lg, 
+                  padding: 4,
+                  gap: 4,
+                  marginBottom: 24
+                }}>
                   {TAB_OPTIONS.map((tab) => {
                     const active = tab.key === activeTab
                     return (
-                      <Pressable
+                      <TouchableOpacity
                         key={tab.key}
                         onPress={() => setActiveTab(tab.key)}
-                        className="flex-1 py-2.5 items-center justify-center"
-                        style={[
-                          { borderRadius: RADIUS.md }, 
-                          active && { backgroundColor: theme.primary }
-                        ]}
+                        style={{
+                          flex: 1,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          paddingVertical: 10,
+                          borderRadius: RADIUS.md,
+                          backgroundColor: active ? theme.surface : 'transparent',
+                          ...(active ? {
+                            shadowColor: '#000',
+                            shadowOffset: { width: 0, height: 1 },
+                            shadowOpacity: 0.1,
+                            shadowRadius: 2,
+                            elevation: 1,
+                          } : {})
+                        }}
                       >
-                        <Text
-                          style={{
-                            color: active ? theme.onPrimary : theme.onSurfaceVariant,
-                            fontFamily: SCREEN_FONTS.cta,
-                            fontSize: 13,
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.8,
-                          }}
-                        >
-                          {tab.label}
+                        <Text style={{
+                          fontFamily: SCREEN_FONTS.headlineBlack,
+                          fontSize: 13,
+                          color: active ? theme.primary : theme.onSurfaceVariant,
+                          letterSpacing: 0.5
+                        }}>
+                          {tab.label.toUpperCase()}
                         </Text>
-                      </Pressable>
+                      </TouchableOpacity>
                     )
                   })}
                 </View>
-                <View className={isHistoryTab ? 'pt-2' : 'pt-3'} />
               </View>
             }
             ListFooterComponent={
@@ -263,129 +320,107 @@ export function MySessionsScreen() {
             }
             ListEmptyComponent={<MySessionsEmptyState activeTab={activeTab} />}
             renderItem={({ item }) => {
-              if (isHistoryTab && 'type' in item) {
-                if (item.type === 'filters') {
-                  return (
-                    <View
-                      className="pt-1 pb-1"
-                      style={{ backgroundColor: theme.background, marginHorizontal: -20, paddingHorizontal: SPACING.xl }}
-                    >
-                      <Pressable
-                        onPress={() => setHistoryFilterModalVisible(true)}
-                        className="flex-row items-center self-start px-4 py-2.5"
-                        style={{
-                          borderRadius: RADIUS.md,
-                          backgroundColor: activeHistoryFiltersCount > 0 ? theme.primary : theme.surfaceContainerLow,
-                          borderWidth: BORDER.base,
-                          borderColor: activeHistoryFiltersCount > 0 ? theme.primary : theme.outlineVariant,
-                        }}
-                      >
-                        <SlidersHorizontal
-                          size={13}
-                          color={activeHistoryFiltersCount > 0 ? theme.onPrimary : theme.onSurfaceVariant}
-                          strokeWidth={2.5}
-                        />
-                        <Text
-                          className="ml-1.5"
-                          style={{
-                            color: activeHistoryFiltersCount > 0 ? theme.onPrimary : theme.onSurfaceVariant,
-                            fontFamily: SCREEN_FONTS.cta,
-                            fontSize: 12,
-                          }}
-                        >
-                          {activeHistoryFiltersCount > 0 ? `Bộ lọc lịch sử (${activeHistoryFiltersCount})` : 'Bộ lọc lịch sử'}
-                        </Text>
-                      </Pressable>
-                    </View>
-                  )
-                }
+              if (item.type === 'section-header') {
+                return (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 12, gap: 10 }}>
+                    <Text style={{ 
+                      fontFamily: SCREEN_FONTS.headline, 
+                      fontSize: 14, 
+                      color: theme.onSurfaceVariant, 
+                      letterSpacing: 1,
+                      textTransform: 'uppercase'
+                    }}>
+                      {item.label}
+                    </Text>
+                    <View style={{ flex: 1, height: 1, backgroundColor: theme.outlineVariant, opacity: 0.5 }} />
+                  </View>
+                )
+              }
 
-                if (item.type === 'month') {
-                  const isExpanded = historyExpandedMonths[item.monthKey]
-                  const monthTotal = monthTotalsByKey[item.monthKey] ?? item.count
-                  return (
-                    <Pressable
-                      onPress={() => toggleMonthExpanded(item.monthKey)}
-                      className="mt-4 mb-3 flex-row items-center"
-                    >
-                      <View className="flex-row items-center pr-3">
-                        {isExpanded ? (
-                          <ChevronDown size={14} color={theme.onSurfaceVariant} strokeWidth={2.4} />
-                        ) : (
-                          <ChevronRight size={14} color={theme.onSurfaceVariant} strokeWidth={2.4} />
-                        )}
-                        <Text
-                          className="ml-2 text-[11px] uppercase tracking-[2px]"
-                          style={{
-                            color: theme.outline,
-                            fontFamily: SCREEN_FONTS.cta,
-                          }}
-                        >
-                          {item.monthLabel}
-                        </Text>
-                      </View>
-                      <View className="h-px flex-1" style={{ backgroundColor: theme.outlineVariant }} />
-                      <Text
-                        className="pl-3 text-[11px] uppercase tracking-[2px]"
-                        style={{
-                          color: theme.outline,
-                          fontFamily: SCREEN_FONTS.cta,
-                        }}
-                      >
-                        {monthTotal} trận
+              if (item.type === 'next-session') {
+                return (
+                  <View style={{ marginBottom: 32 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 10 }}>
+                      <Text style={{ 
+                        fontFamily: SCREEN_FONTS.headline, 
+                        fontSize: 14, 
+                        color: theme.primary, 
+                        letterSpacing: 1,
+                        textTransform: 'uppercase'
+                      }}>
+                        Kèo tiếp theo
                       </Text>
-                    </Pressable>
-                  )
-                }
-
-                if (item.type === 'session') {
-                  return (
-                    <MySessionCard
-                      item={item.session}
-                      tab={activeTab}
-                      onOpenSessionDetail={(id) => router.push({ pathname: '/session/[id]', params: { id } } as any)}
-                      onOpenRateSession={(id) => router.push({ pathname: '/rate-session/[id]', params: { id } } as any)}
-                      onShare={handleShare}
-                      formatTimeRange={formatTimeRange}
+                      <View style={{ flex: 1, height: 1, backgroundColor: theme.primary, opacity: 0.2 }} />
+                    </View>
+                    <NextSessionCard 
+                      session={item.session}
+                      onPress={(id) => router.push({ pathname: '/session/[id]', params: { id } } as any)}
                     />
-                  )
-                }
+                  </View>
+                )
+              }
+
+              if (item.type === 'month') {
+                const isExpanded = historyExpandedMonths[item.monthKey]
+                const monthTotal = monthTotalsByKey[item.monthKey] ?? item.count
+                return (
+                  <Pressable
+                    onPress={() => toggleMonthExpanded(item.monthKey)}
+                    style={{ 
+                      marginTop: 24, 
+                      marginBottom: 12, 
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <Text
+                        style={{
+                          color: theme.onSurfaceVariant,
+                          fontFamily: SCREEN_FONTS.headline,
+                          fontSize: 14,
+                          letterSpacing: 1,
+                          textTransform: 'uppercase'
+                        }}
+                      >
+                        {item.monthLabel}
+                      </Text>
+                      
+                      <View style={{ flex: 1, height: 1, backgroundColor: theme.outlineVariant, opacity: 0.5 }} />
+                      
+                      <View className="flex-row items-center gap-2">
+                        <Text style={{ 
+                          color: theme.outline, 
+                          fontFamily: SCREEN_FONTS.label, 
+                          fontSize: 11,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.5
+                        }}>
+                          {monthTotal} TRẬN
+                        </Text>
+                        {isExpanded ? (
+                          <ChevronDown size={14} color={theme.outline} strokeWidth={2} />
+                        ) : (
+                          <ChevronRight size={14} color={theme.outline} strokeWidth={2} />
+                        )}
+                      </View>
+                    </View>
+                  </Pressable>
+                )
               }
 
               return (
-                <MySessionCard
-                  item={item as MySession}
+                <MySessionCard 
+                  item={item.session}
                   tab={activeTab}
-                  onOpenSessionDetail={(id) => router.push({ pathname: '/session/[id]', params: { id } } as any)}
-                  onOpenRateSession={(id) => router.push({ pathname: '/rate-session/[id]', params: { id } } as any)}
                   onShare={handleShare}
-                  formatTimeRange={formatTimeRange}
                 />
               )
             }}
           />
 
-          <HistoryFilterModal
-            visible={historyFilterModalVisible}
-            onClose={() => setHistoryFilterModalVisible(false)}
-            filters={{
-              status: historyStatusFilter,
-              role: historyRoleFilter,
-              time: historyTimeFilter,
-              rating: historyRatingFilter,
-              result: historyResultFilter,
-            }}
-            onFilterChange={(key, value) => {
-              if (key === 'status') setHistoryStatusFilter(value)
-              if (key === 'role') setHistoryRoleFilter(value)
-              if (key === 'time') setHistoryTimeFilter(value)
-              if (key === 'rating') setHistoryRatingFilter(value)
-              if (key === 'result') setHistoryResultFilter(value)
-            }}
-          />
         </View>
       )}
-
+      </WebContainer>
+      <ExpandingCreateButton />
     </View>
   )
 }

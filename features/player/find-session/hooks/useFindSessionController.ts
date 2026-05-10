@@ -86,6 +86,7 @@ export function useFindSessionController() {
       }))
 
       setSessions(enrichedData as any)
+      console.log('[FindSession] Fetched sessions count:', enrichedData.length)
       setLastFetchedAt(Date.now())
     } catch (error) {
       console.warn('[FindSession] fetchSessions failed:', error)

@@ -5,6 +5,7 @@ import type { SkillAssessmentLevel } from '@/lib/skillAssessment'
 import { getSkillLevelUi } from '@/lib/skillLevelUi'
 import { LinearGradient } from 'expo-linear-gradient'
 import { router } from 'expo-router'
+import { withAlpha } from '@/lib/utils/ui'
 import {
   ChevronRight,
   Flame,
@@ -16,7 +17,7 @@ import {
   Users
 } from 'lucide-react-native'
 import { Text, TouchableOpacity, View } from 'react-native'
-import { RADIUS } from '@/constants/screenLayout'
+import { RADIUS, SHADOW } from '@/constants/screenLayout'
 import React from 'react'
 
 type ActionItem = {
@@ -173,7 +174,14 @@ export function ProfileSkillHero({
   }
 
   return (
-    <View className={`relative overflow-hidden shadow-sm mb-4 ${miniTitleOnly ? 'rounded-[24px] p-4' : 'rounded-[24px] p-5'}`}>
+    <View 
+      className={`relative overflow-hidden shadow-sm mb-4 ${miniTitleOnly ? 'rounded-[24px] p-4' : 'rounded-[24px] p-5'}`}
+      style={{
+        ...SHADOW.md,
+        shadowColor: heroColors.gradientEnd,
+        shadowOpacity: 0.3,
+      }}
+    >
       <LinearGradient
         colors={[heroColors.gradientStart, heroColors.gradientEnd]}
         start={{ x: 0, y: 0 }}
@@ -188,34 +196,34 @@ export function ProfileSkillHero({
           width: miniTitleOnly ? 132 : 220,
           height: miniTitleOnly ? 132 : 220,
           borderRadius: RADIUS.full,
-          backgroundColor: heroColors.bubble,
+          backgroundColor: withAlpha('#FFFFFF', 0.15),
         }}
       />
       
       <WatermarkIcon
         size={miniTitleOnly ? 112 : 180}
-        color={heroColors.watermark}
+        color={withAlpha('#FFFFFF', 0.1)}
         style={{ position: 'absolute', right: miniTitleOnly ? -20 : -40, bottom: miniTitleOnly ? -20 : -40 }}
       />
 
       {!miniTitleOnly ? (
         <View 
-          className="absolute right-5 top-5 rounded-full px-2.5 py-1 border shadow-sm" 
+          className="absolute right-5 top-5 rounded-full px-3 py-1 border shadow-sm" 
           style={{ 
-            backgroundColor: theme.primary,
-            borderColor: theme.surface,
+            backgroundColor: withAlpha('#000000', 0.2),
+            borderColor: withAlpha('#FFFFFF', 0.3),
             zIndex: 10,
           }}
         >
-          <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.bold, fontSize: 11 }}>{elo} ELO</Text>
+          <Text style={{ color: '#FFFFFF', fontFamily: SCREEN_FONTS.bold, fontSize: 12 }}>{elo} ELO</Text>
         </View>
       ) : null}
 
       <View className={miniTitleOnly ? 'mt-1' : 'mt-4'} style={{ paddingRight: miniTitleOnly ? 10 : contentRightInset }}>
         <View className="flex-row items-center">
           <Text
-            className={miniTitleOnly ? 'text-[26px] leading-tight uppercase tracking-wide' : 'text-[34px] leading-tight uppercase tracking-wider'}
-            style={{ color: heroColors.title, fontFamily: SCREEN_FONTS.cta }}
+            className={miniTitleOnly ? 'text-[26px] leading-tight uppercase tracking-wide' : 'text-[36px] leading-tight uppercase tracking-wider'}
+            style={{ color: '#FFFFFF', fontFamily: SCREEN_FONTS.headlineBlack }}
           >
             {title}
           </Text>
@@ -223,17 +231,16 @@ export function ProfileSkillHero({
         {!miniTitleOnly ? (
           <>
             <Text
-              className="mt-2 text-[11px] uppercase tracking-[1.6px]"
+              className="mt-1 text-[12px] uppercase tracking-[2px]"
               style={{
-                color: heroColors.description,
-                fontFamily: subtitleItalic ? SCREEN_FONTS.body : SCREEN_FONTS.cta,
-                fontStyle: 'normal',
+                color: withAlpha('#FFFFFF', 0.9),
+                fontFamily: SCREEN_FONTS.cta,
               }}
             >
               {subtitle}
             </Text>
             {description ? (
-              <Text className="mt-3 text-[14px] leading-6" style={{ color: heroColors.description, fontFamily: SCREEN_FONTS.body }}>
+              <Text className="mt-4 text-[14px] leading-6" style={{ color: withAlpha('#FFFFFF', 0.8), fontFamily: SCREEN_FONTS.body }}>
                 {description}
               </Text>
             ) : null}

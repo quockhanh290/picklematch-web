@@ -3,7 +3,7 @@ import { Platform } from 'react-native'
 
 export default function IndexRoute() {
   if (Platform.OS === 'web') {
-    return <Redirect href="/host/login" />
+    return <Redirect href="/login" />
   }
 
 

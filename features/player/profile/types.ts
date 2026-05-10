@@ -15,6 +15,7 @@ export type ProfilePlayer = {
   no_show_count: number
   created_at: string
   bio?: string | null
+  is_host?: boolean | null
 }
 
 export type ProfilePlayerStats = {

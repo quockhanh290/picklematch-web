@@ -60,19 +60,32 @@ export default function DevHostLoginSection({
       return
     }
 
-    // Ensure player is marked as host for dev convenience (upsert to handle new users)
-    await supabase.from('players').upsert({ 
-      id: user.id, 
-      is_host: true,
-      name: user.email?.split('@')[0] || 'Dev Host' 
-    }).eq('id', user.id)
+    // Check if player exists and get their role
+    const { data: player } = await supabase.from('players').select('*').eq('id', user.id).maybeSingle()
     
+    let isHost = !!(player as any)?.is_host
+    
+    if (!player) {
+      // Create new player with default values
+      await supabase.from('players').insert({ 
+        id: user.id, 
+        is_host: false,
+        name: user.email?.split('@')[0] || 'Dev Player' 
+      })
+      isHost = false
+    }
+
     // Set role in storage so AuthGate knows where to go
     const { safeStorageSetItem } = await import('@/lib/storage')
-    await safeStorageSetItem('user_role', 'host')
+    const role = isHost ? 'host' : 'player'
+    await safeStorageSetItem('user_role', role)
 
     setDevLoading(false)
-    router.replace('/host/dashboard')
+    if (isHost) {
+      router.replace('/host/dashboard')
+    } else {
+      router.replace('/player-hub/profile')
+    }
   }
 
   return (

@@ -259,12 +259,47 @@ export function useSessionJoinActions({
   }, [presentDialog, refreshSession, session, setRequestStatus, userId])
 
   function handleSmartJoinPress() {
-    if (matchStatus === 'MATCHED' && !hostRequiresApproval) {
-      void directJoinSession()
+    // 1. If host requires approval, always open request modal
+    if (hostRequiresApproval) {
+      onJoinModalOpen()
       return
     }
 
-    onJoinModalOpen()
+    // 2. If it's waitlist mode, show informative dialog instead of modal
+    if (matchStatus === 'WAITLIST') {
+      presentDialog({
+        title: 'Kèo đã đầy',
+        message: 'Kèo hiện đã đầy và bạn sẽ vào danh sách dự bị. Chủ kèo sẽ liên hệ nếu có slot trống gần giờ chơi. Bạn vẫn muốn đăng ký chứ?',
+        actions: [
+          { label: 'Bỏ qua', tone: 'secondary' },
+          { 
+            label: 'Đăng ký dự bị', 
+            tone: 'primary', 
+            onPress: () => {
+              void sendJoinRequest()
+            } 
+          }
+        ]
+      })
+      return
+    }
+
+    // 3. Check skill difference for warning (0.2 PVNA = 200 Elo)
+    const skillDiff = eloMin - viewerElo
+    if (skillDiff > 200) {
+      presentDialog({
+        title: 'Chênh lệch trình độ',
+        message: `Trình độ của bạn thấp hơn yêu cầu của kèo này (${(skillDiff / 1000).toFixed(1)} PVNA). Bạn vẫn muốn tham gia chứ?`,
+        actions: [
+          { label: 'Bỏ qua', tone: 'secondary' },
+          { label: 'Tham gia ngay', tone: 'primary', onPress: () => void directJoinSession() }
+        ]
+      })
+      return
+    }
+
+    // 4. Join immediately if no approval required and skill is okay (or slightly lower but < 0.2)
+    void directJoinSession()
   }
 
   return {

@@ -1,8 +1,9 @@
+import React from 'react'
 import { useAppTheme } from '@/lib/theme-context'
 import { AppFontSet } from '@/constants/typography'
 import { useNotificationsContext } from '@/lib/NotificationsContext'
 import { Tabs } from 'expo-router'
-import { Bell, Calendar, House, Search, User } from 'lucide-react-native'
+import { Bell, Calendar, Home, Search, User } from 'lucide-react-native'
 import { Text, View } from 'react-native'
 import { RADIUS, SHADOW } from '@/constants/screenLayout'
 
@@ -102,7 +103,7 @@ export default function TabLayout() {
         options={{
           title: 'Trang chủ',
           tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} Icon={House} activeColor={theme.primary} inactiveColor={theme.outline} />
+            <TabIcon focused={focused} Icon={Home} activeColor={theme.primary} inactiveColor={theme.outline} />
           ),
         }}
       />

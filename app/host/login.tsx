@@ -1,6 +1,7 @@
 import { AppDialog, type AppDialogConfig } from '@/components/design'
 import DevHostLoginSection from '@/components/auth/DevHostLoginSection'
 import { supabase } from '@/lib/supabase'
+import { safeStorageSetItem } from '@/lib/storage'
 import { router } from 'expo-router'
 import { Smartphone, ShieldCheck, Landmark } from 'lucide-react-native'
 import { useAppTheme } from '@/lib/theme-context'
@@ -129,14 +130,15 @@ export default function HostLoginScreen() {
         throw new Error(userErr?.message || 'Không lấy được thông tin tài khoản sau khi xác thực OTP.')
       }
 
-      const { data: player } = await supabase.from('players').select('is_host').eq('id', user.id).maybeSingle()
-
-      if (player?.is_host) {
+      const { data: player } = await supabase.from('players').select('*').eq('id', user.id).maybeSingle()
+      
+      const isHost = !!(player as any)?.is_host
+      if (isHost) {
+        await safeStorageSetItem('user_role', 'host')
         router.replace('/host/dashboard')
       } else {
-        // If they are a player but not a host, they can still go to dashboard 
-        // and we might show a "Become a Host" state or just let them organiz
-        router.replace('/host/dashboard')
+        await safeStorageSetItem('user_role', 'player')
+        router.replace('/player-hub/profile')
       }
     } catch (err: any) {
       setDialogConfig({

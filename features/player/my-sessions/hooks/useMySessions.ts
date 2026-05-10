@@ -189,17 +189,17 @@ export function useMySessions() {
   }, [fetchMySessions, userId])
 
   const sessionsByTab = useMemo(
-    () =>
-      ({
-        upcoming: sessions
-          .filter((s) => resolveTab(s) === 'upcoming' && !isSessionInPast(s))
-          .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()),
-        pending: sessions
-          .filter((s) => resolveTab(s) === 'pending'),
-        history: sessions
-          .filter((s) => resolveTab(s) === 'history' || (resolveTab(s) === 'upcoming' && isSessionInPast(s)))
-          .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()),
-      }),
+    () => ({
+      upcoming: sessions
+        .filter((s) => {
+          const tab = resolveTab(s)
+          return (tab === 'upcoming' || tab === 'pending') && !isSessionInPast(s)
+        })
+        .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()),
+      history: sessions
+        .filter((s) => resolveTab(s) === 'history' || (resolveTab(s) === 'upcoming' && isSessionInPast(s)))
+        .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()),
+    }),
     [sessions],
   )
 

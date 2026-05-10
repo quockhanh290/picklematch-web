@@ -28,6 +28,9 @@ export type Session = {
   player_count: number
   lat?: number | null
   lng?: number | null
+  is_joined?: boolean
+  is_hosted?: boolean
+  is_requested?: boolean
 }
 
 export type QuickFilterId = 'nearby' | 'recent' | 'level3' | 'rescue'

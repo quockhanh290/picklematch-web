@@ -515,6 +515,7 @@ export function HostSessionDetailScreen({
           checkInCompleted={isCheckInCompleted}
           isCheckInMode={isCheckInMode}
           startTime={session.slot.start_time}
+          isHost={isHost}
         />
 
         {!isCheckInCompleted && (

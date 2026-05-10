@@ -13,10 +13,10 @@ export async function fetchSessionsApi(currentUserId: string | null): Promise<Se
           court:court_id ( id, name, address, city, lat, lng )
         ),
         session_players ( player_id ),
-        owner_sessions ( id )`,
+        owner_sessions ( id ),
+        total_cost`,
       )
       .eq('status', 'open')
-      .eq('is_owner_managed', false)
       .order('created_at', { ascending: false })
       .limit(50),
     currentUserId
@@ -44,11 +44,16 @@ export async function fetchSessionsApi(currentUserId: string | null): Promise<Se
   })) as Session[]
 
   if (currentUserId) {
-    return normalized.filter((session) => {
+    return normalized.map((session) => {
       const joined = (session.session_players ?? []).some((player: any) => player.player_id === currentUserId)
       const hosted = session.host_id === currentUserId
       const requested = pendingRequestIds.has(session.id)
-      return !joined && !hosted && !requested
+      return {
+        ...session,
+        is_joined: joined,
+        is_hosted: hosted,
+        is_requested: requested
+      }
     })
   }
 

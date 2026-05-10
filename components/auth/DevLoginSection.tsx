@@ -1,6 +1,8 @@
 import { AppDialogConfig } from '@/components/design'
 import { supabase } from '@/lib/supabase'
+import { safeStorageSetItem } from '@/lib/storage'
 import { router } from 'expo-router'
+import { Platform } from 'react-native'
 import { useAppTheme } from '@/lib/theme-context'
 import { Code2, Lock, Mail } from 'lucide-react-native'
 import { useState } from 'react'
@@ -69,8 +71,16 @@ export default function DevLoginSection({
       return
     }
 
-    const { data: player } = await supabase.from('players').select('*').eq('id', user.id).single()
-    router.replace(nextRouteForPlayer(player) as any)
+    const { data: player } = await supabase.from('players').select('*').eq('id', user.id).maybeSingle()
+    
+    await safeStorageSetItem('user_role', 'player')
+    
+    const next = nextRouteForPlayer(player)
+    if (Platform.OS === 'web' && next === '/(tabs)') {
+      router.replace('/player-hub/profile')
+    } else {
+      router.replace(next as any)
+    }
   }
 
   return (

@@ -23,19 +23,20 @@ type Props = {
   checkInCompleted?: boolean
   isCheckInMode?: boolean
   startTime?: string
+  isHost?: boolean
 }
 
-function EmptySlot({ count, sessionId, startTime }: { count: number, sessionId?: string, startTime?: string }) {
+function EmptySlot({ count, sessionId, startTime, isHost }: { count: number, sessionId?: string, startTime?: string, isHost?: boolean }) {
   const theme = useAppTheme()
   
-  // Only show Add Guest button if session starts within 90 minutes
+  // Only show Add Button for host and if session starts within 90 minutes
   const showAddButton = useMemo(() => {
-    if (!startTime || !sessionId) return false
+    if (!isHost || !startTime || !sessionId) return false
     const start = new Date(startTime)
     const timeDiff = start.getTime() - Date.now()
     const minutesUntilStart = timeDiff / (1000 * 60)
     return minutesUntilStart > 0 && minutesUntilStart <= 90
-  }, [startTime, sessionId])
+  }, [startTime, sessionId, isHost])
 
   return (
     <View
@@ -106,36 +107,58 @@ export function HostRosterSection({
   onArrangementPress,
   checkInCompleted = false,
   isCheckInMode = false,
-  startTime
+  startTime,
+  isHost = false
 }: Props) {
   const theme = useAppTheme()
   const { _onOpenPlayerProfile } = useSessionNav()
-  const confirmedPlayers = players.filter(p => p.status === 'confirmed')
-  const spotsLeft = Math.max(0, maxPlayers - confirmedPlayers.length)
-  
-  // Show Add Guest button for Host regardless of spots
-  const showAddButton = useMemo(() => {
-    if (!sessionId) return false
-    // You can add more conditions here (e.g. only if not finished)
-    return sessionStatus !== 'finished' && sessionStatus !== 'cancelled'
-  }, [sessionId, sessionStatus])
-
   // Local state for instant feedback
   const [localStatuses, setLocalStatuses] = React.useState<Record<string, string>>({})
+  const [removedPlayerIds, setRemovedPlayerIds] = React.useState<Set<string>>(new Set())
   const [isEditMode, setIsEditMode] = React.useState(false)
   const [showManualManagement, setShowManualManagement] = React.useState(false)
 
-  // Sync local status when players change, but don't wipe out local ones unless server has actual value
+  // Filter out locally removed players
+  const activePlayers = useMemo(() => {
+    return players.filter(p => !removedPlayerIds.has(p.id))
+  }, [players, removedPlayerIds])
+
+  const confirmedPlayers = activePlayers.filter(p => p.status === 'confirmed')
+  const spotsLeft = Math.max(0, maxPlayers - confirmedPlayers.length)
+
+  // Show Add Guest button for Host regardless of spots
+  const showAddButton = useMemo(() => {
+    if (!isHost || !sessionId) return false
+    // You can add more conditions here (e.g. only if not finished)
+    return sessionStatus !== 'finished' && sessionStatus !== 'cancelled'
+  }, [sessionId, sessionStatus, isHost])
+
+  // Sync local status when players change
   React.useEffect(() => {
     setLocalStatuses(prev => {
       const next = { ...prev }
-      players.forEach(p => {
+      activePlayers.forEach(p => {
         const serverStatus = (p as any).checkInStatus
         if (serverStatus && serverStatus !== 'pending') {
           next[p.id] = serverStatus
         }
       })
       return next
+    })
+    
+    // Clear removed IDs that are no longer in the server response anyway
+    setRemovedPlayerIds(prev => {
+      if (prev.size === 0) return prev
+      const serverIds = new Set(players.map(p => p.id))
+      let changed = false
+      const next = new Set(prev)
+      prev.forEach(id => {
+        if (!serverIds.has(id)) {
+          next.delete(id)
+          changed = true
+        }
+      })
+      return changed ? next : prev
     })
   }, [players])
   // Add layout animation when players change
@@ -160,7 +183,7 @@ export function HostRosterSection({
   }
 
   const renderContent = () => {
-    if (players.length === 0) {
+    if (activePlayers.length === 0) {
       return (
         <View style={{ 
           padding: 32, 
@@ -177,16 +200,16 @@ export function HostRosterSection({
       )
     }
 
-    const confirmed = players.filter(p => p.status === 'confirmed')
-    const waiting = players.filter(p => p.status === 'waiting')
+    const confirmed = activePlayers.filter(p => p.status === 'confirmed')
+    const waiting = activePlayers.filter(p => p.status === 'waiting')
 
-    const totalCount = players.length
-    const femaleCount = players.filter(p => {
+    const totalCount = activePlayers.length
+    const femaleCount = activePlayers.filter(p => {
       const g = String(p.gender || '').toLowerCase()
       return g === 'female' || g === 'nữ'
     }).length
     const maleCount = totalCount - femaleCount
-    const totalSkill = players.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
+    const totalSkill = activePlayers.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
     const avgSkill = totalCount > 0 ? totalSkill / totalCount : 0
 
 
@@ -254,6 +277,11 @@ export function HostRosterSection({
             .eq('session_id', sessionId)
             .eq('player_id', playerId)
           if (error) throw error
+          setRemovedPlayerIds(prev => {
+            const next = new Set(prev)
+            next.add(playerId)
+            return next
+          })
         } else {
           const { error } = await supabase
             .from('session_players')
@@ -899,57 +927,59 @@ export function HostRosterSection({
         </View>
 
         {/* Header Actions */}
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          {checkInCompleted && (
-            <TouchableOpacity 
-              onPress={() => {
-                setShowManualManagement(!showManualManagement)
-                if (isEditMode) setIsEditMode(false)
-              }}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: showManualManagement ? theme.primary : '#F5F5F0',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: 1,
-                borderColor: showManualManagement ? theme.primary : '#E5E3DC',
-              }}
-            >
-              <Settings2 size={18} color={showManualManagement ? theme.onPrimary : '#7A8884'} />
-            </TouchableOpacity>
-          )}
+        {isHost && (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {checkInCompleted && (
+              <TouchableOpacity 
+                onPress={() => {
+                  setShowManualManagement(!showManualManagement)
+                  if (isEditMode) setIsEditMode(false)
+                }}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: showManualManagement ? theme.primary : '#F5F5F0',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1,
+                  borderColor: showManualManagement ? theme.primary : '#E5E3DC',
+                }}
+              >
+                <Settings2 size={18} color={showManualManagement ? theme.onPrimary : '#7A8884'} />
+              </TouchableOpacity>
+            )}
 
-          {!isCheckInMode && (!checkInCompleted || showManualManagement) && (
-            <TouchableOpacity 
-              onPress={() => setIsEditMode(!isEditMode)}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: isEditMode ? theme.primary : theme.primary + '10',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: 1,
-                borderColor: theme.primary + '20',
-              }}
-            >
-              {isEditMode ? (
-                <Check size={18} color={theme.onPrimary} />
-              ) : (
-                <Pencil size={18} color={theme.primary} />
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
+            {!isCheckInMode && (!checkInCompleted || showManualManagement) && (
+              <TouchableOpacity 
+                onPress={() => setIsEditMode(!isEditMode)}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: isEditMode ? theme.primary : theme.primary + '10',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1,
+                  borderColor: theme.primary + '20',
+                }}
+              >
+                {isEditMode ? (
+                  <Check size={18} color={theme.onPrimary} />
+                ) : (
+                  <Pencil size={18} color={theme.primary} />
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
 
       <View style={{ gap: 16 }}>
         {renderContent()}
 
         {!hideEmptySlots && spotsLeft > 0 && (
-          <EmptySlot count={spotsLeft} sessionId={sessionId} startTime={startTime} />
+          <EmptySlot count={spotsLeft} sessionId={sessionId} startTime={startTime} isHost={isHost} />
         )}
       </View>
     </View>

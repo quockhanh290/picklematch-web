@@ -347,7 +347,7 @@ export default function OnboardingScreen() {
 
       if (dbError) throw dbError
 
-      router.replace('/profile')
+      router.replace(Platform.OS === 'web' ? '/player-hub/profile' : '/profile')
     } catch (err: any) {
       setAuthError(err.message || 'Xác thực OTP thất bại')
     } finally {

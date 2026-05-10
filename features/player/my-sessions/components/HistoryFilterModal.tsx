@@ -1,6 +1,6 @@
 import React from 'react'
 import { Modal, View, Pressable, Text, ScrollView } from 'react-native'
-import { X } from 'lucide-react-native'
+import { X, RotateCcw } from 'lucide-react-native'
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, BORDER } from '@/constants/screenLayout'
@@ -36,6 +36,7 @@ const HISTORY_RESULT_OPTIONS = [
 type HistoryFilterModalProps = {
   visible: boolean
   onClose: () => void
+  isInline?: boolean
   filters: {
     status: string
     role: string
@@ -44,15 +45,19 @@ type HistoryFilterModalProps = {
     result: string
   }
   onFilterChange: (key: string, value: any) => void
+  onReset?: () => void
 }
 
 export function HistoryFilterModal({
   visible,
   onClose,
+  isInline = false,
   filters,
   onFilterChange,
+  onReset,
 }: HistoryFilterModalProps) {
   const theme = useAppTheme()
+
   const renderHistoryFilterChip = (
     id: string,
     label: string,
@@ -62,24 +67,142 @@ export function HistoryFilterModal({
     <Pressable
       key={id}
       onPress={onPress}
-      className="rounded-full px-4 py-2.5 mr-2 mb-2"
       style={{
         backgroundColor: isActive ? theme.primary : theme.surfaceContainerLow,
-        borderWidth: BORDER.base,
+        borderWidth: BORDER.hairline,
         borderColor: isActive ? theme.primary : theme.outlineVariant,
+        borderRadius: RADIUS.full,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        marginRight: 6,
+        marginBottom: 6,
       }}
     >
       <Text
         style={{
           color: isActive ? theme.onPrimary : theme.onSurfaceVariant,
-          fontFamily: SCREEN_FONTS.label,
-          fontSize: 12,
+          fontFamily: SCREEN_FONTS.bold,
+          fontSize: 11,
         }}
       >
         {label}
       </Text>
     </Pressable>
   )
+
+  const content = (
+    <View style={{ gap: 20 }}>
+      {/* Header */}
+      {!isInline && (
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.headline, fontSize: 24, textTransform: 'uppercase' }}>
+            Bộ lọc lịch sử
+          </Text>
+          <Pressable onPress={onClose} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: theme.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' }}>
+            <X size={16} color={theme.onSurfaceVariant} strokeWidth={2.6} />
+          </Pressable>
+        </View>
+      )}
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 20 }}>
+        {/* Status & Role Row */}
+        <View style={{ flexDirection: isInline ? 'row' : 'column', gap: isInline ? 32 : 20 }}>
+           <View style={{ flex: 1 }}>
+              <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.bold, fontSize: 13, marginBottom: 8, opacity: 0.8 }}>TRẠNG THÁI</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {HISTORY_STATUS_OPTIONS.map((opt) => renderHistoryFilterChip(`st-${opt.id}`, opt.label, filters.status === opt.id, () => onFilterChange('status', opt.id)))}
+              </View>
+           </View>
+           <View style={{ flex: 1 }}>
+              <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.bold, fontSize: 13, marginBottom: 8, opacity: 0.8 }}>VAI TRÒ</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {HISTORY_ROLE_OPTIONS.map((opt) => renderHistoryFilterChip(`ro-${opt.id}`, opt.label, filters.role === opt.id, () => onFilterChange('role', opt.id)))}
+              </View>
+           </View>
+        </View>
+
+        {/* Time & Rating Row */}
+        <View style={{ flexDirection: isInline ? 'row' : 'column', gap: isInline ? 32 : 20 }}>
+           <View style={{ flex: 1 }}>
+              <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.bold, fontSize: 13, marginBottom: 8, opacity: 0.8 }}>THỜI GIAN</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {HISTORY_TIME_OPTIONS.map((opt) => renderHistoryFilterChip(`ti-${opt.id}`, opt.label, filters.time === opt.id, () => onFilterChange('time', opt.id)))}
+              </View>
+           </View>
+           <View style={{ flex: 1 }}>
+              <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.bold, fontSize: 13, marginBottom: 8, opacity: 0.8 }}>ĐÁNH GIÁ</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {HISTORY_RATING_OPTIONS.map((opt) => renderHistoryFilterChip(`ra-${opt.id}`, opt.label, filters.rating === opt.id, () => onFilterChange('rating', opt.id)))}
+              </View>
+           </View>
+        </View>
+
+        {/* Result */}
+        <View>
+           <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.bold, fontSize: 13, marginBottom: 8, opacity: 0.8 }}>KẾT QUẢ</Text>
+           <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+             {HISTORY_RESULT_OPTIONS.map((opt) => renderHistoryFilterChip(`re-${opt.id}`, opt.label, filters.result === opt.id, () => onFilterChange('result', opt.id)))}
+           </View>
+        </View>
+      </ScrollView>
+
+      {/* Footer Buttons */}
+      <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+        {onReset && (
+          <Pressable
+            onPress={onReset}
+            style={{ 
+              flex: 1, 
+              height: 44, 
+              borderRadius: RADIUS.md, 
+              borderWidth: 1, 
+              borderColor: theme.outlineVariant,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8
+            }}
+          >
+            <RotateCcw size={14} color={theme.onSurfaceVariant} />
+            <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.headline, fontSize: 13 }}>XÓA BỘ LỌC</Text>
+          </Pressable>
+        )}
+        <Pressable
+          onPress={onClose}
+          style={{ 
+            flex: 2, 
+            height: 44, 
+            borderRadius: RADIUS.md, 
+            backgroundColor: theme.primary,
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.headline, fontSize: 13 }}>
+            {isInline ? 'ẨN BỘ LỌC' : 'ÁP DỤNG'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  )
+
+  if (isInline) {
+    if (!visible) return null
+    return (
+      <View 
+        style={{ 
+          backgroundColor: theme.surfaceContainerLow, 
+          borderRadius: RADIUS.lg, 
+          padding: 20,
+          marginBottom: 16,
+          borderWidth: 1,
+          borderColor: theme.outlineVariant,
+        }}
+      >
+        {content}
+      </View>
+    )
+  }
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -103,159 +226,7 @@ export function HistoryFilterModal({
             elevation: 12,
           }}
         >
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-            <Text
-              style={{
-                color: theme.primary,
-                fontFamily: SCREEN_FONTS.headline,
-                fontSize: 24,
-                textTransform: 'uppercase',
-              }}
-            >
-              Bộ lọc lịch sử
-            </Text>
-            <Pressable
-              onPress={onClose}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: theme.surfaceContainerLow,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <X size={16} color={theme.onSurfaceVariant} strokeWidth={2.6} />
-            </Pressable>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <Text
-              style={{
-                color: theme.primary,
-                fontFamily: SCREEN_FONTS.headline,
-                fontSize: 14,
-                textTransform: 'uppercase',
-                marginBottom: 10,
-              }}
-            >
-              Trạng thái
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginBottom: 16 }}>
-              {HISTORY_STATUS_OPTIONS.map((option) =>
-                renderHistoryFilterChip(
-                  `status-${option.id}`,
-                  option.label,
-                  filters.status === option.id,
-                  () => onFilterChange('status', option.id),
-                ),
-              )}
-            </View>
-
-            <Text
-              style={{
-                color: theme.primary,
-                fontFamily: SCREEN_FONTS.headline,
-                fontSize: 14,
-                textTransform: 'uppercase',
-                marginBottom: 10,
-              }}
-            >
-              Vai trò
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginBottom: 16 }}>
-              {HISTORY_ROLE_OPTIONS.map((option) =>
-                renderHistoryFilterChip(
-                  `role-${option.id}`,
-                  option.label,
-                  filters.role === option.id,
-                  () => onFilterChange('role', option.id),
-                ),
-              )}
-            </View>
-
-            <Text
-              style={{
-                color: theme.primary,
-                fontFamily: SCREEN_FONTS.headline,
-                fontSize: 14,
-                textTransform: 'uppercase',
-                marginBottom: 10,
-              }}
-            >
-              Thời gian
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginBottom: 16 }}>
-              {HISTORY_TIME_OPTIONS.map((option) =>
-                renderHistoryFilterChip(
-                  `time-${option.id}`,
-                  option.label,
-                  filters.time === option.id,
-                  () => onFilterChange('time', option.id),
-                ),
-              )}
-            </View>
-
-            <Text
-              style={{
-                color: theme.primary,
-                fontFamily: SCREEN_FONTS.headline,
-                fontSize: 14,
-                textTransform: 'uppercase',
-                marginBottom: 10,
-              }}
-            >
-              Đánh giá
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginBottom: 16 }}>
-              {HISTORY_RATING_OPTIONS.map((option) =>
-                renderHistoryFilterChip(
-                  `rating-${option.id}`,
-                  option.label,
-                  filters.rating === option.id,
-                  () => onFilterChange('rating', option.id),
-                ),
-              )}
-            </View>
-
-            <Text
-              style={{
-                color: theme.primary,
-                fontFamily: SCREEN_FONTS.headline,
-                fontSize: 14,
-                textTransform: 'uppercase',
-                marginBottom: 10,
-              }}
-            >
-              Kết quả
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginBottom: 24 }}>
-              {HISTORY_RESULT_OPTIONS.map((option) =>
-                renderHistoryFilterChip(
-                  `result-${option.id}`,
-                  option.label,
-                  filters.result === option.id,
-                  () => onFilterChange('result', option.id),
-                ),
-              )}
-            </View>
-          </ScrollView>
-
-          <Pressable
-            onPress={onClose}
-            style={({ pressed }) => ({
-              height: 52,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: RADIUS.full,
-              backgroundColor: theme.primary,
-              opacity: pressed ? 0.9 : 1,
-            })}
-          >
-            <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.headline, fontSize: 16, textTransform: 'uppercase' }}>
-              Áp dụng bộ lọc
-            </Text>
-          </Pressable>
+          {content}
         </View>
       </View>
     </Modal>

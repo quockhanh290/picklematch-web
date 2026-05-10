@@ -63,6 +63,7 @@ import { useSessionNav } from '@/lib/navigation/SessionNavContext'
 import { useAppNav } from '@/lib/navigation/AppNavContext'
 import { fetchCourtDetailApi } from '@/features/player/court/api'
 import { getSessionSkillLabel } from '@/lib/skillAssessment'
+import { NextSessionCard } from '@/components/sessions/NextSessionCard'
 import { formatRelativeDate } from '@/utils/formatters'
 import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
 import { DashboardStatsStrip, buildDashboardStats } from '@/components/dashboard/DashboardStatsStrip'
@@ -714,296 +715,28 @@ export default function HostDashboardScreen() {
 
       {/* Content */}
       <View style={{ paddingVertical: 24, paddingTop: 10 }}>
-        {activeTab === 'upcoming' && nextSession && (() => {
-          // Map raw session to MatchSession-like structure for the card
-          const maxPlayers = nextSession.is_unlimited ? 16 : (nextSession.max_players || 16)
-          const confirmedCount = nextSession.session_players?.filter((p: any) => p.status === 'confirmed' || p.status === 'checked_in').length || 0
-          
-          const item = {
-            ...nextSession,
-            startTime: nextSession.slot?.start_time,
-            endTime: nextSession.slot?.end_time,
-            timeLabel: '', // Helper fallback
-            courtName: nextSession.slot?.court?.name || 'KÈO PICKLEBALL',
-            address: nextSession.slot?.court?.address || 'Chưa cập nhật địa chỉ',
-            priceLabel: nextSession.total_cost > 0 ? `${Math.round(nextSession.total_cost / 1000)}K` : 'Miễn phí',
-            activePlayers: confirmedCount,
-            maxPlayers: maxPlayers,
-            skillLabel: getSessionSkillLabel(nextSession.elo_min, nextSession.elo_max),
-            courtBookingConfirmed: true,
-          }
-
-          const startDate = parseSessionStartDate(item)
-          const endDate = parseSessionEndDate(item, startDate)
-          const dayInfo = getSuggestedDayInfo(startDate, theme)
-          const addressLabel = item.address
-          const levelMatchesUser = true
-
-          // Enhanced Color System
-          const COLORS = {
-            teal: '#0F6E56',
-            darkTeal: '#064E3B',
-            amber: '#D97706',
-            coral: '#D85A30',
-            gray: '#6B7280'
-          }
-
-          const isPastEnd = endDate.getTime() <= Date.now()
-          const isPlaying = nextSession.status === 'playing' && !isPastEnd
-          const isCancelled = nextSession.status === 'cancelled'
-          const isDone = ['completed', 'finished', 'archived', 'done'].includes(nextSession.status) || (isPastEnd && !isCancelled)
-          const fillRatio = confirmedCount / maxPlayers
-          const isFull = fillRatio >= 1
-          const isUnderfilled = fillRatio < 0.6 && !isDone && !isPlaying && !isCancelled
-          
-          let statusLabel = 'ĐANG MỞ'
-          let statusBg = COLORS.teal
-          
-          if (isPlaying) {
-            statusLabel = 'THI ĐẤU'
-            statusBg = COLORS.darkTeal
-          } else if (isCancelled) {
-            statusLabel = 'ĐÃ HỦY'
-            statusBg = COLORS.gray
-          } else if (isDone) {
-            statusLabel = 'KẾT THÚC'
-            statusBg = COLORS.gray
-          } else if (isFull) {
-            statusLabel = 'ĐÃ ĐẦY'
-            statusBg = COLORS.amber
-          } else if (isUnderfilled) {
-            statusLabel = 'CẦN THÊM NGƯỜI'
-            statusBg = COLORS.coral
-          }
-
-          const statusColor = statusBg // Use consistent color
-
-          const sessionTitle = nextSession.title || (nextSession.format_type === 'round_robin' ? 'Giải Round Robin' : 'Kèo giao lưu Social')
-          
-          return (
-            <View style={{ marginBottom: 32, paddingHorizontal: 24 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 10 }}>
-                <Text style={{ 
-                  fontFamily: SCREEN_FONTS.headline, 
-                  fontSize: 14, 
-                  color: theme.primary, 
-                  letterSpacing: 1,
-                  textTransform: 'uppercase'
-                }}>
-                  KÈO TIẾP THEO
-                </Text>
-                <View style={{ flex: 1, height: 1, backgroundColor: theme.primary, opacity: 0.2 }} />
-              </View>
-              
-              <TouchableOpacity
-                onPress={() => onOpenSession(item.id)}
-                style={{
-                  backgroundColor: theme.surface,
-                  borderWidth: BORDER.hairline,
-                  borderColor: theme.outlineVariant,
-                  borderRadius: 16,
-                  overflow: 'hidden',
-                  ...LAYOUT_SHADOW.sm
-                }}
-              >
-                <View
-                  style={{
-                    backgroundColor: statusBg,
-                    paddingHorizontal: 16,
-                    paddingVertical: SPACING.xs,
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6 }}>
-                    <View style={{ width: 5, height: 5, borderRadius: RADIUS.full, backgroundColor: theme.onPrimary }} />
-                    <Text
-                      style={{
-                        color: theme.onPrimary,
-                        fontFamily: SCREEN_FONTS.cta,
-                        fontSize: 11,
-                        lineHeight: 15,
-                        letterSpacing: 0.5,
-                      }}
-                    >
-                      {statusLabel}
-                    </Text>
-                  </View>
-                  {(() => {
-                    const ownerSessions = nextSession.owner_sessions
-                    const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
-                    const subCourts = ownerDetails.sub_court_numbers || nextSession.sub_court_numbers || []
-                    
-                    if (!subCourts || subCourts.length === 0) return null
-                    return (
-                      <Text style={{ 
-                        color: 'white', 
-                        fontFamily: SCREEN_FONTS.bold, 
-                        fontSize: 9.5, 
-                        letterSpacing: 0.5,
-                        opacity: 0.95
-                      }}>
-                        {`SÂN ${subCourts.join(', ')}`}
-                      </Text>
-                    )
-                  })()}
-                </View>
-
-                <View style={{ paddingTop: 8, paddingHorizontal: 16, paddingBottom: 6 }}>
-                  <Text
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                    style={{
-                      color: theme.onSurface,
-                      fontFamily: AppFontSet.headline,
-                      fontSize: 24,
-                      lineHeight: 28,
-                      letterSpacing: 0,
-                      marginBottom: 2,
-                      paddingTop: 2,
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {sessionTitle}
-                  </Text>
-
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ 
-                    fontFamily: SCREEN_FONTS.body, 
-                    fontSize: 12, 
-                    color: theme.onSurfaceVariant,
-                    marginTop: 2,
-                    letterSpacing: 0.3
-                  }}>
-                    {nextSession.slot?.court?.name || 'KÈO PICKLEBALL'}
-                  </Text>
-                </View>
-
-                <View style={{ backgroundColor: theme.surfaceContainerLow, paddingTop: 8, paddingHorizontal: 16, paddingBottom: 10 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 8 }}>
-                      <View style={{ backgroundColor: dayInfo.badgeColor, borderRadius: 3, paddingHorizontal: 7, paddingVertical: 2 }}>
-                        <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.cta, fontSize: 12, lineHeight: 16 }}>
-                          {dayInfo.badgeLabel}
-                        </Text>
-                      </View>
-                    </View>
-           
-                    <View style={{ flexDirection: 'row', gap: 6 }}>
-                      <View style={{ backgroundColor: '#E1F5EE', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: '#0F6E5630' }}>
-                        <Text style={{ color: '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NAM</Text>
-                        <Text style={{ color: '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
-                          {(item.skillLabel || '').split('/')[0]?.replace('♂', '').replace(/\(Nam\)|\(nam\)|Trình|trình/g, '').trim()}
-                        </Text>
-                      </View>
-                      <View style={{ backgroundColor: '#FAECE7', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: '#993C1D30' }}>
-                        <Text style={{ color: '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NỮ</Text>
-                        <Text style={{ color: '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
-                          {((item.skillLabel || '').split('/')[1] || item.skillLabel || '').replace('♀', '').replace(/\(Nữ\)|\(nữ\)|Trình|trình/g, '').trim()}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                    <View>
-                      <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 }}>
-                        THỜI GIAN
-                      </Text>
-                      <Text
-                        style={{
-                          color: theme.onSurface,
-                          fontFamily: AppFontSet.headline,
-                          fontSize: 26,
-                          lineHeight: 26,
-                          letterSpacing: 0,
-                        }}
-                      >
-                        {formatClock(startDate)}
-                      </Text>
-                      <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 14, marginTop: 2 }}>
-                        {`đến ${formatClock(endDate)}`}
-                      </Text>
-                    </View>
-           
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 }}>
-                        CHI PHÍ
-                      </Text>
-                      <Text style={{ color: theme.onSurface, fontFamily: AppFontSet.headline, fontSize: 20, lineHeight: 20 }}>
-                        {item.priceLabel}
-                      </Text>
-                      <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.body, fontSize: 10, lineHeight: 14, marginTop: 1 }}>
-                        {item.priceLabel === 'Miễn phí' ? '' : '/ người'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    {/* Segmented Progress Bar (Roundash) with Icon */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Users size={14} color={theme.onSurfaceVariant} />
-                      <Text style={{ 
-                        fontFamily: SCREEN_FONTS.medium, 
-                        fontSize: 12, 
-                        color: theme.onSurfaceVariant,
-                        marginRight: 2
-                      }}>
-                        {`${item.activePlayers}/${item.maxPlayers}`}
-                      </Text>
-                      <View style={{ flexDirection: 'row', gap: 3, height: 5, width: 100 }}>
-                        {(() => {
-                          const displayMax = 10
-                          const segments = []
-                          for (let i = 0; i < displayMax; i++) {
-                            const isActive = i < (item.activePlayers / item.maxPlayers) * displayMax
-                            segments.push(
-                              <View 
-                                key={i} 
-                                style={{ 
-                                  flex: 1, 
-                                  height: '100%', 
-                                  borderRadius: 4, 
-                                  backgroundColor: isActive ? statusColor : theme.outlineVariant,
-                                  opacity: isActive ? 1 : 0.4
-                                }} 
-                              />
-                            )
-                          }
-                          return segments
-                        })()}
-                      </View>
-                    </View>
-
-                    <TouchableOpacity
-                      onPress={() => onOpenSession(item.id)}
-                      style={{ 
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        backgroundColor: statusColor + '10', 
-                        paddingHorizontal: 12, 
-                        paddingVertical: 6, 
-                        borderRadius: 20,
-                        gap: 4
-                      }}
-                    >
-                      <Text style={{ 
-                        color: statusColor, 
-                        fontFamily: SCREEN_FONTS.headline, 
-                        fontSize: 11, 
-                        lineHeight: 16, 
-                        textTransform: 'uppercase' 
-                      }}>
-                        Chi tiết
-                      </Text>
-                      <ChevronRight size={14} color={statusColor} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </TouchableOpacity>
+        {activeTab === 'upcoming' && nextSession && (
+          <View style={{ marginBottom: 32, paddingHorizontal: 24 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 10 }}>
+              <Text style={{ 
+                fontFamily: SCREEN_FONTS.headline, 
+                fontSize: 14, 
+                color: theme.primary, 
+                letterSpacing: 1,
+                textTransform: 'uppercase'
+              }}>
+                KÈO TIẾP THEO
+              </Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: theme.primary, opacity: 0.2 }} />
             </View>
-          )
-        })()}
+            
+            <NextSessionCard 
+              session={nextSession}
+              isHost={true}
+              onPress={(id) => onOpenSession(id)}
+            />
+          </View>
+        )}
         
         <View style={{ paddingHorizontal: 24 }}>
           {loading ? (

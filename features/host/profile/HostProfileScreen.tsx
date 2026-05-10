@@ -4,6 +4,7 @@ import {
   Text,
   ScrollView,
   Pressable,
+  TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
 } from 'react-native'
@@ -15,6 +16,7 @@ import {
   Building2,
   CalendarDays,
   PencilLine,
+  LogOut,
 } from 'lucide-react-native'
 import { router } from 'expo-router'
 import { supabase } from '@/lib/supabase'
@@ -303,6 +305,32 @@ export function HostProfileScreen() {
               </Pressable>
             ))}
           </View>
+
+          {/* Logout Button */}
+          <TouchableOpacity
+            onPress={async () => {
+              await supabase.auth.signOut()
+              router.replace('/')
+            }}
+            activeOpacity={0.8}
+            style={{
+              marginTop: 24,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: 16,
+              borderRadius: RADIUS.xl,
+              backgroundColor: theme.surfaceAlt,
+              borderWidth: 1,
+              borderColor: theme.outlineVariant,
+              gap: 12
+            }}
+          >
+            <LogOut size={20} color={theme.error} />
+            <Text style={{ fontSize: 15, fontFamily: SCREEN_FONTS.headline, color: theme.error }}>
+              ĐĂNG XUẤT TÀI KHOẢN
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <View style={{ height: 100 }} />

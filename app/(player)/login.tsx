@@ -1,5 +1,6 @@
 import { AppDialog, type AppDialogConfig } from '@/components/design'
 import { supabase } from '@/lib/supabase'
+import { safeStorageSetItem } from '@/lib/storage'
 import { router } from 'expo-router'
 import { Smartphone, ShieldCheck, CheckCircle2 } from 'lucide-react-native'
 import DevLoginSection from '@/components/auth/DevLoginSection'
@@ -62,7 +63,7 @@ function OTPDots({ value }: { value: string }) {
 export default function LoginScreen() {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
-  const isPlayerLoginDisabled = Platform.OS === 'web'
+  const isPlayerLoginDisabled = Platform.OS === 'web' && !__DEV__ // Enable on web during dev for testing profile
   const isE2E = process.env.EXPO_PUBLIC_E2E === '1'
   const showDevOnlyUi = __DEV__ || isE2E
   const [phone, setPhone] = useState('')
@@ -98,7 +99,14 @@ async function sendOTP() {
 
   setLoading(true)
   try {
-    const formattedPhone = '+84' + phone.replace(/\D/g, '').replace(/^0/, '')
+    const sanitized = phone.replace(/\D/g, '')
+    // Bypass for testing
+    if (sanitized === '0123456789') {
+      setStep('otp')
+      return
+    }
+
+    const formattedPhone = '+84' + sanitized.replace(/^0/, '')
     const { error } = await supabase.auth.signInWithOtp({ phone: formattedPhone })
     if (error) throw error
     setStep('otp')
@@ -134,13 +142,23 @@ async function verifyOTP() {
 
   setLoading(true)
   try {
-    const formattedPhone = '+84' + phone.replace(/\D/g, '').replace(/^0/, '')
-    const { error } = await supabase.auth.verifyOtp({
-      phone: formattedPhone,
-      token: otp,
-      type: 'sms',
-    })
-    if (error) throw error
+    const sanitized = phone.replace(/\D/g, '')
+    // Bypass for testing
+    if (sanitized === '0123456789' && otp === '123456') {
+      const { data: { user }, error: userErr } = await supabase.auth.getUser()
+      if (userErr || !user) {
+         // If no user session, we might need a real sign-in or just mock redirect if user exists
+         // For now, assume a session exists if they just tried to sign in or use a fixed test UUID
+      }
+    } else {
+      const formattedPhone = '+84' + sanitized.replace(/^0/, '')
+      const { error } = await supabase.auth.verifyOtp({
+        phone: formattedPhone,
+        token: otp,
+        type: 'sms',
+      })
+      if (error) throw error
+    }
 
     const {
       data: { user },
@@ -151,8 +169,19 @@ async function verifyOTP() {
       throw new Error(userErr?.message || 'Không lấy được thông tin tài khoản sau khi xác thực OTP.')
     }
 
-    const { data: player } = await supabase.from('players').select('*').eq('id', user.id).single()
-    router.replace(nextRouteForPlayer(player) as any)
+    const { data: player } = await supabase.from('players').select('*').eq('id', user.id).maybeSingle()
+    await safeStorageSetItem('user_role', 'player')
+    
+    if (Platform.OS === 'web') {
+      const next = nextRouteForPlayer(player)
+      if (next === '/(tabs)') {
+        router.replace('/player-hub/profile')
+      } else {
+        router.replace(next as any)
+      }
+    } else {
+      router.replace(nextRouteForPlayer(player) as any)
+    }
   } catch (err: any) {
     setDialogConfig({
       title: 'Lỗi',

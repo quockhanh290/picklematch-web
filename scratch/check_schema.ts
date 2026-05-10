@@ -1,33 +1,17 @@
-import { createClient } from '@supabase/supabase-js'
-import * as dotenv from 'dotenv'
-
-dotenv.config({ path: '.env' })
-
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
-const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
-
-const supabase = createClient(supabaseUrl!, supabaseKey!, {
-  auth: { persistSession: false }
-})
+import { supabase } from './lib/supabase'
 
 async function checkSchema() {
-  // Check sessions table
-  const { data: sessData, error: sessErr } = await supabase
-    .from('sessions')
-    .select('*')
-    .limit(1)
-  
-  if (sessErr) console.error('Sessions Error:', sessErr)
-  else console.log('Sessions columns:', Object.keys(sessData?.[0] || {}))
-
-  // Check owner_sessions table
-  const { data: ownerData, error: ownerErr } = await supabase
-    .from('owner_sessions')
-    .select('*')
-    .limit(1)
-  
-  if (ownerErr) console.error('OwnerSessions Error:', ownerErr)
-  else console.log('OwnerSessions columns:', Object.keys(ownerData?.[0] || {}))
+  const { data, error } = await supabase.from('players').select('*').limit(1)
+  if (error) {
+    console.error('Error fetching players:', error)
+    return
+  }
+  if (data && data.length > 0) {
+    console.log('Columns in players:', Object.keys(data[0]))
+  } else {
+    console.log('No players found to check columns')
+    // Try to get table info via RPC or just assume it's missing if we can't find it in migrations
+  }
 }
 
 checkSchema()

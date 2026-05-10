@@ -116,7 +116,7 @@ export function HomeGreetingHeader({
           </View>
 
           {/* Right Section: Primary Action */}
-          <View style={{ alignItems: 'flex-end' }}>
+          <View style={{ alignItems: 'flex-end', gap: 8 }}>
             <TouchableOpacity
               onPress={() => router.push('/host/create-session')}
               activeOpacity={0.8}
@@ -125,7 +125,7 @@ export function HomeGreetingHeader({
                 alignItems: 'center',
                 backgroundColor: theme.primary,
                 paddingHorizontal: 20,
-                paddingVertical: 12,
+                paddingVertical: 10,
                 borderRadius: RADIUS.md,
                 gap: 8,
                 ...SHADOW.sm
@@ -139,6 +139,31 @@ export function HomeGreetingHeader({
                 letterSpacing: 0.5
               }}>
                 TẠO KÈO MỚI
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push(Platform.OS === 'web' ? '/player-hub/profile' : '/(player)/(tabs)/profile' as any)}
+              activeOpacity={0.8}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: theme.secondaryContainer,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: RADIUS.md,
+                gap: 6,
+                borderWidth: 1,
+                borderColor: theme.outlineVariant
+              }}
+            >
+              <Text style={{ 
+                color: theme.primary, 
+                fontFamily: SCREEN_FONTS.cta, 
+                fontSize: 11,
+                letterSpacing: 0.3
+              }}>
+                CHUYỂN SANG HỒ SƠ PLAYER
               </Text>
             </TouchableOpacity>
           </View>

@@ -6,8 +6,9 @@ export type HistorySection = {
   items: MySession[]
 }
 
-export type HistoryRow =
-  | { type: 'filters'; key: string }
+export type SessionRow =
+  | { type: 'section-header'; key: string; label: string; count?: number }
+  | { type: 'next-session'; key: string; session: MySession }
   | { type: 'month'; key: string; monthKey: string; monthLabel: string; count: number }
   | { type: 'session'; key: string; session: MySession }
 
