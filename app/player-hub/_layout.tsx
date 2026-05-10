@@ -51,40 +51,6 @@ export default function PlayerHubLayout() {
     <SessionNavContext.Provider value={sessionNav}>
       <AppNavContext.Provider value={appNav}>
         <View style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
-          {/* Top Header - Branded */}
-          <View style={{ 
-            height: 64, 
-            backgroundColor: 'white', 
-            borderBottomWidth: 1, 
-            borderBottomColor: theme.outlineVariant,
-            zIndex: 100,
-            ...SHADOW.xs
-          }}>
-            <WebContainer>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: '100%' }}>
-                <TouchableOpacity 
-                  onPress={() => router.push('/')}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                >
-                  <View style={{ backgroundColor: theme.primary, width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
-                    <Home size={16} color="white" />
-                  </View>
-                  <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 16, color: theme.primary, letterSpacing: -0.5 }}>
-                    PICKLEMATCH
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  onPress={handleLogout}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, opacity: 0.7 }}
-                >
-                  <LogOut size={16} color={theme.onSurfaceVariant} />
-                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onSurfaceVariant, fontWeight: '700' }}>ĐĂNG XUẤT</Text>
-                </TouchableOpacity>
-              </View>
-            </WebContainer>
-          </View>
-
           {/* Content Area */}
           <View style={{ flex: 1 }}>
             <Slot />

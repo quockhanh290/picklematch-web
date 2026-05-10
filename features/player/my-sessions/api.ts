@@ -25,9 +25,13 @@ export async function fetchMySessionsApi(userId: string): Promise<MySession[]> {
     max_players: session.max_players ?? 0,
     elo_min: session.elo_min ?? null,
     elo_max: session.elo_max ?? null,
+    total_cost: session.total_cost ?? 0,
     has_rated: session.has_rated ?? false,
     is_ranked: session.is_ranked ?? true,
+    format_type: session.format_type ?? 'social',
   }))
+
+  console.log('[MySessionsApi] First session format_type:', rpcSessions[0]?.format_type)
 
   const rpcSessionIds = Array.from(new Set(rpcSessions.map((session) => session.id).filter(Boolean)))
   if (rpcSessionIds.length === 0) return rpcSessions
@@ -141,6 +145,8 @@ export async function fetchMySessionsApi(userId: string): Promise<MySession[]> {
         results_status,
         host_id,
         is_ranked,
+        total_cost,
+        format_type,
         court_booking_status,
         max_players,
         elo_min,
@@ -181,8 +187,10 @@ export async function fetchMySessionsApi(userId: string): Promise<MySession[]> {
         max_players: session.max_players ?? 0,
         elo_min: session.elo_min ?? null,
         elo_max: session.elo_max ?? null,
+        total_cost: session.total_cost ?? 0,
         has_rated: false,
         is_ranked: session.is_ranked ?? true,
+        format_type: session.format_type ?? 'social',
       }
 
       byKey.set(`player:${normalized.id}`, normalized)

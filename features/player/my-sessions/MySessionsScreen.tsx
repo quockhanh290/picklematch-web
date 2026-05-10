@@ -24,7 +24,15 @@ import { MySessionCard, type SessionTab } from '@/components/sessions/MySessionC
 import { NextSessionCard } from '@/components/sessions/NextSessionCard'
 import { MySessionsEmptyState } from '@/components/sessions/MySessionsEmptyState'
 import { ExpandingCreateButton } from '@/components/sessions/ExpandingCreateButton'
+import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { useMySessions, HISTORY_PAGE_SIZE } from './hooks/useMySessions'
+
+import { HomeGreetingHeader } from '@/components/home/HomeGreetingHeader'
+import { DashboardStatsStrip, buildDashboardStats } from '@/components/home/DashboardStatsStrip'
+import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
+import { fetchCurrentPlayerProfileDataApi } from '@/features/player/profile/api'
+import type { ProfilePlayer as Player, ProfilePlayerStats as PlayerStats } from '@/features/player/profile/types'
+import { useEffect } from 'react'
 
 import { HistorySection, SessionRow, MySession } from './types'
 import { 
@@ -56,6 +64,17 @@ export function MySessionsScreen() {
     historyExpandedMonths,
     setHistoryExpandedMonths,
   } = useMySessions()
+
+  const { switchToHost } = useRoleSwitcher()
+  const [player, setPlayer] = useState<Player | null>(null)
+  const [playerStats, setPlayerStats] = useState<PlayerStats | null>(null)
+  
+  useEffect(() => {
+    fetchCurrentPlayerProfileDataApi().then(data => {
+      if (data.player) setPlayer(data.player)
+      if (data.playerStats) setPlayerStats(data.playerStats)
+    })
+  }, [])
 
 
 
@@ -203,76 +222,61 @@ export function MySessionsScreen() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
-      <WebContainer style={{ flex: 1 }}>
-      {loading ? (
-        <View className="flex-1 items-center justify-center px-6">
-          <ActivityIndicator size="large" color={theme.primary} />
-          <Text
-            className="mt-4 text-[14px]"
-            style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label }}
-          >
-            Đang tải kèo của bạn...
-          </Text>
-        </View>
-      ) : (
-        <View className="flex-1">
-          <FlatList
-            data={listData}
-            keyExtractor={(item) => ('type' in item ? `${activeTab}-${item.key}` : `${activeTab}-${item.id}`)}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 0, paddingBottom: 160 }}
-            refreshControl={
-              <RefreshControl 
-                refreshing={refreshing} 
-                onRefresh={onRefresh} 
-                tintColor={theme.primary} 
-                colors={[theme.primary]}
-                title="Cập nhật lịch thi đấu..."
-                titleColor={theme.onSurfaceVariant}
-                progressViewOffset={SPACING.xl}
-              />
-            }
-            alwaysBounceVertical={true}
-            stickyHeaderIndices={isHistoryTab ? [1] : undefined}
-            onEndReached={loadMoreHistory}
-            onEndReachedThreshold={0.25}
-            ListHeaderComponent={
-              <View style={{ marginBottom: 16 }}>
-                <View style={{ 
-                  flexDirection: 'row', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'center',
-                  marginTop: 24,
-                  marginBottom: 20
-                }}>
-                  <View>
-                    <Text style={{ 
-                      fontFamily: SCREEN_FONTS.headlineBlack, 
-                      fontSize: 28, 
-                      color: theme.onSurface,
-                      letterSpacing: -0.5
-                    }}>
-                      Kèo của tôi
-                    </Text>
-                    <Text style={{ 
-                      fontFamily: SCREEN_FONTS.body, 
-                      fontSize: 13, 
-                      color: theme.onSurfaceVariant,
-                      marginTop: 2
-                    }}>
-                      {activeTab === 'history' ? `${activeTabCount} trận đã thi đấu` : `${activeTabCount} kèo sắp tới`}
-                    </Text>
-                  </View>
-                </View>
+      <View style={{ backgroundColor: '#FDFBF7', zIndex: 10, paddingBottom: 24 }}>
+        <HomeGreetingHeader 
+          name={player?.name ?? 'Bạn'}
+          role="player"
+          profilePhotoUrl={player?.avatar_url}
+          onRoleChange={() => switchToHost(player?.id ?? '', !!player?.is_host)}
+        />
+        <WebContainer style={{ marginTop: -12, marginBottom: -22, zIndex: 999 }}>
+          <DashboardStatsStrip items={buildDashboardStats(player, playerStats)} />
+        </WebContainer>
+      </View>
 
-                {/* Pill Tab Selector */}
+      <WebContainer style={{ flex: 1 }}>
+        {loading ? (
+          <View className="flex-1 items-center justify-center px-6">
+            <ActivityIndicator size="large" color={theme.primary} />
+            <Text
+              className="mt-4 text-[14px]"
+              style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label }}
+            >
+              Đang tải kèo của bạn...
+            </Text>
+          </View>
+        ) : (
+          <View className="flex-1">
+            <FlatList
+              data={listData}
+              keyExtractor={(item) => ('type' in item ? `${activeTab}-${item.key}` : `${activeTab}-${item.id}`)}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 0, paddingBottom: 160 }}
+              refreshControl={
+                <RefreshControl 
+                  refreshing={refreshing} 
+                  onRefresh={onRefresh} 
+                  tintColor={theme.primary} 
+                  colors={[theme.primary]}
+                  title="Cập nhật lịch thi đấu..."
+                  titleColor={theme.onSurfaceVariant}
+                  progressViewOffset={SPACING.xl}
+                />
+              }
+              alwaysBounceVertical={true}
+              stickyHeaderIndices={isHistoryTab ? [1] : undefined}
+              onEndReached={loadMoreHistory}
+              onEndReachedThreshold={0.25}
+              ListHeaderComponent={
+                <View style={{ marginTop: 20, marginBottom: 0 }}>
+                  {/* Pill Tab Selector */}
                 <View style={{ 
                   flexDirection: 'row', 
                   backgroundColor: theme.surfaceContainerHighest, 
                   borderRadius: RADIUS.lg, 
                   padding: 4,
                   gap: 4,
-                  marginBottom: 24
+                  marginBottom: 10
                 }}>
                   {TAB_OPTIONS.map((tab) => {
                     const active = tab.key === activeTab
@@ -312,17 +316,22 @@ export function MySessionsScreen() {
               </View>
             }
             ListFooterComponent={
-              isHistoryTab && canLoadMoreHistory ? (
-                <View className="py-6 items-center">
-                  <ActivityIndicator size="small" color={theme.primary} />
+              <View>
+                {isHistoryTab && canLoadMoreHistory && (
+                  <View className="py-6 items-center">
+                    <ActivityIndicator size="small" color={theme.primary} />
+                  </View>
+                )}
+                <View style={{ marginTop: 20 }}>
+                  <BrandedFooter />
                 </View>
-              ) : null
+              </View>
             }
             ListEmptyComponent={<MySessionsEmptyState activeTab={activeTab} />}
             renderItem={({ item }) => {
               if (item.type === 'section-header') {
                 return (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 12, gap: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, marginBottom: 12, gap: 10 }}>
                     <Text style={{ 
                       fontFamily: SCREEN_FONTS.headline, 
                       fontSize: 14, 
@@ -339,7 +348,7 @@ export function MySessionsScreen() {
 
               if (item.type === 'next-session') {
                 return (
-                  <View style={{ marginBottom: 32 }}>
+                  <View style={{ marginBottom: 4 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 10 }}>
                       <Text style={{ 
                         fontFamily: SCREEN_FONTS.headline, 
@@ -408,11 +417,13 @@ export function MySessionsScreen() {
               }
 
               return (
-                <MySessionCard 
-                  item={item.session}
-                  tab={activeTab}
-                  onShare={handleShare}
-                />
+                <View style={{ marginBottom: 8 }}>
+                  <MySessionCard 
+                    item={item.session}
+                    tab={activeTab}
+                    onShare={handleShare}
+                  />
+                </View>
               )
             }}
           />
@@ -420,7 +431,6 @@ export function MySessionsScreen() {
         </View>
       )}
       </WebContainer>
-      <ExpandingCreateButton />
     </View>
   )
 }

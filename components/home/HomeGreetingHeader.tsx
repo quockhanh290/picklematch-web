@@ -24,7 +24,7 @@ export function HomeGreetingHeader({
   profilePhotoUrl,
   onPhotoPress,
   rating = 4.8,
-  sessionCount = 47,
+  sessionCount = 0,
   isProfessional = true,
 }: {
   name: string
@@ -41,8 +41,9 @@ export function HomeGreetingHeader({
   const initial = displayName.charAt(0).toUpperCase()
   const insets = useSafeAreaInsets()
   const isWeb = Platform.OS === 'web'
+  const isHost = role === 'host'
 
-  const handlePhotoPress = onPhotoPress || (() => router.push('/(tabs)/profile' as never))
+  const handlePhotoPress = onPhotoPress || (() => router.push(isWeb ? '/player-hub/profile' : '/(tabs)/profile' as any))
 
   return (
     <View
@@ -53,7 +54,7 @@ export function HomeGreetingHeader({
       }}
     >
       <WebContainer>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 20 }}>
           {/* Left Section: Avatar & Info */}
           <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
             {/* Avatar */}
@@ -82,12 +83,12 @@ export function HomeGreetingHeader({
                 </Text>
               )}
             </Pressable>
-
+ 
             {/* Identity & Stats */}
             <View style={{ flex: 1 }}>
               <Text
                 style={{ 
-                  color: '#8B8678',
+                  color: theme.onSurfaceVariant,
                   fontFamily: SCREEN_FONTS.body, 
                   fontSize: 13,
                   marginBottom: 1
@@ -95,12 +96,12 @@ export function HomeGreetingHeader({
               >
                 {getGreetingLabel()}
               </Text>
-
+ 
               <Text
                 numberOfLines={1}
                 ellipsizeMode="tail"
                 style={{ 
-                  color: '#1A2E2A', 
+                  color: theme.onSurface, 
                   fontFamily: SCREEN_FONTS.headlineBlack, 
                   fontSize: isWeb ? 32 : 24,
                   lineHeight: isWeb ? 38 : 28, 
@@ -111,14 +112,13 @@ export function HomeGreetingHeader({
               >
                 {displayName}
               </Text>
-
             </View>
           </View>
-
+ 
           {/* Right Section: Primary Action */}
-          <View style={{ alignItems: 'flex-end', gap: 8 }}>
+          <View style={{ alignItems: 'flex-end', gap: 10 }}>
             <TouchableOpacity
-              onPress={() => router.push('/host/create-session')}
+              onPress={() => router.push(isHost ? '/host/create-session' : '/player-hub/find-session')}
               activeOpacity={0.8}
               style={{
                 flexDirection: 'row',
@@ -135,37 +135,40 @@ export function HomeGreetingHeader({
               <Text style={{ 
                 color: 'white', 
                 fontFamily: SCREEN_FONTS.headline, 
-                fontSize: 14,
+                fontSize: 13,
                 letterSpacing: 0.5
               }}>
-                TẠO KÈO MỚI
+                {isHost ? 'TẠO KÈO MỚI' : 'TÌM KÈO NGAY'}
               </Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => router.push(Platform.OS === 'web' ? '/player-hub/profile' : '/(player)/(tabs)/profile' as any)}
-              activeOpacity={0.8}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                backgroundColor: theme.secondaryContainer,
-                paddingHorizontal: 16,
-                paddingVertical: 8,
-                borderRadius: RADIUS.md,
-                gap: 6,
-                borderWidth: 1,
-                borderColor: theme.outlineVariant
-              }}
-            >
-              <Text style={{ 
-                color: theme.primary, 
-                fontFamily: SCREEN_FONTS.cta, 
-                fontSize: 11,
-                letterSpacing: 0.3
-              }}>
-                CHUYỂN SANG HỒ SƠ PLAYER
-              </Text>
-            </TouchableOpacity>
+ 
+            {onRoleChange && (
+              <TouchableOpacity
+                onPress={() => onRoleChange(isHost ? 'player' : 'host')}
+                activeOpacity={0.8}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: theme.surfaceContainerLow,
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: RADIUS.md,
+                  gap: 6,
+                  borderWidth: 1,
+                  borderColor: theme.outlineVariant
+                }}
+              >
+                <Text style={{ 
+                  color: theme.primary, 
+                  fontFamily: SCREEN_FONTS.cta, 
+                  fontSize: 10,
+                  letterSpacing: 0.3,
+                  textTransform: 'uppercase'
+                }}>
+                  {isHost ? 'CHẾ ĐỘ NGƯỜI CHƠI' : 'CHẾ ĐỘ QUẢN LÝ'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </WebContainer>

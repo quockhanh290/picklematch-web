@@ -27,7 +27,10 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
     : (session.player_count || 0)
     
   const maxPlayers = session.is_unlimited ? 16 : (session.max_players || 16)
-  const priceLabel = session.total_cost > 0 ? `${Math.round(session.total_cost / 1000)}K` : 'Miễn phí'
+  const ownerSessions = session.owner_sessions
+  const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
+  const costPerPerson = ownerDetails.format_metadata?.cost_per_person ?? ownerDetails.total_cost ?? session.total_cost
+  const priceLabel = costPerPerson > 0 ? `${Math.round(costPerPerson / 1000)}K` : 'Miễn phí'
   const skillLabel = getSessionSkillLabel(session.elo_min, session.elo_max)
 
   // Status Logic
@@ -50,33 +53,36 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
   const isFull = fillRatio >= 1
   const isUnderfilled = fillRatio < 0.6 && !isDone && !isPlaying && !isCancelled
 
-  let statusLabel = 'ĐANG MỞ'
+  let statusLabel = ''
   let statusBg = COLORS.teal
   
-  if (isPlaying) {
-    statusLabel = 'THI ĐẤU'
-    statusBg = COLORS.darkTeal
-  } else if (isCancelled) {
-    statusLabel = 'ĐÃ HỦY'
-    statusBg = COLORS.gray
-  } else if (isDone) {
-    statusLabel = 'KẾT THÚC'
-    statusBg = COLORS.gray
-  } else if (isFull) {
-    statusLabel = 'ĐÃ ĐẦY'
-    statusBg = COLORS.amber
-  } else if (isUnderfilled) {
-    statusLabel = 'CẦN THÊM NGƯỜI'
-    statusBg = COLORS.coral
-  }
-
-  // Overwrite for Players: always show primary/teal theme
-  if (!isHost) {
+  if (isHost) {
+    if (isPlaying) {
+      statusLabel = 'THI ĐẤU'
+      statusBg = COLORS.darkTeal
+    } else if (isCancelled) {
+      statusLabel = 'ĐÃ HỦY'
+      statusBg = COLORS.gray
+    } else if (isDone) {
+      statusLabel = 'KẾT THÚC'
+      statusBg = COLORS.gray
+    } else if (isFull) {
+      statusLabel = 'ĐÃ ĐẦY'
+      statusBg = COLORS.amber
+    } else if (isUnderfilled) {
+      statusLabel = 'CẦN THÊM NGƯỜI'
+      statusBg = COLORS.coral
+    } else {
+      statusLabel = 'ĐANG MỞ'
+      statusBg = COLORS.teal
+    }
+  } else {
+    // Player View: Show format type
     statusBg = theme.primary
-    if (isPlaying) statusLabel = 'ĐANG THI ĐẤU'
-    else if (isCancelled) statusLabel = 'ĐÃ HỦY'
-    else if (isDone) statusLabel = 'ĐÃ KẾT THÚC'
-    else statusLabel = 'KÈO SẮP TỚI'
+    const fmt = (session.format_type || '').toLowerCase()
+    if (fmt === 'round_robin') statusLabel = 'GIẢI ROUND ROBIN'
+    else if (fmt === 'open_play') statusLabel = 'KÈO MỞ OPEN PLAY'
+    else statusLabel = 'KÈO GIAO LƯU SOCIAL'
   }
 
   const formatClock = (date: Date) => {
@@ -116,8 +122,6 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
   }
 
   // Get sub-courts
-  const ownerSessions = session.owner_sessions
-  const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
   const subCourts = ownerDetails.sub_court_numbers || session.sub_court_numbers || []
 
   return (
@@ -145,10 +149,10 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
 
       <View style={styles.contentPadding}>
         <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.title, { color: theme.onSurface }]}>
-          {title.toUpperCase()}
+          {isHost ? title.toUpperCase() : courtName.toUpperCase()}
         </Text>
         <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.location, { color: theme.onSurfaceVariant }]}>
-          {courtName}
+          {isHost ? courtName : session.court_address}
         </Text>
       </View>
 
@@ -248,9 +252,10 @@ const styles = StyleSheet.create({
   },
   statusLabel: {
     color: 'white',
-    fontFamily: SCREEN_FONTS.cta,
-    fontSize: 11,
-    letterSpacing: 0.5,
+    fontFamily: SCREEN_FONTS.headline,
+    fontSize: 12,
+    letterSpacing: 1,
+    fontWeight: '700',
   },
   courtBadge: {
     color: 'white',
@@ -266,9 +271,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: AppFontSet.headline,
-    fontSize: 24,
-    lineHeight: 28,
-    marginBottom: 2,
+    fontSize: 20,
+    lineHeight: 24,
+    marginBottom: 0,
   },
   location: {
     fontFamily: SCREEN_FONTS.body,
@@ -331,13 +336,13 @@ const styles = StyleSheet.create({
   },
   clockValue: {
     fontFamily: AppFontSet.headline,
-    fontSize: 26,
-    lineHeight: 26,
+    fontSize: 22,
+    lineHeight: 22,
   },
   priceValue: {
     fontFamily: AppFontSet.headline,
-    fontSize: 20,
-    lineHeight: 20,
+    fontSize: 18,
+    lineHeight: 18,
   },
   gridSubValue: {
     fontFamily: SCREEN_FONTS.body,

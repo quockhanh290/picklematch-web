@@ -317,7 +317,13 @@ export default function HostDashboardScreen() {
               borderRadius: 3, 
               backgroundColor: 'white' 
             }} />
-            <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 9.5, letterSpacing: 0.5 }}>
+            <Text style={{ 
+              color: 'white', 
+              fontFamily: SCREEN_FONTS.headline, 
+              fontSize: 12, 
+              letterSpacing: 1,
+              fontWeight: '700'
+            }}>
               {statusLabel}
             </Text>
           </View>
@@ -325,9 +331,10 @@ export default function HostDashboardScreen() {
           {subCourts.length > 0 && (
             <Text style={{ 
               color: 'white', 
-              fontFamily: SCREEN_FONTS.bold, 
-              fontSize: 9.5, 
-              letterSpacing: 0.5,
+              fontFamily: SCREEN_FONTS.headline, 
+              fontSize: 12, 
+              letterSpacing: 1,
+              fontWeight: '700',
               opacity: 0.95
             }}>
               {`SÂN ${subCourts.join(', ')}`}
@@ -568,30 +575,30 @@ export default function HostDashboardScreen() {
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <StatusBar style="dark" />
       
-      <View style={{ backgroundColor: '#FDFBF7', zIndex: 10 }}>
-        <HomeGreetingHeader 
-          name={profile?.name ?? 'Host'} 
-          role="host"
-          onRoleChange={() => switchToPlayer()}
-          profilePhotoUrl={profile?.avatar_url}
-          onPhotoPress={onOpenProfile}
-          rating={4.8}
-          sessionCount={sessions.length}
-        />
-        <WebContainer>
-          <DashboardStatsStrip 
-            items={buildDashboardStats(stats)} 
-          />
-        </WebContainer>
-      </View>
-<ScrollView 
-        stickyHeaderIndices={[2]} 
+      <ScrollView 
         showsVerticalScrollIndicator={false}
-        style={{ zIndex: 1 }}
+        style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 100, overflow: 'visible' }}
       >
+        <View style={{ backgroundColor: '#FDFBF7', zIndex: 10 }}>
+          <HomeGreetingHeader 
+            name={profile?.name ?? 'Host'} 
+            role="host"
+            onRoleChange={() => switchToPlayer()}
+            profilePhotoUrl={profile?.avatar_url}
+            onPhotoPress={onOpenProfile}
+            rating={4.8}
+            sessionCount={sessions.length}
+          />
+          <WebContainer>
+            <DashboardStatsStrip 
+              items={buildDashboardStats(stats)} 
+            />
+          </WebContainer>
+        </View>
+
         <WebContainer>
-          <View style={{ height: 28 }} />          {/* Performance Overview Card */}
+          <View style={{ height: 20 }} />          {/* Performance Overview Card */}
           {(() => {
             const upcomingSessions = sessions.filter(s => {
               const endTime = s.slot?.end_time ? new Date(s.slot.end_time).getTime() : 0
@@ -611,61 +618,56 @@ export default function HostDashboardScreen() {
 
             return (
               <View style={{ 
-                marginTop: 20,
+                marginTop: 16,
                 paddingHorizontal: 24,
               }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <MaterialCommunityIcons name="trending-up" size={22} color={barColor} />
                     <View>
                       <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.onSurface }}>
-                        Tỉ lệ lấp đầy hôm nay
-                      </Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurfaceVariant }}>
-                        Dựa trên {upcomingSessions.length} kèo sắp tới
+                        Tỉ lệ lấp đầy
                       </Text>
                     </View>
                   </View>
+
+                  {/* Segmented Performance Bar (Roundash) */}
+                  <View style={{ flex: 1, flexDirection: 'row', gap: 3, height: 6 }}>
+                    {(() => {
+                      const displayMax = 8
+                      const segments = []
+                      const barColor = fillPercentage < 60 ? '#D85A30' : (fillPercentage >= 100 ? '#D97706' : '#0F6E56')
+                      
+                      for (let i = 0; i < displayMax; i++) {
+                        const isActive = (i / displayMax) * 100 < fillPercentage
+                        segments.push(
+                          <View 
+                            key={i} 
+                            style={{ 
+                              flex: 1, 
+                              height: '100%', 
+                              borderRadius: 4, 
+                              backgroundColor: isActive ? barColor : '#F1EFE9',
+                              opacity: isActive ? 1 : 0.5
+                            }} 
+                          />
+                        )
+                      }
+                      return segments
+                    })()}
+                  </View>
+
                   <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 18, color: barColor }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 16, color: barColor }}>
                       {Math.round(fillPercentage)}%
                     </Text>
-                    <Text style={{ fontFamily: SCREEN_FONTS.medium, fontSize: 10, color: theme.onSurfaceVariant }}>
-                      {totalConfirmed}/{totalMax} Slots
-                    </Text>
                   </View>
-                </View>
-
-                {/* Segmented Performance Bar (Roundash) */}
-                <View style={{ flexDirection: 'row', gap: 4, height: 6 }}>
-                  {(() => {
-                    const displayMax = 10
-                    const segments = []
-                    const barColor = fillPercentage < 60 ? '#D85A30' : (fillPercentage >= 100 ? '#D97706' : '#0F6E56')
-                    
-                    for (let i = 0; i < displayMax; i++) {
-                      const isActive = i < (fillPercentage / 100) * displayMax
-                      segments.push(
-                        <View 
-                          key={i} 
-                          style={{ 
-                            flex: 1, 
-                            height: '100%', 
-                            borderRadius: 4, 
-                            backgroundColor: isActive ? barColor : '#F1EFE9',
-                            opacity: isActive ? 1 : 0.5
-                          }} 
-                        />
-                      )
-                    }
-                    return segments
-                  })()}
                 </View>
               </View>
             )
           })()}
       {/* Pill Tab Selector */}
-      <View style={{ paddingHorizontal: 24, marginTop: 20 }}>
+      <View style={{ paddingHorizontal: 24, marginTop: 16 }}>
         <View style={{ 
           flexDirection: 'row', 
           backgroundColor: theme.surfaceContainerHighest, 
@@ -716,7 +718,7 @@ export default function HostDashboardScreen() {
       {/* Content */}
       <View style={{ paddingVertical: 24, paddingTop: 10 }}>
         {activeTab === 'upcoming' && nextSession && (
-          <View style={{ marginBottom: 32, paddingHorizontal: 24 }}>
+          <View style={{ marginBottom: 12, paddingHorizontal: 24 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 10 }}>
               <Text style={{ 
                 fontFamily: SCREEN_FONTS.headline, 

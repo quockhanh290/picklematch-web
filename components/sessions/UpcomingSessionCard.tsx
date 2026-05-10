@@ -12,9 +12,10 @@ import { getSessionSkillLabel } from '@/lib/sessionDetail'
 interface UpcomingSessionCardProps {
   session: MySession
   onPress: (id: string) => void
+  isHost?: boolean
 }
 
-export function UpcomingSessionCard({ session, onPress }: UpcomingSessionCardProps) {
+export function UpcomingSessionCard({ session, onPress, isHost = false }: UpcomingSessionCardProps) {
   const theme = useAppTheme()
 
   // Dynamic Status Logic matching Host Dashboard
@@ -29,15 +30,27 @@ export function UpcomingSessionCard({ session, onPress }: UpcomingSessionCardPro
     coral: '#D85A30',
   }
 
-  let statusLabel = 'ĐANG MỞ'
+  let statusLabel = ''
   let statusBg = COLORS.teal
   
-  if (isFull) {
-    statusLabel = 'ĐÃ ĐẦY'
-    statusBg = COLORS.amber
-  } else if (fillRatio < 0.6) {
-    statusLabel = 'CẦN THÊM NGƯỜI'
-    statusBg = COLORS.coral
+  if (isHost) {
+    if (isFull) {
+      statusLabel = 'ĐÃ ĐẦY'
+      statusBg = COLORS.amber
+    } else if (fillRatio < 0.6) {
+      statusLabel = 'CẦN THÊM NGƯỜI'
+      statusBg = COLORS.coral
+    } else {
+      statusLabel = 'ĐANG MỞ'
+      statusBg = COLORS.teal
+    }
+  } else {
+    // Player View: Show format type
+    statusBg = theme.primary
+    const fmt = (session.format_type || '').toLowerCase()
+    if (fmt === 'round_robin') statusLabel = 'GIẢI ROUND ROBIN'
+    else if (fmt === 'open_play') statusLabel = 'KÈO MỞ OPEN PLAY'
+    else statusLabel = 'KÈO GIAO LƯU SOCIAL'
   }
 
   // Helper for skill badges
@@ -89,10 +102,12 @@ export function UpcomingSessionCard({ session, onPress }: UpcomingSessionCardPro
 
       <View style={styles.contentPadding}>
         <Text numberOfLines={1} style={[styles.title, { color: theme.onSurface }]}>
-          {(session.title || session.court_name).toUpperCase()}
+          {(session.court_name || 'SÂN PICKLEBALL').toUpperCase()}
         </Text>
         <Text numberOfLines={1} style={[styles.location, { color: theme.onSurfaceVariant }]}>
-          {session.court_address || 'KÈO PICKLEBALL'}
+          {isHost 
+            ? (session.title || (session.format_type === 'round_robin' ? 'Giải Round Robin' : 'Kèo giao lưu Social'))
+            : session.court_address}
         </Text>
       </View>
 
@@ -186,9 +201,10 @@ const styles = StyleSheet.create({
   },
   statusLabel: {
     color: 'white',
-    fontFamily: SCREEN_FONTS.cta,
-    fontSize: 11,
-    letterSpacing: 0.5,
+    fontFamily: SCREEN_FONTS.headline,
+    fontSize: 12,
+    letterSpacing: 1,
+    fontWeight: '700',
   },
   courtBadge: {
     color: 'white',
@@ -204,9 +220,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: AppFontSet.headline,
-    fontSize: 24,
-    lineHeight: 28,
-    marginBottom: 2,
+    fontSize: 20,
+    lineHeight: 24,
+    marginBottom: 0,
   },
   location: {
     fontFamily: SCREEN_FONTS.body,
@@ -267,13 +283,13 @@ const styles = StyleSheet.create({
   },
   clockValue: {
     fontFamily: AppFontSet.headline,
-    fontSize: 26,
-    lineHeight: 26,
+    fontSize: 22,
+    lineHeight: 22,
   },
   priceValue: {
     fontFamily: AppFontSet.headline,
-    fontSize: 20,
-    lineHeight: 20,
+    fontSize: 18,
+    lineHeight: 18,
   },
   gridSubValue: {
     fontFamily: SCREEN_FONTS.body,

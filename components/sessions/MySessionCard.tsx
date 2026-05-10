@@ -152,13 +152,33 @@ export function MySessionCard({
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: 'white' }} />
-          <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 9.5, letterSpacing: 0.5 }}>
-            {statusLabel}
+          <Text style={{ 
+            color: 'white', 
+            fontFamily: SCREEN_FONTS.headline, 
+            fontSize: 12, 
+            letterSpacing: 1,
+            fontWeight: '700'
+          }}>
+            {item.role === 'host' 
+              ? statusLabel 
+              : (() => {
+                  const fmt = (item.format_type || '').toLowerCase()
+                  if (fmt === 'round_robin') return 'GIẢI ROUND ROBIN'
+                  if (fmt === 'open_play') return 'KÈO MỞ OPEN PLAY'
+                  return 'KÈO GIAO LƯU SOCIAL'
+                })()}
           </Text>
         </View>
 
         {item.role === 'host' && (
-          <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 9.5, letterSpacing: 0.5, opacity: 0.9 }}>
+          <Text style={{ 
+            color: 'white', 
+            fontFamily: SCREEN_FONTS.headline, 
+            fontSize: 12, 
+            letterSpacing: 1,
+            fontWeight: '700',
+            opacity: 0.9 
+          }}>
             CHỦ KÈO
           </Text>
         )}
@@ -175,7 +195,7 @@ export function MySessionCard({
               textTransform: 'uppercase',
               lineHeight: 24
             }} numberOfLines={1}>
-              {item.title || item.court_name}
+              {(item.court_name || 'SÂN PICKLEBALL').toUpperCase()}
             </Text>
             
             <Text style={{ 
@@ -185,7 +205,9 @@ export function MySessionCard({
               marginTop: 2,
               letterSpacing: 0.3
             }}>
-              {item.court_name} • {item.court_city}
+              {item.role === 'host' 
+                ? (item.title || (item.format_type === 'round_robin' ? 'Giải Round Robin' : 'Kèo giao lưu Social'))
+                : item.court_address}
             </Text>
           </View>
           
@@ -193,6 +215,11 @@ export function MySessionCard({
             <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>
               {pricePerPerson}
             </Text>
+            {item.total_cost && item.total_cost > 0 && (
+              <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.onSurfaceVariant, marginTop: -2 }}>
+                / người
+              </Text>
+            )}
           </View>
         </View>
 
