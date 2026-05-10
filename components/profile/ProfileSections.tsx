@@ -1,7 +1,7 @@
 import { useAppTheme } from '@/lib/theme-context'
 import { getHistoryResultPalette } from '@/constants/profileTheme'
 import { SCREEN_FONTS } from '@/constants/typography'
-import type { SkillAssessmentLevel } from '@/lib/skillAssessment'
+import { eloToPvna, type SkillAssessmentLevel } from '@/lib/skillAssessment'
 import { getSkillLevelUi } from '@/lib/skillLevelUi'
 import { LinearGradient } from 'expo-linear-gradient'
 import { router } from 'expo-router'
@@ -131,122 +131,107 @@ export function ProfileIdentityCard({
   )
 }
 
-// 2. Skill Tier Hero Card
+// 2. Skill Tier Hero Card - Redesigned to match SmartQueueBanner (Inactive style)
 export function ProfileSkillHero({
   elo,
   title,
   subtitle,
   description,
   levelId,
-  colors,
-  subtitleItalic = false,
-  contentRightInset = 48,
-  miniTitleOnly = false,
 }: {
   elo: number
   title: string
   subtitle: string
   description?: string
   levelId?: SkillAssessmentLevel['id'] | null
-  colors?: SkillHeroColors
-  subtitleItalic?: boolean
-  contentRightInset?: number
-  miniTitleOnly?: boolean
 }) {
   const theme = useAppTheme()
-  const skillUi = getSkillLevelUi(levelId)
-  const WatermarkIcon = skillUi.icon
-
-  const defaultTones: Required<SkillHeroColors> = {
-    gradientStart: theme.primary,
-    gradientEnd: theme.surfaceTint,
-    bubble: theme.heroChipBg,
-    watermark: theme.heroChipBg,
-    eloChipBg: theme.primaryFixed,
-    eloChipText: theme.onPrimaryFixed,
-    title: theme.onPrimary,
-    description: theme.inverseOnSurface,
-  }
-
-  const heroColors: Required<SkillHeroColors> = {
-    ...defaultTones,
-    ...colors,
-  }
+  const pvnaScore = eloToPvna(elo).toFixed(1)
 
   return (
     <View 
-      className={`relative overflow-hidden shadow-sm mb-4 ${miniTitleOnly ? 'rounded-[24px] p-4' : 'rounded-[24px] p-5'}`}
       style={{
-        ...SHADOW.md,
-        shadowColor: heroColors.gradientEnd,
-        shadowOpacity: 0.3,
+        borderRadius: RADIUS.xl,
+        overflow: 'hidden',
+        backgroundColor: 'white',
+        borderWidth: 1,
+        borderColor: theme.outlineVariant,
+        ...SHADOW.xs
       }}
     >
       <LinearGradient
-        colors={[heroColors.gradientStart, heroColors.gradientEnd]}
+        colors={['#F5F1E8', '#FFFFFF']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}
-      />
-      <View
-        style={{
-          position: 'absolute',
-          right: miniTitleOnly ? -42 : -80,
-          top: miniTitleOnly ? -26 : -40,
-          width: miniTitleOnly ? 132 : 220,
-          height: miniTitleOnly ? 132 : 220,
-          borderRadius: RADIUS.full,
-          backgroundColor: withAlpha('#FFFFFF', 0.15),
-        }}
-      />
-      
-      <WatermarkIcon
-        size={miniTitleOnly ? 112 : 180}
-        color={withAlpha('#FFFFFF', 0.1)}
-        style={{ position: 'absolute', right: miniTitleOnly ? -20 : -40, bottom: miniTitleOnly ? -20 : -40 }}
-      />
+        style={{ padding: 24 }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1, paddingRight: 16 }}>
+            {/* Top Badge */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+              <View style={{ 
+                width: 24, height: 24, borderRadius: 12, 
+                backgroundColor: theme.primaryContainer,
+                alignItems: 'center', justifyContent: 'center', marginRight: 8
+              }}>
+                <ShieldCheck size={14} color={theme.primary} strokeWidth={2.5} />
+              </View>
+              <Text style={{ 
+                color: theme.primary, 
+                fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase' 
+              }}>
+                TRÌNH ĐỘ PVNA
+              </Text>
+            </View>
 
-      {!miniTitleOnly ? (
-        <View 
-          className="absolute right-5 top-5 rounded-full px-3 py-1 border shadow-sm" 
-          style={{ 
-            backgroundColor: withAlpha('#000000', 0.2),
-            borderColor: withAlpha('#FFFFFF', 0.3),
-            zIndex: 10,
-          }}
-        >
-          <Text style={{ color: '#FFFFFF', fontFamily: SCREEN_FONTS.bold, fontSize: 12 }}>{elo} ELO</Text>
-        </View>
-      ) : null}
+            {/* Title */}
+            <Text style={{ 
+              color: theme.onSurface, 
+              fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 28, lineHeight: 32, textTransform: 'uppercase', letterSpacing: -0.5
+            }}>
+              {title}
+            </Text>
 
-      <View className={miniTitleOnly ? 'mt-1' : 'mt-4'} style={{ paddingRight: miniTitleOnly ? 10 : contentRightInset }}>
-        <View className="flex-row items-center">
-          <Text
-            className={miniTitleOnly ? 'text-[26px] leading-tight uppercase tracking-wide' : 'text-[36px] leading-tight uppercase tracking-wider'}
-            style={{ color: '#FFFFFF', fontFamily: SCREEN_FONTS.headlineBlack }}
-          >
-            {title}
-          </Text>
-        </View>
-        {!miniTitleOnly ? (
-          <>
-            <Text
-              className="mt-1 text-[12px] uppercase tracking-[2px]"
-              style={{
-                color: withAlpha('#FFFFFF', 0.9),
-                fontFamily: SCREEN_FONTS.cta,
-              }}
-            >
+            {/* Subtitle */}
+            <Text style={{ 
+              marginTop: 4,
+              color: theme.onSurface, 
+              fontFamily: SCREEN_FONTS.headline, fontSize: 16, opacity: 0.8
+            }}>
               {subtitle}
             </Text>
+            
+            {/* Description */}
             {description ? (
-              <Text className="mt-4 text-[14px] leading-6" style={{ color: withAlpha('#FFFFFF', 0.8), fontFamily: SCREEN_FONTS.body }}>
+              <Text style={{ 
+                marginTop: 10,
+                color: theme.onSurfaceVariant, 
+                fontFamily: SCREEN_FONTS.body, fontSize: 13, lineHeight: 20 
+              }}>
                 {description}
               </Text>
             ) : null}
-          </>
-        ) : null}
-      </View>
+          </View>
+
+          {/* ELO Circle */}
+          <View style={{ 
+            width: 84, height: 84, borderRadius: 42, 
+            backgroundColor: 'white', 
+            alignItems: 'center', justifyContent: 'center',
+            borderWidth: 1, borderColor: theme.outlineVariant,
+            ...SHADOW.xs
+          }}>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 24, lineHeight: 28 }}>
+                {pvnaScore}
+              </Text>
+              <Text style={{ color: theme.outline, fontFamily: SCREEN_FONTS.bold, fontSize: 10, marginTop: -2 }}>
+                PVNA
+              </Text>
+            </View>
+          </View>
+        </View>
+      </LinearGradient>
     </View>
   )
 }
@@ -338,8 +323,8 @@ export function ProfileHistoryList({
           const resultText = item.status === 'done' ? (isWin ? 'W' : 'L') : '-'
           const resultPalette = getHistoryResultPalette(item.status === 'done' ? (isWin ? 'win' : 'loss') : 'pending', theme)
 
-          // Mock ELO adjustment
-          const eloAdj = item.status === 'done' ? (isWin ? '+12' : '-8') : '--'
+          // Mock PVNA adjustment
+          const pvnaAdj = item.status === 'done' ? (isWin ? '+0.1' : '-0.05') : '--'
 
           return (
             <TouchableOpacity
@@ -369,7 +354,7 @@ export function ProfileHistoryList({
               </View>
 
               <View className="mr-3">
-                 <Text className="text-[16px]" style={{ color: resultPalette.eloText, fontFamily: SCREEN_FONTS.cta }}>{eloAdj}</Text>
+                 <Text className="text-[16px]" style={{ color: resultPalette.eloText, fontFamily: SCREEN_FONTS.cta }}>{pvnaAdj}</Text>
               </View>
               <ChevronRight size={20} color={theme.outlineVariant} />
             </TouchableOpacity>

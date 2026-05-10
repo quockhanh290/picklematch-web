@@ -1,5 +1,6 @@
 import { AppButton } from '@/components/design/AppButton'
-import { AppDialog, type AppDialogConfig } from '@/components/design/AppDialog'
+import { AppDialog, type AppDialogConfig, MainHeader } from '@/components/design'
+import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { EmptyState } from '@/components/design/EmptyState'
 import { ScreenHeader } from '@/components/design/ScreenHeader'
 import type { FeedbackTrait } from '@/components/profile/CommunityFeedbackSection'
@@ -56,7 +57,7 @@ import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
 
 function ProfileSectionDivider({ index, title, theme }: { index: string; title: string; theme: any }) {
   return (
-    <View className="mb-6 flex-row items-center gap-4">
+    <View className="mb-4 flex-row items-center gap-4">
       <Text className="text-[11px] uppercase tracking-[4px]" style={{ color: theme.outline, fontFamily: SCREEN_FONTS.cta }}>
         {index} / {title}
       </Text>
@@ -305,215 +306,106 @@ export function ProfileScreen() {
         <View />
 
         <WebContainer maxWidth={600}>
-          {/* HERO HEADER */}
-          <View style={{ 
-            backgroundColor: theme.primary, 
-            paddingTop: insets.top + 32,
-            paddingBottom: 80,
-            paddingHorizontal: 24,
-            borderBottomLeftRadius: RADIUS.hero,
-            borderBottomRightRadius: RADIUS.hero,
-          }}>
-            <View className="flex-row items-center justify-between mb-4">
-              <View>
-                <View style={{ width: 40, height: 4, backgroundColor: 'white', borderRadius: 2, marginBottom: 12, opacity: 0.6 }} />
-                <Text style={{ fontFamily: SCREEN_FONTS.headlineItalic, fontSize: 32, color: 'white', letterSpacing: -1 }}>
-                  PLAYER
-                </Text>
-                <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 24, color: 'white', marginTop: -4, opacity: 0.9 }}>
-                  PROFILE
-                </Text>
-              </View>
-              
-              <TouchableOpacity
-                onPress={logout}
-                style={{
-                  width: 44, height: 44, borderRadius: 22,
-                  backgroundColor: 'rgba(255,255,255,0.15)',
-                  alignItems: 'center', justifyContent: 'center'
-                }}
-              >
-                <LogOut size={20} color="white" />
-              </TouchableOpacity>
-            </View>
-            
-            <Text style={{ color: 'rgba(255,255,255,0.8)', fontFamily: SCREEN_FONTS.body, fontSize: 14, maxWidth: 280 }}>
-              {player.bio || 'Chưa có mô tả bản thân. Hãy cập nhật để mọi người hiểu rõ phong cách chơi của bạn hơn.'}
-            </Text>
+          <View style={{ paddingTop: 12 }}>
+            <MainHeader
+              title="HỒ SƠ NGƯỜI CHƠI"
+              brandedSubtitle="PICKLEMATCH"
+              style={{ paddingHorizontal: 0 }}
+              rightElement={
+                <TouchableOpacity
+                  onPress={logout}
+                  style={{
+                    width: 44, height: 44, borderRadius: 22,
+                    backgroundColor: theme.surfaceContainerLow,
+                    borderWidth: 1, borderColor: theme.outlineVariant,
+                    alignItems: 'center', justifyContent: 'center'
+                  }}
+                >
+                  <LogOut size={20} color={theme.primary} />
+                </TouchableOpacity>
+              }
+            />
           </View>
-
-          {/* IDENTITY CARD - PREMIUM REDESIGN */}
-          <View style={{ paddingHorizontal: 24, marginTop: 32 }}>
-            <View style={{
-              backgroundColor: 'white',
-              borderRadius: RADIUS.xxl,
-              padding: 32,
-              borderWidth: 1,
-              borderColor: theme.outlineVariant,
-              flexDirection: isWeb ? 'row' : 'column',
-              alignItems: isWeb ? 'center' : 'flex-start',
-              gap: 32,
-              ...SHADOW.md
-            }}>
-              {/* Profile Pic Container */}
-              <View style={{
-                width: 100, height: 100, borderRadius: 50,
+          {/* MAIN PROFILE CARD */}
+          <View style={{ 
+            backgroundColor: 'white', 
+            borderRadius: RADIUS.hero,
+            borderWidth: 1,
+            borderColor: theme.outlineVariant,
+            paddingBottom: 40,
+            marginTop: 8,
+            ...SHADOW.sm,
+            overflow: 'hidden'
+          }}>
+            {/* Identity Header (Avatar & Name) */}
+            <View style={{ padding: 24, alignItems: 'center', backgroundColor: theme.surfaceAlt }}>
+              <View style={{ 
+                width: 88, height: 88, borderRadius: 44, 
                 backgroundColor: theme.primaryContainer,
+                borderWidth: 3, borderColor: 'white',
                 alignItems: 'center', justifyContent: 'center',
-                borderWidth: 4, borderColor: 'white',
-                ...SHADOW.sm
+                ...SHADOW.xs
               }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 44, color: theme.primary }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 36, color: theme.primary }}>
                   {player.name?.[0]?.toUpperCase()}
                 </Text>
               </View>
 
-              {/* User Identity Details */}
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-                  <View>
-                    <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 32, color: theme.onSurface, letterSpacing: -0.5 }}>
-                      {player.name}
-                    </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                      <MapPin size={14} color={theme.outline} />
-                      <Text style={{ marginLeft: 6, fontFamily: SCREEN_FONTS.body, fontSize: 14, color: theme.onSurfaceVariant }}>
-                        {joinedYear ? `Thành viên từ ${joinedYear}` : 'Thành viên mới'}
-                      </Text>
-                    </View>
-                  </View>
-                  
-                  <TouchableOpacity 
-                    onPress={() => router.push('/edit-profile' as any)}
-                    style={{ 
-                      paddingHorizontal: 20, paddingVertical: 10, 
-                      borderRadius: RADIUS.full, backgroundColor: theme.surfaceAlt,
-                      borderWidth: 1, borderColor: theme.outlineVariant,
-                      flexDirection: 'row', alignItems: 'center', gap: 10
-                    }}
-                  >
-                    <PencilLine size={16} color={theme.primary} />
-                    <Text style={{ fontFamily: SCREEN_FONTS.cta, fontSize: 13, color: theme.primary, letterSpacing: 1 }}>CHỈNH SỬA</Text>
-                  </TouchableOpacity>
-                </View>
+              <Text style={{ 
+                fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 28, 
+                color: theme.onSurface, marginTop: 16, textAlign: 'center' 
+              }}>
+                {player.name}
+              </Text>
 
-                {/* Status Badges */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 }}>
-                  <View style={{
-                    backgroundColor: theme.secondaryContainer,
-                    paddingHorizontal: 14, paddingVertical: 6,
-                    borderRadius: RADIUS.lg, flexDirection: 'row', alignItems: 'center', gap: 6
-                  }}>
-                    <ShieldCheck size={14} color={theme.primary} />
-                    <Text style={{ fontFamily: SCREEN_FONTS.cta, fontSize: 11, color: theme.primary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      {player.is_provisional ? 'DỰ PHÓNG' : 'ĐÃ XÁC THỰC'}
-                    </Text>
-                  </View>
-                  <View style={{
-                    backgroundColor: withAlpha(theme.primary, 0.05),
-                    paddingHorizontal: 14, paddingVertical: 6,
-                    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: withAlpha(theme.primary, 0.1)
-                  }}>
-                    <Text style={{ fontFamily: SCREEN_FONTS.cta, fontSize: 11, color: theme.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 1 }}>
-                      ĐỘ TIN CẬY {reliability}%
-                    </Text>
-                  </View>
-                </View>
+              <View style={{ 
+                flexDirection: 'row', alignItems: 'center', 
+                marginTop: 6, paddingHorizontal: 12, paddingVertical: 4,
+                backgroundColor: theme.background, borderRadius: RADIUS.full,
+                borderWidth: 1, borderColor: theme.outlineVariant
+              }}>
+                <MapPin size={12} color={theme.outline} />
+                <Text style={{ 
+                  marginLeft: 6, fontFamily: SCREEN_FONTS.bold, fontSize: 11, 
+                  color: theme.onSurfaceVariant, textTransform: 'uppercase' 
+                }}>
+                  {player.city || 'TP. HỒ CHÍ MINH'}
+                </Text>
               </View>
             </View>
-          </View>
 
-          {/* DASHBOARD GRID SYSTEM */}
-          <View style={{ 
-            flexDirection: isWeb ? 'row' : 'column', 
-            paddingHorizontal: 24, 
-            marginTop: 32, 
-            gap: 32 
-          }}>
-            {/* COLUMN 1 (PRIMARY): SKILL & STATS */}
-            <View style={{ flex: isWeb ? 1.5 : 1, gap: 32 }}>
-              {/* Skill Proficiency Card */}
+            {/* Bio Section */}
+            <View style={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 16 }}>
+              <Text style={{ 
+                color: theme.onSurface, 
+                fontFamily: SCREEN_FONTS.body, 
+                fontSize: 14,
+                lineHeight: 22,
+                textAlign: 'center'
+              }}>
+                {player.bio || 'Quản lý thông tin và trình độ cá nhân của bạn.'}
+              </Text>
+            </View>
+
+            <View style={{ height: 1, backgroundColor: theme.outlineVariant, marginHorizontal: 24, marginVertical: 8 }} />
+
+            {/* DASHBOARD CONTENT */}
+            <View style={{ paddingHorizontal: 24, marginTop: 24, gap: 40 }}>
+              {/* Skill Proficiency Section */}
               <View>
                 <ProfileSectionDivider index="01" title="TRÌNH ĐỘ PVNA" theme={theme} />
                 <ProfileSkillHero
                   elo={effectiveElo}
-                  title={skill?.title ?? 'Đang hiệu chỉnh'}
-                  subtitle={skill?.subtitle ?? 'Hệ thống đang tinh chỉnh.'}
+                  title={skill?.title ?? 'MỚI CHƠI'}
+                  subtitle={skill?.subtitle ?? 'PVNA 2.1 - Bắt đầu làm quen'}
                   description={skill?.description}
                   levelId={skill?.id}
-                  colors={PROFILE_SKILL_HERO_TONE}
-                  contentRightInset={16}
                 />
               </View>
 
-              {/* Performance Metrics Card */}
+              {/* Account Management Section */}
               <View>
-                <ProfileSectionDivider index="02" title="CHỈ SỐ THI ĐẤU" theme={theme} />
-                <View style={{ flexDirection: 'row', gap: 16 }}>
-                  <View style={{
-                    flex: 1, backgroundColor: 'white',
-                    borderRadius: RADIUS.xxl, padding: 24,
-                    borderWidth: 1, borderColor: theme.outlineVariant,
-                    ...SHADOW.xs
-                  }}>
-                    <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: withAlpha(theme.primary, 0.08), alignItems: 'center', justifyContent: 'center' }}>
-                      <Swords size={22} color={theme.primary} />
-                    </View>
-                    <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 40, color: theme.onSurface, marginTop: 16 }}>
-                      {player.sessions_joined ?? 0}
-                    </Text>
-                    <Text style={{ fontFamily: SCREEN_FONTS.cta, fontSize: 11, color: theme.outline, textTransform: 'uppercase', letterSpacing: 1, marginTop: 2 }}>
-                      TRẬN ĐÃ CHƠI
-                    </Text>
-                  </View>
-
-                  <View style={{
-                    flex: 1, backgroundColor: 'white',
-                    borderRadius: RADIUS.xxl, padding: 24,
-                    borderWidth: 1, borderColor: theme.outlineVariant,
-                    ...SHADOW.xs
-                  }}>
-                    <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: withAlpha(theme.primary, 0.08), alignItems: 'center', justifyContent: 'center' }}>
-                      <Calendar size={22} color={theme.primary} />
-                    </View>
-                    <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 40, color: theme.onSurface, marginTop: 16 }}>
-                      {hostedCount}
-                    </Text>
-                    <Text style={{ fontFamily: SCREEN_FONTS.cta, fontSize: 11, color: theme.outline, textTransform: 'uppercase', letterSpacing: 1, marginTop: 2 }}>
-                      KÈO ĐÃ TỔ CHỨC
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              {/* Performance Streak Card */}
-              <View>
-                <ProfileSectionDivider index="03" title="PHONG ĐỘ" theme={theme} />
-                <ProfileWinStreak current={currentWinStreak} active={streakActive} />
-              </View>
-            </View>
-
-            {/* COLUMN 2 (SECONDARY): COMMUNITY & RECOGNITION */}
-            <View style={{ flex: 1, gap: 32 }}>
-              {/* Community Feedback Card */}
-              <View>
-                <ProfileSectionDivider index="04" title="GHI NHẬN CỘNG ĐỒNG" theme={theme} />
-                <View style={{ backgroundColor: 'white', borderRadius: RADIUS.xxl, padding: 24, borderWidth: 1, borderColor: theme.outlineVariant, ...SHADOW.xs }}>
-                  <CommunityFeedbackPanel title="" traits={displayCommunityTraits} flushBottom />
-                </View>
-              </View>
-
-              {/* Achievements Card */}
-              <View>
-                <ProfileSectionDivider index="05" title="PHÒNG TRUYỀN THỐNG" theme={theme} />
-                <View style={{ backgroundColor: 'white', borderRadius: RADIUS.xxl, padding: 24, borderWidth: 1, borderColor: theme.outlineVariant, ...SHADOW.xs }}>
-                  <TrophyRoomSection badges={displayAchievements} hideHeader flushBottom />
-                </View>
-              </View>
-
-              {/* Account Management Card */}
-              <View>
-                <ProfileSectionDivider index="06" title="QUẢN LÝ TÀI KHOẢN" theme={theme} />
+                <ProfileSectionDivider index="02" title="QUẢN LÝ TÀI KHOẢN" theme={theme} />
                 <View style={{ gap: 12 }}>
                   <TouchableOpacity
                     onPress={handleSwitchToHost}
