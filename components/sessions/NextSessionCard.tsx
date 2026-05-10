@@ -20,15 +20,17 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
   const endTime = session.end_time || session.slot?.end_time
   const courtName = session.court_name || session.slot?.court?.name || 'KÈO PICKLEBALL'
   const address = session.court_address || session.slot?.court?.address || 'Chưa cập nhật địa chỉ'
-  const title = session.title || (session.format_type === 'round_robin' ? 'Giải Round Robin' : 'Kèo giao lưu Social')
+  const ownerSessions = session.owner_sessions
+  const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
+  const formatType = ownerDetails.format_type || session.format_type || 'social'
+  const fmt = formatType.toLowerCase()
+  const title = session.title || (fmt === 'round_robin' ? 'Round Robin' : (fmt === 'open_play' ? 'Open Play' : 'Giao lưu Social'))
   
   const confirmedCount = isHost 
     ? (session.session_players?.filter((p: any) => p.status === 'confirmed' || p.status === 'checked_in').length || 0)
     : (session.player_count || 0)
     
   const maxPlayers = session.is_unlimited ? 16 : (session.max_players || 16)
-  const ownerSessions = session.owner_sessions
-  const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
   const costPerPerson = ownerDetails.format_metadata?.cost_per_person ?? ownerDetails.total_cost ?? session.total_cost
   const priceLabel = costPerPerson > 0 ? `${Math.round(costPerPerson / 1000)}K` : 'Miễn phí'
   const skillLabel = getSessionSkillLabel(session.elo_min, session.elo_max)
@@ -79,10 +81,12 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
   } else {
     // Player View: Show format type
     statusBg = theme.primary
-    const fmt = (session.format_type || '').toLowerCase()
-    if (fmt === 'round_robin') statusLabel = 'GIẢI ROUND ROBIN'
-    else if (fmt === 'open_play') statusLabel = 'KÈO MỞ OPEN PLAY'
-    else statusLabel = 'KÈO GIAO LƯU SOCIAL'
+    const ownerSessions = session.owner_sessions
+    const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
+    const fmt = (ownerDetails.format_type || session.format_type || '').toLowerCase()
+    if (fmt === 'round_robin') statusLabel = 'ROUND ROBIN'
+    else if (fmt === 'open_play') statusLabel = 'OPEN PLAY'
+    else statusLabel = 'GIAO LƯU SOCIAL'
   }
 
   const formatClock = (date: Date) => {
@@ -156,7 +160,7 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
         </Text>
       </View>
 
-      <View style={[styles.infoGrid, { backgroundColor: theme.surfaceContainerLow }]}>
+      <View style={[styles.infoGrid, { backgroundColor: theme.surfaceAlt }]}>
         <View style={styles.gridHeader}>
           <View style={[styles.dayBadge, { backgroundColor: statusBg }]}>
             <Text style={styles.dayBadgeText}>{getDayLabel(startDate).toUpperCase()}</Text>

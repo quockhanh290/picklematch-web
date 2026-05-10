@@ -13,7 +13,7 @@ export async function fetchSessionsApi(currentUserId: string | null): Promise<Se
           court:court_id ( id, name, address, city, lat, lng )
         ),
         session_players ( player_id ),
-        owner_sessions ( id ),
+        owner_sessions ( id, format_type ),
         total_cost`,
       )
       .eq('status', 'open')
@@ -36,12 +36,16 @@ export async function fetchSessionsApi(currentUserId: string | null): Promise<Se
     return []
   }
 
-  const normalized = data.map((s: any) => ({
-    ...s,
-    player_count: (s.session_players ?? []).length,
-    lat: s.slot?.court?.lat,
-    lng: s.slot?.court?.lng,
-  })) as Session[]
+  const normalized = data.map((s: any) => {
+    const ownerData = Array.isArray(s.owner_sessions) ? s.owner_sessions[0] : s.owner_sessions
+    return {
+      ...s,
+      format_type: ownerData?.format_type || s.format_type || 'social',
+      player_count: (s.session_players ?? []).length,
+      lat: s.slot?.court?.lat,
+      lng: s.slot?.court?.lng,
+    }
+  }) as Session[]
 
   if (currentUserId) {
     return normalized.map((session) => {

@@ -44,25 +44,21 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
   const isFull = fillRatio >= 1
   const isUnderfilled = fillRatio < 0.6 && !isPast && !isFull
   
-  let statusLabel = 'ĐANG MỞ'
+  // Format Type Label
+  const formatType = (session.format_type || '').toLowerCase()
+  let formatLabel = 'GIAO LƯU SOCIAL'
+  if (formatType === 'round_robin') formatLabel = 'ROUND ROBIN'
+  else if (formatType === 'open_play') formatLabel = 'OPEN PLAY'
+
+  let statusLabel = formatLabel
   let statusBg = theme.primary
   
   if (isPast) {
-    statusLabel = 'KẾT THÚC'
     statusBg = COLORS.gray
-  } else if (isFull) {
-    statusLabel = 'ĐÃ ĐẦY'
-    // Still use primary or maybe a slightly different shade? 
-    // User said "default primary", so let's stick to it.
-    statusBg = theme.primary 
   } else if (session.is_joined) {
-    statusLabel = 'ĐÃ THAM GIA'
-    statusBg = theme.primary
-  } else if (isUnderfilled) {
-    statusLabel = 'CẦN THÊM NGƯỜI'
     statusBg = theme.primary
   }
-
+  
   // Day Badge Logic (Matching Host Dashboard style)
   const isToday = start.toDateString() === now.toDateString()
   const isTomorrow = new Date(now.getTime() + 86400000).toDateString() === start.toDateString()
@@ -70,15 +66,6 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
   let dayBadgeBg = theme.outline
   if (isToday) dayBadgeBg = theme.primary
   else if (isTomorrow) dayBadgeBg = theme.onSurfaceVariant
-
-  const handleShare = async () => {
-    try {
-      const courtName = session.slot?.court?.name || 'Pickleball Court'
-      const timeStr = format(start, 'HH:mm - dd/MM')
-      const message = `Tham gia kèo Pickleball tại ${courtName}!\n⏰ ${timeStr}\n📍 ${session.slot?.court?.address}\n\nĐăng ký ngay trên PickleMatch!`
-      await Share.share({ message })
-    } catch (e) {}
-  }
 
   return (
     <TouchableOpacity
@@ -94,7 +81,7 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
         ...SHADOW.sm
       }}
     >
-      {/* Top Accent Bar (Restored with Primary Color) */}
+      {/* Top Accent Bar */}
       <View style={{ 
         backgroundColor: statusBg, 
         paddingHorizontal: 14, 
@@ -109,9 +96,16 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
             {statusLabel}
           </Text>
         </View>
-        <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 9.5, letterSpacing: 0.5 }}>
-          {session.slot?.court?.city?.toUpperCase() || 'TP.HCM'}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {session.is_joined && (
+            <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+              <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 8, letterSpacing: 0.2 }}>ĐÃ THAM GIA</Text>
+            </View>
+          )}
+          <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 9.5, letterSpacing: 0.5 }}>
+            {session.slot?.court?.city?.toUpperCase() || 'TP.HCM'}
+          </Text>
+        </View>
       </View>
 
       <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10 }}>

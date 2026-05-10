@@ -50,9 +50,9 @@ export default function PlayerHubLayout() {
   return (
     <SessionNavContext.Provider value={sessionNav}>
       <AppNavContext.Provider value={appNav}>
-        <View style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+        <View style={{ flex: 1, backgroundColor: '#F8F6F1' }}>
           {/* Content Area */}
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, backgroundColor: '#F8F6F1' }}>
             <Slot />
           </View>
 

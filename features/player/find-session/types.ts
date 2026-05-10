@@ -9,6 +9,7 @@ export type Session = {
   max_players: number
   status: string
   court_booking_status: 'confirmed' | 'unconfirmed'
+  format_type: 'open_play' | 'round_robin' | 'social' | string
   host: {
     id: string
     name: string

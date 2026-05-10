@@ -19,6 +19,7 @@ export function WebContainer({ children, style, maxWidth = 1200 }: WebContainerP
       maxWidth: maxWidth,
       alignSelf: 'center',
       paddingHorizontal: SPACING.xl,
+      backgroundColor: 'transparent',
     }, style]}>
       {children}
     </View>

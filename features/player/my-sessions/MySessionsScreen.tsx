@@ -221,8 +221,14 @@ export function MySessionsScreen() {
   const activeTabCount = isHistoryTab ? filteredHistorySessions.length : (sessionsByTab[activeTab]?.length ?? 0)
 
   return (
-    <View className="flex-1" style={{ backgroundColor: theme.background }}>
-      <View style={{ backgroundColor: '#FDFBF7', zIndex: 10, paddingBottom: 24 }}>
+    <View 
+      style={{ 
+        flex: 1, 
+        backgroundColor: '#F8F6F1',
+        ...(Platform.OS === 'web' ? { minHeight: '100vh' } : {})
+      }}
+    >
+      <View style={{ backgroundColor: '#F8F6F1', zIndex: 10, paddingBottom: 24 }}>
         <HomeGreetingHeader 
           name={player?.name ?? 'Bạn'}
           role="player"

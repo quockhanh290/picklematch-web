@@ -118,7 +118,7 @@ export function PlayerSessionDetailScreen({
     courtId: session.slot.court.id,
     address: session.slot.court.city ? `${session.slot.court.address}, ${session.slot.court.city}` : session.slot.court.address,
     matchScore: 100,
-    matchHint: (HostDetails.format_type || 'social').toUpperCase(),
+    matchHint: (HostDetails.format_type || 'social').replace(/_/g, ' ').toUpperCase(),
     skillLabel: sessionSkillLabel,
     timeLabel: formatTimeRange(session.slot.start_time, session.slot.end_time),
     priceLabel: (HostDetails.total_cost ?? session.total_cost ?? 0) > 0

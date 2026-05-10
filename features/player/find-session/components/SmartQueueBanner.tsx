@@ -1,10 +1,12 @@
 import React from 'react'
-import { View, Text, Pressable } from 'react-native'
-import { Sparkles } from 'lucide-react-native'
+import { View, Text, TouchableOpacity } from 'react-native'
+import { Sparkles, BrainCircuit, Zap } from 'lucide-react-native'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { STRINGS } from '@/constants/strings'
 import { useAppTheme } from '@/lib/theme-context'
+import { RADIUS, SPACING, SHADOW } from '@/constants/screenLayout'
 import { PlayerQueueProfile } from '../types'
+import { LinearGradient } from 'expo-linear-gradient'
 
 type SmartQueueBannerProps = {
   smartQueueEnabled: boolean
@@ -24,92 +26,114 @@ export function SmartQueueBanner({
   loading,
 }: SmartQueueBannerProps) {
   const theme = useAppTheme()
-  return (
-    <View className="px-5 pb-10">
-      {!loading && filteredSessionsCount === 0 ? (
-        <View
-          className="mb-4 rounded-[24px] px-6 py-7"
-          style={{
-            backgroundColor: theme.surfaceContainerLowest,
-            borderLeftWidth: 3,
-            borderLeftColor: theme.primary,
-            shadowColor: theme.onBackground,
-            shadowOpacity: 0.04,
-            shadowRadius: 10,
-            shadowOffset: { width: 0, height: 4 },
-            elevation: 2,
-          }}
-        >
-          <Text style={{ color: theme.outline, fontFamily: SCREEN_FONTS.headline, fontSize: 10, letterSpacing: 2, textTransform: 'uppercase' }}>
-            {STRINGS.find_session.empty.no_results}
-          </Text>
-          <Text className="mt-3" style={{ color: theme.onBackground, fontFamily: SCREEN_FONTS.headline, fontSize: 22, lineHeight: 28, textTransform: 'uppercase', letterSpacing: 1 }}>
-            {STRINGS.find_session.empty.no_results_sub}
-          </Text>
-          <Text className="mt-2" style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.body, fontSize: 14, lineHeight: 22 }}>
-            Hệ thống sẽ tiếp tục săn trận phù hợp để bạn không bỏ lỡ cơ hội vào sân đúng gu.
-          </Text>
-        </View>
-      ) : null}
 
+  if (loading) return null
+
+  return (
+    <View style={{ paddingHorizontal: 0, paddingBottom: 24, marginTop: 12, backgroundColor: 'transparent' }}>
+      {/* Smart Suggestions Card */}
       <View
-        className="rounded-[24px] px-6 py-6"
         style={{
-          backgroundColor: theme.surfaceContainerLowest,
-          borderLeftWidth: 3,
-          borderLeftColor: theme.primary,
-          shadowColor: theme.onBackground,
-          shadowOpacity: 0.04,
-          shadowRadius: 10,
-          shadowOffset: { width: 0, height: 4 },
-          elevation: 2,
+          borderRadius: RADIUS.xl,
+          overflow: 'hidden',
+          backgroundColor: 'white',
+          borderWidth: 1,
+          borderColor: theme.outlineVariant,
+          ...SHADOW.xs
         }}
       >
-        <Text style={{ color: theme.outline, fontFamily: SCREEN_FONTS.headline, fontSize: 10, letterSpacing: 2.2, textTransform: 'uppercase' }}>
-          Gợi ý thông minh
-        </Text>
-        <Text className="mt-3" style={{ color: theme.onBackground, fontFamily: SCREEN_FONTS.headline, fontSize: 22, lineHeight: 28, textTransform: 'uppercase', letterSpacing: 1 }}>
-          Chưa thấy kèo ưng ý?
-        </Text>
-        <Text className="mt-2" style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.body, fontSize: 14, lineHeight: 22 }}>
-          Bật gợi ý hợp gu để ưu tiên kèo vừa trình, vừa giờ, vừa khoảng cách bạn đang săn.
-        </Text>
-
-        {smartQueueEnabled ? (
-          <Text
-            className="mt-3"
-            style={{ color: theme.primary, fontFamily: SCREEN_FONTS.label, fontSize: 12, lineHeight: 18 }}
-          >
-            Đang ưu tiên kèo gần {playerProfile?.city?.trim() || 'gu của bạn'} và khớp nhịp chơi hiện tại
-          </Text>
-        ) : null}
-
-        <Pressable
-          onPress={() => onToggle(!smartQueueEnabled)}
-          disabled={!smartQueueHydrated}
-          className="mt-4 flex-row items-center justify-center rounded-[20px] px-4 py-3.5"
-          style={{
-            backgroundColor: smartQueueEnabled
-              ? theme.surfaceContainerHighest
-              : theme.primary,
-            opacity: !smartQueueHydrated ? 0.5 : 1,
-          }}
+        <LinearGradient
+          colors={smartQueueEnabled ? [theme.primary, theme.primaryContainer] : ['#F5F1E8', '#FFFFFF']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{ padding: 18 }}
         >
-          <Sparkles
-            size={15}
-            color={smartQueueEnabled ? theme.onSurfaceVariant : theme.onPrimary}
-            strokeWidth={2.3}
-          />
-          <Text
-            className="ml-2 text-[13px]"
-            style={{
-              color: smartQueueEnabled ? theme.onSurfaceVariant : theme.onPrimary,
-              fontFamily: SCREEN_FONTS.label,
-            }}
-          >
-            {smartQueueEnabled ? 'Tắt gợi ý hợp gu' : 'Bật gợi ý hợp gu'}
-          </Text>
-        </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flex: 1, pr: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <View style={{ 
+                  width: 24, height: 24, borderRadius: 12, 
+                  backgroundColor: smartQueueEnabled ? 'rgba(255,255,255,0.2)' : theme.primaryContainer,
+                  alignItems: 'center', justifyContent: 'center', marginRight: 8
+                }}>
+                  <BrainCircuit size={14} color={smartQueueEnabled ? 'white' : theme.primary} strokeWidth={2.5} />
+                </View>
+                <Text style={{ 
+                  color: smartQueueEnabled ? 'white' : theme.primary, 
+                  fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase' 
+                }}>
+                  SMART MATCHMAKING
+                </Text>
+              </View>
+
+              <Text style={{ 
+                color: smartQueueEnabled ? 'white' : theme.onSurface, 
+                fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 20, lineHeight: 24, textTransform: 'uppercase', letterSpacing: -0.2
+              }}>
+                {smartQueueEnabled ? 'HỆ THỐNG ĐANG SĂN KÈO' : 'CHƯA THẤY KÈO ƯNG Ý?'}
+              </Text>
+              
+              <Text style={{ 
+                marginTop: 6,
+                color: smartQueueEnabled ? 'rgba(255,255,255,0.8)' : theme.onSurfaceVariant, 
+                fontFamily: SCREEN_FONTS.body, fontSize: 13, lineHeight: 20 
+              }}>
+                {smartQueueEnabled 
+                  ? `Hệ thống đang tự động lọc các kèo phù hợp nhất tại ${playerProfile?.city || 'khu vực của bạn'}.`
+                  : 'Kích hoạt Gợi ý thông minh để hệ thống tự động tìm và ưu tiên những kèo đấu khớp nhất với bạn.'
+                }
+              </Text>
+
+              <TouchableOpacity
+                onPress={() => onToggle(!smartQueueEnabled)}
+                disabled={!smartQueueHydrated}
+                style={{
+                  marginTop: 16,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  alignSelf: 'flex-start',
+                  backgroundColor: smartQueueEnabled ? 'white' : theme.primary,
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: RADIUS.full,
+                  opacity: !smartQueueHydrated ? 0.6 : 1,
+                  ...SHADOW.xs
+                }}
+              >
+                <Sparkles
+                  size={14}
+                  color={smartQueueEnabled ? theme.primary : 'white'}
+                  strokeWidth={3}
+                />
+                <Text
+                  style={{
+                    marginLeft: 8,
+                    color: smartQueueEnabled ? theme.primary : 'white',
+                    fontFamily: SCREEN_FONTS.cta,
+                    fontSize: 12,
+                    letterSpacing: 0.5
+                  }}
+                >
+                  {smartQueueEnabled ? 'TẮT GỢI Ý' : 'KÍCH HOẠT NGAY'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ 
+              width: 70, height: 70, borderRadius: 35, 
+              backgroundColor: smartQueueEnabled ? 'rgba(255,255,255,0.15)' : 'white', 
+              alignItems: 'center', justifyContent: 'center',
+              borderWidth: 1, borderColor: smartQueueEnabled ? 'rgba(255,255,255,0.3)' : theme.outlineVariant,
+              ...SHADOW.xs
+            }}>
+              {smartQueueEnabled ? (
+                <Sparkles size={32} color="white" strokeWidth={1.5} />
+              ) : (
+                <Zap size={32} color={theme.outline} strokeWidth={1.5} />
+              )}
+            </View>
+          </View>
+        </LinearGradient>
       </View>
     </View>
   )

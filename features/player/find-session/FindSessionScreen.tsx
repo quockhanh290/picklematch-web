@@ -214,12 +214,11 @@ export function FindSessionScreen() {
   const sidebar = useMemo(() => (
     <View style={{ width: 280, paddingRight: 32, display: isMobile ? 'none' : 'flex' }}>
       <View style={{ 
-        backgroundColor: 'white', 
+        backgroundColor: 'transparent', 
         borderRadius: RADIUS.xl, 
         padding: 24,
         borderWidth: 1,
         borderColor: theme.outlineVariant,
-        ...SHADOW.sm
       }}>
         <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.label, color: theme.outline, marginBottom: 24, textTransform: 'uppercase', letterSpacing: 2 }}>
           LỌC KÈO ĐẤU
@@ -303,19 +302,138 @@ export function FindSessionScreen() {
   const numColumns = isMobile ? 1 : (isDesktop ? 3 : 2)
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8F6F1' }}>
+    <View style={{ 
+      flex: 1, 
+      backgroundColor: '#F8F6F1',
+      ...(Platform.OS === 'web' ? { minHeight: '100vh' } : {})
+    }}>
+      <View style={{ backgroundColor: 'transparent', paddingTop: isMobile ? 0 : 24 }}>
+        <MainHeader
+          title="TÌM KÈO GIAO LƯU"
+          brandedSubtitle="PICKLEMATCH"
+          style={{ backgroundColor: 'transparent' }}
+          rightElement={
+            <TouchableOpacity
+              onPress={() => void handleNearbyFilter()}
+              style={{
+                height: 52, width: 52, alignItems: 'center', justifyContent: 'center',
+                borderRadius: RADIUS.full, backgroundColor: 'white',
+                borderWidth: 1, borderColor: theme.outlineVariant,
+                marginRight: isMobile ? 0 : SPACING.xl,
+                ...SHADOW.xs
+              }}
+            >
+              <Navigation size={20} color={theme.primary} strokeWidth={2.5} />
+            </TouchableOpacity>
+          }
+        />
+
+        <WebContainer>
+          <View style={{ marginTop: -6, marginBottom: 8 }}>
+            <Text style={{ 
+              fontFamily: SCREEN_FONTS.body, 
+              fontSize: 13, 
+              color: theme.onSurfaceVariant 
+            }}>
+              {loading && isFirstLoad ? STRINGS.common.loading : `Tìm thấy ${filteredSessions.length} kèo đấu phù hợp`}
+            </Text>
+          </View>
+
+        </WebContainer>
+      </View>
+
       <WebContainer>
-        <View style={{ flexDirection: isMobile ? 'column' : 'row', paddingTop: isMobile ? 0 : 48 }}>
+        {preferredCourtFilter && (
+          <View style={{
+            marginTop: 8, marginBottom: 16, backgroundColor: theme.secondaryContainer, borderRadius: RADIUS.xl,
+            padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14,
+            borderWidth: 1, borderColor: theme.primaryContainer, ...SHADOW.xs
+          }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.cta, fontSize: 10, letterSpacing: 2.2, textTransform: 'uppercase' }}>
+                ƯU TIÊN THEO CƠ SỞ
+              </Text>
+              <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.headline, fontSize: 16, marginTop: 4 }}>
+                {preferredCourtFilter.name}
+              </Text>
+            </View>
+            <TouchableOpacity 
+              onPress={clearCourtFilter} 
+              style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: 'white', borderRadius: RADIUS.full, ...SHADOW.xs }}
+            >
+              <X size={16} color={theme.primary} strokeWidth={3} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={{ 
+          flexDirection: isMobile ? 'column' : 'row', 
+          paddingTop: isMobile ? 0 : 24,
+          backgroundColor: '#F8F6F1'
+        }}>
           {sidebar}
 
           <View style={{ flex: 1 }}>
+            <View style={{ paddingHorizontal: isMobile ? 20 : 0 }}>
+              <SearchBar 
+                query={query}
+                setQuery={setQuery}
+                activeAdvancedFiltersCount={activeAdvancedFiltersCount}
+                onFilterPress={() => setFilterModalVisible(true)}
+                theme={theme}
+              />
+
+              {/* Sorting Tabs - Dashboard Style */}
+              <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: -4, marginBottom: 24 }}>
+                <View style={{
+                  flexDirection: 'row', gap: 4, padding: 4,
+                  backgroundColor: 'white', borderRadius: RADIUS.xl,
+                  borderWidth: 1, borderColor: theme.outlineVariant,
+                  flex: isDesktop ? 0 : 1, minWidth: isDesktop ? 300 : undefined,
+                  ...SHADOW.xs
+                }}>
+                  <TouchableOpacity
+                    onPress={() => setSortMode('match')}
+                    style={{
+                      flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 8,
+                      backgroundColor: sortMode === 'match' ? theme.primary : 'transparent',
+                      borderRadius: RADIUS.lg,
+                    }}
+                  >
+                    <Text style={{
+                      color: sortMode === 'match' ? 'white' : theme.onSurfaceVariant,
+                      fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 11, letterSpacing: 0.5
+                    }}>
+                      PHÙ HỢP NHẤT
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => setSortMode('time')}
+                    style={{
+                      flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 8,
+                      backgroundColor: sortMode === 'time' ? theme.primary : 'transparent',
+                      borderRadius: RADIUS.lg,
+                    }}
+                  >
+                    <Text style={{
+                      color: sortMode === 'time' ? 'white' : theme.onSurfaceVariant,
+                      fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 11, letterSpacing: 0.5
+                    }}>
+                      MỚI NHẤT
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
             <FlatList
               data={filteredSessions}
               keyExtractor={(item) => item.id}
               key={`${isMobile ? 'mobile' : 'desktop'}-${numColumns}`}
               numColumns={numColumns}
-              columnWrapperStyle={numColumns > 1 ? { gap: 24 } : undefined}
+              columnWrapperStyle={numColumns > 1 ? { gap: 16 } : undefined}
               showsVerticalScrollIndicator={false}
+              style={{ backgroundColor: '#F8F6F1' }}
               contentContainerStyle={{ 
                 paddingBottom: 100,
                 paddingHorizontal: isMobile ? 20 : 0 
@@ -327,105 +445,10 @@ export function FindSessionScreen() {
                   tintColor={theme.primary} 
                 />
               }
-              ListHeaderComponent={
-                <View style={{ marginBottom: 32, paddingTop: isMobile ? 24 : 0 }}>
-                  <MainHeader
-                    title="TÌM KÈO GIAO LƯU"
-                    subtitle={loading && isFirstLoad ? STRINGS.common.loading : `Tìm thấy ${filteredSessions.length} kèo đấu phù hợp`}
-                    rightElement={
-                      <TouchableOpacity
-                        onPress={() => void handleNearbyFilter()}
-                        style={{
-                          height: 56, width: 56, alignItems: 'center', justifyContent: 'center',
-                          borderRadius: RADIUS.full, backgroundColor: 'white',
-                          borderWidth: 1, borderColor: theme.outlineVariant,
-                          ...SHADOW.sm
-                        }}
-                      >
-                        <Navigation size={22} color={theme.primary} strokeWidth={2.5} />
-                      </TouchableOpacity>
-                    }
-                  />
-
-                  <SearchBar 
-                    query={query}
-                    setQuery={setQuery}
-                    activeAdvancedFiltersCount={activeAdvancedFiltersCount}
-                    onFilterPress={() => setFilterModalVisible(true)}
-                    theme={theme}
-                  />
-
-                  {/* Sorting Tabs - Dashboard Style */}
-                  <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 8 }}>
-                    <View style={{
-                      flexDirection: 'row', gap: 6, padding: 6,
-                      backgroundColor: 'white', borderRadius: RADIUS.xl,
-                      borderWidth: 1, borderColor: theme.outlineVariant,
-                      flex: isDesktop ? 0 : 1, minWidth: isDesktop ? 340 : undefined,
-                      ...SHADOW.xs
-                    }}>
-                      <TouchableOpacity
-                        onPress={() => setSortMode('match')}
-                        style={{
-                          flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 10,
-                          backgroundColor: sortMode === 'match' ? theme.primary : 'transparent',
-                          borderRadius: RADIUS.lg,
-                        }}
-                      >
-                        <Text style={{
-                          color: sortMode === 'match' ? 'white' : theme.onSurfaceVariant,
-                          fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 12, letterSpacing: 0.5
-                        }}>
-                          PHÙ HỢP NHẤT
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => setSortMode('time')}
-                        style={{
-                          flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 10,
-                          backgroundColor: sortMode === 'time' ? theme.primary : 'transparent',
-                          borderRadius: RADIUS.lg,
-                        }}
-                      >
-                        <Text style={{
-                          color: sortMode === 'time' ? 'white' : theme.onSurfaceVariant,
-                          fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 12, letterSpacing: 0.5
-                        }}>
-                          MỚI NHẤT
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {preferredCourtFilter && (
-                    <View style={{
-                      marginTop: 24, backgroundColor: theme.secondaryContainer, borderRadius: RADIUS.xl,
-                      padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14,
-                      borderWidth: 1, borderColor: theme.primaryContainer, ...SHADOW.xs
-                    }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.cta, fontSize: 10, letterSpacing: 2.2, textTransform: 'uppercase' }}>
-                          ƯU TIÊN THEO CƠ SỞ
-                        </Text>
-                        <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.headline, fontSize: 16, marginTop: 4 }}>
-                          {preferredCourtFilter.name}
-                        </Text>
-                      </View>
-                      <TouchableOpacity 
-                        onPress={clearCourtFilter} 
-                        style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: 'white', borderRadius: RADIUS.full, ...SHADOW.xs }}
-                      >
-                        <X size={16} color={theme.primary} strokeWidth={3} />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              }
               ListFooterComponent={listFooter}
               ListEmptyComponent={
                 !loading && (
-                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', pt: 100, px: 40 }}>
+                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 100, paddingHorizontal: 40 }}>
                     <View style={{ 
                       width: 120, height: 120, borderRadius: 60, backgroundColor: 'white', 
                       alignItems: 'center', justifyContent: 'center', marginBottom: 28,
@@ -451,7 +474,7 @@ export function FindSessionScreen() {
               renderItem={({ item }) => (
                 <View style={{ 
                   flex: 1, 
-                  marginBottom: isMobile ? 16 : 24 
+                  marginBottom: isMobile ? 12 : 16 
                 }}>
                   <SearchResultCard session={item} userLocation={userLocation} />
                 </View>
@@ -495,26 +518,26 @@ const SearchBar = React.memo(({
   const isMobile = width < 768
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingBottom: isMobile ? 16 : 28, gap: isMobile ? 12 : 16 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 8, paddingBottom: isMobile ? 12 : 20, gap: isMobile ? 10 : 12 }}>
       <View
         style={{
-          flex: 1, flexDirection: 'row', alignItems: 'center', height: isMobile ? 56 : 64, paddingHorizontal: isMobile ? 16 : 24,
+          flex: 1, flexDirection: 'row', alignItems: 'center', height: isMobile ? 48 : 52, paddingHorizontal: isMobile ? 12 : 20,
           backgroundColor: 'white',
-          borderRadius: RADIUS.xl,
+          borderRadius: RADIUS.lg,
           borderWidth: 1,
           borderColor: theme.outlineVariant,
           ...SHADOW.xs
         }}
       >
-        <Search size={isMobile ? 20 : 24} color={theme.primary} strokeWidth={2.5} />
+        <Search size={isMobile ? 18 : 20} color={theme.primary} strokeWidth={2.5} />
         <TextInput
           value={query}
           onChangeText={setQuery}
           placeholder={STRINGS.find_session.search_placeholder}
           placeholderTextColor={theme.outline}
           style={{
-            flex: 1, marginLeft: isMobile ? 12 : 16,
-            fontSize: 16,
+            flex: 1, marginLeft: isMobile ? 10 : 14,
+            fontSize: isMobile ? 14 : 15,
             fontFamily: SCREEN_FONTS.body,
             color: theme.onSurface,
             outlineStyle: 'none' // For web
@@ -522,7 +545,7 @@ const SearchBar = React.memo(({
         />
         {query.length > 0 ? (
           <TouchableOpacity onPress={() => setQuery('')} style={{ marginLeft: 8, padding: 4 }}>
-            <X size={isMobile ? 18 : 20} color={theme.outline} strokeWidth={2.4} />
+            <X size={isMobile ? 16 : 18} color={theme.outline} strokeWidth={2.4} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -530,16 +553,16 @@ const SearchBar = React.memo(({
       <TouchableOpacity
         onPress={onFilterPress}
         style={{
-          width: isMobile ? 56 : 64, height: isMobile ? 56 : 64, alignItems: 'center', justifyContent: 'center',
+          width: isMobile ? 48 : 52, height: isMobile ? 48 : 52, alignItems: 'center', justifyContent: 'center',
           backgroundColor: activeAdvancedFiltersCount > 0 ? theme.primary : 'white',
-          borderRadius: RADIUS.xl,
+          borderRadius: RADIUS.lg,
           borderWidth: 1,
           borderColor: activeAdvancedFiltersCount > 0 ? theme.primary : theme.outlineVariant,
           ...SHADOW.xs
         }}
       >
         <SlidersHorizontal
-          size={isMobile ? 20 : 24}
+          size={isMobile ? 18 : 20}
           color={activeAdvancedFiltersCount > 0 ? 'white' : theme.onSurfaceVariant}
           strokeWidth={2}
         />
@@ -547,19 +570,19 @@ const SearchBar = React.memo(({
           <View 
             style={{
               position: 'absolute',
-              top: -4,
-              right: -4,
+              top: -2,
+              right: -2,
               backgroundColor: theme.primary,
-              borderRadius: 12,
-              minWidth: isMobile ? 20 : 24,
-              height: isMobile ? 20 : 24,
+              borderRadius: 10,
+              minWidth: isMobile ? 18 : 20,
+              height: isMobile ? 18 : 20,
               alignItems: 'center',
               justifyContent: 'center',
-              borderWidth: 3,
+              borderWidth: 2,
               borderColor: 'white',
             }}
           >
-            <Text style={{ color: '#FFFFFF', fontSize: isMobile ? 9 : 11, fontFamily: SCREEN_FONTS.bold, top: -0.5 }}>
+            <Text style={{ color: '#FFFFFF', fontSize: isMobile ? 8 : 10, fontFamily: SCREEN_FONTS.bold, top: -0.5 }}>
               {activeAdvancedFiltersCount}
             </Text>
           </View>

@@ -47,10 +47,12 @@ export function UpcomingSessionCard({ session, onPress, isHost = false }: Upcomi
   } else {
     // Player View: Show format type
     statusBg = theme.primary
-    const fmt = (session.format_type || '').toLowerCase()
-    if (fmt === 'round_robin') statusLabel = 'GIẢI ROUND ROBIN'
-    else if (fmt === 'open_play') statusLabel = 'KÈO MỞ OPEN PLAY'
-    else statusLabel = 'KÈO GIAO LƯU SOCIAL'
+    const ownerSessions = session.owner_sessions
+    const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
+    const fmt = (ownerDetails.format_type || session.format_type || '').toLowerCase()
+    if (fmt === 'round_robin') statusLabel = 'ROUND ROBIN'
+    else if (fmt === 'open_play') statusLabel = 'OPEN PLAY'
+    else statusLabel = 'GIAO LƯU SOCIAL'
   }
 
   // Helper for skill badges
@@ -106,12 +108,12 @@ export function UpcomingSessionCard({ session, onPress, isHost = false }: Upcomi
         </Text>
         <Text numberOfLines={1} style={[styles.location, { color: theme.onSurfaceVariant }]}>
           {isHost 
-            ? (session.title || (session.format_type === 'round_robin' ? 'Giải Round Robin' : 'Kèo giao lưu Social'))
+            ? (session.title || (fmt === 'round_robin' ? 'Round Robin' : (fmt === 'open_play' ? 'Open Play' : 'Giao lưu Social')))
             : session.court_address}
         </Text>
       </View>
 
-      <View style={[styles.infoGrid, { backgroundColor: theme.surfaceContainerLow }]}>
+      <View style={[styles.infoGrid, { backgroundColor: theme.surfaceAlt }]}>
         <View style={styles.gridHeader}>
           <View style={[styles.dayBadge, { backgroundColor: theme.primary }]}>
             <Text style={styles.dayBadgeText}>{formatDatePart(session.start_time).toUpperCase()}</Text>

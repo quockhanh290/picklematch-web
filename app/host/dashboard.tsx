@@ -154,7 +154,7 @@ export default function HostDashboardScreen() {
           .from('sessions')
           .select(`
             *,
-            owner_sessions(sub_court_numbers),
+            owner_sessions(sub_court_numbers, format_type),
             slot:slot_id(
               start_time, end_time,
               court:court_id(*)
@@ -238,9 +238,9 @@ export default function HostDashboardScreen() {
     const isDone = isCompleted || isCancelled
     
     // Format variables for rendering (restoring original context)
-    const formatType = session.format_type || 'social'
     const ownerSessions = session.owner_sessions
     const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
+    const formatType = ownerDetails.format_type || session.format_type || 'social'
     const subCourts = ownerDetails.sub_court_numbers || session.sub_court_numbers || []
     
     // Skill Level Labels
@@ -353,7 +353,7 @@ export default function HostDashboardScreen() {
                 textTransform: 'uppercase',
                 lineHeight: 24
               }} numberOfLines={1}>
-                {session.title || (formatType === 'round_robin' ? 'Giải Round Robin' : 'Kèo giao lưu Social')}
+                {session.title || (formatType === 'round_robin' ? 'Round Robin' : (formatType === 'open_play' ? 'Open Play' : 'Giao lưu Social'))}
               </Text>
               
               <Text style={{ 

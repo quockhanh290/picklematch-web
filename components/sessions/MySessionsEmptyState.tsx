@@ -28,51 +28,53 @@ export function MySessionsEmptyState({ activeTab }: { activeTab: SessionTab }) {
 
   return (
     <View
-      className="rounded-[24px] px-6 py-7"
       style={{
-        backgroundColor: theme.surfaceContainerLowest,
-        borderLeftWidth: 3,
-        borderLeftColor: theme.primary,
-        shadowColor: theme.onBackground,
-        shadowOpacity: 0.04,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 2,
+        borderRadius: RADIUS.xl,
+        overflow: 'hidden',
+        backgroundColor: 'white',
+        borderWidth: 1,
+        borderColor: theme.outlineVariant,
+        ...SHADOW.xs,
+        marginTop: 12
       }}
     >
-      <Text
-        style={{
-          color: theme.outline,
-          fontFamily: SCREEN_FONTS.cta,
-          fontSize: 10,
-          letterSpacing: 2,
-          textTransform: 'uppercase',
-        }}
-      >
-        {config.eyebrow}
-      </Text>
-      <Text
-        className="mt-3"
-        style={{
-          color: theme.onBackground,
-          fontFamily: SCREEN_FONTS.headline,
-          fontSize: 22,
-          lineHeight: 28,
-        }}
-      >
-        {config.title}
-      </Text>
-      <Text
-        className="mt-2"
-        style={{
-          color: theme.onSurfaceVariant,
-          fontFamily: SCREEN_FONTS.body,
-          fontSize: 14,
-          lineHeight: 22,
-        }}
-      >
-        {config.description}
-      </Text>
+      <View style={{ padding: 28, backgroundColor: '#FCFAF7' }}>
+        <Text
+          style={{
+            color: theme.primary,
+            fontFamily: SCREEN_FONTS.cta,
+            fontSize: 10,
+            letterSpacing: 2.2,
+            textTransform: 'uppercase',
+            marginBottom: 16
+          }}
+        >
+          {config.eyebrow}
+        </Text>
+        <Text
+          style={{
+            color: theme.onSurface,
+            fontFamily: SCREEN_FONTS.headline,
+            fontSize: 26,
+            lineHeight: 32,
+            textTransform: 'uppercase',
+            marginBottom: 10
+          }}
+        >
+          {config.title}
+        </Text>
+        <Text
+          style={{
+            color: theme.onSurfaceVariant,
+            fontFamily: SCREEN_FONTS.body,
+            fontSize: 15,
+            lineHeight: 24,
+            maxWidth: '90%'
+          }}
+        >
+          {config.description}
+        </Text>
+      </View>
     </View>
   )
 }

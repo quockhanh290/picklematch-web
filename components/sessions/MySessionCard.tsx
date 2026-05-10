@@ -163,9 +163,9 @@ export function MySessionCard({
               ? statusLabel 
               : (() => {
                   const fmt = (item.format_type || '').toLowerCase()
-                  if (fmt === 'round_robin') return 'GIẢI ROUND ROBIN'
-                  if (fmt === 'open_play') return 'KÈO MỞ OPEN PLAY'
-                  return 'KÈO GIAO LƯU SOCIAL'
+                  if (fmt === 'round_robin') return 'ROUND ROBIN'
+                  if (fmt === 'open_play') return 'OPEN PLAY'
+                  return 'GIAO LƯU SOCIAL'
                 })()}
           </Text>
         </View>
@@ -206,7 +206,7 @@ export function MySessionCard({
               letterSpacing: 0.3
             }}>
               {item.role === 'host' 
-                ? (item.title || (item.format_type === 'round_robin' ? 'Giải Round Robin' : 'Kèo giao lưu Social'))
+                ? (item.title || (item.format_type === 'round_robin' ? 'Round Robin' : 'Giao lưu Social'))
                 : item.court_address}
             </Text>
           </View>
@@ -258,7 +258,7 @@ export function MySessionCard({
       <View style={{ 
         paddingHorizontal: 14, 
         paddingVertical: 8,
-        backgroundColor: '#F9FAFB',
+        backgroundColor: theme.surfaceAlt,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
