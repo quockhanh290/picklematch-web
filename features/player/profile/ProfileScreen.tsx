@@ -411,32 +411,54 @@ export function ProfileScreen() {
                     onPress={handleSwitchToHost}
                     activeOpacity={0.8}
                     style={{
-                      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: theme.primary, borderRadius: RADIUS.xl,
-                      paddingVertical: 18, ...SHADOW.sm,
-                      gap: 12
+                      flexDirection: 'row', alignItems: 'center', 
+                      backgroundColor: theme.surfaceAlt, borderRadius: RADIUS.xl,
+                      padding: 16, borderWidth: 1, borderColor: theme.outlineVariant,
+                      gap: 16, ...SHADOW.xs
                     }}
                   >
-                    <ShieldCheck size={20} color="white" />
-                    <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 16, color: 'white', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      KÍCH HOẠT CHẾ ĐỘ HOST
-                    </Text>
+                    <View style={{ 
+                      width: 44, height: 44, borderRadius: 12, 
+                      backgroundColor: theme.primary,
+                      alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      <ShieldCheck size={22} color="white" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 15, color: theme.onSurface }}>
+                        Chế độ Host
+                      </Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurfaceVariant, marginTop: 2 }}>
+                        Kích hoạt để quản lý và tạo kèo đấu
+                      </Text>
+                    </View>
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     onPress={logout}
                     activeOpacity={0.8}
                     style={{
-                      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                      flexDirection: 'row', alignItems: 'center', 
                       backgroundColor: theme.surfaceAlt, borderRadius: RADIUS.xl,
-                      paddingVertical: 16, borderWidth: 1, borderColor: theme.outlineVariant,
-                      gap: 10
+                      padding: 16, borderWidth: 1, borderColor: theme.outlineVariant,
+                      gap: 16, ...SHADOW.xs
                     }}
                   >
-                    <LogOut size={18} color={theme.error} />
-                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.error }}>
-                      ĐĂNG XUẤT TÀI KHOẢN
-                    </Text>
+                    <View style={{ 
+                      width: 44, height: 44, borderRadius: 12, 
+                      backgroundColor: withAlpha(theme.error, 0.1),
+                      alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      <LogOut size={22} color={theme.error} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 15, color: theme.error }}>
+                        Đăng xuất
+                      </Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurfaceVariant, marginTop: 2 }}>
+                        Thoát khỏi tài khoản hiện tại
+                      </Text>
+                    </View>
                   </TouchableOpacity>
                 </View>
               </View>
