@@ -18,7 +18,7 @@ begin
   end if;
 
   -- Get times for the session being joined
-  select start_time, end_time into v_new_start, v_new_end
+  select cs.start_time, cs.end_time into v_new_start, v_new_end
   from public.court_slots cs
   join public.sessions s on s.slot_id = cs.id
   where s.id = NEW.session_id;
@@ -73,7 +73,7 @@ declare
   v_overlapping_session_id uuid;
 begin
   -- Get times for the session being requested
-  select start_time, end_time into v_new_start, v_new_end
+  select cs.start_time, cs.end_time into v_new_start, v_new_end
   from public.court_slots cs
   join public.sessions s on s.slot_id = cs.id
   where s.id = NEW.match_id;

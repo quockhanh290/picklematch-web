@@ -9,7 +9,7 @@ test.describe('PickleMatch web smoke', () => {
   test('host profile and session detail smoke path', async ({ page }) => {
     await page.goto('/host/profile')
     await expect(page).toHaveURL(/\/host\/profile/)
-    await expect(page.getByText(/host/i).first()).toBeVisible()
+    await expect(page.getByTestId('host-profile-screen')).toBeVisible()
 
     await page.goto(`/session/${SESSION_IDS.openConfirmed}`)
     await expect(page).toHaveURL(new RegExp(`/session/${SESSION_IDS.openConfirmed}`))
@@ -41,7 +41,7 @@ test.describe('PickleMatch web smoke', () => {
 
   test('offline transition smoke', async ({ page }) => {
     await page.goto('/host/profile')
-    await expect(page.getByText(/host/i).first()).toBeVisible()
+    await expect(page.getByTestId('host-profile-screen')).toBeVisible()
 
     // Simulate going offline
     await page.context().setOffline(true)
@@ -54,6 +54,6 @@ test.describe('PickleMatch web smoke', () => {
     // Restore
     await page.context().setOffline(false)
     await page.reload()
-    await expect(page.getByText(/host/i).first()).toBeVisible()
+    await expect(page.getByTestId('host-profile-screen')).toBeVisible()
   })
 })

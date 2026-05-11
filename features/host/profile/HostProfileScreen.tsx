@@ -160,7 +160,7 @@ export function HostProfileScreen() {
   const displayHistory = _history.length > 0 ? _history : _PROFILE_MOCK_HISTORY
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.background }}>
+    <View style={{ flex: 1, backgroundColor: theme.background }} testID="host-profile-screen">
       <StatusBar style="light" translucent backgroundColor="transparent" />
       <ScrollView 
         contentContainerStyle={{ flexGrow: 1 }} 
@@ -171,7 +171,12 @@ export function HostProfileScreen() {
       >
         <WebContainer maxWidth={600}>
           <View style={{ paddingTop: 12 }}>
-            <MainHeader title="HỒ SƠ CHỦ SÂN" brandedSubtitle="PICKLEMATCH" style={{ paddingHorizontal: 0 }} />
+            <MainHeader 
+              title="HỒ SƠ CHỦ SÂN" 
+              brandedSubtitle="PICKLEMATCH" 
+              style={{ paddingHorizontal: 0 }} 
+              testID="host-profile-header"
+            />
           </View>
 
           <View style={{ paddingHorizontal: 24 }}>

@@ -1,7 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
 
-const AUTH_BOOTSTRAP_TIMEOUT_MS = 8000
 
 export function useAuth() {
   const [userId, setUserId] = useState<string | null | undefined>(undefined)

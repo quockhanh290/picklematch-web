@@ -203,7 +203,11 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
         </View>
       )
     }
-    return null
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }}>
+        <AppLoading label="ĐANG XÁC THỰC..." />
+      </View>
+    )
   }
 
   // Security: Only render children if it's a public route OR if auth is in a valid state for the route.
@@ -214,7 +218,11 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
     (authStatus === 'needs_onboarding' && isOnboardingRoute)
 
   if (!shouldRenderChildren) {
-    return null
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }}>
+        <AppLoading label="ĐANG CHUYỂN HƯỚNG..." />
+      </View>
+    )
   }
 
   return (

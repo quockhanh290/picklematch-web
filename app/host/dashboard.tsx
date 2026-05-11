@@ -266,6 +266,8 @@ export default function HostDashboardScreen() {
     const fillRatio = confirmedCount / maxPlayers
     const isFull = fillRatio >= 1
     const isUnderfilled = fillRatio < 0.6 && !isDone && !isPlaying && !isCancelled
+    const isWithin24h = startTimestamp > 0 && (startTimestamp - now) < (24 * 3600000) && startTimestamp > now
+    const isUrgent = isUnderfilled && isWithin24h
 
     let statusLabel = 'ĐANG MỞ'
     let statusBg = COLORS.teal
@@ -282,7 +284,7 @@ export default function HostDashboardScreen() {
     } else if (isFull) {
       statusLabel = 'ĐÃ ĐẦY'
       statusBg = COLORS.amber
-    } else if (isUnderfilled) {
+    } else if (isUrgent) {
       statusLabel = 'CẦN THÊM NGƯỜI'
       statusBg = COLORS.coral
     }
@@ -470,14 +472,7 @@ export default function HostDashboardScreen() {
         }}>
           {(() => {
             const maxPlayers = session.is_unlimited ? 16 : (session.max_players || 16)
-            const remaining = maxPlayers - confirmedCount
-            const isFull = remaining <= 0
-            const isUrgent = confirmedCount < maxPlayers / 2 && !isFull
             
-            const statusColor = isFull 
-              ? theme.successText 
-              : (isUrgent ? '#d97706' : theme.primary)
-
             return (
               <>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
@@ -574,7 +569,7 @@ export default function HostDashboardScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.background }}>
+    <View style={{ flex: 1, backgroundColor: theme.background }} testID="host-dashboard-screen">
       <StatusBar style="dark" />
       
       <ScrollView 
@@ -783,6 +778,10 @@ export default function HostDashboardScreen() {
             })
             
             if (filteredSessions.length === 0) {
+              // If we are in upcoming tab and already showing the nextSession at the top, 
+              // don't show the empty state box below it.
+              if (activeTab === 'upcoming' && nextSessionId) return null
+              
               return (
                 <View
                   style={{

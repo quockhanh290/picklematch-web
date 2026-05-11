@@ -1,5 +1,5 @@
 import React from 'react'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useAuth } from '@/lib/useAuth'
 import { useSessionDetail } from '@/hooks/useSessionDetail'
 import { AppLoading, SecondaryNavbar } from '@/components/design'
@@ -22,6 +22,13 @@ export default function HostMatchRoute() {
     fetchSession,
     error,
   } = useSessionDetail(id, userId)
+
+  // Re-fetch every time this screen comes into focus (e.g. after navigating back from session detail)
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchSession()
+    }, [id])
+  )
 
   if (loading) {
     return <AppLoading fullScreen />

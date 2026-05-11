@@ -57,9 +57,11 @@ export default function HostWebQuickStart() {
 
   useEffect(() => {
     if (!isAllowed) {
+      console.error('[QuickStart] Access denied: This route is only for development/testing.')
       router.replace('/host/login')
     }
   }, [isAllowed])
+
 
 
 
@@ -80,6 +82,17 @@ export default function HostWebQuickStart() {
       fetchCourts()
     }
   }, [currentStep, search])
+
+  if (!isAllowed) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.error, textAlign: 'center' }}>
+          TRANG NÀY CHỈ DÀNH CHO MÔI TRƯỜNG PHÁT TRIỂN
+        </Text>
+        <AppButton label="Về trang đăng nhập" onPress={() => router.replace('/host/login')} style={{ marginTop: 24 }} />
+      </View>
+    )
+  }
 
   async function fetchCourts() {
     setLoading(true)
@@ -109,7 +122,9 @@ export default function HostWebQuickStart() {
   // 3. Final Create Match Logic
   const handleCreateMatch = async () => {
     if (!isAllowed) {
-      console.error('[QuickStart] Security Error: Write attempt blocked in production environment.')
+      const errorMsg = '[QuickStart] Security Error: Write attempt blocked in production environment.'
+      console.error(errorMsg)
+      Alert.alert('Lỗi bảo mật', 'Thao tác bị chặn ở môi trường production.')
       return
     }
     setLoading(true)

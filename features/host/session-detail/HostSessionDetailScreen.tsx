@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import * as Linking from 'expo-linking'
-import { Platform, Pressable, RefreshControl, ScrollView, Share, Text, TouchableOpacity, View } from 'react-native'
+import { Platform, Pressable, RefreshControl, ScrollView, Share, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Trophy, LayoutDashboard, CheckCircle2, Check, AlertTriangle } from 'lucide-react-native'
@@ -51,7 +51,7 @@ export function HostSessionDetailScreen({
   const [dialogConfig, setDialogConfig] = useState<AppDialogConfig | null>(null)
   const [isCheckInMode, setIsCheckInMode] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
-
+  const [isProcessingCheckIn, setIsProcessingCheckIn] = useState(false)
 
 
   const now = new Date().getTime()
@@ -99,6 +99,7 @@ export function HostSessionDetailScreen({
     
     const confirmAction = async () => {
       try {
+        setIsProcessingCheckIn(true)
         console.log('[CheckIn] Starting confirmAction for session:', id)
         
         // 1. Mark session as completed and lock it
@@ -174,7 +175,7 @@ export function HostSessionDetailScreen({
           }
 
           console.log('[CheckIn] Saving system arrangements...', assignments.length)
-          const { error: arrangementError } = await supabase.rpc('save_session_arrangements', {
+          const { error: arrangementError } = await supabase.rpc('save_session_teams', {
             p_session_id: id,
             p_assignments: assignments
           })
@@ -186,8 +187,11 @@ export function HostSessionDetailScreen({
         }
 
         onRefresh()
+        setIsCheckInMode(false)
       } catch (err: any) {
         Alert.alert('Lỗi', err.message || 'Không thể hoàn tất check-in')
+      } finally {
+        setIsProcessingCheckIn(false)
       }
     }
 
@@ -349,12 +353,17 @@ export function HostSessionDetailScreen({
           <TouchableOpacity 
             onPress={async () => {
               try {
-                await supabase.from('sessions').update({ status: 'open', check_in_completed: false }).eq('id', id)
-                await supabase.from('session_players').update({ team_no: 0, check_in_status: 'pending' }).eq('session_id', id)
+                const res1 = await supabase.from('sessions').update({ status: 'open', check_in_completed: false }).eq('id', id)
+                if (res1.error) throw res1.error
+                const res2 = await supabase.from('session_players').update({ team_no: null, check_in_status: 'pending', status: 'confirmed' }).eq('session_id', id).neq('status', 'cancelled')
+                if (res2.error) throw res2.error
+                const res3 = await supabase.from('session_matches').delete().eq('session_id', id)
+                if (res3.error) throw res3.error
                 onRefresh()
-                Alert.alert('Thành công', 'Đã reset trạng thái kèo để test.')
-              } catch (e) {
+                Alert.alert('Thành công', 'Đã reset trạng thái kèo và xóa toàn bộ lịch sử trận để test.')
+              } catch (e: any) {
                 console.error(e)
+                Alert.alert('Lỗi', e.message || 'Không thể reset')
               }
             }}
             style={{ 
@@ -406,6 +415,7 @@ export function HostSessionDetailScreen({
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <TouchableOpacity 
                   onPress={handleCompleteCheckIn}
+                  disabled={isProcessingCheckIn}
                   style={{ 
                     flex: 2,
                     backgroundColor: theme.primary,
@@ -415,15 +425,23 @@ export function HostSessionDetailScreen({
                     justifyContent: 'center',
                     flexDirection: 'row',
                     gap: 10,
+                    opacity: isProcessingCheckIn ? 0.7 : 1,
                     ...SHADOW.md
                   }}
                 >
-                  <CheckCircle2 size={20} color={theme.onPrimary} />
-                  <Text style={{ color: theme.onPrimary, fontSize: 16, fontFamily: SCREEN_FONTS.headline }}>HOÀN TẤT ĐIỂM DANH</Text>
+                  {isProcessingCheckIn ? (
+                    <ActivityIndicator color={theme.onPrimary} />
+                  ) : (
+                    <>
+                      <CheckCircle2 size={20} color={theme.onPrimary} />
+                      <Text style={{ color: theme.onPrimary, fontSize: 16, fontFamily: SCREEN_FONTS.headline }}>HOÀN TẤT ĐIỂM DANH</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
 
                 <TouchableOpacity 
                   onPress={() => setIsCheckInMode(false)}
+                  disabled={isProcessingCheckIn}
                   style={{ 
                     flex: 1,
                     backgroundColor: theme.dangerStrong,
@@ -431,6 +449,7 @@ export function HostSessionDetailScreen({
                     borderRadius: RADIUS.xl,
                     alignItems: 'center',
                     justifyContent: 'center',
+                    opacity: isProcessingCheckIn ? 0.7 : 1,
                     ...SHADOW.sm
                   }}
                 >

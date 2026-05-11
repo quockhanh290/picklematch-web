@@ -145,6 +145,8 @@ export function HostRosterSection({
         const serverStatus = (p as any).checkInStatus
         if (serverStatus && serverStatus !== 'pending') {
           next[p.id] = serverStatus
+        } else if (serverStatus === 'pending') {
+          delete next[p.id]
         }
       })
       return next
@@ -204,16 +206,17 @@ export function HostRosterSection({
       )
     }
 
-    const confirmed = activePlayers.filter(p => p.status === 'confirmed')
+    const confirmed = activePlayers.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show')
+    const noShows = activePlayers.filter(p => p.checkInStatus === 'no_show')
     const waiting = activePlayers.filter(p => p.status === 'waiting')
 
-    const totalCount = activePlayers.length
+    const totalCount = activePlayers.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show').length
     const femaleCount = activePlayers.filter(p => {
       const g = String(p.gender || '').toLowerCase()
-      return g === 'female' || g === 'nữ'
+      return (g === 'female' || g === 'nữ') && p.status === 'confirmed' && p.checkInStatus !== 'no_show'
     }).length
     const maleCount = totalCount - femaleCount
-    const totalSkill = activePlayers.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
+    const totalSkill = confirmed.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
     const avgSkill = totalCount > 0 ? totalSkill / totalCount : 0
 
 
@@ -287,17 +290,31 @@ export function HostRosterSection({
             return next
           })
         } else {
-          const { error } = await supabase
+          const { data, error } = await supabase
             .from('session_players')
             .update({ status: newStatus, team_no: newStatus === 'waiting' ? null : undefined })
             .eq('session_id', sessionId)
             .eq('player_id', playerId)
-          if (error) throw error
+            .select()
+          
+          if (data && data.length === 0 && playerId === hostId) {
+            const { error: insertError } = await supabase
+              .from('session_players')
+              .insert({
+                session_id: sessionId,
+                player_id: playerId,
+                status: newStatus,
+                team_no: null
+              })
+            if (insertError) throw insertError
+          } else if (error) {
+            throw error
+          }
         }
         onUpdated?.()
-      } catch (err) {
+      } catch (err: any) {
         console.error('[ManualUpdate] Error:', err)
-        Alert.alert('Lỗi', 'Không thể cập nhật trạng thái người chơi')
+        Alert.alert('Lỗi', err.message || 'Không thể cập nhật trạng thái người chơi')
       }
     }
 
@@ -637,6 +654,32 @@ export function HostRosterSection({
       </View>
     )
 
+    const noShowList = noShows.length > 0 && (
+      <View style={{ marginTop: 12 }}>
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          gap: 8, marginBottom: 8,
+        }}>
+          <Text style={{ fontSize: 14 }}>❌</Text>
+          <Text style={{
+            fontSize: 12, fontWeight: '700', color: '#dc2626',
+            fontFamily: SCREEN_FONTS.label
+          }}>VẮNG MẶT (NO SHOW)</Text>
+          <View style={{
+            backgroundColor: '#fee2e2', paddingHorizontal: 7,
+            paddingVertical: 2, borderRadius: 999,
+          }}>
+            <Text style={{
+              fontSize: 10, fontWeight: '700', color: '#b91c1c',
+              fontFamily: SCREEN_FONTS.label
+            }}>{noShows.length}</Text>
+          </View>
+        </View>
+
+        {noShows.map(player => renderNewPlayerRow(player, false))}
+      </View>
+    )
+
     const addButton = showAddButton && (
       <TouchableOpacity
         onPress={() => router.push(`/register/${sessionId}`)}
@@ -820,13 +863,61 @@ export function HostRosterSection({
                               }} />
                             </View>
 
-                            <View style={{ flex: 1 }}>
+                            <View style={{ flex: 1, justifyContent: 'center' }}>
                               <Text numberOfLines={1} style={{ fontSize: 12, fontFamily: SCREEN_FONTS.label, fontWeight: '600', color: '#1A2E2A' }}>
                                 {player.name || 'Người chơi'}
                               </Text>
-                              <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.label, color: '#7A8884' }}>
-                                {isMale ? 'Nam' : 'Nữ'} · {Number(player.pvna || 0).toFixed(2)}
-                              </Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+                                <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.label, color: '#7A8884' }}>
+                                  {isMale ? 'Nam' : 'Nữ'} · {Number(player.pvna || 0).toFixed(2)}
+                                </Text>
+                                {player.metadata?.partner_gender_pref && player.metadata.partner_gender_pref !== 'any' && (
+                                  <View style={{ 
+                                    flexDirection: 'row', 
+                                    alignItems: 'center', 
+                                    gap: 2, 
+                                    backgroundColor: player.metadata.partner_gender_pref === 'female' ? '#FAECE7' : '#E1F5EE', 
+                                    paddingHorizontal: 4, 
+                                    paddingVertical: 1,
+                                    borderRadius: 4,
+                                    borderWidth: 0.5,
+                                    borderColor: player.metadata.partner_gender_pref === 'female' ? '#993C1D30' : '#0F6E5630'
+                                  }}>
+                                    <Text style={{ fontSize: 8 }}>🤝</Text>
+                                    <Text style={{ 
+                                      fontSize: 8, 
+                                      fontWeight: '800', 
+                                      color: player.metadata.partner_gender_pref === 'female' ? '#993C1D' : '#0F6E56',
+                                      fontFamily: SCREEN_FONTS.headline
+                                    }}>
+                                      {player.metadata.partner_gender_pref === 'male' ? 'NAM' : 'NỮ'}
+                                    </Text>
+                                  </View>
+                                )}
+                                {player.metadata?.opponent_gender_pref && player.metadata.opponent_gender_pref !== 'any' && (
+                                  <View style={{ 
+                                    flexDirection: 'row', 
+                                    alignItems: 'center', 
+                                    gap: 2, 
+                                    backgroundColor: player.metadata.opponent_gender_pref === 'female' ? '#FAECE7' : '#E1F5EE', 
+                                    paddingHorizontal: 4, 
+                                    paddingVertical: 1,
+                                    borderRadius: 4,
+                                    borderWidth: 0.5,
+                                    borderColor: player.metadata.opponent_gender_pref === 'female' ? '#993C1D30' : '#0F6E5630'
+                                  }}>
+                                    <Text style={{ fontSize: 8 }}>⚔️</Text>
+                                    <Text style={{ 
+                                      fontSize: 8, 
+                                      fontWeight: '800', 
+                                      color: player.metadata.opponent_gender_pref === 'female' ? '#993C1D' : '#0F6E56',
+                                      fontFamily: SCREEN_FONTS.headline
+                                    }}>
+                                      {player.metadata.opponent_gender_pref === 'male' ? 'NAM' : 'NỮ'}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
                             </View>
                           </View>
                         )
@@ -876,6 +967,7 @@ export function HostRosterSection({
           )}
 
           {reserveList}
+          {noShowList}
           {addButton}
         </>
       )
@@ -887,6 +979,7 @@ export function HostRosterSection({
         {summaryStrip}
         {renderSummaryAndList(confirmed)}
         {reserveList}
+        {noShowList}
         {addButton}
       </View>
     )

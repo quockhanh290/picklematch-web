@@ -27,14 +27,14 @@ test.describe('In-App Browser Simulation', () => {
 
   test('IAB: should maintain session in memory despite blocked storage', async ({ page }) => {
     await page.goto('/host/dashboard')
-    await expect(page.getByText(/host/i).first()).toBeVisible()
+    await expect(page.getByTestId('host-dashboard-screen')).toBeVisible()
 
     // Navigate to profile using a more reliable selector or direct URL
     await page.goto('/host/profile')
     await expect(page).toHaveURL(/\/host\/profile/)
     
     // Session should still be valid because AuthGate/useAuth maintains it in memory
-    await expect(page.getByText(/host/i).first()).toBeVisible()
+    await expect(page.getByTestId('host-profile-screen')).toBeVisible()
   })
 
   test('IAB: input focus should not cause disruptive layout shifts', async ({ page }) => {

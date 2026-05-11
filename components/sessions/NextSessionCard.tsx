@@ -54,6 +54,8 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
   const fillRatio = confirmedCount / maxPlayers
   const isFull = fillRatio >= 1
   const isUnderfilled = fillRatio < 0.6 && !isDone && !isPlaying && !isCancelled
+  const isWithin24h = startDate.getTime() > now && (startDate.getTime() - now) < (24 * 3600000)
+  const isUrgent = isUnderfilled && isWithin24h
 
   let statusLabel = ''
   let statusBg = COLORS.teal
@@ -71,7 +73,7 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
     } else if (isFull) {
       statusLabel = 'ĐÃ ĐẦY'
       statusBg = COLORS.amber
-    } else if (isUnderfilled) {
+    } else if (isUrgent) {
       statusLabel = 'CẦN THÊM NGƯỜI'
       statusBg = COLORS.coral
     } else {
