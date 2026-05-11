@@ -81,6 +81,7 @@ export function useHostCreateSessionController(editSessionId: string | null) {
   
   const [submitting, setSubmitting] = useState(false)
   const [isHydrating, setIsHydrating] = useState(false)
+  const [isAfterEnd, setIsAfterEnd] = useState(false)
   const [dialogConfig, setDialogConfig] = useState<any | null>(null)
 
   const costVal = useMemo(() => parseTotalCost(costPerPersonStr), [costPerPersonStr])
@@ -178,6 +179,14 @@ export function useHostCreateSessionController(editSessionId: string | null) {
         const deadlineDiffMins = fillDeadlineMs != null ? Math.max(0, Math.round((nextStart.getTime() - fillDeadlineMs) / 60_000)) : 60
         setDeadlineMinutes(nearestDeadlineMinutes(deadlineDiffMins))
         setBookingStatus(session.court_booking_status || 'confirmed')
+
+        // Check if ended
+        const nowTs = Date.now()
+        const startTs = nextStart.getTime()
+        const endTs = nextEnd.getTime()
+        const isWayPastStart = startTs > 0 && (nowTs - startTs) > (12 * 3600000)
+        const ended = endTs <= nowTs || ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion'].includes(session.status) || isWayPastStart
+        setIsAfterEnd(ended)
       }
     } catch (err) {
       console.error('Hydration error:', err)
@@ -249,6 +258,10 @@ export function useHostCreateSessionController(editSessionId: string | null) {
 
   async function submit() {
     if (!selectedCourt || !startTime || !endTime) return
+    if (isEditMode && isAfterEnd) {
+      Alert.alert('Thông báo', 'Kèo đấu này đã kết thúc, không thể chỉnh sửa.')
+      return
+    }
     setSubmitting(true)
     try {
       const fillDeadline = new Date(startTime.getTime() - deadlineMinutes * 60_000)
@@ -393,7 +406,7 @@ export function useHostCreateSessionController(editSessionId: string | null) {
     costPerPersonStr, setCostPerPersonStr,
     deadlineMinutes, setDeadlineMinutes,
     bookingStatus, setBookingStatus,
-    submitting, isHydrating,
+    submitting, isHydrating, isAfterEnd,
     dialogConfig, setDialogConfig,
     onDatePress, goToStep2, goToStep3, submit,
     defaultPickerValue,

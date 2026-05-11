@@ -23,7 +23,8 @@
     "seed:dummy": "node --env-file=.env.server ./scripts/seed-dummy-data.mjs",
     "smoke:backend": "node --env-file=.env.server ./scripts/smoke-backend.mjs",
     "test:security": "node --experimental-strip-types --experimental-specifier-resolution=node tests/security.test.mts",
-    "test:ui": "jest"
+    "test:ui": "jest",
+    "check:artifacts": "node ./scripts/check-temp-artifacts.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/barlow-condensed": "^0.2.3",

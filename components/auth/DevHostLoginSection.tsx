@@ -4,7 +4,7 @@ import { router } from 'expo-router'
 import { useAppTheme } from '@/lib/theme-context'
 import { ShieldCheck, Lock, Mail } from 'lucide-react-native'
 import { useState } from 'react'
-import { Pressable, Text, TextInput, View } from 'react-native'
+import { Platform, Pressable, Text, TextInput, View } from 'react-native'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { SPACING, RADIUS } from '@/constants/screenLayout'
 
@@ -144,7 +144,7 @@ export default function DevHostLoginSection({
               placeholderTextColor={theme.outline}
               autoCapitalize="none"
               keyboardType="email-address"
-              style={{ flex: 1, color: DEV.ink, fontSize: 15, fontFamily: SCREEN_FONTS.body }}
+              style={{ flex: 1, color: DEV.ink, fontSize: Platform.OS === 'web' ? 16 : 15, fontFamily: SCREEN_FONTS.body }}
             />
           </View>
         </View>
@@ -164,7 +164,7 @@ export default function DevHostLoginSection({
               placeholder="Nhập mật khẩu dev"
               placeholderTextColor={theme.outline}
               secureTextEntry
-              style={{ flex: 1, color: DEV.ink, fontSize: 15, fontFamily: SCREEN_FONTS.body }}
+              style={{ flex: 1, color: DEV.ink, fontSize: Platform.OS === 'web' ? 16 : 15, fontFamily: SCREEN_FONTS.body }}
             />
           </View>
         </View>

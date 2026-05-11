@@ -22,9 +22,10 @@ interface Props {
   players: ArrangementPlayer[]
   onUpdated: () => void
   onClose?: () => void
+  isAfterEnd?: boolean
 }
 
-export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit<Props, 'onClose'>) {
+export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfterEnd }: Omit<Props, 'onClose'>) {
   const theme = useAppTheme()
   const [submitting, setSubmitting] = useState(false)
   const [localScores, setLocalScores] = useState<Record<string, { a: number, b: number }>>({})
@@ -67,6 +68,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
   const teamIds = Object.keys(teamGroups).sort((a, b) => Number(a) - Number(b))
 
   const handleUpdateScore = async (matchId: string, team: 'a' | 'b', delta: number) => {
+    if (isAfterEnd) return
     const currentScore = localScores[matchId]?.[team] ?? 0
     const newScore = Math.max(0, currentScore + delta)
 
@@ -94,6 +96,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
   }
 
   const handleFinishMatch = async (matchId: string) => {
+    if (isAfterEnd) return
     setSubmitting(true)
     const { error } = await supabase
       .from('session_matches')
@@ -105,6 +108,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
   }
 
   const handleCancelMatch = async (matchId: string) => {
+    if (isAfterEnd) return
     const performCancel = async () => {
       setSubmitting(true)
       const { error } = await supabase
@@ -144,6 +148,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
   }
 
   const handleCreateMatch = async (teamA: number, teamB: number) => {
+    if (isAfterEnd) return
     setSubmitting(true)
     const { error } = await supabase.from('session_matches').insert({
       session_id: sessionId,
@@ -160,6 +165,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
   }
 
   const handleCreateAllMatches = async () => {
+    if (isAfterEnd) return
     const schedulingTeams = teamIds.length % 2 === 0 ? [...teamIds] : [...teamIds, '0']
     const numRounds = schedulingTeams.length - 1
     const message = `Tạo lịch thi đấu tự động cho tất cả các đội? Hệ thống sẽ ưu tiên xáo trộn để đa dạng hóa các trận Nam/Nữ/Mixed.`
@@ -246,25 +252,26 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
   return (
     <View style={{ flex: 1, backgroundColor: 'white' }}>
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-        <View style={{ marginBottom: 32 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A' }}>ĐANG DIỄN RA</Text>
-            <View style={{ 
-              backgroundColor: activeMatches.length > 0 ? theme.primary : '#F1EFE8', 
-              paddingHorizontal: 10, 
-              paddingVertical: 4, 
-              borderRadius: 999,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 4
-            }}>
-              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: activeMatches.length > 0 ? '#E1F5EE' : '#B4B2A9' }} />
-              <View style={{ width: 6, height: 6, borderRadius: RADIUS.full, backgroundColor: activeMatches.length > 0 ? '#E1F5EE' : '#B4B2A9' }} />
-              <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.headline, color: activeMatches.length > 0 ? 'white' : '#7A8884' }}>
-                {activeMatches.length} TRẬN LIVE
-              </Text>
+        {!isAfterEnd && (
+          <View style={{ marginBottom: 32 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A' }}>ĐANG DIỄN RA</Text>
+              <View style={{ 
+                backgroundColor: activeMatches.length > 0 ? theme.primary : '#F1EFE8', 
+                paddingHorizontal: 10, 
+                paddingVertical: 4, 
+                borderRadius: 999,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4
+              }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: activeMatches.length > 0 ? '#E1F5EE' : '#B4B2A9' }} />
+                <View style={{ width: 6, height: 6, borderRadius: RADIUS.full, backgroundColor: activeMatches.length > 0 ? '#E1F5EE' : '#B4B2A9' }} />
+                <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.headline, color: activeMatches.length > 0 ? 'white' : '#7A8884' }}>
+                  {activeMatches.length} TRẬN LIVE
+                </Text>
+              </View>
             </View>
-          </View>
 
           {activeMatches.length === 0 ? (
             <View style={{ 
@@ -384,11 +391,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                           <Pressable 
                             onPress={() => handleUpdateScore(match.id, 'a', -1)} 
+                            disabled={isAfterEnd}
                             style={({ pressed }) => ({ 
                               width: 36, height: 36, borderRadius: 18, 
                               backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center', 
                               borderWidth: 1, borderColor: '#E5E3DC',
-                              opacity: pressed ? 0.7 : 1
+                              opacity: (pressed || isAfterEnd) ? 0.7 : 1
                             })}
                           >
                             <Minus size={18} color="#7A8884" />
@@ -415,11 +423,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
 
                           <Pressable 
                             onPress={() => handleUpdateScore(match.id, 'a', 1)} 
+                            disabled={isAfterEnd}
                             style={({ pressed }) => ({ 
                               width: 36, height: 36, borderRadius: 18, 
-                              backgroundColor: '#0F6E56', alignItems: 'center', justifyContent: 'center', 
+                              backgroundColor: isAfterEnd ? '#E5E3DC' : '#0F6E56', alignItems: 'center', justifyContent: 'center', 
                               ...LAYOUT_SHADOW.sm,
-                              opacity: pressed ? 0.8 : 1
+                              opacity: (pressed || isAfterEnd) ? 0.8 : 1
                             })}
                           >
                             <Plus size={18} color="white" />
@@ -439,11 +448,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                           <Pressable 
                             onPress={() => handleUpdateScore(match.id, 'b', -1)} 
+                            disabled={isAfterEnd}
                             style={({ pressed }) => ({ 
                               width: 36, height: 36, borderRadius: 18, 
                               backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center', 
                               borderWidth: 1, borderColor: '#E5E3DC',
-                              opacity: pressed ? 0.7 : 1
+                              opacity: (pressed || isAfterEnd) ? 0.7 : 1
                             })}
                           >
                             <Minus size={18} color="#7A8884" />
@@ -470,11 +480,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
 
                           <Pressable 
                             onPress={() => handleUpdateScore(match.id, 'b', 1)} 
+                            disabled={isAfterEnd}
                             style={({ pressed }) => ({ 
                               width: 36, height: 36, borderRadius: 18, 
-                              backgroundColor: '#0F6E56', alignItems: 'center', justifyContent: 'center', 
+                              backgroundColor: isAfterEnd ? '#E5E3DC' : '#0F6E56', alignItems: 'center', justifyContent: 'center', 
                               ...LAYOUT_SHADOW.sm,
-                              opacity: pressed ? 0.8 : 1
+                              opacity: (pressed || isAfterEnd) ? 0.8 : 1
                             })}
                           >
                             <Plus size={18} color="white" />
@@ -486,112 +497,119 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
                     </View>
 
                     {/* Bottom Actions */}
-                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-                      <TouchableOpacity 
-                        onPress={() => handleFinishMatch(match.id)} 
-                        style={{ 
-                          flex: 2, 
-                          backgroundColor: '#0F6E56', 
-                          paddingVertical: 12, 
-                          borderRadius: RADIUS.lg, 
-                          alignItems: 'center', 
-                          justifyContent: 'center', 
-                          ...LAYOUT_SHADOW.sm 
-                        }}
-                      >
-                        <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.headline, fontSize: 13, fontWeight: '800' }}>XÁC NHẬN KẾT QUẢ</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        onPress={() => handleCancelMatch(match.id)} 
-                        style={{ 
-                          flex: 1, 
-                          backgroundColor: '#FAECE7', 
-                          paddingVertical: 12, 
-                          borderRadius: RADIUS.lg, 
-                          alignItems: 'center', 
-                          justifyContent: 'center' 
-                        }}
-                      >
-                        <Text style={{ color: '#D85A30', fontFamily: SCREEN_FONTS.headline, fontSize: 13, fontWeight: '800' }}>HỦY</Text>
-                      </TouchableOpacity>
-                    </View>
+                    {!isAfterEnd && (
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                        <TouchableOpacity 
+                          onPress={() => handleFinishMatch(match.id)} 
+                          style={{ 
+                            flex: 2, 
+                            backgroundColor: '#0F6E56', 
+                            paddingVertical: 12, 
+                            borderRadius: RADIUS.lg, 
+                            alignItems: 'center', 
+                            justifyContent: 'center', 
+                            ...LAYOUT_SHADOW.sm 
+                          }}
+                        >
+                          <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.headline, fontSize: 13, fontWeight: '800' }}>XÁC NHẬN KẾT QUẢ</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          onPress={() => handleCancelMatch(match.id)} 
+                          style={{ 
+                            flex: 1, 
+                            backgroundColor: '#FAECE7', 
+                            paddingVertical: 12, 
+                            borderRadius: RADIUS.lg, 
+                            alignItems: 'center', 
+                            justifyContent: 'center' 
+                          }}
+                        >
+                          <Text style={{ color: '#D85A30', fontFamily: SCREEN_FONTS.headline, fontSize: 13, fontWeight: '800' }}>HỦY</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
                 </View>
               )
             })
           )}
         </View>
+        )}
 
-        <View style={{ marginBottom: 32 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A' }}>LỊCH THI ĐẤU</Text>
-            <TouchableOpacity onPress={handleCreateAllMatches} style={{ backgroundColor: '#E1F5EE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 }}><Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: '#0F6E56' }}>⚡ TẠO LỊCH TỰ ĐỘNG</Text></TouchableOpacity>
-          </View>
-          <View style={{ gap: 12 }}>
-            {teamIds.map((tA, idx) => teamIds.slice(idx + 1).map(tB => (
-              activeMatches.some(m => (m.team_a_no === Number(tA) && m.team_b_no === Number(tB)) || (m.team_a_no === Number(tB) && m.team_b_no === Number(tA))) ? null : (
-                <View key={`${tA}-${tB}`} style={{ 
-                  backgroundColor: '#F5F1E8', 
-                  borderRadius: RADIUS.lg, 
-                  marginBottom: 10,
-                  borderWidth: 1, 
-                  borderColor: '#E5E3DC',
-                  overflow: 'hidden'
-                }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12 }}>
-                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      {/* Team A Info */}
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '800' }}>ĐỘI {tA}</Text>
-                          <View style={{ backgroundColor: '#E1F5EE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: RADIUS.xs }}>
-                            <Text style={{ fontSize: 9, color: '#0F6E56', fontWeight: '800' }}>{getTeamSkill(Number(tA)).toFixed(2)}</Text>
+        {!isAfterEnd && (
+          <View style={{ marginBottom: 32 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A' }}>LỊCH THI ĐẤU</Text>
+              <TouchableOpacity onPress={handleCreateAllMatches} style={{ backgroundColor: '#E1F5EE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 }}>
+                <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: '#0F6E56' }}>⚡ TẠO LỊCH TỰ ĐỘNG</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ gap: 12 }}>
+              {teamIds.map((tA, idx) => teamIds.slice(idx + 1).map(tB => (
+                activeMatches.some(m => (m.team_a_no === Number(tA) && m.team_b_no === Number(tB)) || (m.team_a_no === Number(tB) && m.team_b_no === Number(tA))) ? null : (
+                  <View key={`${tA}-${tB}`} style={{ 
+                    backgroundColor: '#F5F1E8', 
+                    borderRadius: RADIUS.lg, 
+                    marginBottom: 10,
+                    borderWidth: 1, 
+                    borderColor: '#E5E3DC',
+                    overflow: 'hidden'
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12 }}>
+                      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        {/* Team A Info */}
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '800' }}>ĐỘI {tA}</Text>
+                            <View style={{ backgroundColor: '#E1F5EE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: RADIUS.xs }}>
+                              <Text style={{ fontSize: 9, color: '#0F6E56', fontWeight: '800' }}>{getTeamSkill(Number(tA)).toFixed(2)}</Text>
+                            </View>
                           </View>
+                          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884' }} numberOfLines={1}>
+                            {getPlayerNames(Number(tA))}
+                          </Text>
                         </View>
-                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884' }} numberOfLines={1}>
-                          {getPlayerNames(Number(tA))}
-                        </Text>
-                      </View>
-                      
-                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#B4B2A9', marginHorizontal: 10 }}>VS</Text>
-                      
-                      {/* Team B Info */}
-                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                          <View style={{ backgroundColor: '#E1F5EE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: RADIUS.xs }}>
-                            <Text style={{ fontSize: 9, color: '#0F6E56', fontWeight: '800' }}>{getTeamSkill(Number(tB)).toFixed(2)}</Text>
+                        
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#B4B2A9', marginHorizontal: 10 }}>VS</Text>
+                        
+                        {/* Team B Info */}
+                        <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                            <View style={{ backgroundColor: '#E1F5EE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: RADIUS.xs }}>
+                              <Text style={{ fontSize: 9, color: '#0F6E56', fontWeight: '800' }}>{getTeamSkill(Number(tB)).toFixed(2)}</Text>
+                            </View>
+                            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '800' }}>ĐỘI {tB}</Text>
                           </View>
-                          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '800' }}>ĐỘI {tB}</Text>
+                          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', textAlign: 'right' }} numberOfLines={1}>
+                            {getPlayerNames(Number(tB))}
+                          </Text>
                         </View>
-                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', textAlign: 'right' }} numberOfLines={1}>
-                          {getPlayerNames(Number(tB))}
-                        </Text>
                       </View>
+
+                      <TouchableOpacity 
+                        onPress={() => handleCreateMatch(Number(tA), Number(tB))} 
+                        disabled={submitting} 
+                        style={{ 
+                          backgroundColor: '#0F6E56', 
+                          paddingHorizontal: 12, 
+                          paddingVertical: 8, 
+                          borderRadius: RADIUS.md,
+                          marginLeft: 12,
+                          shadowColor: '#0F6E56',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.2,
+                          shadowRadius: 4
+                        }}
+                      >
+                        <Text style={{ color: 'white', fontSize: 11, fontFamily: SCREEN_FONTS.headline, fontWeight: '800' }}>BẮT ĐẦU</Text>
+                      </TouchableOpacity>
                     </View>
-
-                    <TouchableOpacity 
-                      onPress={() => handleCreateMatch(Number(tA), Number(tB))} 
-                      disabled={submitting} 
-                      style={{ 
-                        backgroundColor: '#0F6E56', 
-                        paddingHorizontal: 12, 
-                        paddingVertical: 8, 
-                        borderRadius: RADIUS.md,
-                        marginLeft: 12,
-                        shadowColor: '#0F6E56',
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.2,
-                        shadowRadius: 4
-                      }}
-                    >
-                      <Text style={{ color: 'white', fontSize: 11, fontFamily: SCREEN_FONTS.headline, fontWeight: '800' }}>BẮT ĐẦU</Text>
-                    </TouchableOpacity>
                   </View>
-                </View>
-              )
-            )))}
+                )
+              )))}
+            </View>
           </View>
-        </View>
+        )}
 
         {historyMatches.length > 0 && (
           <View>
@@ -640,33 +658,33 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
                     <View style={{ flex: 1 }}>
                       <Text style={{ 
                         fontFamily: SCREEN_FONTS.headline, 
-                        fontSize: 12, 
+                        fontSize: 14, 
                         color: winner === 'a' && !isCancelled ? '#0F6E56' : '#1A2E2A',
                         fontWeight: '800'
                       }}>ĐỘI {match.team_a_no}</Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', marginTop: 1 }} numberOfLines={1}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', marginTop: 2 }} numberOfLines={1}>
                         {getPlayerNames(match.team_a_no)}
                       </Text>
                     </View>
 
                     {/* Compact Scoreboard */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8 }}>
                       <View style={{ 
                         backgroundColor: winner === 'a' && !isCancelled ? '#0F6E56' : '#F5F1E8', 
-                        width: 28, height: 32, borderRadius: RADIUS.xs, alignItems: 'center', justifyContent: 'center',
+                        width: 34, height: 40, borderRadius: RADIUS.xs, alignItems: 'center', justifyContent: 'center',
                         borderWidth: 1, borderColor: winner === 'a' && !isCancelled ? '#0F6E56' : '#E5E3DC'
                       }}>
-                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: winner === 'a' && !isCancelled ? 'white' : '#1A2E2A', fontWeight: '800' }}>{match.score_a}</Text>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: winner === 'a' && !isCancelled ? 'white' : '#1A2E2A', fontWeight: '800' }}>{match.score_a}</Text>
                       </View>
                       
-                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#B4B2A9' }}>—</Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#B4B2A9' }}>—</Text>
                       
                       <View style={{ 
                         backgroundColor: winner === 'b' && !isCancelled ? '#0F6E56' : '#F5F1E8', 
-                        width: 28, height: 32, borderRadius: RADIUS.xs, alignItems: 'center', justifyContent: 'center',
+                        width: 34, height: 40, borderRadius: RADIUS.xs, alignItems: 'center', justifyContent: 'center',
                         borderWidth: 1, borderColor: winner === 'b' && !isCancelled ? '#0F6E56' : '#E5E3DC'
                       }}>
-                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: winner === 'b' && !isCancelled ? 'white' : '#1A2E2A', fontWeight: '800' }}>{match.score_b}</Text>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: winner === 'b' && !isCancelled ? 'white' : '#1A2E2A', fontWeight: '800' }}>{match.score_b}</Text>
                       </View>
                     </View>
 
@@ -674,12 +692,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
                     <View style={{ flex: 1, alignItems: 'flex-end' }}>
                       <Text style={{ 
                         fontFamily: SCREEN_FONTS.headline, 
-                        fontSize: 12, 
+                        fontSize: 14, 
                         color: winner === 'b' && !isCancelled ? '#0F6E56' : '#1A2E2A',
                         fontWeight: '800',
                         textAlign: 'right'
                       }}>ĐỘI {match.team_b_no}</Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', marginTop: 1, textAlign: 'right' }} numberOfLines={1}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', marginTop: 2, textAlign: 'right' }} numberOfLines={1}>
                         {getPlayerNames(match.team_b_no)}
                       </Text>
                     </View>

@@ -15,9 +15,10 @@ type Props = {
   sessionId: string
   onUpdated: () => void
   onGoToMatches?: () => void
+  isAfterEnd?: boolean
 }
 
-export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId, onUpdated, onGoToMatches }: Props) {
+export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId, onUpdated, onGoToMatches, isAfterEnd }: Props) {
   const theme = useAppTheme()
   const [arrangedPlayers, setArrangedPlayers] = useState<ArrangementPlayer[]>(players)
   const [submitting, setSubmitting] = useState(false)
@@ -111,6 +112,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
       }))
       
       const waitingPlayers = arrangedPlayers.filter(p => p.team <= 0)
+      if (isAfterEnd) return
       
       // Shuffle and then pick best of several tries
       let bestResult: ArrangementPlayer[] = []
@@ -151,6 +153,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
     }
 
     // MODE: Change partners (Traditional Auto-balance)
+    if (isAfterEnd) return
     // 1. Initial Skill-based Balance (Greedy Snake/High-Low)
     const sorted = [...arrangedPlayers].sort((a, b) => {
       const valA = a.pvna ?? (a.elo / 100)
@@ -242,6 +245,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
   }
 
   const shuffleTeams = () => {
+    if (isAfterEnd) return
     let result: ArrangementPlayer[] = []
     
     if (keepPartners) {
@@ -294,6 +298,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
   const totalPlayers = arrangedPlayers.length
 
   const handleSave = async () => {
+    if (isAfterEnd) return
     if (hasOngoingMatches) {
       const confirm = await new Promise((resolve) => {
         Alert.alert(
@@ -486,8 +491,10 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
                 backgroundColor: '#0F6E56', 
                 paddingVertical: 14, 
                 borderRadius: 12,
-                ...LAYOUT_SHADOW.sm
+                ...LAYOUT_SHADOW.sm,
+                opacity: isAfterEnd ? 0.5 : 1
               }}
+              disabled={isAfterEnd}
             >
               <ShieldCheck size={18} color="white" />
               <Text style={{ 
@@ -501,6 +508,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
 
             <TouchableOpacity 
               onPress={shuffleTeams}
+              disabled={isAfterEnd}
               activeOpacity={0.7}
               style={{ 
                 flex: 1,
@@ -511,6 +519,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
                 backgroundColor: '#F5F1E8', 
                 paddingVertical: 14, 
                 borderRadius: 12,
+                opacity: isAfterEnd ? 0.5 : 1
               }}
             >
               <RefreshCw size={16} color="#1A2E2A" />
@@ -800,23 +809,19 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
         </TouchableOpacity>
         <TouchableOpacity 
           onPress={handleSave}
-          disabled={submitting}
+          disabled={submitting || isAfterEnd}
           style={{ 
             flex: 2, 
-            flexDirection: 'row', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            gap: 8, 
-            backgroundColor: '#0F6E56', 
             paddingVertical: 14, 
-            borderRadius: 12,
-            opacity: submitting ? 0.7 : 1,
+            borderRadius: 12, 
+            backgroundColor: '#0F6E56', 
+            alignItems: 'center',
+            opacity: (submitting || isAfterEnd) ? 0.7 : 1,
             ...LAYOUT_SHADOW.sm
           }}
         >
-          <Text style={{ fontSize: 18 }}>💾</Text>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, fontWeight: '700', color: 'white', textTransform: 'uppercase' }}>
-            {submitting ? 'ĐANG LƯU...' : 'Lưu sắp xếp'}
+            {submitting ? 'ĐANG LƯU...' : (isAfterEnd ? 'ĐÃ ĐÓNG' : 'Lưu sắp xếp')}
           </Text>
         </TouchableOpacity>
       </View>

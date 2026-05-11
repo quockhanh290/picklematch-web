@@ -1,4 +1,6 @@
 # In-App Browser Test Matrix
+> [!NOTE]
+> This matrix is enforced via a combination of **Automated Simulation** (Playwright) and **Physical Device Evidence** (Manual).
 
 ## Scope
 - Standalone mobile browsers: iOS Safari, Android Chrome
@@ -34,6 +36,10 @@
 1. Confirm no service-role key in tracked files.
 2. Confirm CSP header includes no `unsafe-eval`.
 3. Confirm quick-start non-OTP host flow is not reachable in production builds.
+
+## Automation Infrastructure
+- **Simulation**: Run `npx playwright test --project=in-app-browser-simulation` to verify baseline resilience against blocked storage and viewport constraints.
+- **Evidence Generation**: Run `node scripts/generate-release-evidence.mjs` before each release to generate the required physical device sign-off template.
 
 ## Evidence to Capture (Required for Release)
 1. **Device Information**: Model, OS version, Browser/App version.

@@ -2,6 +2,7 @@ import React from 'react'
 import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native'
 import { LogOut, PencilLine, Repeat2, Save, Star, Trophy, ShieldAlert, Hourglass, LayoutDashboard } from 'lucide-react-native'
 import { useSessionNav } from '@/lib/navigation/SessionNavContext'
+import { router } from 'expo-router'
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, SPACING, BORDER } from '@/constants/screenLayout'
@@ -26,6 +27,7 @@ interface SessionActionButtonsProps {
   onArrangementPress?: () => void
   checkInCompleted?: boolean
   hideInputResult?: boolean
+  matchesCount?: number
 }
 
 const PartialPlayerWarning = ({ count, max, theme }: { count: number; max: number; theme: any }) => (
@@ -57,40 +59,61 @@ const SessionStatusBanner = ({
   isInvalidPlayerCount, 
   hasJoined, 
   isFinalized, 
+  isAfterEnd,
+  checkInCompleted,
+  matchesCount,
   theme 
 }: { 
   isCancelled: boolean; 
   isInvalidPlayerCount: boolean; 
   hasJoined: boolean; 
   isFinalized: boolean; 
+  isAfterEnd?: boolean;
+  checkInCompleted?: boolean;
+  matchesCount?: number;
   theme: any 
-}) => (
-  <View
-    style={{
-      width: '100%',
-      minHeight: 52,
-      paddingVertical: 11,
-      borderRadius: RADIUS.md,
-      backgroundColor: theme.dangerBg,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: BORDER.base,
-      borderColor: theme.dangerBorderSoft,
-      marginBottom: hasJoined && !isFinalized ? SPACING.md : 0,
-    }}
-  >
-    <Text
+}) => {
+  const isCancelledNoCheckin = isAfterEnd && !checkInCompleted && !isCancelled
+  const isNoData = isAfterEnd && checkInCompleted && matchesCount === 0
+
+  const bgColor = (isCancelled || isCancelledNoCheckin) ? theme.dangerBg : isNoData ? theme.surfaceVariant : theme.dangerBg
+  const borderColor = (isCancelled || isCancelledNoCheckin) ? theme.dangerBorderSoft : isNoData ? theme.outlineVariant : theme.dangerBorderSoft
+  const textColor = (isCancelled || isCancelledNoCheckin) ? theme.dangerText : isNoData ? theme.onSurfaceVariant : theme.dangerText
+
+  let label = isInvalidPlayerCount ? STRINGS.session.labels.cancelled_no_players : STRINGS.session.labels.cancelled_generic
+  if (isCancelledNoCheckin) label = 'KÈO KHÔNG DIỄN RA (CHƯA CHECK-IN)'
+  if (isNoData) label = 'KÈO ĐÃ KẾT THÚC (THIẾU DỮ LIỆU)'
+
+  return (
+    <View
       style={{
-        fontSize: 15,
-        fontFamily: SCREEN_FONTS.headline,
-        color: theme.dangerText,
-        textTransform: 'uppercase',
+        width: '100%',
+        minHeight: 52,
+        paddingVertical: 11,
+        paddingHorizontal: 16,
+        borderRadius: RADIUS.md,
+        backgroundColor: bgColor,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: BORDER.base,
+        borderColor: borderColor,
+        marginBottom: hasJoined && !isFinalized ? SPACING.md : 0,
       }}
     >
-      {isInvalidPlayerCount ? STRINGS.session.labels.cancelled_no_players : STRINGS.session.labels.cancelled_generic}
-    </Text>
-  </View>
-)
+      <Text
+        style={{
+          fontSize: 14,
+          fontFamily: SCREEN_FONTS.headline,
+          color: textColor,
+          textTransform: 'uppercase',
+          textAlign: 'center'
+        }}
+      >
+        {label}
+      </Text>
+    </View>
+  )
+}
 
 const HostPastSessionView = ({ theme }: { theme: any }) => (
   <View
@@ -120,40 +143,48 @@ const HostPastSessionView = ({ theme }: { theme: any }) => (
 )
 
 const HostFinalizedSessionView = ({ id, theme }: { id: string; theme: any }) => {
-  const { onViewMatchResult } = useSessionNav()
-  const label = STRINGS.session.buttons.view_result
-  const action = () => onViewMatchResult(id)
-  const Icon = Trophy
-
   return (
-    <TouchableOpacity
-      onPress={action}
-      activeOpacity={0.84}
-      style={{
-        alignSelf: 'center',
-        paddingHorizontal: SPACING.xl,
-        minHeight: 52,
-        paddingVertical: 11,
-        borderRadius: RADIUS.md,
-        backgroundColor: theme.primary,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Icon size={18} strokeWidth={2.5} color={theme.onPrimary} />
-        <Text
-          style={{
-            fontSize: 15,
-            fontFamily: SCREEN_FONTS.headline,
-            color: theme.onPrimary,
-            textTransform: 'uppercase',
-          }}
-        >
-          {label}
-        </Text>
-      </View>
-    </TouchableOpacity>
+    <View style={{ flexDirection: 'row', gap: 10, width: '100%' }}>
+      <TouchableOpacity 
+        onPress={() => router.push(`/host/session/${id}/matches` as any)}
+        activeOpacity={0.84}
+        style={{
+          flex: 1,
+          minHeight: 52,
+          backgroundColor: '#E1F5EE',
+          borderRadius: RADIUS.md,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          borderWidth: 1,
+          borderColor: '#0F6E5630'
+        }}
+      >
+        <LayoutDashboard size={18} color="#0F6E56" />
+        <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: '#0F6E56' }}>XEM KẾT QUẢ</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        onPress={() => router.push(`/host/session/${id}/recap` as any)}
+        activeOpacity={0.84}
+        style={{
+          flex: 1,
+          minHeight: 52,
+          backgroundColor: '#FAECE7',
+          borderRadius: RADIUS.md,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          borderWidth: 1,
+          borderColor: '#D85A3030'
+        }}
+      >
+        <Trophy size={18} color="#993C1D" />
+        <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: '#993C1D' }}>BẢNG XẾP HẠNG</Text>
+      </TouchableOpacity>
+    </View>
   )
 }
 
@@ -204,39 +235,49 @@ const HostSubmittedSessionView = ({ id, session, theme }: { id: string; session:
 }
 
 const HostAwaitingResultView = ({ id, isPartial, count, max, theme }: any) => {
-  const { onViewMatchResult } = useSessionNav()
   return (
-    <>
+    <View style={{ width: '100%' }}>
       {isPartial && <PartialPlayerWarning count={count} max={max} theme={theme} />}
-      <TouchableOpacity
-        onPress={() => onViewMatchResult(id)}
-      activeOpacity={0.84}
-      style={{
-        width: '100%',
-        paddingHorizontal: SPACING.md,
-        minHeight: 52,
-        paddingVertical: 11,
-        borderRadius: RADIUS.md,
-        backgroundColor: theme.primary,
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexDirection: 'row',
-        gap: 8,
-      }}
-    >
-      <Trophy size={18} strokeWidth={2.5} color={theme.onPrimary} />
-      <Text
-        style={{
-          fontSize: 15,
-          fontFamily: SCREEN_FONTS.headline,
-          color: theme.onPrimary,
-          textTransform: 'uppercase',
-        }}
-      >
-        {STRINGS.session.labels.input_result}
-      </Text>
-    </TouchableOpacity>
-  </>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <TouchableOpacity 
+          onPress={() => router.push(`/host/session/${id}/matches` as any)}
+          activeOpacity={0.84}
+          style={{
+            flex: 1,
+            minHeight: 52,
+            backgroundColor: theme.primary,
+            borderRadius: RADIUS.md,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+          }}
+        >
+          <LayoutDashboard size={18} color={theme.onPrimary} />
+          <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: theme.onPrimary }}>XEM KẾT QUẢ</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          onPress={() => router.push(`/host/session/${id}/recap` as any)}
+          activeOpacity={0.84}
+          style={{
+            flex: 1,
+            minHeight: 52,
+            backgroundColor: 'transparent',
+            borderRadius: RADIUS.md,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            borderWidth: 1,
+            borderColor: theme.primary + '30'
+          }}
+        >
+          <Trophy size={18} color={theme.primary} />
+          <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: theme.primary }}>XẾP HẠNG</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   )
 }
 
@@ -416,6 +457,8 @@ const HostActions = ({
   editPathname,
   checkInCompleted,
   hideInputResult,
+  isCancelled,
+  matchesCount,
   theme
 }: any) => {
   const parseRobustDate = (d: any) => {
@@ -449,12 +492,37 @@ const HostActions = ({
   const actualIsPastEnd = internalIsPastEnd || isAfterEnd || isFinalized
   const effectiveIsDuringMatch = internalIsDuringMatch || (isDuringMatch && !actualIsPastEnd)
 
-  if (actualIsPastEnd && !session?.is_ranked) {
+  if (isCancelled || session.status === 'cancelled' || isInvalidPlayerCount) {
+    return <SessionStatusBanner isCancelled={isCancelled || session.status === 'cancelled'} isInvalidPlayerCount={isInvalidPlayerCount} hasJoined={true} isFinalized={false} theme={theme} />
+  }
+
+  // Case 1: Session ended without check-in -> Cancelled
+  if (actualIsPastEnd && !checkInCompleted) {
+    return <SessionStatusBanner isCancelled={true} isAfterEnd={true} checkInCompleted={false} />
+  }
+
+  // Case 2: Session ended with check-in but no matches -> Finished with warning
+  if (actualIsPastEnd && checkInCompleted && matchesCount === 0) {
+    return <SessionStatusBanner isCancelled={false} isAfterEnd={true} checkInCompleted={true} matchesCount={0} />
+  }
+
+  // Case 3: Session ended with data -> Finalized or Awaiting Results
+  if (actualIsPastEnd && checkInCompleted && matchesCount > 0) {
+    if (isFinalized) return <HostFinalizedSessionView id={id} theme={theme} />
+    if (isAwaitingResult) return <HostAwaitingResultView id={id} theme={theme} />
     return <HostPastSessionView theme={theme} />
   }
 
   if (isFinalized) {
     return <HostFinalizedSessionView id={id} theme={theme} />
+  }
+
+  if (isResultSubmitted) {
+    return <HostSubmittedSessionView id={id} session={session} theme={theme} />
+  }
+
+  if (isAwaitingResult) {
+    return <HostAwaitingResultView id={id} isPartial={isPartialPlayerCount} count={confirmedPlayerCount} max={maxPlayers} theme={theme} />
   }
 
   if (effectiveIsDuringMatch) {
@@ -831,6 +899,7 @@ export const SessionActionButtons: React.FC<SessionActionButtonsProps> = ({
   onArrangementPress,
   checkInCompleted,
   hideInputResult,
+  matchesCount,
 }) => {
   const theme = useAppTheme()
   const resultsStatus = session?.results_status
@@ -841,13 +910,17 @@ export const SessionActionButtons: React.FC<SessionActionButtonsProps> = ({
   const confirmedPlayerCount = (session?.session_players ?? []).filter((p: any) => p.status === 'confirmed').length
   const maxPlayers = Number(session?.max_players || 0)
   
+  const hostDetails = session?.owner_sessions?.[0] || session?.owner_sessions || {}
+  const matchFormat = hostDetails.match_format || 'doubles'
+  const minPlayers = session?.min_players || (matchFormat === 'doubles' ? 4 : 2)
+  
   const isEven = confirmedPlayerCount % 2 === 0
-  const isValidCount = confirmedPlayerCount >= 2 && isEven && confirmedPlayerCount <= maxPlayers
+  const isValidCount = confirmedPlayerCount >= minPlayers && confirmedPlayerCount <= maxPlayers
     
   const sessionStatus = session?.status
-  const isEnded = isAfterEnd || ['done', 'pending_completion', 'pending_results', 'completed', 'finished', 'archived', 'cancelled_no_players', 'failed_to_fill'].includes(sessionStatus)
-  const isInvalidPlayerCount = isEnded && !isValidCount
-  const isPartialPlayerCount = isEnded && isValidCount && confirmedPlayerCount < maxPlayers
+  const isEnded = isAfterEnd || ['done', 'pending_completion', 'pending_results', 'completed', 'finished', 'archived', 'cancelled_no_players', 'failed_to_fill', 'cancelled'].includes(sessionStatus)
+  const isInvalidPlayerCount = isEnded && !isValidCount && !checkInCompleted
+  const isPartialPlayerCount = isEnded && (isValidCount || checkInCompleted) && confirmedPlayerCount < maxPlayers
 
   const isResultSubmitted = resultsStatus === 'pending_confirmation' || resultsStatus === 'disputed'
   const isAwaitingResult = isAfterEnd && (resultsStatus === 'not_submitted' || resultsStatus === null || resultsStatus === undefined)
@@ -864,6 +937,9 @@ export const SessionActionButtons: React.FC<SessionActionButtonsProps> = ({
           isInvalidPlayerCount={isInvalidPlayerCount}
           hasJoined={hasJoined}
           isFinalized={isFinalized}
+          isAfterEnd={isAfterEnd}
+          checkInCompleted={checkInCompleted}
+          matchesCount={matchesCount}
           theme={theme}
         />
       )}
@@ -894,7 +970,8 @@ export const SessionActionButtons: React.FC<SessionActionButtonsProps> = ({
             leaveSession={leaveSession}
             onArrangementPress={onArrangementPress}
             checkInCompleted={checkInCompleted}
-            hideInputResult={hideInputResult}
+            isCancelled={isCancelled}
+            isInvalidPlayerCount={isInvalidPlayerCount}
             theme={theme}
           />
         )

@@ -84,12 +84,13 @@ export function HostSessionDetailScreen({
   const isWayPastStart = startTs > 0 && (Date.now() - startTs) > (12 * 3600000)
   const isAfterEnd = parseRobustDate(session.slot.end_time) <= Date.now() || ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion'].includes(session.status) || isWayPastStart
   const confirmedPlayerCount = (session?.session_players ?? []).filter((p: any) => p.status === 'confirmed').length
-  const minPlayers = session?.min_players || 2
-  const isInvalidPlayerCount = !session?.is_unlimited && confirmedPlayerCount < minPlayers && isAfterEnd
+  const HostDetails = session.owner_sessions?.[0] || session.owner_sessions || {}
+  const matchFormat = HostDetails.match_format || 'doubles'
+  const minPlayers = session?.min_players || (matchFormat === 'doubles' ? 4 : 2)
+  const isInvalidPlayerCount = !session?.is_unlimited && confirmedPlayerCount < minPlayers && isAfterEnd && !session.check_in_completed && matches.length === 0
   const isCancelled = session.status === 'cancelled' || session.status === 'failed_to_fill' || session.court_booking_status === 'cancelled' || session.status === 'cancelled_no_players' || isInvalidPlayerCount
 
   const sessionSkillLabel = getSessionSkillLabel(session.elo_min, session.elo_max)
-  const HostDetails = session.owner_sessions?.[0] || session.owner_sessions || {}
   const processedPlayers = buildArrangementPlayers({ ...session, owner_sessions: HostDetails })
 
   const handleCompleteCheckIn = async () => {
@@ -344,30 +345,31 @@ export function HostSessionDetailScreen({
           paddingTop: 12,
         }}
       >
-        {/* DEBUG RESET BUTTON - ONLY FOR TESTING */}
-        <TouchableOpacity 
-          onPress={async () => {
-            try {
-              await supabase.from('sessions').update({ status: 'open', check_in_completed: false }).eq('id', id)
-              await supabase.from('session_players').update({ team_no: 0, check_in_status: 'pending' }).eq('session_id', id)
-              onRefresh()
-              Alert.alert('Thành công', 'Đã reset trạng thái kèo để test.')
-            } catch (e) {
-              console.error(e)
-            }
-          }}
-          style={{ 
-            alignSelf: 'flex-end', 
-            paddingHorizontal: 8, 
-            paddingVertical: 4, 
-            backgroundColor: '#fee2e2', 
-            borderRadius: 4,
-            borderWidth: 1,
-            borderColor: '#fecaca'
-          }}
-        >
-          <Text style={{ fontSize: 10, color: '#dc2626', fontWeight: 'bold' }}>RESET TEST</Text>
-        </TouchableOpacity>
+        {__DEV__ && (
+          <TouchableOpacity 
+            onPress={async () => {
+              try {
+                await supabase.from('sessions').update({ status: 'open', check_in_completed: false }).eq('id', id)
+                await supabase.from('session_players').update({ team_no: 0, check_in_status: 'pending' }).eq('session_id', id)
+                onRefresh()
+                Alert.alert('Thành công', 'Đã reset trạng thái kèo để test.')
+              } catch (e) {
+                console.error(e)
+              }
+            }}
+            style={{ 
+              alignSelf: 'flex-end', 
+              paddingHorizontal: 8, 
+              paddingVertical: 4, 
+              backgroundColor: '#fee2e2', 
+              borderRadius: 4,
+              borderWidth: 1,
+              borderColor: '#fecaca'
+            }}
+          >
+            <Text style={{ fontSize: 10, color: '#dc2626', fontWeight: 'bold' }}>RESET TEST</Text>
+          </TouchableOpacity>
+        )}
 
         <MatchSessionCard
           item={previewMatch}
@@ -380,27 +382,6 @@ export function HostSessionDetailScreen({
 
         {/* Format Selector REMOVED */}
 
-        {session.is_ranked && !isAfterEnd && (
-          <TouchableOpacity 
-            onPress={() => router.push(`/host/session/${id}/recap` as any)}
-            style={{ 
-              backgroundColor: '#FAECE7',
-              paddingVertical: 14,
-              borderRadius: RADIUS.lg,
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexDirection: 'row',
-              gap: 8,
-              marginTop: 12,
-              borderWidth: 1,
-              borderColor: '#993C1D20',
-              ...SHADOW.sm
-            }}
-          >
-            <Trophy size={18} color="#993C1D" />
-            <Text style={{ color: '#993C1D', fontSize: 14, fontFamily: SCREEN_FONTS.headline, fontWeight: 'bold' }}>XEM BẢNG XẾP HẠNG</Text>
-          </TouchableOpacity>
-        )}
 
         {canCheckIn && !isCheckInCompleted && !isCancelled && !isAfterEnd && (
           <View style={{ marginTop: 12 }}>
@@ -460,7 +441,7 @@ export function HostSessionDetailScreen({
           </View>
         )}
 
-        {isCheckInCompleted && !isCancelled && (
+        {isCheckInCompleted && !isCancelled && !isAfterEnd && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}>
             <TouchableOpacity 
               onPress={() => router.push(`/host/session/${id}/matches` as any)}
@@ -506,7 +487,6 @@ export function HostSessionDetailScreen({
             </TouchableOpacity>
           </View>
         )}
-
         <HostRosterSection
           players={processedPlayers}
           maxPlayers={session.max_players}
@@ -521,38 +501,34 @@ export function HostSessionDetailScreen({
           isCheckInMode={isCheckInMode}
           startTime={session.slot.start_time}
           isHost={isHost}
+          isAfterEnd={isAfterEnd}
         />
 
-        {!isCheckInCompleted && (
-          <View style={{ marginTop: 24 }}>
-            <SessionActionButtons
-              id={id}
-              session={session}
-              isHost={isHost}
-              hasJoined={false}
-              isAfterEnd={isAfterEnd}
-              isDuringMatch={parseRobustDate(session.slot.start_time) <= Date.now() && !isAfterEnd}
-              isCancelled={isCancelled}
-              isFinalized={['completed', 'finished', 'archived', 'done'].includes(session.status)}
-              isAwaitingResult={isAfterEnd && session.is_ranked && !['completed', 'finished', 'archived', 'done'].includes(session.status)}
-              viewerSessionPlayer={null}
-              hostPrimaryMode="edit"
-              hostPrimaryDisabled={false}
-              hostActionBusy={false}
-              savingArrangement={false}
-              leaving={isCancelling}
-              onSaveArrangement={() => {}}
-              leaveSession={handleCancelSession}
-              editPathname="/host/create-session"
-              onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
-              checkInCompleted={isCheckInCompleted}
-              hideInputResult={false}
-              confirmedPlayerCount={confirmedPlayerCount}
-              maxPlayers={session.max_players}
-              isInvalidPlayerCount={isInvalidPlayerCount}
-            />
-          </View>
-        )}
+        <View style={{ marginTop: 24 }}>
+          <SessionActionButtons
+            id={id}
+            session={session}
+            isHost={isHost}
+            hasJoined={false}
+            isAfterEnd={isAfterEnd}
+            isDuringMatch={parseRobustDate(session.slot.start_time) <= Date.now() && !isAfterEnd}
+            isCancelled={isCancelled}
+            isFinalized={['completed', 'finished', 'archived', 'done'].includes(session.status)}
+            viewerSessionPlayer={null}
+            hostPrimaryMode="edit"
+            hostPrimaryDisabled={false}
+            hostActionBusy={false}
+            savingArrangement={false}
+            leaving={isCancelling}
+            onSaveArrangement={() => {}}
+            leaveSession={handleCancelSession}
+            editPathname="/host/create-session"
+            onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
+            checkInCompleted={isCheckInCompleted}
+            hideInputResult={false}
+            matchesCount={matches.length}
+          />
+        </View>
         <BrandedFooter />
       </ScrollView>
 

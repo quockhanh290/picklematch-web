@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useNetworkState } from '@/lib/NetworkContext'
 
 export type Notification = {
   id: string
@@ -16,6 +17,7 @@ export type Notification = {
 export function useNotifications(userId: string | null | undefined) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [error, setError] = useState<string | null>(null)
+  const { isOnline, status } = useNetworkState()
 
   useEffect(() => {
     if (!userId) {
@@ -27,8 +29,11 @@ export function useNotifications(userId: string | null | undefined) {
     void fetchNotifications()
 
     // Fallback polling for in-app browsers where realtime can be unstable.
+    // Pause polling if offline.
     const pollTimer = setInterval(() => {
-      void fetchNotifications()
+      if (isOnline) {
+        void fetchNotifications()
+      }
     }, 30000)
 
     // Realtime subscription
@@ -70,7 +75,7 @@ export function useNotifications(userId: string | null | undefined) {
       clearInterval(pollTimer)
       supabase.removeChannel(channel)
     }
-  }, [userId])
+  }, [userId, isOnline])
 
   async function fetchNotifications() {
     if (!userId) return

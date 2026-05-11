@@ -53,11 +53,15 @@ export default function HostWebQuickStart() {
   const [format, setFormat] = useState('social')
   const [createdSessionId, setCreatedSessionId] = useState<string | null>(null)
 
+  const isAllowed = __DEV__ || isE2E
+
   useEffect(() => {
-    if (!__DEV__ && !isE2E) {
+    if (!isAllowed) {
       router.replace('/host/login')
     }
-  }, [isE2E])
+  }, [isAllowed])
+
+
 
   useEffect(() => {
     if (courtId && !selectedCourt) {
@@ -104,11 +108,16 @@ export default function HostWebQuickStart() {
 
   // 3. Final Create Match Logic
   const handleCreateMatch = async () => {
+    if (!isAllowed) {
+      console.error('[QuickStart] Security Error: Write attempt blocked in production environment.')
+      return
+    }
     setLoading(true)
     try {
       // Step A: Create or Get Host (Simplified for Demo)
-      // Note: In real app, we would use auth. Here we might create a temporary Host record
-      const HostId = gen_random_uuid() // Placeholder for demo logic
+      // Note: In real app, we would use auth. Here we create a MOCK Host record
+      // This is ONLY for development/testing and should never run on production data.
+      const HostId = gen_random_uuid() 
       
       // Step B: Update Court Host
       await supabase.from('courts').update({ 
@@ -252,6 +261,10 @@ export default function HostWebQuickStart() {
           </View>
         )
     }
+  }
+
+  if (!isAllowed) {
+    return null
   }
 
   return (

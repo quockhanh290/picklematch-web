@@ -8,12 +8,8 @@ export function useAuth() {
 
   useEffect(() => {
     let isMounted = true
-    const loadingTimeout = setTimeout(() => {
-      if (isMounted) {
-        console.warn('[useAuth] getSession timeout, fallback to unauthenticated')
-        setUserId(null)
-      }
-    }, AUTH_BOOTSTRAP_TIMEOUT_MS)
+    // Removed hard timeout to prevent false logouts on slow networks.
+    // AuthGate will handle "slow connection" UX instead.
 
     const bootstrapSession = async () => {
       try {
@@ -30,7 +26,7 @@ export function useAuth() {
           setUserId(null)
         }
       } finally {
-        clearTimeout(loadingTimeout)
+        // No timeout to clear
       }
     }
 
@@ -44,7 +40,6 @@ export function useAuth() {
 
     return () => {
       isMounted = false
-      clearTimeout(loadingTimeout)
       subscription.unsubscribe()
     }
   }, [])

@@ -51,3 +51,7 @@ courts_output/
 tmp_*/
 tmp_*.tsx
 *.log
+*.bak
+*.tmp
+*.raw
+*_utf8.tsx

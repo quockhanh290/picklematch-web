@@ -24,9 +24,10 @@ type Props = {
   isCheckInMode?: boolean
   startTime?: string
   isHost?: boolean
+  isAfterEnd?: boolean
 }
 
-function EmptySlot({ count, sessionId, startTime, isHost }: { count: number, sessionId?: string, startTime?: string, isHost?: boolean }) {
+function EmptySlot({ count, sessionId, startTime, isHost, sessionStatus, isAfterEnd }: { count: number, sessionId?: string, startTime?: string, isHost?: boolean, sessionStatus?: string, isAfterEnd?: boolean }) {
   const theme = useAppTheme()
   
   // Only show Add Button for host and if session starts within 90 minutes
@@ -35,8 +36,9 @@ function EmptySlot({ count, sessionId, startTime, isHost }: { count: number, ses
     const start = new Date(startTime)
     const timeDiff = start.getTime() - Date.now()
     const minutesUntilStart = timeDiff / (1000 * 60)
-    return minutesUntilStart > 0 && minutesUntilStart <= 90
-  }, [startTime, sessionId, isHost])
+    const isEnded = ['done', 'pending_completion', 'pending_results', 'completed', 'finished', 'archived', 'cancelled_no_players', 'failed_to_fill', 'cancelled'].includes(sessionStatus || '')
+    return minutesUntilStart > 0 && minutesUntilStart <= 90 && !isEnded && !isAfterEnd
+  }, [startTime, sessionId, isHost, isAfterEnd])
 
   return (
     <View
@@ -108,7 +110,8 @@ export function HostRosterSection({
   checkInCompleted = false,
   isCheckInMode = false,
   startTime,
-  isHost = false
+  isHost = false,
+  isAfterEnd = false
 }: Props) {
   const theme = useAppTheme()
   const { _onOpenPlayerProfile } = useSessionNav()
@@ -130,8 +133,9 @@ export function HostRosterSection({
   const showAddButton = useMemo(() => {
     if (!isHost || !sessionId) return false
     // You can add more conditions here (e.g. only if not finished)
-    return sessionStatus !== 'finished' && sessionStatus !== 'cancelled'
-  }, [sessionId, sessionStatus, isHost])
+    const isEnded = ['done', 'pending_completion', 'pending_results', 'completed', 'finished', 'archived', 'cancelled_no_players', 'failed_to_fill', 'cancelled'].includes(sessionStatus || '')
+    return !isEnded && !isAfterEnd
+  }, [sessionId, sessionStatus, isHost, isAfterEnd])
 
   // Sync local status when players change
   React.useEffect(() => {
@@ -922,12 +926,12 @@ export function HostRosterSection({
             <Users size={20} color={theme.primary} />
           </View>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onBackground, textTransform: 'uppercase' }}>
-            Danh sách người chơi
+            {checkInCompleted && !showManualManagement ? 'Danh sách đội' : 'Danh sách người chơi'}
           </Text>
         </View>
 
         {/* Header Actions */}
-        {isHost && (
+        {isHost && !isAfterEnd && !['done', 'pending_completion', 'pending_results', 'completed', 'finished', 'archived', 'cancelled_no_players', 'failed_to_fill', 'cancelled'].includes(sessionStatus) && (
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {checkInCompleted && (
               <TouchableOpacity 
@@ -979,7 +983,7 @@ export function HostRosterSection({
         {renderContent()}
 
         {!hideEmptySlots && spotsLeft > 0 && (
-          <EmptySlot count={spotsLeft} sessionId={sessionId} startTime={startTime} isHost={isHost} />
+          <EmptySlot count={spotsLeft} sessionId={sessionId} startTime={startTime} isHost={isHost} sessionStatus={sessionStatus} isAfterEnd={isAfterEnd} />
         )}
       </View>
     </View>

@@ -62,5 +62,15 @@ export default defineConfig({
       },
       dependencies: ['setup'],
     },
+    {
+      name: 'in-app-browser-simulation',
+      use: {
+        ...devices['iPhone 14'],
+        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Zalo/23.05.01',
+        viewport: { width: 390, height: 664 }, // Reduced height for in-app headers/footers
+        storageState: 'e2e/.auth/host.json',
+      },
+      dependencies: ['setup'],
+    },
   ],
 })

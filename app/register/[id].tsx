@@ -12,8 +12,7 @@ import {
 } from 'react-native'
 import Slider from '@react-native-community/slider'
 import { useLocalSearchParams, router } from 'expo-router'
-import AsyncStorage from '@react-native-async-storage/async-storage'
-import { safeStorageSetItem } from '@/lib/storage'
+import { safeStorageSetItem, safeStorageGetItem, safeStorageRemoveItem } from '@/lib/storage'
 
 import { AppButton, AppLoading, SecondaryNavbar, BrandedFooter } from '@/components/design'
 import { MatchSessionCard } from '@/components/home/MatchSessionCard'
@@ -91,26 +90,22 @@ export default function ZaloRegisterScreen() {
   const [opponentPref, setOpponentPref] = useState<'any' | 'male' | 'female'>('any')
 
   useEffect(() => {
-    // Load sticky preferences from localStorage
-    try {
-      const savedPartnerPref = localStorage.getItem('pm_partner_pref')
-      const savedOpponentPref = localStorage.getItem('pm_opponent_pref')
-      if (savedPartnerPref) setPartnerPref(savedPartnerPref as any)
-      if (savedOpponentPref) setOpponentPref(savedOpponentPref as any)
-    } catch (e) {
-      console.warn('Failed to load preferences from localStorage', e)
-    }
-
     if (!id) return
     const loadSavedData = async () => {
       try {
+        // Load sticky preferences using safeStorage
+        const savedPartnerPref = await safeStorageGetItem('pm_partner_pref')
+        const savedOpponentPref = await safeStorageGetItem('pm_opponent_pref')
+        if (savedPartnerPref) setPartnerPref(savedPartnerPref as any)
+        if (savedOpponentPref) setOpponentPref(savedOpponentPref as any)
+
         const storageKey = getRegisterInfoStorageKey()
-        const savedData = await AsyncStorage.getItem(storageKey)
+        const savedData = await safeStorageGetItem(storageKey)
         if (!savedData) return
         const parsed = JSON.parse(savedData) as StoredRegisterInfo
         const savedAt = parsed?.savedAt ?? 0
         if (!savedAt || Date.now() - savedAt > REGISTER_INFO_TTL_MS) {
-          await AsyncStorage.removeItem(storageKey)
+          await safeStorageRemoveItem(storageKey)
           return
         }
         if (parsed?.name) setName(parsed.name)
@@ -132,9 +127,16 @@ export default function ZaloRegisterScreen() {
     [session]
   )
 
+  const isEnded = useMemo(() => {
+    if (!session) return false
+    const now = new Date()
+    const endTime = new Date(session.slot.end_time)
+    return ['done', 'cancelled', 'pending_completion'].includes(session.status) || now > endTime
+  }, [session])
+
   const nameError = useMemo(() => validateName(name), [name])
   const phoneError = useMemo(() => validatePhone(phone), [phone])
-  const _canSubmit = !nameError && !phoneError && !submitting
+  const _canSubmit = !nameError && !phoneError && !submitting && !isEnded
 
   const pvnaRange = useMemo(() => {
     if (gender === 'female') {
@@ -333,14 +335,12 @@ export default function ZaloRegisterScreen() {
           console.warn('[ZaloRegister] Failed to save register info', e)
         }
         
-        // Save sticky preferences for next time
+        // Save sticky preferences for next time using safeStorage
         try {
-          if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('pm_partner_pref', partnerPref)
-            localStorage.setItem('pm_opponent_pref', opponentPref)
-          }
+          await safeStorageSetItem('pm_partner_pref', partnerPref)
+          await safeStorageSetItem('pm_opponent_pref', opponentPref)
         } catch (e) {
-          console.warn('[ZaloRegister] Failed to save preferences to localStorage', e)
+          console.warn('[ZaloRegister] Failed to save preferences', e)
         }
       }
 
@@ -758,13 +758,33 @@ export default function ZaloRegisterScreen() {
             </Text>
           ) : null}
 
+          {isEnded ? (
+            <View style={{ 
+              backgroundColor: theme.error + '10', 
+              padding: 12, 
+              borderRadius: 12, 
+              marginBottom: 16,
+              borderWidth: 1,
+              borderColor: theme.error + '30'
+            }}>
+              <Text style={{ 
+                textAlign: 'center', 
+                color: theme.error, 
+                fontFamily: SCREEN_FONTS.bold, 
+                fontSize: 14 
+              }}>
+                ⚠️ Kèo đấu này đã kết thúc hoặc không còn nhận đăng ký.
+              </Text>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             style={{
-              backgroundColor: theme.primary,
+              backgroundColor: isEnded ? theme.onSurfaceVariant : theme.primary,
               borderRadius: 999, padding: 16,
               flexDirection: 'row',
               alignItems: 'center', justifyContent: 'center', gap: 8,
-              opacity: submitting ? 0.7 : 1,
+              opacity: (submitting || isEnded) ? 0.7 : 1,
               ...LAYOUT_SHADOW.sm
             }}
             onPress={handleRegister}

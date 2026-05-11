@@ -29,10 +29,16 @@ export default function TeamArrangementRoute() {
   const ownerDetails = session?.owner_sessions?.[0] || session?.owner_sessions || {}
   const processedPlayers = session ? buildArrangementPlayers({ ...session, owner_sessions: ownerDetails }) : []
 
+  const startTs = session?.slot?.start_time ? new Date(session.slot.start_time).getTime() : 0
+  const isWayPastStart = startTs > 0 && (Date.now() - startTs) > (12 * 3600000)
+  const isAfterEnd = (session?.slot?.end_time ? new Date(session.slot.end_time).getTime() <= Date.now() : false) || 
+                     ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion'].includes(session?.status) || 
+                     isWayPastStart
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <SecondaryNavbar 
-        title="SẮP XẾP ĐỘI" 
+        title={isAfterEnd ? "XEM ĐỘI HÌNH" : "SẮP XẾP ĐỘI"} 
       />
       <TeamArrangementScreen
         sessionId={id!}
@@ -40,6 +46,7 @@ export default function TeamArrangementRoute() {
         maxPlayers={session?.max_players || 16}
         onUpdated={fetchSession}
         onClose={() => router.back()}
+        isAfterEnd={isAfterEnd}
       />
     </View>
   )

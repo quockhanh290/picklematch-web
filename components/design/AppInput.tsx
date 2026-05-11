@@ -45,7 +45,7 @@ export function AppInput({ label, hint, leftIcon, ...props }: Props) {
           placeholderTextColor={theme.outline}
           style={{ 
             flex: 1, 
-            fontSize: 15,
+            fontSize: Platform.OS === 'web' ? 16 : 15,
             color: theme.onSurface, 
             fontFamily: SCREEN_FONTS.body,
             outlineStyle: 'none' // For web

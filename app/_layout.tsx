@@ -1,5 +1,7 @@
 import { NotificationsProvider } from '@/lib/NotificationsContext'
 import { AppThemeProvider } from '@/lib/theme-context'
+import { NetworkProvider } from '@/lib/NetworkContext'
+import { NetworkStatusBanner } from '@/components/design/NetworkStatusBanner'
 import { useAuth } from '@/lib/useAuth'
 import { PlusJakartaSans_400Regular } from '@expo-google-fonts/plus-jakarta-sans/400Regular'
 import { PlusJakartaSans_500Medium } from '@expo-google-fonts/plus-jakarta-sans/500Medium'
@@ -55,17 +57,20 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AppThemeProvider>
-        <NotificationsProvider userId={userId}>
-            <SessionNavContext.Provider value={sessionNav}>
-              <AuthGate fontsLoaded={fontsReadyForRender}>
-                <Stack screenOptions={{ headerShown: false }}>
-                  <Stack.Screen name="(player)" options={{ headerShown: false }} />
-                  <Stack.Screen name="host" options={{ headerShown: false }} />
-                  <Stack.Screen name="player/[id]" options={{ headerShown: false }} />
-                </Stack>
-              </AuthGate>
-            </SessionNavContext.Provider>
-        </NotificationsProvider>
+        <NetworkProvider>
+          <NetworkStatusBanner />
+          <NotificationsProvider userId={userId}>
+              <SessionNavContext.Provider value={sessionNav}>
+                <AuthGate fontsLoaded={fontsReadyForRender}>
+                  <Stack screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name="(player)" options={{ headerShown: false }} />
+                    <Stack.Screen name="host" options={{ headerShown: false }} />
+                    <Stack.Screen name="player/[id]" options={{ headerShown: false }} />
+                  </Stack>
+                </AuthGate>
+              </SessionNavContext.Provider>
+          </NotificationsProvider>
+        </NetworkProvider>
       </AppThemeProvider>
     </GestureHandlerRootView>
   )
