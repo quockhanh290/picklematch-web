@@ -1,6 +1,13 @@
+import { BrandedFooter } from '@/components/design/BrandedFooter'
+import { SHADOW as LAYOUT_SHADOW, RADIUS } from '@/constants/screenLayout'
+import { SCREEN_FONTS } from '@/constants/typography'
+import type { SessionMatch } from '@/hooks/useSessionDetail'
+import type { ArrangementPlayer } from '@/lib/sessionDetail'
+import { supabase } from '@/lib/supabase'
+import { useAppTheme } from '@/lib/theme-context'
+import { Minus, Plus, SwordsIcon } from 'lucide-react-native'
 import React, { useState } from 'react'
-import { View, Text, TouchableOpacity, ScrollView, LayoutAnimation, Platform, Alert, Image, Dimensions, Pressable } from 'react-native'
-import { History, CheckCircle2, Plus, Minus, Swords, SwordsIcon } from 'lucide-react-native'
+import { Alert, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const IS_SMALL_DEVICE = SCREEN_WIDTH < 375
@@ -8,13 +15,6 @@ const RESPONSIVE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 80 : SCREEN_WIDTH > 360 ? 70 
 const RESPONSIVE_CARD_HEIGHT = RESPONSIVE_CARD_WIDTH * 1.25
 const RESPONSIVE_FONT_SIZE = SCREEN_WIDTH > 400 ? 56 : SCREEN_WIDTH > 360 ? 48 : 42
 const RESPONSIVE_GAP = SCREEN_WIDTH > 360 ? 8 : 4
-import { useAppTheme } from '@/lib/theme-context'
-import { SCREEN_FONTS } from '@/constants/typography'
-import { RADIUS, SPACING, SHADOW as LAYOUT_SHADOW, BORDER } from '@/constants/screenLayout'
-import type { SessionMatch } from '@/hooks/useSessionDetail'
-import type { ArrangementPlayer } from '@/lib/sessionDetail'
-import { supabase } from '@/lib/supabase'
-import { BrandedFooter } from '@/components/design/BrandedFooter'
 
 interface Props {
   sessionId: string
@@ -46,12 +46,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
           // Only sync if we don't have it yet, or if the server score is different from our local one
           // and we're not in the middle of a rapid update
           if (!next[m.id] || (next[m.id].a !== m.score_a && next[m.id].b !== m.score_b)) {
-             // To prevent jumping, we only overwrite if the server data is actually newer 
-             // or if we don't have local state yet
-             if (!next[m.id]) {
-               next[m.id] = { a: m.score_a, b: m.score_b }
-               changed = true
-             }
+            // To prevent jumping, we only overwrite if the server data is actually newer 
+            // or if we don't have local state yet
+            if (!next[m.id]) {
+              next[m.id] = { a: m.score_a, b: m.score_b }
+              changed = true
+            }
           }
         }
       })
@@ -141,7 +141,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
       .from('session_matches')
       .update({ status: 'finished', updated_at: new Date().toISOString() })
       .eq('id', matchId)
-    
+
     setSubmitting(false)
     if (!error) onUpdated()
   }
@@ -154,7 +154,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
         .from('session_matches')
         .update({ status: 'cancelled', updated_at: new Date().toISOString() })
         .eq('id', matchId)
-      
+
       setSubmitting(false)
       if (error) {
         Alert.alert('Lỗi', 'Không thể hủy trận đấu.')
@@ -179,7 +179,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     const all = [...pA, ...pB]
     const males = all.filter(p => String(p.gender || '').toLowerCase() === 'male' || String(p.gender || '').toLowerCase() === 'nam').length
     const females = all.filter(p => String(p.gender || '').toLowerCase() === 'female' || String(p.gender || '').toLowerCase() === 'nữ').length
-    
+
     if (males === 4) return '4M'
     if (females === 4) return '4F'
     if (males === 2 && females === 2) return '2M2F'
@@ -208,14 +208,14 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     const schedulingTeams = teamIds.length % 2 === 0 ? [...teamIds] : [...teamIds, '0']
     const numRounds = schedulingTeams.length - 1
     const message = `Tạo lịch thi đấu tự động cho tất cả các đội? Hệ thống sẽ ưu tiên xáo trộn để đa dạng hóa các trận Nam/Nữ/Mixed.`
-    
+
     const performCreate = async () => {
       setSubmitting(true)
-      
+
       // 1. Generate all match pairings using Circle Method
       const matchPool: { tA: number, tB: number, format: string }[] = []
       const currentTeams = [...schedulingTeams]
-      
+
       for (let round = 0; round < numRounds; round++) {
         for (let i = 0; i < currentTeams.length / 2; i++) {
           const tA = Number(currentTeams[i])
@@ -242,7 +242,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
 
         const picked = remainingMatches.splice(bestIdx, 1)[0]
         finalSchedule.push(picked)
-        
+
         lastFormats.push(picked.format)
         if (lastFormats.length > maxHistory) lastFormats.shift()
       }
@@ -260,12 +260,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
       }))
 
       const { error } = await supabase.from('session_matches').insert(insertData)
-      
+
       if (error) {
         console.error('[CreateAllMatches] Error:', error)
         Alert.alert('Lỗi', 'Không thể tạo lịch thi đấu tự động.')
       }
-      
+
       setSubmitting(false)
       onUpdated()
     }
@@ -301,30 +301,27 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
       return
     }
 
-    // Count total matches played + last match timestamp per player.
-    // Using match COUNT (not creation index) avoids bias where players in the
-    // "last created match" of a round get unfairly deprioritized next round.
-    const matchesPlayed = new Map<string, number>()
-    const lastMatchTime = new Map<string, number>()
-    eligible.forEach(p => { matchesPlayed.set(p.id, 0); lastMatchTime.set(p.id, 0) })
+    // Count total matches played per player
 
+    const matchesPlayed = new Map<string, number>()
+    eligible.forEach(p => matchesPlayed.set(p.id, 0))
     matches.forEach(m => {
       const all = [...(m.players_snapshot?.team_a || []), ...(m.players_snapshot?.team_b || [])]
-      const t = new Date(m.created_at).getTime()
       all.forEach(pid => {
-        if (matchesPlayed.has(pid)) {
-          matchesPlayed.set(pid, (matchesPlayed.get(pid) ?? 0) + 1)
-          lastMatchTime.set(pid, Math.max(lastMatchTime.get(pid) ?? 0, t))
-        }
+        if (matchesPlayed.has(pid)) matchesPlayed.set(pid, (matchesPlayed.get(pid) ?? 0) + 1)
       })
     })
 
-    // Sort: 1) fewer matches played → higher priority; 2) rested longer → higher priority
+    // Assign a random order upfront so tiebreaks are unbiased.
+    // Using lastMatchTime as tiebreaker is WRONG because players in the "last
+    // created match" of a round always get the most recent timestamp and end up
+    // sitting out repeatedly — creating a systematic gap over many rounds.
+    const randomTie = new Map(eligible.map(p => [p.id, Math.random()]))
+
     const sorted = [...eligible].sort((a, b) => {
-      const aPlayed = matchesPlayed.get(a.id) ?? 0
-      const bPlayed = matchesPlayed.get(b.id) ?? 0
-      if (aPlayed !== bPlayed) return aPlayed - bPlayed
-      return (lastMatchTime.get(a.id) ?? 0) - (lastMatchTime.get(b.id) ?? 0)
+      const diff = (matchesPlayed.get(a.id) ?? 0) - (matchesPlayed.get(b.id) ?? 0)
+      if (diff !== 0) return diff
+      return randomTie.get(a.id)! - randomTie.get(b.id)! // unbiased tiebreak
     })
 
     const numMatches = Math.floor(sorted.length / 4)
@@ -391,10 +388,10 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
           <View style={{ marginBottom: 32 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A' }}>ĐANG DIỄN RA</Text>
-              <View style={{ 
-                backgroundColor: activeMatches.length > 0 ? theme.primary : '#F1EFE8', 
-                paddingHorizontal: 10, 
-                paddingVertical: 4, 
+              <View style={{
+                backgroundColor: activeMatches.length > 0 ? theme.primary : '#F1EFE8',
+                paddingHorizontal: 10,
+                paddingVertical: 4,
                 borderRadius: 999,
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -408,283 +405,283 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
               </View>
             </View>
 
-          {activeMatches.length === 0 ? (
-            <View style={{ 
-              backgroundColor: '#1A2E2A', 
-              borderRadius: RADIUS.xl, 
-              height: 200,
-              alignItems: 'center', 
-              justifyContent: 'center',
-              marginTop: 8,
-              overflow: 'hidden',
-              position: 'relative',
-              borderWidth: 1,
-              borderColor: '#0F6E5630',
-              ...LAYOUT_SHADOW.md
-            }}>
-              {/* Subtle background pattern or gradient */}
-              <View style={{ 
-                position: 'absolute', 
-                top: 0, left: 0, right: 0, bottom: 0,
-                backgroundColor: theme.primary,
-                opacity: 0.15
-              }} />
-              
-              <View style={{ 
-                flexDirection: 'row', 
-                alignItems: 'center', 
-                backgroundColor: '#0F6E56', 
-                paddingHorizontal: 12, 
-                paddingVertical: 4, 
-                borderRadius: 4,
-                marginBottom: 16,
-                gap: 6
-              }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#E1F5EE' }} />
-                <Text style={{ color: 'white', fontSize: 10, fontFamily: SCREEN_FONTS.headline, letterSpacing: 1.5, fontWeight: '800' }}>PRE-MATCH</Text>
-              </View>
-
-              <Text style={{ 
-                fontFamily: SCREEN_FONTS.headline, 
-                fontSize: 22, 
-                color: 'white', 
-                textAlign: 'center',
-                letterSpacing: 1,
-                fontWeight: '900',
-                textShadowColor: 'rgba(0,0,0,0.3)',
-                textShadowOffset: { width: 0, height: 2 },
-                textShadowRadius: 4
-              }}>
-                TRẬN ĐẤU SẮP BẮT ĐẦU
-              </Text>
-              
-              <Text style={{ 
-                fontFamily: SCREEN_FONTS.label, 
-                fontSize: 12, 
-                color: '#E1F5EE', 
-                textAlign: 'center',
+            {activeMatches.length === 0 ? (
+              <View style={{
+                backgroundColor: '#1A2E2A',
+                borderRadius: RADIUS.xl,
+                height: 200,
+                alignItems: 'center',
+                justifyContent: 'center',
                 marginTop: 8,
-                opacity: 0.8,
-                letterSpacing: 0.5
+                overflow: 'hidden',
+                position: 'relative',
+                borderWidth: 1,
+                borderColor: '#0F6E5630',
+                ...LAYOUT_SHADOW.md
               }}>
-                Vui lòng chọn cặp đấu bên dưới để {`"lên sóng"`}
-              </Text>
+                {/* Subtle background pattern or gradient */}
+                <View style={{
+                  position: 'absolute',
+                  top: 0, left: 0, right: 0, bottom: 0,
+                  backgroundColor: theme.primary,
+                  opacity: 0.15
+                }} />
 
-              <View style={{ 
-                position: 'absolute', 
-                bottom: 0, 
-                left: 0, 
-                right: 0, 
-                height: 4, 
-                backgroundColor: '#0F6E56',
-                opacity: 0.5
-              }} />
-            </View>
-          ) : (
-            activeMatches.map(match => {
-              const scoreA = localScores[match.id]?.a ?? match.score_a
-              const scoreB = localScores[match.id]?.b ?? match.score_b
-              
-              return (
-                <View key={match.id} style={{ 
-                  backgroundColor: 'white', 
-                  borderRadius: RADIUS.xl, 
-                  borderWidth: 1, 
-                  borderColor: '#E5E3DC', 
-                  marginBottom: 20, 
-                  overflow: 'hidden', 
-                  ...LAYOUT_SHADOW.sm 
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#0F6E56',
+                  paddingHorizontal: 12,
+                  paddingVertical: 4,
+                  borderRadius: 4,
+                  marginBottom: 16,
+                  gap: 6
                 }}>
-                  {/* Card Header */}
-                  <View style={{ 
-                    backgroundColor: '#F5F1E8', 
-                    paddingHorizontal: 16, 
-                    paddingVertical: 10, 
-                    flexDirection: 'row', 
-                    justifyContent: 'space-between', 
-                    alignItems: 'center',
-                    borderBottomWidth: 1,
-                    borderBottomColor: '#E5E3DC'
-                  }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#0F6E56' }} />
-                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#0F6E56', fontWeight: '800' }}>TRẬN ĐẤU LIVE</Text>
-                    </View>
-                    <View style={{ backgroundColor: '#1A2E2A', paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.xs }}>
-                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: 'white', fontWeight: '700' }}>
-                        {new Date(match.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </Text>
-                    </View>
-                  </View>
-                  
-                  <View style={{ padding: 20 }}>
-                    {/* Scoreboard Row */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                      
-                      {/* Team A Section */}
-                      <View style={{ alignItems: 'center', flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                          <Pressable 
-                            onPress={() => handleUpdateScore(match.id, 'a', -1)} 
-                            disabled={isAfterEnd}
-                            style={({ pressed }) => ({ 
-                              width: 36, height: 36, borderRadius: 18, 
-                              backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center', 
-                              borderWidth: 1, borderColor: '#E5E3DC',
-                              opacity: (pressed || isAfterEnd) ? 0.7 : 1
-                            })}
-                          >
-                            <Minus size={18} color="#7A8884" />
-                          </Pressable>
-                          
-                          <View style={{ 
-                            width: RESPONSIVE_CARD_WIDTH + 10, 
-                            height: RESPONSIVE_CARD_HEIGHT + 10, 
-                            backgroundColor: '#F5F1E8', 
-                            borderRadius: RADIUS.md, 
-                            alignItems: 'center', 
-                            justifyContent: 'center', 
-                            borderWidth: 2, 
-                            borderColor: scoreA > scoreB ? '#0F6E56' : '#E5E3DC',
-                            ...LAYOUT_SHADOW.sm
-                          }}>
-                            <Text style={{ 
-                              fontFamily: SCREEN_FONTS.headline, 
-                              fontSize: RESPONSIVE_FONT_SIZE, 
-                              color: scoreA > scoreB ? '#0F6E56' : '#1A2E2A', 
-                              fontWeight: '900' 
-                            }}>{scoreA}</Text>
-                          </View>
-
-                          <Pressable 
-                            onPress={() => handleUpdateScore(match.id, 'a', 1)} 
-                            disabled={isAfterEnd}
-                            style={({ pressed }) => ({ 
-                              width: 36, height: 36, borderRadius: 18, 
-                              backgroundColor: isAfterEnd ? '#E5E3DC' : '#0F6E56', alignItems: 'center', justifyContent: 'center', 
-                              ...LAYOUT_SHADOW.sm,
-                              opacity: (pressed || isAfterEnd) ? 0.8 : 1
-                            })}
-                          >
-                            <Plus size={18} color="white" />
-                          </Pressable>
-                        </View>
-                        {match.team_a_no === 0 ? (
-                          <Text style={{ fontSize: 12, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 8, textAlign: 'center', fontWeight: '700', lineHeight: 18 }}>
-                            {getMatchPlayerNames(match.players_snapshot?.team_a || [])}
-                          </Text>
-                        ) : (
-                          <>
-                            <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 6, textAlign: 'center', fontWeight: '800' }}>ĐỘI {match.team_a_no}</Text>
-                            <Text style={{ fontSize: 9, color: '#7A8884', marginTop: 2, textAlign: 'center' }} numberOfLines={1}>{getPlayerNames(match.team_a_no)}</Text>
-                          </>
-                        )}
-                      </View>
-
-                      {/* VS Divider */}
-                      <View style={{ paddingHorizontal: 10, alignItems: 'center' }}>
-                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: '#B4B2A9', fontWeight: '900' }}>VS</Text>
-                      </View>
-
-                      {/* Team B Section */}
-                      <View style={{ alignItems: 'center', flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                          <Pressable 
-                            onPress={() => handleUpdateScore(match.id, 'b', -1)} 
-                            disabled={isAfterEnd}
-                            style={({ pressed }) => ({ 
-                              width: 36, height: 36, borderRadius: 18, 
-                              backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center', 
-                              borderWidth: 1, borderColor: '#E5E3DC',
-                              opacity: (pressed || isAfterEnd) ? 0.7 : 1
-                            })}
-                          >
-                            <Minus size={18} color="#7A8884" />
-                          </Pressable>
-                          
-                          <View style={{ 
-                            width: RESPONSIVE_CARD_WIDTH + 10, 
-                            height: RESPONSIVE_CARD_HEIGHT + 10, 
-                            backgroundColor: '#F5F1E8', 
-                            borderRadius: RADIUS.md, 
-                            alignItems: 'center', 
-                            justifyContent: 'center', 
-                            borderWidth: 2, 
-                            borderColor: scoreB > scoreA ? '#0F6E56' : '#E5E3DC',
-                            ...LAYOUT_SHADOW.sm
-                          }}>
-                            <Text style={{ 
-                              fontFamily: SCREEN_FONTS.headline, 
-                              fontSize: RESPONSIVE_FONT_SIZE, 
-                              color: scoreB > scoreA ? '#0F6E56' : '#1A2E2A', 
-                              fontWeight: '900' 
-                            }}>{scoreB}</Text>
-                          </View>
-
-                          <Pressable 
-                            onPress={() => handleUpdateScore(match.id, 'b', 1)} 
-                            disabled={isAfterEnd}
-                            style={({ pressed }) => ({ 
-                              width: 36, height: 36, borderRadius: 18, 
-                              backgroundColor: isAfterEnd ? '#E5E3DC' : '#0F6E56', alignItems: 'center', justifyContent: 'center', 
-                              ...LAYOUT_SHADOW.sm,
-                              opacity: (pressed || isAfterEnd) ? 0.8 : 1
-                            })}
-                          >
-                            <Plus size={18} color="white" />
-                          </Pressable>
-                        </View>
-                        {match.team_b_no === 0 ? (
-                          <Text style={{ fontSize: 12, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 8, textAlign: 'center', fontWeight: '700', lineHeight: 18 }}>
-                            {getMatchPlayerNames(match.players_snapshot?.team_b || [])}
-                          </Text>
-                        ) : (
-                          <>
-                            <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 6, textAlign: 'center', fontWeight: '800' }}>ĐỘI {match.team_b_no}</Text>
-                            <Text style={{ fontSize: 9, color: '#7A8884', marginTop: 2, textAlign: 'center' }} numberOfLines={1}>{getPlayerNames(match.team_b_no)}</Text>
-                          </>
-                        )}
-                      </View>
-                    </View>
-
-                    {/* Bottom Actions */}
-                    {!isAfterEnd && (
-                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-                        <TouchableOpacity 
-                          onPress={() => handleFinishMatch(match.id)} 
-                          style={{ 
-                            flex: 2, 
-                            backgroundColor: '#0F6E56', 
-                            paddingVertical: 12, 
-                            borderRadius: RADIUS.lg, 
-                            alignItems: 'center', 
-                            justifyContent: 'center', 
-                            ...LAYOUT_SHADOW.sm 
-                          }}
-                        >
-                          <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.headline, fontSize: 13, fontWeight: '800' }}>XÁC NHẬN KẾT QUẢ</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          onPress={() => handleCancelMatch(match.id)} 
-                          style={{ 
-                            flex: 1, 
-                            backgroundColor: '#FAECE7', 
-                            paddingVertical: 12, 
-                            borderRadius: RADIUS.lg, 
-                            alignItems: 'center', 
-                            justifyContent: 'center' 
-                          }}
-                        >
-                          <Text style={{ color: '#D85A30', fontFamily: SCREEN_FONTS.headline, fontSize: 13, fontWeight: '800' }}>HỦY</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#E1F5EE' }} />
+                  <Text style={{ color: 'white', fontSize: 10, fontFamily: SCREEN_FONTS.headline, letterSpacing: 1.5, fontWeight: '800' }}>PRE-MATCH</Text>
                 </View>
-              )
-            })
-          )}
-        </View>
+
+                <Text style={{
+                  fontFamily: SCREEN_FONTS.headline,
+                  fontSize: 22,
+                  color: 'white',
+                  textAlign: 'center',
+                  letterSpacing: 1,
+                  fontWeight: '900',
+                  textShadowColor: 'rgba(0,0,0,0.3)',
+                  textShadowOffset: { width: 0, height: 2 },
+                  textShadowRadius: 4
+                }}>
+                  TRẬN ĐẤU SẮP BẮT ĐẦU
+                </Text>
+
+                <Text style={{
+                  fontFamily: SCREEN_FONTS.label,
+                  fontSize: 12,
+                  color: '#E1F5EE',
+                  textAlign: 'center',
+                  marginTop: 8,
+                  opacity: 0.8,
+                  letterSpacing: 0.5
+                }}>
+                  Vui lòng chọn cặp đấu bên dưới để {`"lên sóng"`}
+                </Text>
+
+                <View style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: 4,
+                  backgroundColor: '#0F6E56',
+                  opacity: 0.5
+                }} />
+              </View>
+            ) : (
+              activeMatches.map(match => {
+                const scoreA = localScores[match.id]?.a ?? match.score_a
+                const scoreB = localScores[match.id]?.b ?? match.score_b
+
+                return (
+                  <View key={match.id} style={{
+                    backgroundColor: 'white',
+                    borderRadius: RADIUS.xl,
+                    borderWidth: 1,
+                    borderColor: '#E5E3DC',
+                    marginBottom: 20,
+                    overflow: 'hidden',
+                    ...LAYOUT_SHADOW.sm
+                  }}>
+                    {/* Card Header */}
+                    <View style={{
+                      backgroundColor: '#F5F1E8',
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      borderBottomWidth: 1,
+                      borderBottomColor: '#E5E3DC'
+                    }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#0F6E56' }} />
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#0F6E56', fontWeight: '800' }}>TRẬN ĐẤU LIVE</Text>
+                      </View>
+                      <View style={{ backgroundColor: '#1A2E2A', paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.xs }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: 'white', fontWeight: '700' }}>
+                          {new Date(match.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={{ padding: 20 }}>
+                      {/* Scoreboard Row */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+
+                        {/* Team A Section */}
+                        <View style={{ alignItems: 'center', flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <Pressable
+                              onPress={() => handleUpdateScore(match.id, 'a', -1)}
+                              disabled={isAfterEnd}
+                              style={({ pressed }) => ({
+                                width: 36, height: 36, borderRadius: 18,
+                                backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center',
+                                borderWidth: 1, borderColor: '#E5E3DC',
+                                opacity: (pressed || isAfterEnd) ? 0.7 : 1
+                              })}
+                            >
+                              <Minus size={18} color="#7A8884" />
+                            </Pressable>
+
+                            <View style={{
+                              width: RESPONSIVE_CARD_WIDTH + 10,
+                              height: RESPONSIVE_CARD_HEIGHT + 10,
+                              backgroundColor: '#F5F1E8',
+                              borderRadius: RADIUS.md,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderWidth: 2,
+                              borderColor: scoreA > scoreB ? '#0F6E56' : '#E5E3DC',
+                              ...LAYOUT_SHADOW.sm
+                            }}>
+                              <Text style={{
+                                fontFamily: SCREEN_FONTS.headline,
+                                fontSize: RESPONSIVE_FONT_SIZE,
+                                color: scoreA > scoreB ? '#0F6E56' : '#1A2E2A',
+                                fontWeight: '900'
+                              }}>{scoreA}</Text>
+                            </View>
+
+                            <Pressable
+                              onPress={() => handleUpdateScore(match.id, 'a', 1)}
+                              disabled={isAfterEnd}
+                              style={({ pressed }) => ({
+                                width: 36, height: 36, borderRadius: 18,
+                                backgroundColor: isAfterEnd ? '#E5E3DC' : '#0F6E56', alignItems: 'center', justifyContent: 'center',
+                                ...LAYOUT_SHADOW.sm,
+                                opacity: (pressed || isAfterEnd) ? 0.8 : 1
+                              })}
+                            >
+                              <Plus size={18} color="white" />
+                            </Pressable>
+                          </View>
+                          {match.team_a_no === 0 ? (
+                            <Text style={{ fontSize: 12, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 8, textAlign: 'center', fontWeight: '700', lineHeight: 18 }}>
+                              {getMatchPlayerNames(match.players_snapshot?.team_a || [])}
+                            </Text>
+                          ) : (
+                            <>
+                              <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 6, textAlign: 'center', fontWeight: '800' }}>ĐỘI {match.team_a_no}</Text>
+                              <Text style={{ fontSize: 9, color: '#7A8884', marginTop: 2, textAlign: 'center' }} numberOfLines={1}>{getPlayerNames(match.team_a_no)}</Text>
+                            </>
+                          )}
+                        </View>
+
+                        {/* VS Divider */}
+                        <View style={{ paddingHorizontal: 10, alignItems: 'center' }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: '#B4B2A9', fontWeight: '900' }}>VS</Text>
+                        </View>
+
+                        {/* Team B Section */}
+                        <View style={{ alignItems: 'center', flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <Pressable
+                              onPress={() => handleUpdateScore(match.id, 'b', -1)}
+                              disabled={isAfterEnd}
+                              style={({ pressed }) => ({
+                                width: 36, height: 36, borderRadius: 18,
+                                backgroundColor: '#F5F1E8', alignItems: 'center', justifyContent: 'center',
+                                borderWidth: 1, borderColor: '#E5E3DC',
+                                opacity: (pressed || isAfterEnd) ? 0.7 : 1
+                              })}
+                            >
+                              <Minus size={18} color="#7A8884" />
+                            </Pressable>
+
+                            <View style={{
+                              width: RESPONSIVE_CARD_WIDTH + 10,
+                              height: RESPONSIVE_CARD_HEIGHT + 10,
+                              backgroundColor: '#F5F1E8',
+                              borderRadius: RADIUS.md,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderWidth: 2,
+                              borderColor: scoreB > scoreA ? '#0F6E56' : '#E5E3DC',
+                              ...LAYOUT_SHADOW.sm
+                            }}>
+                              <Text style={{
+                                fontFamily: SCREEN_FONTS.headline,
+                                fontSize: RESPONSIVE_FONT_SIZE,
+                                color: scoreB > scoreA ? '#0F6E56' : '#1A2E2A',
+                                fontWeight: '900'
+                              }}>{scoreB}</Text>
+                            </View>
+
+                            <Pressable
+                              onPress={() => handleUpdateScore(match.id, 'b', 1)}
+                              disabled={isAfterEnd}
+                              style={({ pressed }) => ({
+                                width: 36, height: 36, borderRadius: 18,
+                                backgroundColor: isAfterEnd ? '#E5E3DC' : '#0F6E56', alignItems: 'center', justifyContent: 'center',
+                                ...LAYOUT_SHADOW.sm,
+                                opacity: (pressed || isAfterEnd) ? 0.8 : 1
+                              })}
+                            >
+                              <Plus size={18} color="white" />
+                            </Pressable>
+                          </View>
+                          {match.team_b_no === 0 ? (
+                            <Text style={{ fontSize: 12, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 8, textAlign: 'center', fontWeight: '700', lineHeight: 18 }}>
+                              {getMatchPlayerNames(match.players_snapshot?.team_b || [])}
+                            </Text>
+                          ) : (
+                            <>
+                              <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A', marginTop: 6, textAlign: 'center', fontWeight: '800' }}>ĐỘI {match.team_b_no}</Text>
+                              <Text style={{ fontSize: 9, color: '#7A8884', marginTop: 2, textAlign: 'center' }} numberOfLines={1}>{getPlayerNames(match.team_b_no)}</Text>
+                            </>
+                          )}
+                        </View>
+                      </View>
+
+                      {/* Bottom Actions */}
+                      {!isAfterEnd && (
+                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                          <TouchableOpacity
+                            onPress={() => handleFinishMatch(match.id)}
+                            style={{
+                              flex: 2,
+                              backgroundColor: '#0F6E56',
+                              paddingVertical: 12,
+                              borderRadius: RADIUS.lg,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              ...LAYOUT_SHADOW.sm
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.headline, fontSize: 13, fontWeight: '800' }}>XÁC NHẬN KẾT QUẢ</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleCancelMatch(match.id)}
+                            style={{
+                              flex: 1,
+                              backgroundColor: '#FAECE7',
+                              paddingVertical: 12,
+                              borderRadius: RADIUS.lg,
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <Text style={{ color: '#D85A30', fontFamily: SCREEN_FONTS.headline, fontSize: 13, fontWeight: '800' }}>HỦY</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )
+              })
+            )}
+          </View>
         )}
 
         {/* Pending Proposals Preview — shown above tabs when proposals exist */}
@@ -781,13 +778,13 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
         {/* Toggle Mode */}
         {!isAfterEnd && (
           <View style={{ flexDirection: 'row', backgroundColor: '#F5F1E8', borderRadius: RADIUS.lg, padding: 4, marginBottom: 24 }}>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => setIsMixInMode(true)}
               style={{ flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: isMixInMode ? 'white' : 'transparent', borderRadius: RADIUS.md, ...(isMixInMode ? LAYOUT_SHADOW.sm : {}) }}
             >
               <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: isMixInMode ? '#0F6E56' : '#7A8884' }}>ĐỔI CẶP (MIX-IN)</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => setIsMixInMode(false)}
               style={{ flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: !isMixInMode ? 'white' : 'transparent', borderRadius: RADIUS.md, ...(!isMixInMode ? LAYOUT_SHADOW.sm : {}) }}
             >
@@ -801,10 +798,10 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
           <View style={{ marginBottom: 32 }}>
             {/* Rotation Complete Banner */}
             {isRotationComplete && (
-              <View style={{ 
-                backgroundColor: '#0F6E56', 
-                padding: 16, 
-                borderRadius: RADIUS.xl, 
+              <View style={{
+                backgroundColor: '#0F6E56',
+                padding: 16,
+                borderRadius: RADIUS.xl,
                 marginBottom: 16,
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -869,11 +866,11 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                 {isRotationComplete ? 'TIẾP TỤC LƯỢT MỚI' : 'CHẾ ĐỘ ĐỔI CẶP'}
               </Text>
               <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#7A8884', textAlign: 'center', marginBottom: 20, paddingHorizontal: 8 }}>
-                {isRotationComplete 
+                {isRotationComplete
                   ? 'Tất cả mọi người đã đấu với nhau rồi! Tiếp tục để bắt đầu vòng mới.'
                   : 'Bốc thăm ngẫu nhiên cặp mới cho tất cả người chơi đang rảnh.'}
               </Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={handleGenerateMixInRound}
                 disabled={submitting}
                 style={{ backgroundColor: '#0F6E56', paddingHorizontal: 24, paddingVertical: 14, borderRadius: RADIUS.lg, width: '100%', alignItems: 'center', opacity: submitting ? 0.7 : 1 }}
@@ -926,11 +923,11 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
             <View style={{ gap: 12 }}>
               {teamIds.map((tA, idx) => teamIds.slice(idx + 1).map(tB => (
                 activeMatches.some(m => (m.team_a_no === Number(tA) && m.team_b_no === Number(tB)) || (m.team_a_no === Number(tB) && m.team_b_no === Number(tA))) ? null : (
-                  <View key={`${tA}-${tB}`} style={{ 
-                    backgroundColor: '#F5F1E8', 
-                    borderRadius: RADIUS.lg, 
+                  <View key={`${tA}-${tB}`} style={{
+                    backgroundColor: '#F5F1E8',
+                    borderRadius: RADIUS.lg,
                     marginBottom: 10,
-                    borderWidth: 1, 
+                    borderWidth: 1,
                     borderColor: '#E5E3DC',
                     overflow: 'hidden'
                   }}>
@@ -948,9 +945,9 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                             {getPlayerNames(Number(tA))}
                           </Text>
                         </View>
-                        
+
                         <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#B4B2A9', marginHorizontal: 10 }}>VS</Text>
-                        
+
                         {/* Team B Info */}
                         <View style={{ flex: 1, alignItems: 'flex-end' }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
@@ -965,13 +962,13 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                         </View>
                       </View>
 
-                      <TouchableOpacity 
-                        onPress={() => handleCreateMatch(Number(tA), Number(tB))} 
-                        disabled={submitting} 
-                        style={{ 
-                          backgroundColor: '#0F6E56', 
-                          paddingHorizontal: 12, 
-                          paddingVertical: 8, 
+                      <TouchableOpacity
+                        onPress={() => handleCreateMatch(Number(tA), Number(tB))}
+                        disabled={submitting}
+                        style={{
+                          backgroundColor: '#0F6E56',
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
                           borderRadius: RADIUS.md,
                           marginLeft: 12,
                           shadowColor: '#0F6E56',
@@ -998,13 +995,13 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
               const winner = match.score_a > match.score_b ? 'a' : match.score_b > match.score_a ? 'b' : 'draw'
 
               return (
-                <View key={match.id} style={{ 
-                  backgroundColor: '#FFFFFF', 
-                  borderRadius: RADIUS.lg, 
+                <View key={match.id} style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: RADIUS.lg,
                   padding: 10,
                   marginBottom: 8,
-                  borderWidth: 1, 
-                  borderColor: '#E5E3DC', 
+                  borderWidth: 1,
+                  borderColor: '#E5E3DC',
                   ...LAYOUT_SHADOW.xs,
                   opacity: isCancelled ? 0.7 : 1
                 }}>
@@ -1013,15 +1010,15 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                     <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#B4B2A9', fontWeight: '600' }}>
                       {new Date(match.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
-                    <View style={{ 
-                      backgroundColor: isCancelled ? '#FDECEA' : '#E1F5EE', 
-                      paddingHorizontal: 8, 
-                      paddingVertical: 2, 
-                      borderRadius: RADIUS.xs 
+                    <View style={{
+                      backgroundColor: isCancelled ? '#FDECEA' : '#E1F5EE',
+                      paddingHorizontal: 8,
+                      paddingVertical: 2,
+                      borderRadius: RADIUS.xs
                     }}>
-                      <Text style={{ 
-                        fontSize: 8, 
-                        fontWeight: '800', 
+                      <Text style={{
+                        fontSize: 8,
+                        fontWeight: '800',
                         color: isCancelled ? '#D85A30' : '#0F6E56',
                         fontFamily: SCREEN_FONTS.headline,
                         letterSpacing: 0.5
@@ -1036,18 +1033,18 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                     {/* Team A */}
                     <View style={{ flex: 1 }}>
                       {match.team_a_no === 0 ? (
-                        <Text style={{ 
-                          fontFamily: SCREEN_FONTS.headline, 
-                          fontSize: 12, 
+                        <Text style={{
+                          fontFamily: SCREEN_FONTS.headline,
+                          fontSize: 12,
                           color: winner === 'a' && !isCancelled ? '#0F6E56' : '#1A2E2A',
                           fontWeight: '700',
                           lineHeight: 18
                         }}>{getMatchPlayerNames(match.players_snapshot?.team_a || [])}</Text>
                       ) : (
                         <>
-                          <Text style={{ 
-                            fontFamily: SCREEN_FONTS.headline, 
-                            fontSize: 14, 
+                          <Text style={{
+                            fontFamily: SCREEN_FONTS.headline,
+                            fontSize: 14,
                             color: winner === 'a' && !isCancelled ? '#0F6E56' : '#1A2E2A',
                             fontWeight: '800'
                           }}>ĐỘI {match.team_a_no}</Text>
@@ -1060,18 +1057,18 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
 
                     {/* Compact Scoreboard */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8 }}>
-                      <View style={{ 
-                        backgroundColor: winner === 'a' && !isCancelled ? '#0F6E56' : '#F5F1E8', 
+                      <View style={{
+                        backgroundColor: winner === 'a' && !isCancelled ? '#0F6E56' : '#F5F1E8',
                         width: 34, height: 40, borderRadius: RADIUS.xs, alignItems: 'center', justifyContent: 'center',
                         borderWidth: 1, borderColor: winner === 'a' && !isCancelled ? '#0F6E56' : '#E5E3DC'
                       }}>
                         <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: winner === 'a' && !isCancelled ? 'white' : '#1A2E2A', fontWeight: '800' }}>{match.score_a}</Text>
                       </View>
-                      
+
                       <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#B4B2A9' }}>—</Text>
-                      
-                      <View style={{ 
-                        backgroundColor: winner === 'b' && !isCancelled ? '#0F6E56' : '#F5F1E8', 
+
+                      <View style={{
+                        backgroundColor: winner === 'b' && !isCancelled ? '#0F6E56' : '#F5F1E8',
                         width: 34, height: 40, borderRadius: RADIUS.xs, alignItems: 'center', justifyContent: 'center',
                         borderWidth: 1, borderColor: winner === 'b' && !isCancelled ? '#0F6E56' : '#E5E3DC'
                       }}>
@@ -1082,9 +1079,9 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                     {/* Team B */}
                     <View style={{ flex: 1, alignItems: 'flex-end' }}>
                       {match.team_b_no === 0 ? (
-                        <Text style={{ 
-                          fontFamily: SCREEN_FONTS.headline, 
-                          fontSize: 12, 
+                        <Text style={{
+                          fontFamily: SCREEN_FONTS.headline,
+                          fontSize: 12,
                           color: winner === 'b' && !isCancelled ? '#0F6E56' : '#1A2E2A',
                           fontWeight: '700',
                           textAlign: 'right',
@@ -1092,9 +1089,9 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                         }}>{getMatchPlayerNames(match.players_snapshot?.team_b || [])}</Text>
                       ) : (
                         <>
-                          <Text style={{ 
-                            fontFamily: SCREEN_FONTS.headline, 
-                            fontSize: 14, 
+                          <Text style={{
+                            fontFamily: SCREEN_FONTS.headline,
+                            fontSize: 14,
                             color: winner === 'b' && !isCancelled ? '#0F6E56' : '#1A2E2A',
                             fontWeight: '800',
                             textAlign: 'right'
