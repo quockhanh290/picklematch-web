@@ -10,7 +10,7 @@ Mục tiêu "ai cũng mở được bằng phone browser hoặc app browser" là
 1. CSP quá lỏng, tăng mạnh rủi ro XSS.
 2. Lộ lọt secret (đặc biệt service role key) nếu .env bị commit/chia sẻ.
 3. AuthGate redirect theo effect, có thể để màn hình protected mount trước khi chuyển hướng.
-4. Quick-start owner flow có đường đi bypass OTP và logic placeholder không phù hợp môi trường public.
+4. Quick-start host flow có đường đi bypass OTP và logic placeholder không phù hợp môi trường public.
 
 ## 2) Findings theo mức độ nghiêm trọng
 
@@ -48,14 +48,14 @@ Mục tiêu "ai cũng mở được bằng phone browser hoặc app browser" là
   2. Đưa guard lên layout/route boundary để ngăn mount từ đầu.
   3. Thêm test direct URL khi chưa đăng nhập.
 
-### F-04: Owner quick-start có đường bypass OTP và logic demo placeholder
+### F-04: Host quick-start có đường bypass OTP và logic demo placeholder
 - Mức độ: High
-- Bằng chứng: app/owner/login.tsx:244, app/owner/web-quick-start.tsx:104, app/owner/web-quick-start.tsx:275
+- Bằng chứng: app/host/login.tsx:244, app/host/web-quick-start.tsx:104, app/host/web-quick-start.tsx:275
 - Mô tả:
   Tồn tại entry "trải nghiệm nhanh" từ login và flow quick-start dùng UUID client-side kiểu placeholder. Trong web public, đây là bề mặt lạm dụng quyền ghi dữ liệu.
 - Khuyến nghị:
   1. Gỡ khỏi production hoặc khóa bằng feature flag server-side.
-  2. Mọi thao tác owner phải dựa trên identity đã xác thực.
+  2. Mọi thao tác host phải dựa trên identity đã xác thực.
   3. Loại bỏ logic placeholder khỏi runtime public.
 
 ## Medium
@@ -94,7 +94,7 @@ Mục tiêu "ai cũng mở được bằng phone browser hoặc app browser" là
 
 ### F-08: State ownership còn phân tán ở level screen
 - Mức độ: Low
-- Bằng chứng: app/owner/claim-court.tsx:45
+- Bằng chứng: app/host/claim-court.tsx:45
 - Mô tả:
   Có useAuth/AuthGate nhưng nhiều screen vẫn gọi getUser riêng. Điều này làm tăng khả năng lệch trạng thái và tăng chi phí bảo trì.
 - Khuyến nghị:

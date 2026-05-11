@@ -5,6 +5,8 @@ import {
   getEloBandForElo,
   getEloBandForSessionRange,
   getShortLabelForLevelId,
+  type EloLevelId,
+  type LegacySkillLabel,
 } from './eloSystem'
 import { supabase } from './supabase'
 

@@ -325,7 +325,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated }: Omit
                 opacity: 0.8,
                 letterSpacing: 0.5
               }}>
-                Vui lòng chọn cặp đấu bên dưới để "lên sóng"
+                Vui lòng chọn cặp đấu bên dưới để {`"lên sóng"`}
               </Text>
 
               <View style={{ 

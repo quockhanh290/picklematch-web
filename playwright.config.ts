@@ -39,19 +39,27 @@ export default defineConfig({
     {
       name: 'chromium',
       testIgnore: /.*\.auth\.setup\.ts/,
-      use: { ...devices['Desktop Chrome'], storageState: 'e2e/.auth/owner.json' },
+      use: { ...devices['Desktop Chrome'], storageState: 'e2e/.auth/host.json' },
       dependencies: ['setup'],
     },
     {
       name: 'mobile-chrome',
       testIgnore: /.*\.auth\.setup\.ts/,
-      use: { ...devices['Pixel 7'], storageState: 'e2e/.auth/owner.json' },
+      use: { ...devices['Pixel 7'], storageState: 'e2e/.auth/host.json' },
       dependencies: ['setup'],
     },
     {
       name: 'mobile-safari',
       testIgnore: /.*\.auth\.setup\.ts/,
-      use: { ...devices['iPhone 14'], storageState: 'e2e/.auth/owner.json' },
+      use: { ...devices['iPhone 14'], storageState: 'e2e/.auth/host.json' },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'storage-blocked-simulation',
+      use: { 
+        ...devices['Pixel 7'],
+        storageState: 'e2e/.auth/host.json',
+      },
       dependencies: ['setup'],
     },
   ],

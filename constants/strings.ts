@@ -397,11 +397,6 @@ export const STRINGS = {
     errors: {
       no_account: 'Không tìm thấy tài khoản hiện tại.',
     },
-    placeholders: {
-      name: 'Nguyễn Văn A',
-      phone: '0901234567',
-      email: 'a@example.com',
-    },
     assessment: {
       time_playing: {
         question: 'Bạn đã chơi pickleball bao lâu?',

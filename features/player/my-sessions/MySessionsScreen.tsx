@@ -8,6 +8,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Platform,
 } from 'react-native'
 import {
   ChevronDown,
@@ -16,7 +17,7 @@ import {
   RotateCcw,
 } from 'lucide-react-native'
 import { router } from 'expo-router'
-import { MainHeader } from '@/components/design'
+import { MainHeader, AppLoading } from '@/components/design'
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, SPACING, BORDER } from '@/constants/screenLayout'
@@ -43,7 +44,7 @@ import {
 } from './utils'
 
 const TAB_OPTIONS: { key: SessionTab; label: string }[] = [
-  { key: 'upcoming', label: 'Sắp đánh' },
+  { key: 'upcoming', label: 'Sắp tới' },
   { key: 'history', label: 'Lịch sử' },
 ]
 
@@ -224,16 +225,15 @@ export function MySessionsScreen() {
     <View 
       style={{ 
         flex: 1, 
-        backgroundColor: '#F8F6F1',
-        ...(Platform.OS === 'web' ? { minHeight: '100vh' } : {})
+        backgroundColor: theme.background,
+        ...(Platform.OS === 'web' ? { minHeight: '100dvh' } : {})
       }}
     >
-      <View style={{ backgroundColor: '#F8F6F1', zIndex: 10, paddingBottom: 24 }}>
+      <View style={{ backgroundColor: theme.background, zIndex: 10, paddingBottom: 24 }}>
         <HomeGreetingHeader 
           name={player?.name ?? 'Bạn'}
           role="player"
           profilePhotoUrl={player?.avatar_url}
-          onRoleChange={() => switchToHost(player?.id ?? '', !!player?.is_host)}
         />
         <WebContainer style={{ marginTop: -12, marginBottom: -22, zIndex: 999 }}>
           <DashboardStatsStrip items={buildDashboardStats(player, playerStats)} />
@@ -242,15 +242,7 @@ export function MySessionsScreen() {
 
       <WebContainer style={{ flex: 1 }}>
         {loading ? (
-          <View className="flex-1 items-center justify-center px-6">
-            <ActivityIndicator size="large" color={theme.primary} />
-            <Text
-              className="mt-4 text-[14px]"
-              style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label }}
-            >
-              Đang tải kèo của bạn...
-            </Text>
-          </View>
+          <AppLoading label="Đang tải kèo của bạn..." style={{ flex: 1 }} />
         ) : (
           <View className="flex-1">
             <FlatList

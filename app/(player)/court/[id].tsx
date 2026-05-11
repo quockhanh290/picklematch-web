@@ -10,7 +10,9 @@ import {
   Dimensions, 
   FlatList,
   Share,
-  RefreshControl
+  RefreshControl,
+  StyleSheet,
+  Alert
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
@@ -33,11 +35,12 @@ import {
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { STRINGS } from '@/constants/strings'
-import { RADIUS, SPACING } from '@/constants/screenLayout'
+import { RADIUS, SPACING, SHADOW } from '@/constants/screenLayout'
 import { fetchCourtDetailApi, CourtDetail, CourtReview } from '@/features/player/court/api'
 import { isCurrentlyOpen } from '@/lib/utils/court'
 import { AppButton, AppInput, AppLoading } from '@/components/design'
 import { Image } from 'expo-image'
+import { supabase } from '@/lib/supabase'
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 

@@ -49,11 +49,15 @@ export function UpcomingSessionCard({ session, onPress, isHost = false }: Upcomi
     statusBg = theme.primary
     const ownerSessions = session.owner_sessions
     const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
-    const fmt = (ownerDetails.format_type || session.format_type || '').toLowerCase()
-    if (fmt === 'round_robin') statusLabel = 'ROUND ROBIN'
-    else if (fmt === 'open_play') statusLabel = 'OPEN PLAY'
+    const fmtInternal = (ownerDetails.format_type || session.format_type || '').toLowerCase()
+    if (fmtInternal === 'round_robin') statusLabel = 'ROUND ROBIN'
+    else if (fmtInternal === 'open_play') statusLabel = 'OPEN PLAY'
     else statusLabel = 'GIAO LƯU SOCIAL'
   }
+
+  const ownerSessions = session.owner_sessions
+  const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
+  const fmt = (ownerDetails.format_type || session.format_type || '').toLowerCase()
 
   // Helper for skill badges
   const renderSkillBadge = (label: string, type: 'NAM' | 'NỮ') => {

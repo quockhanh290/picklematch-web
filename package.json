@@ -14,6 +14,7 @@
     "test:e2e:web:headed": "playwright test --headed",
     "test:e2e:install": "playwright install chromium",
     "test": "node --experimental-strip-types --experimental-specifier-resolution=node tests/domain-logic.test.mts",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "lint:errors": "eslint . --ext .ts,.tsx,.js,.jsx --quiet",
     "lint:warnings:report": "eslint . --ext .ts,.tsx,.js,.jsx -f json -o .lint-report.json && node ./scripts/lint-warnings-report.mjs",

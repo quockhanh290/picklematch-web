@@ -59,14 +59,12 @@ export function useFindSessionController() {
   const activeAdvancedFiltersCount = useMemo(
     () =>
       [
-        advancedFilter.district,
         advancedFilter.date,
         advancedFilter.weekend,
         advancedFilter.timeSlot,
         advancedFilter.skillLevel,
         advancedFilter.priceMin != null,
         advancedFilter.priceMax != null,
-        advancedFilter.bookingStatus,
         advancedFilter.slotsLeft != null,
       ].filter(Boolean).length,
     [advancedFilter],
@@ -271,10 +269,6 @@ export function useFindSessionController() {
       } else if (preferredCourtFilter?.name) {
         if (normalizeText(session.slot?.court?.name) !== normalizeText(preferredCourtFilter.name)) return false
       }
-      if (advancedFilter.district) {
-        const d = extractDistrict(session.slot?.court?.address)
-        if (d !== advancedFilter.district) return false
-      }
       if (advancedFilter.weekend) {
         const day = session.slot?.start_time ? new Date(session.slot.start_time).getDay() : -1
         if (day !== 0 && day !== 6) return false
@@ -302,9 +296,6 @@ export function useFindSessionController() {
           if (typeof advancedFilter.priceMin === 'number' && pricePer < advancedFilter.priceMin * 1000) return false
           if (typeof advancedFilter.priceMax === 'number' && pricePer > advancedFilter.priceMax * 1000) return false
         }
-      }
-      if (advancedFilter.bookingStatus) {
-        if (session.court_booking_status !== advancedFilter.bookingStatus) return false
       }
       if (typeof advancedFilter.slotsLeft === 'number') {
         if ((session.max_players - session.player_count) < advancedFilter.slotsLeft) return false

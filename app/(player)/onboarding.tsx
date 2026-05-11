@@ -9,7 +9,8 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  Platform
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 

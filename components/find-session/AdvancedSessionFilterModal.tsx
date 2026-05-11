@@ -12,26 +12,22 @@ import { STRINGS } from '@/constants/strings'
 import { withAlpha } from '@/lib/utils/ui'
 
 export type AdvancedFilter = {
-  district: string | null
   date: string
   weekend: boolean
   timeSlot: string | null
   skillLevel: string | null
   priceMin: number | undefined
   priceMax: number | undefined
-  bookingStatus: 'confirmed' | 'unconfirmed' | undefined
   slotsLeft: number | undefined
 }
 
 export const ADVANCED_FILTER_INITIAL: AdvancedFilter = {
-  district: null,
   date: '',
   weekend: false,
   timeSlot: null,
   skillLevel: null,
   priceMin: undefined,
   priceMax: undefined,
-  bookingStatus: undefined,
   slotsLeft: undefined,
 }
 
@@ -42,7 +38,6 @@ type Props = {
   setFilter: React.Dispatch<React.SetStateAction<AdvancedFilter>>
   onApply: () => void
   onReset: () => void
-  districts?: string[]
   skillLevels?: { id: string; label: string }[]
 }
 
@@ -54,10 +49,6 @@ const FILTER_FONTS = {
   cta: SCREEN_FONTS.cta,
 } as const
 
-const BOOKING_OPTIONS: { value: 'confirmed' | 'unconfirmed'; label: string }[] = [
-  { value: 'confirmed', label: STRINGS.session.booking.confirmed },
-  { value: 'unconfirmed', label: STRINGS.session.booking.unconfirmed },
-]
 
 function fmtDate(d: Date): string {
   const pad = (v: number) => v.toString().padStart(2, '0')
@@ -98,7 +89,6 @@ export function AdvancedSessionFilterModal({
   setFilter,
   onApply,
   onReset,
-  districts = [],
   skillLevels = [],
 }: Props) {
   const theme = useAppTheme()
@@ -212,22 +202,6 @@ export function AdvancedSessionFilterModal({
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            {districts.length > 0 && (
-              <>
-                <Text style={sectionLabel}>{STRINGS.find_session.advanced_filter.district}</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-                  {districts.map((d) => (
-                    <Pressable
-                      key={d}
-                      onPress={() => setFilter((f) => ({ ...f, district: f.district === d ? null : d }))}
-                      style={chipStyle(filter.district === d)}
-                    >
-                      <Text style={chipTextStyle(filter.district === d)}>{d}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </>
-            )}
 
             <Text style={sectionLabel}>{STRINGS.find_session.advanced_filter.date}</Text>
             <ScrollView
@@ -265,24 +239,42 @@ export function AdvancedSessionFilterModal({
               <View
                 style={{
                   marginBottom: 12,
-                  alignItems: 'center',
+                  padding: 12,
                   backgroundColor: theme.surfaceContainerLow,
                   borderRadius: RADIUS.md,
                   borderWidth: BORDER.base,
                   borderColor: theme.outlineVariant,
-                  paddingVertical: SPACING.xs,
                 }}
               >
-                <DateTimePicker
-                  value={pickerDate}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                  minimumDate={new Date()}
-                  onChange={handleDateChange}
-                  style={{ width: '100%', maxWidth: 360, backgroundColor: theme.surfaceContainerLow }}
-                  accentColor={theme.primary}
-                  themeVariant="light"
-                />
+                {Platform.OS === 'web' ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {[2, 3, 4, 5, 6].map(days => {
+                      const d = addDays(days)
+                      const val = fmtDate(d)
+                      const label = `${d.getDate()}/${d.getMonth() + 1}`
+                      return (
+                        <Pressable
+                          key={val}
+                          onPress={() => selectQuickDate(val)}
+                          style={chipStyle(filter.date === val)}
+                        >
+                          <Text style={chipTextStyle(filter.date === val)}>{label}</Text>
+                        </Pressable>
+                      )
+                    })}
+                  </View>
+                ) : (
+                  <DateTimePicker
+                    value={pickerDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                    minimumDate={new Date()}
+                    onChange={handleDateChange}
+                    style={{ width: '100%', maxWidth: 360, backgroundColor: theme.surfaceContainerLow }}
+                    accentColor={theme.primary}
+                    themeVariant="light"
+                  />
+                )}
               </View>
             )}
 
@@ -381,23 +373,6 @@ export function AdvancedSessionFilterModal({
               </Text>
             )}
 
-            <Text style={sectionLabel}>{STRINGS.find_session.advanced_filter.court_status}</Text>
-            <View style={{ flexDirection: 'row', marginBottom: 16 }}>
-              {BOOKING_OPTIONS.map((opt) => (
-                <Pressable
-                  key={opt.value}
-                  onPress={() =>
-                    setFilter((f) => ({
-                      ...f,
-                      bookingStatus: f.bookingStatus === opt.value ? undefined : opt.value,
-                    }))
-                  }
-                  style={chipStyle(filter.bookingStatus === opt.value)}
-                >
-                  <Text style={chipTextStyle(filter.bookingStatus === opt.value)}>{opt.label}</Text>
-                </Pressable>
-              ))}
-            </View>
 
             <Text style={sectionLabel}>{STRINGS.find_session.advanced_filter.slots_left}</Text>
             <View style={{ flexDirection: 'row', marginBottom: 24 }}>

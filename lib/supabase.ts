@@ -14,32 +14,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY')
 }
 
-const memoryStorage = new Map<string, string>()
+import { safeStorageGetItem, safeStorageSetItem, safeStorageRemoveItem } from './storage'
 
 const resilientStorage: StorageAdapter = {
   async getItem(key) {
-    try {
-      const value = await AsyncStorage.getItem(key)
-      return value ?? memoryStorage.get(key) ?? null
-    } catch {
-      return memoryStorage.get(key) ?? null
-    }
+    return safeStorageGetItem(key)
   },
   async setItem(key, value) {
-    memoryStorage.set(key, value)
-    try {
-      await AsyncStorage.setItem(key, value)
-    } catch {
-      // Fall back to in-memory storage when persistent storage is blocked.
-    }
+    return safeStorageSetItem(key, value)
   },
   async removeItem(key) {
-    memoryStorage.delete(key)
-    try {
-      await AsyncStorage.removeItem(key)
-    } catch {
-      // Ignore storage removal failures in constrained web/in-app environments.
-    }
+    return safeStorageRemoveItem(key)
   },
 }
 

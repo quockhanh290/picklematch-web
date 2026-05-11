@@ -590,7 +590,7 @@ export default function ConfirmSessionResultScreen() {
                   backgroundColor: RESULT_THEME.inputBg, 
                   padding: 16, 
                   fontFamily: SCREEN_FONTS.body, 
-                  fontSize: 13, 
+                  fontSize: 16, 
                   color: RESULT_THEME.inputText,
                 }}
                 placeholder={STRINGS.session_detail.result.dispute_placeholder}

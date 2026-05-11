@@ -19,7 +19,7 @@ import { useAppTheme } from '@/lib/theme-context'
 import { router } from 'expo-router'
 import {
     Calendar,
-    CircleAlert,
+    AlertCircle,
     PencilLine,
     Swords,
     UserCircle,
@@ -36,6 +36,7 @@ import { STRINGS } from '@/constants/strings'
 import { WebContainer } from '@/components/design/WebContainer'
 import { withAlpha } from '@/lib/utils/ui'
 import { StatusBar } from 'expo-status-bar'
+import { DashboardStatsStrip, buildDashboardStats } from '@/components/home/DashboardStatsStrip'
 
 import type { 
     ProfilePlayer as Player, 
@@ -56,12 +57,16 @@ import {
 import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
 
 function ProfileSectionDivider({ index, title, theme }: { index: string; title: string; theme: any }) {
+  const isFirst = index === '01' || index === '1'
   return (
-    <View className="mb-4 flex-row items-center gap-4">
-      <Text className="text-[11px] uppercase tracking-[4px]" style={{ color: theme.outline, fontFamily: SCREEN_FONTS.cta }}>
-        {index} / {title}
-      </Text>
-      <View className="h-px flex-1" style={{ backgroundColor: theme.outlineVariant }} />
+    <View style={{ marginTop: isFirst ? 0 : 18 }}>
+      {!isFirst && <View style={{ height: 1, backgroundColor: theme.outlineVariant, marginBottom: 18, opacity: 0.5 }} />}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 18 }}>
+        <Text className="text-[11px] uppercase tracking-[4px]" style={{ color: theme.outline, fontFamily: SCREEN_FONTS.cta }}>
+          {index} / {title}
+        </Text>
+        <View className="h-px flex-1" style={{ backgroundColor: theme.outlineVariant, opacity: 0.5 }} />
+      </View>
     </View>
   )
 }
@@ -263,7 +268,7 @@ export function ProfileScreen() {
     return (
       <View className="flex-1" style={{ backgroundColor: theme.backgroundMuted, paddingTop: insets.top }}>
         <EmptyState
-          icon={<CircleAlert size={28} color={theme.outline} />}
+          icon={<AlertCircle size={28} color={theme.outline} />}
           title="Không tìm thấy hồ sơ"
           description="Thử tải lại hoặc đăng nhập lại để tiếp tục."
         />
@@ -274,8 +279,21 @@ export function ProfileScreen() {
   const skill = getSkillLevelFromPlayer(player)
   let effectiveElo = player.current_elo ?? player.elo ?? 0
   
-  if (effectiveElo === 0 && skill) {
-    effectiveElo = skill.id === 'level_1' ? 800 : (getEloBandByLevelId(skill.id)?.seedElo ?? 800)
+  if (effectiveElo === 0) {
+    // Fallback based on gender floor defined in engine-spec
+    // Male: 2.6 PVNA (1000 ELO), Female: 2.1 PVNA (800 ELO)
+    if (player.gender === 'female') {
+      effectiveElo = 800
+    } else {
+      // Default to male floor (2.6) as per system logic if null/male
+      effectiveElo = 1000
+    }
+    
+    // If they have a skill level but 0 ELO, override with seedElo if higher
+    if (skill && skill.id !== 'pvna_1') {
+      const seed = getEloBandByLevelId(skill.id)?.seedElo ?? 800
+      effectiveElo = Math.max(effectiveElo, seed)
+    }
   }
   const reliability = calculateReliabilityScore(player.sessions_joined, player.no_show_count)
   const hostedCount = hostedSessionsCount
@@ -285,6 +303,7 @@ export function ProfileScreen() {
   const joinedYear = player.created_at ? new Date(player.created_at).getFullYear() : null
   const displayCommunityTraits = communityTraits.length > 0 ? communityTraits : PROFILE_MOCK_TRAITS
   const displayAchievements = achievements.length > 0 ? achievements : PROFILE_MOCK_BADGES
+  const displayHistory = _history.length > 0 ? _history : _PROFILE_MOCK_HISTORY
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
@@ -311,86 +330,65 @@ export function ProfileScreen() {
               title="HỒ SƠ NGƯỜI CHƠI"
               brandedSubtitle="PICKLEMATCH"
               style={{ paddingHorizontal: 0 }}
-              rightElement={
-                <TouchableOpacity
-                  onPress={logout}
-                  style={{
-                    width: 44, height: 44, borderRadius: 22,
-                    backgroundColor: theme.surfaceContainerLow,
-                    borderWidth: 1, borderColor: theme.outlineVariant,
-                    alignItems: 'center', justifyContent: 'center'
-                  }}
-                >
-                  <LogOut size={20} color={theme.primary} />
-                </TouchableOpacity>
-              }
             />
           </View>
-          {/* MAIN PROFILE CARD */}
-          <View style={{ 
-            backgroundColor: 'white', 
-            borderRadius: RADIUS.hero,
-            borderWidth: 1,
-            borderColor: theme.outlineVariant,
-            paddingBottom: 40,
-            marginTop: 8,
-            ...SHADOW.sm,
-            overflow: 'hidden'
-          }}>
-            {/* Identity Header (Avatar & Name) */}
-            <View style={{ padding: 24, alignItems: 'center', backgroundColor: theme.surfaceAlt }}>
+
+
+          <View style={{ paddingHorizontal: 24 }}>
+            {/* IDENTITY SECTION - NOW AT THE TOP */}
+            <View style={{ paddingVertical: 20, flexDirection: 'row', alignItems: 'center', gap: 16 }}>
               <View style={{ 
-                width: 88, height: 88, borderRadius: 44, 
-                backgroundColor: theme.primaryContainer,
-                borderWidth: 3, borderColor: 'white',
+                width: 64, height: 64, borderRadius: 32, 
+                backgroundColor: theme.primary,
+                borderWidth: 2, borderColor: 'white',
                 alignItems: 'center', justifyContent: 'center',
                 ...SHADOW.xs
               }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 36, color: theme.primary }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 24, color: 'white' }}>
                   {player.name?.[0]?.toUpperCase()}
                 </Text>
               </View>
 
-              <Text style={{ 
-                fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 28, 
-                color: theme.onSurface, marginTop: 16, textAlign: 'center' 
-              }}>
-                {player.name}
-              </Text>
-
-              <View style={{ 
-                flexDirection: 'row', alignItems: 'center', 
-                marginTop: 6, paddingHorizontal: 12, paddingVertical: 4,
-                backgroundColor: theme.background, borderRadius: RADIUS.full,
-                borderWidth: 1, borderColor: theme.outlineVariant
-              }}>
-                <MapPin size={12} color={theme.outline} />
+              <View style={{ flex: 1 }}>
                 <Text style={{ 
-                  marginLeft: 6, fontFamily: SCREEN_FONTS.bold, fontSize: 11, 
-                  color: theme.onSurfaceVariant, textTransform: 'uppercase' 
+                  fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 22, 
+                  color: theme.onSurface, letterSpacing: -0.5
                 }}>
-                  {player.city || 'TP. HỒ CHÍ MINH'}
+                  {player.name}
                 </Text>
+                
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                  <MapPin size={12} color={theme.outline} />
+                  <Text style={{ 
+                    marginLeft: 4, fontFamily: SCREEN_FONTS.bold, fontSize: 11, 
+                    color: theme.onSurfaceVariant, textTransform: 'uppercase' 
+                  }}>
+                    {player.city || 'TP. HỒ CHÍ MINH'}
+                  </Text>
+                </View>
               </View>
+
+              <TouchableOpacity 
+                onPress={() => router.push('/edit-profile' as any)}
+                style={{ 
+                  width: 36, height: 36, borderRadius: 18, 
+                  backgroundColor: theme.primary, borderWidth: 1, borderColor: 'white',
+                  alignItems: 'center', justifyContent: 'center',
+                  ...SHADOW.xs
+                }}
+              >
+                <PencilLine size={16} color="white" />
+              </TouchableOpacity>
             </View>
 
-            {/* Bio Section */}
-            <View style={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 16 }}>
-              <Text style={{ 
-                color: theme.onSurface, 
-                fontFamily: SCREEN_FONTS.body, 
-                fontSize: 14,
-                lineHeight: 22,
-                textAlign: 'center'
-              }}>
-                {player.bio || 'Quản lý thông tin và trình độ cá nhân của bạn.'}
-              </Text>
+
+            {/* Stats Strip */}
+            <View style={{ marginTop: 0, marginBottom: 12 }}>
+              <DashboardStatsStrip items={buildDashboardStats(player as any, playerStats)} />
             </View>
 
-            <View style={{ height: 1, backgroundColor: theme.outlineVariant, marginHorizontal: 24, marginVertical: 8 }} />
-
-            {/* DASHBOARD CONTENT */}
-            <View style={{ paddingHorizontal: 24, marginTop: 24, gap: 40 }}>
+            {/* DASHBOARD CONTENT - NOW FREE FLOATING */}
+            <View style={{ paddingBottom: 100 }}>
               {/* Skill Proficiency Section */}
               <View>
                 <ProfileSectionDivider index="01" title="TRÌNH ĐỘ PVNA" theme={theme} />
@@ -403,62 +401,107 @@ export function ProfileScreen() {
                 />
               </View>
 
+              {/* Favorite Courts Section */}
+              <View>
+                <ProfileSectionDivider index="02" title="SÂN HAY CHƠI" theme={theme} />
+                {displayHistory.length > 0 ? (
+                  <View style={{ gap: 10 }}>
+                    {(() => {
+                      const courtMap = new Map<string, { name: string; city: string; count: number }>()
+                      displayHistory.forEach(item => {
+                        const court = item.slot?.court
+                        if (court) {
+                          const existing = courtMap.get(court.name)
+                          if (existing) {
+                            existing.count++
+                          } else {
+                            courtMap.set(court.name, { ...court, count: 1 })
+                          }
+                        }
+                      })
+                      const sortedCourts = Array.from(courtMap.values())
+                        .sort((a, b) => b.count - a.count)
+                        .slice(0, 3)
+
+                      return sortedCourts.map((court, idx) => (
+                        <View 
+                          key={idx}
+                          style={{ 
+                            flexDirection: 'row', alignItems: 'center', 
+                            backgroundColor: theme.surfaceAlt, padding: 12,
+                            borderRadius: RADIUS.lg, borderWidth: 1, borderColor: theme.outlineVariant,
+                            gap: 10
+                          }}
+                        >
+                          <View style={{ 
+                            width: 32, height: 32, borderRadius: 16, 
+                            backgroundColor: theme.primary,
+                            alignItems: 'center', justifyContent: 'center'
+                          }}>
+                            <MapPin size={16} color="white" />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.onSurface, textTransform: 'uppercase' }}>
+                              {court.name}
+                            </Text>
+                            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurfaceVariant }}>
+                              {court.city}
+                            </Text>
+                          </View>
+                          <View style={{ backgroundColor: theme.background, paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.full, borderWidth: 1, borderColor: theme.outlineVariant }}>
+                            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: theme.primary }}>
+                              {court.count} TRẬN
+                            </Text>
+                          </View>
+                        </View>
+                      ))
+                    })()}
+                  </View>
+                ) : (
+                  <View style={{ padding: 24, backgroundColor: theme.surfaceAlt, borderRadius: RADIUS.lg, borderStyle: 'dashed', borderWidth: 1, borderColor: theme.outlineVariant, alignItems: 'center' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, color: theme.outline }}>
+                      Chưa có dữ liệu sân đã chơi
+                    </Text>
+                  </View>
+                )}
+              </View>
+
               {/* Account Management Section */}
               <View>
-                <ProfileSectionDivider index="02" title="QUẢN LÝ TÀI KHOẢN" theme={theme} />
-                <View style={{ gap: 12 }}>
+                <ProfileSectionDivider index="03" title="QUẢN LÝ TÀI KHOẢN" theme={theme} />
+                <View style={{ gap: 10 }}>
                   <TouchableOpacity
                     onPress={handleSwitchToHost}
                     activeOpacity={0.8}
                     style={{
-                      flexDirection: 'row', alignItems: 'center', 
-                      backgroundColor: theme.surfaceAlt, borderRadius: RADIUS.xl,
-                      padding: 16, borderWidth: 1, borderColor: theme.outlineVariant,
-                      gap: 16, ...SHADOW.xs
+                      backgroundColor: theme.primary, borderRadius: RADIUS.lg,
+                      padding: 12, alignItems: 'center', justifyContent: 'center',
+                      ...SHADOW.xs
                     }}
                   >
-                    <View style={{ 
-                      width: 44, height: 44, borderRadius: 12, 
-                      backgroundColor: theme.primary,
-                      alignItems: 'center', justifyContent: 'center'
+                    <Text style={{ 
+                      fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: 'white',
+                      textTransform: 'uppercase', letterSpacing: 1
                     }}>
-                      <ShieldCheck size={22} color="white" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 15, color: theme.onSurface }}>
-                        Chế độ Host
-                      </Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurfaceVariant, marginTop: 2 }}>
-                        Kích hoạt để quản lý và tạo kèo đấu
-                      </Text>
-                    </View>
+                      Chế độ Host
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     onPress={logout}
                     activeOpacity={0.8}
                     style={{
-                      flexDirection: 'row', alignItems: 'center', 
-                      backgroundColor: theme.surfaceAlt, borderRadius: RADIUS.xl,
-                      padding: 16, borderWidth: 1, borderColor: theme.outlineVariant,
-                      gap: 16, ...SHADOW.xs
+                      backgroundColor: theme.error, borderRadius: RADIUS.lg,
+                      padding: 12, alignItems: 'center', justifyContent: 'center',
+                      ...SHADOW.xs
                     }}
                   >
-                    <View style={{ 
-                      width: 44, height: 44, borderRadius: 12, 
-                      backgroundColor: withAlpha(theme.error, 0.1),
-                      alignItems: 'center', justifyContent: 'center'
+                    <Text style={{ 
+                      fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: 'white',
+                      textTransform: 'uppercase', letterSpacing: 1
                     }}>
-                      <LogOut size={22} color={theme.error} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 15, color: theme.error }}>
-                        Đăng xuất
-                      </Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurfaceVariant, marginTop: 2 }}>
-                        Thoát khỏi tài khoản hiện tại
-                      </Text>
-                    </View>
+                      Đăng xuất
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>

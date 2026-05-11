@@ -13,6 +13,7 @@ import {
 import Slider from '@react-native-community/slider'
 import { useLocalSearchParams, router } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { safeStorageSetItem } from '@/lib/storage'
 
 import { AppButton, AppLoading, SecondaryNavbar, BrandedFooter } from '@/components/design'
 import { MatchSessionCard } from '@/components/home/MatchSessionCard'
@@ -317,23 +318,29 @@ export default function ZaloRegisterScreen() {
       setStatusMsg('Đang lưu thông tin cá nhân...')
       
       if (id) {
-        await AsyncStorage.setItem(
-          getRegisterInfoStorageKey(),
-          JSON.stringify({
-            name: cleanedName,
-            phone: submitPhone,
-            gender,
-            pvna: pvnaValue.toFixed(1),
-            savedAt: Date.now(),
-          } satisfies StoredRegisterInfo)
-        )
+        try {
+          await safeStorageSetItem(
+            getRegisterInfoStorageKey(),
+            JSON.stringify({
+              name: cleanedName,
+              phone: submitPhone,
+              gender,
+              pvna: pvnaValue.toFixed(1),
+              savedAt: Date.now(),
+            } satisfies StoredRegisterInfo)
+          )
+        } catch (e) {
+          console.warn('[ZaloRegister] Failed to save register info', e)
+        }
         
         // Save sticky preferences for next time
         try {
-          localStorage.setItem('pm_partner_pref', partnerPref)
-          localStorage.setItem('pm_opponent_pref', opponentPref)
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('pm_partner_pref', partnerPref)
+            localStorage.setItem('pm_opponent_pref', opponentPref)
+          }
         } catch (e) {
-          console.warn('Failed to save preferences to localStorage', e)
+          console.warn('[ZaloRegister] Failed to save preferences to localStorage', e)
         }
       }
 
@@ -462,7 +469,7 @@ export default function ZaloRegisterScreen() {
                     borderRadius: 8, borderWidth: 0,
                     paddingVertical: 12,
                     paddingLeft: 40, paddingRight: 14,
-                    fontSize: 15, color: theme.onSurface,
+                    fontSize: 16, color: theme.onSurface,
                     fontFamily: SCREEN_FONTS.body,
                   }}
                   placeholder="Họ và tên"
@@ -503,7 +510,7 @@ export default function ZaloRegisterScreen() {
                     borderRadius: 8, borderWidth: 0,
                     paddingVertical: 12,
                     paddingLeft: 40, paddingRight: 14,
-                    fontSize: 15, color: theme.onSurface,
+                    fontSize: 16, color: theme.onSurface,
                     fontFamily: SCREEN_FONTS.body,
                   }}
                   placeholder="0912333333"

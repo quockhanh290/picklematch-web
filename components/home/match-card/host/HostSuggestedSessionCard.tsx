@@ -99,7 +99,7 @@ export function HostSuggestedSessionCard({
             event.stopPropagation()
             const courtId = item.courtId || (item as any).courtId
             if (courtId) {
-              onOpenCourt(courtId)
+              router.push(`/court/${courtId}` as any)
             }
           }}
         >

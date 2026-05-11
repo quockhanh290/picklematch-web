@@ -1,6 +1,8 @@
-import { Text, TextInput, type TextInputProps, View } from 'react-native'
-import { AppFontSet } from '@/constants/typography'
+import React from 'react'
+import { Text, TextInput, type TextInputProps, View, Platform } from 'react-native'
+import { SCREEN_FONTS } from '@/constants/typography'
 import { useAppTheme } from '@/lib/theme-context'
+import { RADIUS } from '@/constants/screenLayout'
 
 type Props = TextInputProps & {
   label?: string
@@ -11,18 +13,60 @@ type Props = TextInputProps & {
 export function AppInput({ label, hint, leftIcon, ...props }: Props) {
   const theme = useAppTheme()
   return (
-    <View>
-      {label ? <Text className="mb-2 text-sm font-bold" style={{ color: theme.text, fontFamily: AppFontSet.title }}>{label}</Text> : null}
-      <View className="flex-row items-center border rounded-2xl h-14 px-4" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
-        {leftIcon ? <View className="mr-3">{leftIcon}</View> : null}
+    <View style={{ gap: 8 }}>
+      {label && (
+        <Text 
+          style={{ 
+            color: theme.onSurfaceVariant, 
+            fontFamily: SCREEN_FONTS.headline, 
+            fontSize: 12,
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+            paddingLeft: 4
+          }}
+        >
+          {label}
+        </Text>
+      )}
+      <View 
+        style={{ 
+          flexDirection: 'row', 
+          itemsCenter: 'center', 
+          borderWidth: 1, 
+          borderColor: theme.outlineVariant,
+          borderRadius: RADIUS.lg, 
+          height: 56, 
+          paddingHorizontal: 16,
+          backgroundColor: theme.surfaceContainerLowest,
+        }}
+      >
+        {leftIcon ? <View style={{ marginRight: 12, justifyContent: 'center' }}>{leftIcon}</View> : null}
         <TextInput
-          placeholderTextColor={theme.textSoft}
-          className="flex-1 text-[16px]"
-          style={{ color: theme.text, fontFamily: AppFontSet.body }}
+          placeholderTextColor={theme.outline}
+          style={{ 
+            flex: 1, 
+            fontSize: 15,
+            color: theme.onSurface, 
+            fontFamily: SCREEN_FONTS.body,
+            outlineStyle: 'none' // For web
+          } as any}
           {...props}
         />
       </View>
-      {hint ? <Text className="mt-2 text-xs leading-5" style={{ color: theme.textMuted, fontFamily: AppFontSet.body }}>{hint}</Text> : null}
+      {hint ? (
+        <Text 
+          style={{ 
+            color: theme.outline, 
+            fontFamily: SCREEN_FONTS.body, 
+            fontSize: 12, 
+            lineHeight: 18,
+            paddingLeft: 4,
+            marginTop: -4
+          }}
+        >
+          {hint}
+        </Text>
+      ) : null}
     </View>
   )
 }

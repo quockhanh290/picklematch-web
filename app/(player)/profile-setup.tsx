@@ -6,21 +6,23 @@ import { supabase } from '@/lib/supabase'
 import { router } from 'expo-router'
 import { useState } from 'react'
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { RADIUS } from '@/constants/screenLayout'
 
 export default function ProfileSetup() {
   const theme = useAppTheme()
   const [name, setName] = useState('')
   const [city, setCity] = useState('')
+  const [gender, setGender] = useState<'nam' | 'nu' | null>(null)
   const [bio, setBio] = useState('')
   const [loading, setLoading] = useState(false)
   const [dialogConfig, setDialogConfig] = useState<AppDialogConfig | null>(null)
   const defaultBand = getEloBandByLegacySkillLabel('beginner')
 
   async function saveProfile() {
-    if (!name || !city) {
+    if (!name || !city || !gender) {
       setDialogConfig({
         title: 'Thiếu thông tin',
-        message: 'Vui lòng điền tên và thành phố của bạn.',
+        message: 'Vui lòng điền đầy đủ tên, thành phố và giới tính của bạn.',
         actions: [{ label: 'Đã hiểu' }],
       })
       return
@@ -48,6 +50,7 @@ export default function ProfileSetup() {
       phone: user.phone || null,
       name,
       city,
+      gender,
       bio,
       skill_label: defaultBand.legacySkillLabel,
       skill_tier: defaultBand.tier,
@@ -228,4 +231,3 @@ export default function ProfileSetup() {
     </View>
   )
 }
-

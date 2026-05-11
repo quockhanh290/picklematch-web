@@ -16,7 +16,12 @@ import { SessionActionButtons } from '@/components/session/SessionActionButtons'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { SPACING, RADIUS, SHADOW } from '@/constants/screenLayout'
 import { formatTimeRange, buildArrangementPlayers } from '@/lib/sessionDetail'
-import { getEloBandForSessionRange } from '@/lib/eloSystem'
+import { 
+  getEloBandForSessionRange,
+  getShortLabelForLevelId,
+  type EloLevelId,
+  type LegacySkillLabel,
+} from '@/lib/eloSystem'
 import { getSessionSkillLabel } from '@/lib/skillAssessment'
 
 import type { SessionMatch } from '@/hooks/useSessionDetail'
@@ -539,7 +544,7 @@ export function HostSessionDetailScreen({
               onSaveArrangement={() => {}}
               leaveSession={handleCancelSession}
               editPathname="/host/create-session"
-              onArrangementPress={() => setShowArrangement(true)}
+              onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
               checkInCompleted={isCheckInCompleted}
               hideInputResult={false}
               confirmedPlayerCount={confirmedPlayerCount}

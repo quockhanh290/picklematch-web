@@ -21,7 +21,8 @@ import {
 } from 'lucide-react-native'
 import { 
   AppDialog, 
-  MainHeader 
+  MainHeader,
+  AppLoading
 } from '@/components/design'
 import { AdvancedSessionFilterModal, ADVANCED_FILTER_INITIAL } from '@/components/find-session/AdvancedSessionFilterModal'
 import { SCREEN_FONTS } from '@/constants/typography'
@@ -224,32 +225,6 @@ export function FindSessionScreen() {
           LỌC KÈO ĐẤU
         </Text>
         
-        {/* District Filter */}
-        <View style={{ marginBottom: 32 }}>
-          <Text style={{ fontSize: 13, fontFamily: SCREEN_FONTS.headline, color: theme.onSurface, marginBottom: 14, letterSpacing: 0.5 }}>
-            QUẬN / HUYỆN
-          </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {ALL_DISTRICTS.slice(0, 8).map(d => (
-              <TouchableOpacity
-                key={d}
-                onPress={() => setAdvancedFilter(f => ({ ...f, district: f.district === d ? null : d }))}
-                style={{
-                  paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.lg,
-                  backgroundColor: advancedFilter.district === d ? theme.primary : theme.surfaceAlt,
-                  borderWidth: 1, borderColor: advancedFilter.district === d ? theme.primary : theme.outlineVariant
-                }}
-              >
-                <Text style={{ 
-                  fontSize: 12, fontFamily: SCREEN_FONTS.label, 
-                  color: advancedFilter.district === d ? 'white' : theme.onSurfaceVariant 
-                }}>
-                  {d}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
 
         {/* Skill Level Filter */}
         <View style={{ marginBottom: 32 }}>
@@ -304,8 +279,8 @@ export function FindSessionScreen() {
   return (
     <View style={{ 
       flex: 1, 
-      backgroundColor: '#F8F6F1',
-      ...(Platform.OS === 'web' ? { minHeight: '100vh' } : {})
+      backgroundColor: theme.background,
+      ...(Platform.OS === 'web' ? { minHeight: '100dvh' } : {})
     }}>
       <View style={{ backgroundColor: 'transparent', paddingTop: isMobile ? 0 : 24 }}>
         <MainHeader
@@ -369,7 +344,7 @@ export function FindSessionScreen() {
         <View style={{ 
           flexDirection: isMobile ? 'column' : 'row', 
           paddingTop: isMobile ? 0 : 24,
-          backgroundColor: '#F8F6F1'
+          backgroundColor: theme.background
         }}>
           {sidebar}
 
@@ -384,25 +359,39 @@ export function FindSessionScreen() {
               />
 
               {/* Sorting Tabs - Dashboard Style */}
-              <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: -4, marginBottom: 24 }}>
+              <View style={{ flexDirection: 'row', marginTop: -4, marginBottom: 24 }}>
                 <View style={{
-                  flexDirection: 'row', gap: 4, padding: 4,
-                  backgroundColor: 'white', borderRadius: RADIUS.xl,
-                  borderWidth: 1, borderColor: theme.outlineVariant,
-                  flex: isDesktop ? 0 : 1, minWidth: isDesktop ? 300 : undefined,
-                  ...SHADOW.xs
+                  flexDirection: 'row', 
+                  backgroundColor: theme.surfaceContainerHighest, 
+                  borderRadius: RADIUS.lg, 
+                  padding: 4,
+                  gap: 4,
+                  flex: isDesktop ? 0 : 1, 
+                  minWidth: isDesktop ? 300 : undefined,
                 }}>
                   <TouchableOpacity
                     onPress={() => setSortMode('match')}
                     style={{
-                      flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 8,
-                      backgroundColor: sortMode === 'match' ? theme.primary : 'transparent',
-                      borderRadius: RADIUS.lg,
+                      flex: 1, 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      paddingVertical: 10,
+                      borderRadius: RADIUS.md,
+                      backgroundColor: sortMode === 'match' ? theme.surface : 'transparent',
+                      ...(sortMode === 'match' ? {
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 2,
+                        elevation: 1,
+                      } : {})
                     }}
                   >
                     <Text style={{
-                      color: sortMode === 'match' ? 'white' : theme.onSurfaceVariant,
-                      fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 11, letterSpacing: 0.5
+                      fontFamily: SCREEN_FONTS.headlineBlack,
+                      fontSize: 13,
+                      color: sortMode === 'match' ? theme.primary : theme.onSurfaceVariant,
+                      letterSpacing: 0.5
                     }}>
                       PHÙ HỢP NHẤT
                     </Text>
@@ -411,14 +400,26 @@ export function FindSessionScreen() {
                   <TouchableOpacity
                     onPress={() => setSortMode('time')}
                     style={{
-                      flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 8,
-                      backgroundColor: sortMode === 'time' ? theme.primary : 'transparent',
-                      borderRadius: RADIUS.lg,
+                      flex: 1, 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      paddingVertical: 10,
+                      borderRadius: RADIUS.md,
+                      backgroundColor: sortMode === 'time' ? theme.surface : 'transparent',
+                      ...(sortMode === 'time' ? {
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 2,
+                        elevation: 1,
+                      } : {})
                     }}
                   >
                     <Text style={{
-                      color: sortMode === 'time' ? 'white' : theme.onSurfaceVariant,
-                      fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 11, letterSpacing: 0.5
+                      fontFamily: SCREEN_FONTS.headlineBlack,
+                      fontSize: 13,
+                      color: sortMode === 'time' ? theme.primary : theme.onSurfaceVariant,
+                      letterSpacing: 0.5
                     }}>
                       MỚI NHẤT
                     </Text>
@@ -426,14 +427,17 @@ export function FindSessionScreen() {
                 </View>
               </View>
             </View>
-            <FlatList
-              data={filteredSessions}
+            {loading && isFirstLoad ? (
+              <AppLoading label="Đang tìm kèo đấu phù hợp..." style={{ marginTop: 60 }} />
+            ) : (
+              <FlatList
+                data={filteredSessions}
               keyExtractor={(item) => item.id}
               key={`${isMobile ? 'mobile' : 'desktop'}-${numColumns}`}
               numColumns={numColumns}
               columnWrapperStyle={numColumns > 1 ? { gap: 16 } : undefined}
               showsVerticalScrollIndicator={false}
-              style={{ backgroundColor: '#F8F6F1' }}
+              style={{ backgroundColor: theme.background }}
               contentContainerStyle={{ 
                 paddingBottom: 100,
                 paddingHorizontal: isMobile ? 20 : 0 
@@ -480,7 +484,8 @@ export function FindSessionScreen() {
                 </View>
               )}
             />
-          </View>
+          )}
+        </View>
         </View>
       </WebContainer>
 
@@ -491,7 +496,6 @@ export function FindSessionScreen() {
         setFilter={setAdvancedFilter}
         onApply={() => setFilterModalVisible(false)}
         onReset={() => setAdvancedFilter(ADVANCED_FILTER_INITIAL)}
-        districts={ALL_DISTRICTS}
         skillLevels={SKILL_LEVELS}
       />
 

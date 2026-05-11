@@ -30,6 +30,7 @@ import {
 import { useAppTheme } from '@/lib/theme-context'
 import { StatusBar } from 'expo-status-bar'
 import { HomeGreetingHeader } from '@/components/home/HomeGreetingHeader'
+import { AppLoading } from '@/components/design'
 import { useState, useEffect, useCallback } from 'react'
 import { formatDistance } from '@/utils/formatters'
 import { 
@@ -46,7 +47,8 @@ import {
   SafeAreaView,
   Pressable,
   ActivityIndicator,
-  Share
+  Share,
+  Platform
 } from 'react-native'
 import { WebContainer } from '@/components/design/WebContainer'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -580,11 +582,10 @@ export default function HostDashboardScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 100, overflow: 'visible' }}
       >
-        <View style={{ backgroundColor: '#FDFBF7', zIndex: 10 }}>
+        <View style={{ backgroundColor: theme.background, zIndex: 10 }}>
           <HomeGreetingHeader 
             name={profile?.name ?? 'Host'} 
             role="host"
-            onRoleChange={() => switchToPlayer()}
             profilePhotoUrl={profile?.avatar_url}
             onPhotoPress={onOpenProfile}
             rating={4.8}
@@ -686,31 +687,40 @@ export default function HostDashboardScreen() {
             return [
               { id: 'upcoming', label: 'SẮP TỚI' },
               { id: 'history', label: 'LỊCH SỬ' }
-            ].map((tab) => (
-              <TouchableOpacity
-                key={tab.id}
-                onPress={() => setActiveTab(tab.id as any)}
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  paddingVertical: 10,
-                  borderRadius: RADIUS.md,
-                  backgroundColor: activeTab === tab.id ? theme.surface : 'transparent',
-                  ... (activeTab === tab.id ? LAYOUT_SHADOW.xs : {})
-                }}
-              >
-                <Text style={{
-                  fontFamily: SCREEN_FONTS.headlineBlack,
-                  fontSize: 14,
-                  color: activeTab === tab.id ? theme.primary : theme.onSurfaceVariant,
-                  letterSpacing: 0.5
-                }}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            ))
+            ].map((tab) => {
+              const active = activeTab === tab.id
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  onPress={() => setActiveTab(tab.id as any)}
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingVertical: 10,
+                    borderRadius: RADIUS.md,
+                    backgroundColor: active ? theme.surface : 'transparent',
+                    ...(active ? {
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.1,
+                      shadowRadius: 2,
+                      elevation: 1,
+                    } : {})
+                  }}
+                >
+                  <Text style={{
+                    fontFamily: SCREEN_FONTS.headlineBlack,
+                    fontSize: 13,
+                    color: active ? theme.primary : theme.onSurfaceVariant,
+                    letterSpacing: 0.5
+                  }}>
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })
           })()}
         </View>
       </View>
@@ -742,7 +752,7 @@ export default function HostDashboardScreen() {
         
         <View style={{ paddingHorizontal: 24 }}>
           {loading ? (
-          <ActivityIndicator color={theme.primary} style={{ marginTop: 40 }} />
+          <AppLoading label="Đang tải dữ liệu..." style={{ flex: 1, marginTop: 40 }} />
         ) : sessions.length > 0 ? (
           (() => {
             const filteredSessions = sessions.filter(s => {
@@ -774,19 +784,57 @@ export default function HostDashboardScreen() {
             
             if (filteredSessions.length === 0) {
               return (
-                <View style={{ alignItems: 'center', marginTop: 40, paddingHorizontal: 40 }}>
-                  <Text style={{ 
-                    fontFamily: SCREEN_FONTS.medium, 
-                    color: theme.onSurfaceVariant, 
-                    textAlign: 'center',
-                    lineHeight: 20
-                  }}>
-                    {activeTab === 'upcoming' 
-                      ? (nextSessionId 
-                          ? 'Bạn đã xem hết danh sách kèo sắp tới.\nTiếp tục tạo thêm kèo mới nhé!' 
-                          : 'Chưa có kèo nào sắp diễn ra.\nTạo kèo mới để bắt đầu ngay!')
-                      : 'Chưa có dữ liệu kèo trong lịch sử.'}
-                  </Text>
+                <View
+                  style={{
+                    borderRadius: RADIUS.xl,
+                    overflow: 'hidden',
+                    backgroundColor: 'white',
+                    borderWidth: 1,
+                    borderColor: theme.outlineVariant,
+                    ...LAYOUT_SHADOW.xs,
+                    marginTop: 12
+                  }}
+                >
+                  <View style={{ padding: 28, backgroundColor: '#FCFAF7' }}>
+                    <Text
+                      style={{
+                        color: theme.primary,
+                        fontFamily: SCREEN_FONTS.cta,
+                        fontSize: 10,
+                        letterSpacing: 2.2,
+                        textTransform: 'uppercase',
+                        marginBottom: 16
+                      }}
+                    >
+                      {activeTab === 'upcoming' ? 'QUẢN LÝ KÈO' : 'LỊCH SỬ TỔ CHỨC'}
+                    </Text>
+                    <Text
+                      style={{
+                        color: theme.onSurface,
+                        fontFamily: SCREEN_FONTS.headline,
+                        fontSize: 26,
+                        lineHeight: 32,
+                        textTransform: 'uppercase',
+                        marginBottom: 10
+                      }}
+                    >
+                      {activeTab === 'upcoming' ? 'Chưa có kèo nào sắp diễn ra' : 'Chưa có lịch sử tổ chức'}
+                    </Text>
+                    <Text
+                      style={{
+                        color: theme.onSurfaceVariant,
+                        fontFamily: SCREEN_FONTS.body,
+                        fontSize: 15,
+                        lineHeight: 24,
+                        maxWidth: '90%'
+                      }}
+                    >
+                      {activeTab === 'upcoming' 
+                        ? 'Nhấn nút "Tạo kèo mới" ngay và bắt đầu kêu gọi mọi người tham gia.'
+                        : 'Danh sách các kèo bạn đã hoàn thành hoặc đã hủy trong quá khứ sẽ hiển thị tại đây.'
+                      }
+                    </Text>
+                  </View>
                 </View>
               )
             }
@@ -903,12 +951,57 @@ export default function HostDashboardScreen() {
             )
           })()
         ) : (
-          <View style={{ alignItems: 'center', marginTop: 40 }}>
-            <View style={{ width: 80, height: 80, borderRadius: RADIUS.full, backgroundColor: theme.surfaceContainerLow, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
-              <Calendar size={32} color={theme.outline} />
+          <View
+            style={{
+              borderRadius: RADIUS.xl,
+              overflow: 'hidden',
+              backgroundColor: 'white',
+              borderWidth: 1,
+              borderColor: theme.outlineVariant,
+              ...LAYOUT_SHADOW.xs,
+              marginTop: 12
+            }}
+          >
+            <View style={{ padding: 28, backgroundColor: '#FCFAF7' }}>
+              <Text
+                style={{
+                  color: theme.primary,
+                  fontFamily: SCREEN_FONTS.cta,
+                  fontSize: 10,
+                  letterSpacing: 2.2,
+                  textTransform: 'uppercase',
+                  marginBottom: 16
+                }}
+              >
+                {activeTab === 'upcoming' ? 'QUẢN LÝ KÈO' : 'LỊCH SỬ TỔ CHỨC'}
+              </Text>
+              <Text
+                style={{
+                  color: theme.onSurface,
+                  fontFamily: SCREEN_FONTS.headline,
+                  fontSize: 26,
+                  lineHeight: 32,
+                  textTransform: 'uppercase',
+                  marginBottom: 10
+                }}
+              >
+                {activeTab === 'upcoming' ? 'Chưa có kèo nào sắp diễn ra' : 'Chưa có lịch sử tổ chức'}
+              </Text>
+              <Text
+                style={{
+                  color: theme.onSurfaceVariant,
+                  fontFamily: SCREEN_FONTS.body,
+                  fontSize: 15,
+                  lineHeight: 24,
+                  maxWidth: '90%'
+                }}
+              >
+                {activeTab === 'upcoming' 
+                  ? 'Nhấn nút "Tạo kèo mới" ngay và bắt đầu kêu gọi mọi người tham gia.'
+                  : 'Danh sách các kèo bạn đã hoàn thành hoặc đã hủy trong quá khứ sẽ hiển thị tại đây.'
+                }
+              </Text>
             </View>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>Chưa có kèo nào</Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 14, color: theme.onSurfaceVariant, textAlign: 'center', marginTop: 8 }}>Nhấn nút '+' để tạo kèo mới.</Text>
           </View>
         )}
         </View>

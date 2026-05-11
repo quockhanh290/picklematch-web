@@ -1,7 +1,7 @@
-// https://docs.expo.dev/guides/using-eslint/
 const { defineConfig } = require('eslint/config');
 const expoConfig = require('eslint-config-expo/flat');
 const tsEslintPlugin = require('@typescript-eslint/eslint-plugin');
+const globals = require('globals');
 
 module.exports = defineConfig([
   {
@@ -14,16 +14,26 @@ module.exports = defineConfig([
       'web-build/**',
       'docs/**',
       'scratch/**',
+      'supabase/functions/**',
       '**/*.bak',
       '**/*.tmp',
     ],
   },
   expoConfig,
   {
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        ...globals.jest,
+        __DEV__: 'readonly',
+      },
+    },
     plugins: {
       '@typescript-eslint': tsEslintPlugin,
     },
     rules: {
+      'no-undef': 'error',
       '@typescript-eslint/no-unused-vars': [
         'warn',
         {

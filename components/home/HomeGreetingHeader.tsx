@@ -6,7 +6,7 @@ import { SPACING, RADIUS, BORDER, SHADOW } from '@/constants/screenLayout'
 import { STRINGS } from '@/constants/strings'
 import { useAppTheme } from '@/lib/theme-context'
 import { WebContainer } from '@/components/design/WebContainer'
-import { Settings, Star, Plus } from 'lucide-react-native'
+import { Settings, Star, Plus, Search } from 'lucide-react-native'
 
 function getGreetingLabel() {
   const hour = new Date().getHours()
@@ -20,7 +20,6 @@ function getGreetingLabel() {
 export function HomeGreetingHeader({
   name,
   role = 'player',
-  onRoleChange,
   profilePhotoUrl,
   onPhotoPress,
   rating = 4.8,
@@ -29,7 +28,6 @@ export function HomeGreetingHeader({
 }: {
   name: string
   role?: 'host' | 'player'
-  onRoleChange?: (role: 'host' | 'player') => void
   profilePhotoUrl?: string | null
   onPhotoPress?: () => void
   rating?: number
@@ -131,7 +129,11 @@ export function HomeGreetingHeader({
                 ...SHADOW.sm
               }}
             >
-              <Plus size={18} color="white" strokeWidth={3} />
+              {isHost ? (
+                <Plus size={18} color="white" strokeWidth={3} />
+              ) : (
+                <Search size={18} color="white" strokeWidth={3} />
+              )}
               <Text style={{ 
                 color: 'white', 
                 fontFamily: SCREEN_FONTS.headline, 
@@ -142,33 +144,6 @@ export function HomeGreetingHeader({
               </Text>
             </TouchableOpacity>
  
-            {onRoleChange && (
-              <TouchableOpacity
-                onPress={() => onRoleChange(isHost ? 'player' : 'host')}
-                activeOpacity={0.8}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  backgroundColor: theme.surfaceContainerLow,
-                  paddingHorizontal: 16,
-                  paddingVertical: 8,
-                  borderRadius: RADIUS.md,
-                  gap: 6,
-                  borderWidth: 1,
-                  borderColor: theme.outlineVariant
-                }}
-              >
-                <Text style={{ 
-                  color: theme.primary, 
-                  fontFamily: SCREEN_FONTS.cta, 
-                  fontSize: 10,
-                  letterSpacing: 0.3,
-                  textTransform: 'uppercase'
-                }}>
-                  {isHost ? 'CHẾ ĐỘ NGƯỜI CHƠI' : 'CHẾ ĐỘ QUẢN LÝ'}
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
       </WebContainer>

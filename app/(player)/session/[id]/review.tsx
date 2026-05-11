@@ -305,7 +305,7 @@ function RequestCard({
               multiline
               style={{
                 fontFamily: SCREEN_FONTS.body,
-                fontSize: 14,
+                fontSize: 16,
                 color: theme.onSurface,
                 minHeight: 60,
                 textAlignVertical: 'top',

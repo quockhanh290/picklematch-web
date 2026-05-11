@@ -1,6 +1,7 @@
 import React from 'react'
 import { Text, View } from 'react-native'
 import { useAppTheme } from '@/lib/theme-context'
+import { RADIUS, SHADOW } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 
 export type SessionTab = 'upcoming' | 'pending' | 'history'
@@ -11,7 +12,7 @@ export function MySessionsEmptyState({ activeTab }: { activeTab: SessionTab }) {
     activeTab === 'upcoming'
       ? {
           eyebrow: 'SẴN SÀNG RA SÂN',
-          title: 'Bạn chưa có kèo sắp đánh',
+          title: 'Bạn chưa có kèo sắp tới',
           description: 'Tạo kèo mới hoặc tham gia một trận phù hợp để lịch chơi của bạn bắt đầu đầy lên.',
         }
       : activeTab === 'pending'

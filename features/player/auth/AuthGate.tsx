@@ -2,8 +2,11 @@ import React, { useEffect, useState } from 'react'
 import { usePathname, useRootNavigationState, useRouter, useSegments } from 'expo-router'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/useAuth'
-import { safeStorageGetItem } from '@/lib/storage'
-import { Platform } from 'react-native'
+import { safeStorageGetItem, safeStorageSetItem, checkStoragePersistence } from '@/lib/storage'
+import { Platform, View, Text, TouchableOpacity } from 'react-native'
+import { useAppTheme } from '@/lib/theme-context'
+import { AlertTriangle, X } from 'lucide-react-native'
+import { SCREEN_FONTS } from '@/constants/typography'
 
 export type AuthStatus = 'loading' | 'unauthenticated' | 'needs_setup' | 'needs_onboarding' | 'ready'
 export type UserRole = 'player' | 'host' | null
@@ -22,6 +25,8 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
   const navReady = Boolean(rootNavigationState?.key)
   const [authStatus, setAuthStatus] = useState<AuthStatus>('loading')
   const [userRole, setUserRole] = useState<UserRole>(null)
+  const [persistenceWarning, setPersistenceWarning] = useState(false)
+  const theme = useAppTheme()
   const firstSegment = segments[0] ?? ''
   const secondSegment = segments[1] ?? ''
   const isWeb = Platform.OS === 'web'
@@ -32,6 +37,17 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
   const isProfileSetupRoute = firstSegment === 'profile-setup' || (firstSegment === '(player)' && secondSegment === 'profile-setup')
   const isHostRoute = firstSegment === 'host'
   const isPlayerRoute = firstSegment === '(player)' || firstSegment === '(tabs)' || firstSegment === 'player-hub'
+
+  useEffect(() => {
+    if (isWeb) {
+      void checkStoragePersistence().then(persistent => {
+        if (!persistent) {
+          console.warn('[AuthGate] Persistent storage is unavailable. Falling back to memory.')
+          setPersistenceWarning(true)
+        }
+      })
+    }
+  }, [isWeb])
 
   useEffect(() => {
     if (!fontsLoaded || !isLoading || authStatus !== 'loading') return
@@ -153,5 +169,36 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
     return null
   }
 
-  return <>{children}</>
+  return (
+    <>
+      {persistenceWarning && (
+        <View style={{ 
+          backgroundColor: theme.warningContainer, 
+          paddingVertical: 10, 
+          paddingHorizontal: 16,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 12,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.warningStrong + '30',
+          zIndex: 9999
+        }}>
+          <AlertTriangle size={18} color={theme.warningStrong} />
+          <Text style={{ 
+            flex: 1,
+            fontSize: 12, 
+            color: theme.onWarningContainer, 
+            fontFamily: SCREEN_FONTS.medium,
+            lineHeight: 16
+          }}>
+            Trình duyệt đang chặn lưu trữ (chế độ ẩn danh). Bạn sẽ bị đăng xuất khi đóng tab này.
+          </Text>
+          <TouchableOpacity onPress={() => setPersistenceWarning(false)}>
+            <X size={16} color={theme.warningStrong} />
+          </TouchableOpacity>
+        </View>
+      )}
+      {children}
+    </>
+  )
 }

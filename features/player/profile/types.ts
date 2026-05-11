@@ -16,6 +16,7 @@ export type ProfilePlayer = {
   created_at: string
   bio?: string | null
   is_host?: boolean | null
+  gender?: 'male' | 'female' | null
 }
 
 export type ProfilePlayerStats = {

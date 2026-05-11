@@ -7,7 +7,7 @@ type DevLoginOptions = {
   password?: string
 }
 
-type DevRole = 'owner' | 'player'
+type DevRole = 'host' | 'player'
 
 const DEFAULT_PASSWORD = 'Pickle123!'
 const LOGIN_WAIT_TIMEOUT = 15_000
@@ -15,11 +15,11 @@ const REDIRECT_WAIT_TIMEOUT = 25_000
 const MAX_SUBMIT_ATTEMPTS = 3
 
 const SELECTORS: Record<DevRole, { route: string; email: string; password: string; submit: string }> = {
-  owner: {
-    route: '/owner/login',
-    email: 'dev-owner-email-input',
-    password: 'dev-owner-password-input',
-    submit: 'dev-owner-login-submit',
+  host: {
+    route: '/host/login',
+    email: 'dev-host-email-input',
+    password: 'dev-host-password-input',
+    submit: 'dev-host-login-submit',
   },
   player: {
     route: '/login',
@@ -59,7 +59,7 @@ async function devLoginByRole(page: Page, role: DevRole, options: DevLoginOption
 }
 
 export async function devLogin(page: Page, options: DevLoginOptions) {
-  await devLoginByRole(page, 'owner', options)
+  await devLoginByRole(page, 'host', options)
 }
 
 export async function devPlayerLogin(page: Page, options: DevLoginOptions) {
@@ -104,7 +104,7 @@ function getSupabaseStorageKey(supabaseUrl: string) {
   return `sb-${projectRef}-auth-token`
 }
 
-export async function buildOwnerAuthStorageState(request: APIRequestContext, options: ApiLoginOptions) {
+export async function buildHostAuthStorageState(request: APIRequestContext, options: ApiLoginOptions) {
   const { supabaseUrl, supabaseAnonKey } = getSupabaseConfig()
   const password = options.password ?? process.env.E2E_DUMMY_PASSWORD ?? DEFAULT_PASSWORD
 

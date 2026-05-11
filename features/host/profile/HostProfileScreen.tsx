@@ -1,372 +1,303 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import { AppButton } from '@/components/design/AppButton'
+import { AppDialog, type AppDialogConfig, MainHeader } from '@/components/design'
+import { ScreenHeader } from '@/components/design/ScreenHeader'
 import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-  TouchableOpacity,
-  RefreshControl,
-  ActivityIndicator,
-} from 'react-native'
-import {
-  Settings,
-  ChevronRight,
-  LayoutDashboard,
-  PlusCircle,
-  Building2,
-  CalendarDays,
-  PencilLine,
-  LogOut,
-} from 'lucide-react-native'
-import { router } from 'expo-router'
-import { supabase } from '@/lib/supabase'
-import { MainHeader } from '@/components/design'
+    ProfileSkillHero,
+} from '@/components/profile/ProfileSections'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { RADIUS, SPACING } from '@/constants/screenLayout'
+import { getSkillLevelFromPlayer, getEloBandByLevelId } from '@/lib/skillAssessment'
+import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
-import { useAuth } from '@/lib/useAuth'
+import { router } from 'expo-router'
+import {
+    AlertCircle,
+    PencilLine,
+    UserCircle,
+    MapPin,
+    LogOut
+} from 'lucide-react-native'
+import React, { useCallback, useEffect, useState } from 'react'
+import { ActivityIndicator, Platform, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { RADIUS, SHADOW } from '@/constants/screenLayout'
+import { STRINGS } from '@/constants/strings'
+import { WebContainer } from '@/components/design/WebContainer'
+import { StatusBar } from 'expo-status-bar'
+import { DashboardStatsStrip, buildDashboardStats } from '@/components/home/DashboardStatsStrip'
 
-type HostProfile = {
-  name: string
-  phone: string | null
-  city: string | null
-  hostedSessionsCount: number
-  courtsCount: number
+import type { 
+    ProfilePlayer as Player, 
+    ProfilePlayerStats as PlayerStats, 
+    ProfileSessionHistory as SessionHistory 
+} from '../../player/profile/types'
+import { 
+    fetchCurrentPlayerProfileDataApi, 
+    clearCurrentPlayerProfileCacheApi 
+} from '../../player/profile/api'
+
+function ProfileSectionDivider({ index, title, theme }: { index: string; title: string; theme: any }) {
+  const isFirst = index === '01' || index === '1'
+  return (
+    <View style={{ marginTop: isFirst ? 0 : 18 }}>
+      {!isFirst && <View style={{ height: 1, backgroundColor: theme.outlineVariant, marginBottom: 18, opacity: 0.5 }} />}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 18 }}>
+        <Text style={{ fontSize: 11, color: theme.outline, fontFamily: SCREEN_FONTS.cta, textTransform: 'uppercase', letterSpacing: 4 }}>
+          {index} / {title}
+        </Text>
+        <View style={{ height: 1, flex: 1, backgroundColor: theme.outlineVariant, opacity: 0.5 }} />
+      </View>
+    </View>
+  )
 }
 
-const INITIAL_PROFILE: HostProfile = {
-  name: '',
-  phone: null,
-  city: null,
-  hostedSessionsCount: 0,
-  courtsCount: 0,
-}
-
-async function fetchHostProfileData(userId: string): Promise<HostProfile> {
-
-  const [playerRes, hostedRes, courtsRes] = await Promise.all([
-    supabase
-      .from('players')
-      .select('name, phone, city')
-      .eq('id', userId)
-      .single(),
-    supabase
-      .from('sessions')
-      .select('id', { count: 'exact', head: true })
-      .eq('owner_id', userId),
-    supabase
-      .from('courts')
-      .select('id', { count: 'exact', head: true })
-      .eq('owner_id', userId),
-  ])
-
-  return {
-    name: playerRes.data?.name ?? 'Host',
-    phone: playerRes.data?.phone ?? null,
-    city: playerRes.data?.city ?? null,
-    hostedSessionsCount: hostedRes.count ?? 0,
-    courtsCount: courtsRes.count ?? 0,
-  }
-}
+const _PROFILE_MOCK_HISTORY: SessionHistory[] = [
+  {
+    id: 'mock-session-1',
+    status: 'done',
+    is_host: true,
+    slot: {
+      start_time: '2026-04-12T19:00:00.000Z',
+      end_time: '2026-04-12T21:00:00.000Z',
+      court: { name: 'Saigon Pickle Dome', city: 'TP.HCM' },
+    },
+  },
+]
 
 export function HostProfileScreen() {
+  const insets = useSafeAreaInsets()
   const theme = useAppTheme()
-  const { userId, isLoading: authLoading } = useAuth()
-  const [profile, setProfile] = useState<HostProfile>(INITIAL_PROFILE)
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  const [checking, setChecking] = useState(true)
+  const [loggedIn, setLoggedIn] = useState(false)
+  const [player, setPlayer] = useState<Player | null>(null)
+  const [playerStats, setPlayerStats] = useState<PlayerStats | null>(null)
+  const [_history, setHistory] = useState<SessionHistory[]>([])
+  const [loading, setLoading] = useState(false)
+  const [dialogConfig, setDialogConfig] = useState<AppDialogConfig | null>(null)
 
-  const load = useCallback(async () => {
-    if (!userId) {
-      setProfile(INITIAL_PROFILE)
-      setLoading(false)
-      return
-    }
-    const data = await fetchHostProfileData(userId)
-    setProfile(data)
+  const init = useCallback(async () => {
+    setLoading(true)
+    const snapshot = await fetchCurrentPlayerProfileDataApi()
+    setLoggedIn(snapshot.loggedIn)
+    setPlayer(snapshot.player)
+    setPlayerStats(snapshot.playerStats)
+    setHistory(snapshot.history)
     setLoading(false)
-  }, [userId])
-
-  const onRefresh = useCallback(async () => {
-    if (!userId) {
-      setRefreshing(false)
-      return
-    }
-    setRefreshing(true)
-    const data = await fetchHostProfileData(userId)
-    setProfile(data)
-    setRefreshing(false)
-  }, [userId])
+    setChecking(false)
+  }, [])
 
   useEffect(() => {
-    if (authLoading) return
-    void load()
-  }, [authLoading, load])
+    void init()
+  }, [init])
 
-  const menuItems = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard Quản lý',
-      subtitle: 'Xem lịch kèo và tình trạng sân',
-      icon: LayoutDashboard,
-      onPress: () => router.push('/host/dashboard' as any),
-    },
-    {
-      id: 'create_session',
-      label: 'Tạo kèo mới',
-      subtitle: 'Tạo lịch thi đấu cho sân của bạn',
-      icon: PlusCircle,
-      onPress: () => router.push('/host/create-session' as any),
-    },
-    {
-      id: 'my_courts',
-      label: 'Sân của tôi',
-      subtitle: 'Quản lý thông tin và cơ sở vật chất',
-      icon: Building2,
-      onPress: () => router.push('/host/edit-court' as any),
-    },
-    {
-      id: 'edit_profile',
-      label: 'Chỉnh sửa hồ sơ',
-      subtitle: 'Cập nhật thông tin liên hệ và giới thiệu',
-      icon: PencilLine,
-      onPress: () => router.push('/host/edit-profile' as any),
-    },
-    {
-      id: 'settings',
-      label: 'Cài đặt tài khoản',
-      subtitle: 'Bảo mật và thông báo',
-      icon: Settings,
-      onPress: () => router.push('/settings' as any),
-    },
-  ]
+  async function logout() {
+    setDialogConfig({
+      title: 'Đăng xuất?',
+      message: 'Bạn chắc muốn đăng xuất không?',
+      actions: [
+        { label: 'QUAY LẠI', tone: 'secondary' },
+        {
+          label: 'ĐĂNG XUẤT',
+          tone: 'danger',
+          onPress: async () => {
+            await supabase.auth.signOut()
+            clearCurrentPlayerProfileCacheApi()
+            router.replace('/')
+          },
+        },
+      ],
+    })
+  }
 
-  if (loading) {
+  if (checking) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.background }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceContainerLow, paddingTop: insets.top }}>
         <ActivityIndicator size="large" color={theme.primary} />
       </View>
     )
   }
 
+  if (!loggedIn) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.surfaceContainerLow, paddingTop: insets.top }}>
+        <ScreenHeader compact title="HỒ SƠ" />
+        <View style={{ padding: 24, alignItems: 'center' }}>
+          <UserCircle size={48} color={theme.outline} />
+          <Text style={{ marginTop: 16, fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>
+            Đăng nhập để xem hồ sơ
+          </Text>
+          <AppButton label="Đăng nhập" onPress={() => router.push('/login' as any)} style={{ marginTop: 24, width: '100%' }} />
+        </View>
+      </View>
+    )
+  }
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceContainerLow, paddingTop: insets.top }}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    )
+  }
+
+  if (!player) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background, paddingTop: insets.top }}>
+        <ScreenHeader compact title="KHÔNG TÌM THẤY HỒ SƠ" />
+      </View>
+    )
+  }
+
+  const skill = getSkillLevelFromPlayer(player)
+  let effectiveElo = player.current_elo ?? player.elo ?? 0
+  if (effectiveElo === 0) {
+    effectiveElo = player.gender === 'female' ? 800 : 1000
+    if (skill && skill.id !== 'pvna_1') {
+      const seed = getEloBandByLevelId(skill.id)?.seedElo ?? 800
+      effectiveElo = Math.max(effectiveElo, seed)
+    }
+  }
+
+  const displayHistory = _history.length > 0 ? _history : _PROFILE_MOCK_HISTORY
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      <ScrollView
+      <StatusBar style="light" translucent backgroundColor="transparent" />
+      <ScrollView 
+        contentContainerStyle={{ flexGrow: 1 }} 
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={theme.primary}
-          />
+          <RefreshControl refreshing={loading} onRefresh={init} tintColor={theme.primary} />
         }
       >
-        <MainHeader
-          title="Host"
-          rightElement={
-            <Pressable
-              onPress={() => router.push('/settings' as any)}
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 24,
-                backgroundColor: theme.surfaceContainerLow,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Settings size={22} color={theme.onSurface} />
-            </Pressable>
-          }
-        />
+        <WebContainer maxWidth={600}>
+          <View style={{ paddingTop: 12 }}>
+            <MainHeader title="HỒ SƠ CHỦ SÂN" brandedSubtitle="PICKLEMATCH" style={{ paddingHorizontal: 0 }} />
+          </View>
 
-        {/* Identity */}
-        <View style={{ paddingHorizontal: SPACING.xl, marginBottom: 28 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View
-              style={{
-                width: 80,
-                height: 80,
-                borderRadius: 40,
-                backgroundColor: theme.primaryContainer,
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: 3,
-                borderColor: theme.primary,
-              }}
-            >
-              <Text style={{ fontSize: 32, fontFamily: SCREEN_FONTS.headline, color: theme.onPrimaryContainer }}>
-                {(profile.name?.charAt(0) || 'H').toUpperCase()}
-              </Text>
-            </View>
-            <View style={{ marginLeft: 20, flex: 1 }}>
-              <Text style={{ fontSize: 24, fontFamily: SCREEN_FONTS.headline, color: theme.onSurface }}>
-                {profile.name}
-              </Text>
-              {profile.city ? (
-                <Text style={{ fontSize: 13, fontFamily: SCREEN_FONTS.body, color: theme.onSurfaceVariant, marginTop: 2 }}>
-                  {profile.city}
+          <View style={{ paddingHorizontal: 24 }}>
+            {/* Identity */}
+            <View style={{ paddingVertical: 20, flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+              <View style={{ 
+                width: 64, height: 64, borderRadius: 32, 
+                backgroundColor: theme.primary, borderWidth: 2, borderColor: 'white',
+                alignItems: 'center', justifyContent: 'center', ...SHADOW.xs
+              }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 24, color: 'white' }}>
+                  {player.name?.[0]?.toUpperCase()}
                 </Text>
-              ) : null}
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  marginTop: 6,
-                  backgroundColor: theme.secondaryContainer,
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                  borderRadius: RADIUS.full,
-                  alignSelf: 'flex-start',
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 22, color: theme.onSurface, letterSpacing: -0.5 }}>
+                  {player.name}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                  <MapPin size={12} color={theme.outline} />
+                  <Text style={{ marginLeft: 4, fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: theme.onSurfaceVariant, textTransform: 'uppercase' }}>
+                    {player.city || 'CHƯA CẬP NHẬT'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity 
+                onPress={() => router.push('/host/edit-profile' as any)}
+                style={{ 
+                  width: 36, height: 36, borderRadius: 18, 
+                  backgroundColor: theme.primary, borderWidth: 1, borderColor: 'white',
+                  alignItems: 'center', justifyContent: 'center', ...SHADOW.xs
                 }}
               >
-                <Building2 size={12} color={theme.onSecondaryContainer} />
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontFamily: SCREEN_FONTS.label,
-                    color: theme.onSecondaryContainer,
-                    marginLeft: 6,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  Host đã xác minh
-                </Text>
+                <PencilLine size={16} color="white" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Stats Strip */}
+            <View style={{ marginBottom: 12 }}>
+              <DashboardStatsStrip items={buildDashboardStats(player as any, playerStats)} />
+            </View>
+
+            <View style={{ paddingBottom: 100 }}>
+              {/* Skill Section */}
+              <View>
+                <ProfileSectionDivider index="01" title="TRÌNH ĐỘ PVNA" theme={theme} />
+                <ProfileSkillHero
+                  elo={effectiveElo}
+                  title={skill?.title ?? 'MỚI CHƠI'}
+                  subtitle={skill?.subtitle ?? 'PVNA 2.1 - Bắt đầu làm quen'}
+                  description={skill?.description}
+                  levelId={skill?.id}
+                />
+              </View>
+
+              {/* Favorite Courts Section */}
+              <View>
+                <ProfileSectionDivider index="02" title="SÂN HAY CHƠI" theme={theme} />
+                {displayHistory.length > 0 ? (
+                  <View style={{ gap: 10 }}>
+                    {(() => {
+                      const courtMap = new Map<string, { name: string; city: string; count: number }>()
+                      displayHistory.forEach(item => {
+                        const court = item.slot?.court
+                        if (court) {
+                          const existing = courtMap.get(court.name)
+                          if (existing) {
+                            existing.count++
+                          } else {
+                            courtMap.set(court.name, { ...court, count: 1 })
+                          }
+                        }
+                      })
+                      const sortedCourts = Array.from(courtMap.values()).sort((a, b) => b.count - a.count).slice(0, 3)
+                      return sortedCourts.map((court, idx) => (
+                        <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surfaceAlt, padding: 12, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: theme.outlineVariant, gap: 10 }}>
+                          <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}>
+                            <MapPin size={16} color="white" />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.onSurface, textTransform: 'uppercase' }}>{court.name}</Text>
+                            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurfaceVariant }}>{court.city}</Text>
+                          </View>
+                          <View style={{ backgroundColor: theme.background, paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.full, borderWidth: 1, borderColor: theme.outlineVariant }}>
+                            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: theme.primary }}>{court.count} TRẬN</Text>
+                          </View>
+                        </View>
+                      ))
+                    })()}
+                  </View>
+                ) : (
+                  <View style={{ padding: 24, backgroundColor: theme.surfaceAlt, borderRadius: RADIUS.lg, borderStyle: 'dashed', borderWidth: 1, borderColor: theme.outlineVariant, alignItems: 'center' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, color: theme.outline }}>Chưa có dữ liệu sân đã chơi</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Account Actions */}
+              <View>
+                <ProfileSectionDivider index="03" title="QUẢN LÝ TÀI KHOẢN" theme={theme} />
+                <View style={{ gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => router.replace('/player-hub/profile')}
+                    activeOpacity={0.8}
+                    style={{ backgroundColor: theme.primary, borderRadius: RADIUS.lg, padding: 12, alignItems: 'center', justifyContent: 'center', ...SHADOW.xs }}
+                  >
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: 'white', textTransform: 'uppercase', letterSpacing: 1 }}>
+                      CHẾ ĐỘ NGƯỜI CHƠI
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={logout}
+                    activeOpacity={0.8}
+                    style={{ backgroundColor: theme.error, borderRadius: RADIUS.lg, padding: 12, alignItems: 'center', justifyContent: 'center', ...SHADOW.xs }}
+                  >
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: 'white', textTransform: 'uppercase', letterSpacing: 1 }}>
+                      ĐĂNG XUẤT
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </View>
-        </View>
-
-        {/* Stats */}
-        <View style={{ flexDirection: 'row', paddingHorizontal: SPACING.xl, gap: 12, marginBottom: 32 }}>
-          <StatCard label="Kèo đã tạo" value={profile.hostedSessionsCount.toString()} icon={CalendarDays} theme={theme} />
-          <StatCard label="Sân đang quản lý" value={profile.courtsCount.toString()} icon={Building2} theme={theme} />
-        </View>
-
-        {/* Management Menu */}
-        <View style={{ paddingHorizontal: SPACING.xl }}>
-          <Text
-            style={{
-              fontSize: 12,
-              fontFamily: SCREEN_FONTS.label,
-              color: theme.outline,
-              marginBottom: 16,
-              textTransform: 'uppercase',
-              letterSpacing: 1.5,
-            }}
-          >
-            Quản lý chuyên sâu
-          </Text>
-
-          <View
-            style={{
-              backgroundColor: theme.surfaceContainerLow,
-              borderRadius: RADIUS.xl,
-              overflow: 'hidden',
-              borderWidth: 1,
-              borderColor: theme.outlineVariant,
-            }}
-          >
-            {menuItems.map((item, index) => (
-              <Pressable
-                key={item.id}
-                onPress={item.onPress}
-                style={({ pressed }) => ({
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  padding: 20,
-                  backgroundColor: pressed ? theme.surfaceContainerHigh : 'transparent',
-                  borderBottomWidth: index === menuItems.length - 1 ? 0 : 1,
-                  borderBottomColor: theme.outlineVariant,
-                })}
-              >
-                <View
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 12,
-                    backgroundColor: theme.surfaceContainer,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <item.icon size={22} color={theme.primary} strokeWidth={2} />
-                </View>
-                <View style={{ flex: 1, marginLeft: 16 }}>
-                  <Text style={{ fontSize: 16, fontFamily: SCREEN_FONTS.headline, color: theme.onSurface }}>
-                    {item.label}
-                  </Text>
-                  <Text style={{ fontSize: 13, fontFamily: SCREEN_FONTS.body, color: theme.onSurfaceVariant, marginTop: 2 }}>
-                    {item.subtitle}
-                  </Text>
-                </View>
-                <ChevronRight size={20} color={theme.outline} />
-              </Pressable>
-            ))}
-          </View>
-
-          {/* Logout Button */}
-          <TouchableOpacity
-            onPress={async () => {
-              await supabase.auth.signOut()
-              router.replace('/')
-            }}
-            activeOpacity={0.8}
-            style={{
-              marginTop: 24,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingVertical: 16,
-              borderRadius: RADIUS.xl,
-              backgroundColor: theme.surfaceAlt,
-              borderWidth: 1,
-              borderColor: theme.outlineVariant,
-              gap: 12
-            }}
-          >
-            <LogOut size={20} color={theme.error} />
-            <Text style={{ fontSize: 15, fontFamily: SCREEN_FONTS.headline, color: theme.error }}>
-              ĐĂNG XUẤT TÀI KHOẢN
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={{ height: 100 }} />
+        </WebContainer>
       </ScrollView>
-    </View>
-  )
-}
-
-function StatCard({ label, value, icon: Icon, theme }: any) {
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: theme.surfaceContainerLow,
-        padding: 16,
-        borderRadius: RADIUS.xl,
-        borderWidth: 1,
-        borderColor: theme.outlineVariant,
-      }}
-    >
-      <Icon size={18} color={theme.primary} />
-      <Text style={{ fontSize: 28, fontFamily: SCREEN_FONTS.headline, color: theme.onSurface, marginTop: 12 }}>
-        {value}
-      </Text>
-      <Text
-        style={{
-          fontSize: 11,
-          fontFamily: SCREEN_FONTS.label,
-          color: theme.onSurfaceVariant,
-          marginTop: 2,
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-        }}
-      >
-        {label}
-      </Text>
+      <AppDialog visible={Boolean(dialogConfig)} config={dialogConfig} onClose={() => setDialogConfig(null)} />
     </View>
   )
 }

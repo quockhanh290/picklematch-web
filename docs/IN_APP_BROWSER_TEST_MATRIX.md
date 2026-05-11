@@ -10,7 +10,7 @@
 - Android (latest stable major)
 
 ## Must-Pass Flows
-1. Open `/owner/login` directly from an external link.
+1. Open `/host/login` directly from an external link.
 2. Complete login and verify redirect out of login route.
 3. Reload page and verify session restore behavior.
 4. Open deep link to session detail and verify page load.
@@ -33,9 +33,26 @@
 ## Security Regression Checks
 1. Confirm no service-role key in tracked files.
 2. Confirm CSP header includes no `unsafe-eval`.
-3. Confirm quick-start non-OTP owner flow is not reachable in production builds.
+3. Confirm quick-start non-OTP host flow is not reachable in production builds.
 
-## Evidence to Capture
-- Screen recording per environment.
-- Console/network errors.
-- Final pass/fail checklist with build SHA.
+## Evidence to Capture (Required for Release)
+1. **Device Information**: Model, OS version, Browser/App version.
+2. **Persistence Warning**: Screenshot of the "Storage blocked" banner appearing in private mode/Zalo IAB.
+3. **Auth Persistence**:
+   - Step 1: Login.
+   - Step 2: Close App/Browser tab.
+   - Step 3: Re-open link.
+   - Result: Document if session persisted (Expected: Yes in Safari/Chrome, No in Private/Zalo IAB with warning).
+4. **Deep-linking**:
+   - Screenshot of loading a `/session/[id]` URL directly from Zalo/Messenger chat.
+5. **Layout Stability**:
+   - Screenshot of focused input field showing no auto-zoom on iOS.
+   - Screenshot of keyboard open with "Join/Register" button still accessible or easily scrollable.
+
+## Sign-off Log Template
+| Environment | Build SHA | Tester | Status | Evidence Link |
+| :--- | :--- | :--- | :--- | :--- |
+| iOS Safari | | | | |
+| Zalo IAB (iOS) | | | | |
+| FB IAB (Android) | | | | |
+| Chrome Android | | | | |
