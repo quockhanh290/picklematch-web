@@ -13,6 +13,11 @@ export type RoundRobinSchedule = {
   sittersPerRound: number
   gamesCount: Record<string, number>
   sitCount: Record<string, number>
+  quality?: {
+    runtimeMs: number
+    timedOut: boolean
+    fallbackUsed: boolean
+  }
 }
 
 export type SchedulePriority = 'balanced' | 'partner' | 'opponent'
@@ -20,6 +25,7 @@ export type SchedulePriority = 'balanced' | 'partner' | 'opponent'
 export type RoundRobinScheduleOptions = {
   minGamesPerPlayer?: number
   priority?: SchedulePriority
+  maxRuntimeMs?: number
 }
 
 type PairMap = Record<string, number>
@@ -31,6 +37,30 @@ const getPairValue = (map: PairMap, a: number, b: number) => map[pairKey(a, b)] 
 const incrementPair = (map: PairMap, a: number, b: number) => {
   const key = pairKey(a, b)
   map[key] = (map[key] || 0) + 1
+}
+
+const nowMs = () => {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') return performance.now()
+  return Date.now()
+}
+
+type RuntimeGuard = {
+  startedAt: number
+  maxRuntimeMs?: number | null
+  timedOut: boolean
+}
+
+const createRuntimeGuard = (maxRuntimeMs?: number | null): RuntimeGuard => ({
+  startedAt: nowMs(),
+  maxRuntimeMs: maxRuntimeMs && maxRuntimeMs > 0 ? maxRuntimeMs : null,
+  timedOut: false,
+})
+
+function hasTimedOut(guard?: RuntimeGuard | null) {
+  if (!guard?.maxRuntimeMs) return false
+  if (guard.timedOut) return true
+  guard.timedOut = nowMs() - guard.startedAt >= guard.maxRuntimeMs
+  return guard.timedOut
 }
 
 function getCombos(arr: number[], k: number): number[][] {
@@ -453,7 +483,8 @@ function packTemplateMatchesIntoRounds(matches: Split[], playerIndexes: number[]
 function buildFastFullRotationTemplateRounds(
   playerIndexes: number[],
   courtsPerRound: number,
-  priority: SchedulePriority
+  priority: SchedulePriority,
+  guard?: RuntimeGuard | null
 ): RoundCandidate[] | null {
   if (playerIndexes.length > 20) return null
   if (playerIndexes.length < 4) return null
@@ -472,14 +503,15 @@ function buildFastFullRotationTemplateRounds(
   const matches: Split[] = []
 
   if (canUseExactPartnerRounds) {
-    partnerRounds.forEach(partnerPairs => {
+    for (const partnerPairs of partnerRounds) {
+      if (hasTimedOut(guard)) return null
       const roundMatches = pairPartnerPairsForTemplate(partnerPairs, opponentMap, priority)
       matches.push(...roundMatches)
 
       roundMatches.forEach(([teamA, teamB]) => {
         teamA.forEach(a => teamB.forEach(b => incrementPair(opponentMap, a, b)))
       })
-    })
+    }
   } else {
     const greedyMatches = buildGreedyPartnerPairMatches(playerIndexes, priority)
     if (!greedyMatches) return null
@@ -610,7 +642,8 @@ function generateRoundCandidates(
   courtsPerRound: number,
   sittersPerRound: number,
   targetGamesPerPlayer?: number | null,
-  priority: SchedulePriority = 'balanced'
+  priority: SchedulePriority = 'balanced',
+  guard?: RuntimeGuard | null
 ) {
   const activeSlots = courtsPerRound * 4
   const candidates: RoundCandidate[] = []
@@ -626,6 +659,7 @@ function generateRoundCandidates(
       .slice(0, 28)
 
   sitterSets.forEach(sitters => {
+    if (hasTimedOut(guard)) return
     const sitterSet = new Set(sitters)
     const active = playerIndexes
       .filter(player => !sitterSet.has(player))
@@ -637,6 +671,7 @@ function generateRoundCandidates(
 
     if (active.length !== activeSlots) return
     generateCourtCombinations(active, courtsPerRound, state, 32, priority).forEach(courts => {
+      if (hasTimedOut(guard)) return
       candidates.push({ courts, sitters })
     })
   })
@@ -655,7 +690,8 @@ function buildBeamSearchSchedule(
   targetRounds: number,
   targetGamesPerPlayer?: number | null,
   totalMatchesTarget?: number | null,
-  priority: SchedulePriority = 'balanced'
+  priority: SchedulePriority = 'balanced',
+  guard?: RuntimeGuard | null
 ) {
   const emptyCounts = Object.fromEntries(playerIndexes.map(player => [player, 0])) as Record<number, number>
   const initialState: SearchState = {
@@ -669,6 +705,7 @@ function buildBeamSearchSchedule(
   let beam: SearchState[] = [initialState]
 
   for (let round = 0; round < targetRounds; round += 1) {
+    if (hasTimedOut(guard)) break
     const matchesRemaining = totalMatchesTarget
       ? totalMatchesTarget - (beam[0]?.rounds.reduce((sum, item) => sum + item.courts.length, 0) ?? 0)
       : null
@@ -678,10 +715,12 @@ function buildBeamSearchSchedule(
     const sittersThisRound = playerIndexes.length - courtsThisRound * 4
     const nextBeam: SearchState[] = []
     beam.forEach(state => {
-      generateRoundCandidates(state, playerIndexes, courtsThisRound, sittersThisRound, targetGamesPerPlayer, priority)
+      if (hasTimedOut(guard)) return
+      generateRoundCandidates(state, playerIndexes, courtsThisRound, sittersThisRound, targetGamesPerPlayer, priority, guard)
         .forEach(candidate => nextBeam.push(applyRoundCandidate(state, candidate)))
     })
 
+    if (nextBeam.length === 0) break
     beam = nextBeam
       .sort((left, right) => scoreSearchState(left, playerIndexes, false, priority) - scoreSearchState(right, playerIndexes, false, priority))
       .slice(0, beamWidth)
@@ -698,17 +737,19 @@ function extendStateToMinimumGames(
   playerIndexes: number[],
   courtsPerRound: number,
   targetGamesPerPlayer: number,
-  priority: SchedulePriority
+  priority: SchedulePriority,
+  guard?: RuntimeGuard | null
 ) {
   let current = state
   const maxExtraRounds = playerIndexes.length * 2
 
   for (let extraRound = 0; extraRound < maxExtraRounds; extraRound += 1) {
+    if (hasTimedOut(guard)) break
     const games = playerIndexes.map(player => current.gamesCount[player])
     if (Math.min(...games) >= targetGamesPerPlayer) break
 
     const sittersThisRound = playerIndexes.length - courtsPerRound * 4
-    const candidates = generateRoundCandidates(current, playerIndexes, courtsPerRound, sittersThisRound, targetGamesPerPlayer, priority)
+    const candidates = generateRoundCandidates(current, playerIndexes, courtsPerRound, sittersThisRound, targetGamesPerPlayer, priority, guard)
     if (candidates.length === 0) break
 
     const bestCandidate = candidates
@@ -740,6 +781,7 @@ export function buildRoundRobinDoublesSchedule(
   rounds?: number,
   options: RoundRobinScheduleOptions = {}
 ): RoundRobinSchedule {
+  const guard = createRuntimeGuard(options.maxRuntimeMs)
   const normalizedCourtCount = Math.max(1, Math.floor(courtCount || 1))
   const players = playerIds.map(String)
   const courtsPerRound = Math.min(normalizedCourtCount, Math.floor(players.length / 4))
@@ -765,6 +807,11 @@ export function buildRoundRobinDoublesSchedule(
       sittersPerRound: players.length,
       gamesCount: Object.fromEntries(players.map(player => [player, 0])),
       sitCount: Object.fromEntries(players.map(player => [player, 0])),
+      quality: {
+        runtimeMs: nowMs() - guard.startedAt,
+        timedOut: guard.timedOut,
+        fallbackUsed: false,
+      },
     }
   }
 
@@ -780,7 +827,7 @@ export function buildRoundRobinDoublesSchedule(
     ? buildExhaustiveSingleCourtSchedule(playerIndexes)
     : null
   const fastTemplateRounds = !exactSingleCourtMatches && !rounds && !targetGamesPerPlayer
-    ? buildFastFullRotationTemplateRounds(playerIndexes, courtsPerRound, priority)
+    ? buildFastFullRotationTemplateRounds(playerIndexes, courtsPerRound, priority, guard)
     : null
 
   if (exactSingleCourtMatches) {
@@ -813,10 +860,16 @@ export function buildRoundRobinDoublesSchedule(
       sittersPerRound,
       gamesCount: Object.fromEntries(players.map((player, index) => [player, gamesCountByIndex[index]])),
       sitCount: Object.fromEntries(players.map((player, index) => [player, sitCountByIndex[index]])),
+      quality: {
+        runtimeMs: nowMs() - guard.startedAt,
+        timedOut: guard.timedOut,
+        fallbackUsed: false,
+      },
     }
   }
 
   let beamState: SearchState | null = null
+  let fallbackUsed = false
   if (!fastTemplateRounds) {
     beamState = buildBeamSearchSchedule(
       playerIndexes,
@@ -825,11 +878,14 @@ export function buildRoundRobinDoublesSchedule(
       Math.max(1, Math.floor(targetRounds)),
       targetGamesPerPlayer,
       targetGamesPerPlayer ? requiredMatchesForPartnerCoverage : null,
-      priority
+      priority,
+      guard
     )
 
     if (targetGamesPerPlayer) {
-      beamState = extendStateToMinimumGames(beamState, playerIndexes, courtsPerRound, targetGamesPerPlayer, priority)
+      const beforeRounds = beamState.rounds.length
+      beamState = extendStateToMinimumGames(beamState, playerIndexes, courtsPerRound, targetGamesPerPlayer, priority, guard)
+      fallbackUsed = beamState.rounds.length > beforeRounds
     }
   }
 
@@ -860,5 +916,10 @@ export function buildRoundRobinDoublesSchedule(
     sittersPerRound,
     gamesCount: Object.fromEntries(players.map((player, index) => [player, gamesCountByIndex[index]])),
     sitCount: Object.fromEntries(players.map((player, index) => [player, sitCountByIndex[index]])),
+    quality: {
+      runtimeMs: nowMs() - guard.startedAt,
+      timedOut: guard.timedOut,
+      fallbackUsed,
+    },
   }
 }

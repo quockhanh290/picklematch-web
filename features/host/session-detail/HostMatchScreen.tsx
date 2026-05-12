@@ -2,7 +2,8 @@ import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { SHADOW as LAYOUT_SHADOW, RADIUS } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import type { SessionMatch } from '@/hooks/useSessionDetail'
-import { buildRoundRobinDoublesSchedule, type SchedulePriority } from '@/lib/roundRobinScheduler'
+import { buildRoundRobinDoublesScheduleAsync } from '@/lib/roundRobinSchedulerClient'
+import type { SchedulePriority } from '@/lib/roundRobinScheduler'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
@@ -50,6 +51,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   const [showRotationTable, setShowRotationTable] = useState(false)
   const [pendingMixInMatches, setPendingMixInMatches] = useState<PendingMatch[]>([])
   const [fullRotationSchedule, setFullRotationSchedule] = useState<PendingMatch[]>([])
+  const [scheduleQuality, setScheduleQuality] = useState<{ runtimeMs: number, timedOut: boolean, fallbackUsed: boolean } | undefined>()
   const [scheduledPlayers, setScheduledPlayers] = useState<ArrangementPlayer[]>([])
   const [sittingOutPlayers, setSittingOutPlayers] = useState<string[]>([]) // player IDs sitting out
   const [localScores, setLocalScores] = useState<Record<string, { a: number, b: number }>>({})
@@ -134,7 +136,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
 
     const effectiveCourts = Math.min(Math.max(1, Math.floor(scheduleCourtCount || 1)), Math.floor(X / 4))
 
-    const performGeneration = () => {
+    const performGeneration = async () => {
       try {
         setSubmitting(true)
         const sortedPlayers = [...activePlayers].sort((a, b) =>
@@ -142,11 +144,13 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
         )
         setScheduledPlayers(sortedPlayers)
 
-        const generated = buildRoundRobinDoublesSchedule(
+        const generated = await buildRoundRobinDoublesScheduleAsync(
           sortedPlayers.map(p => String(p.id)),
           effectiveCourts,
           undefined,
-          scheduleMode === 'limited' ? { minGamesPerPlayer, priority: schedulePriority } : { priority: schedulePriority }
+          scheduleMode === 'limited'
+            ? { minGamesPerPlayer, priority: schedulePriority, maxRuntimeMs: 2_500 }
+            : { priority: schedulePriority, maxRuntimeMs: 1_500 }
         )
         const schedule: PendingMatch[] = generated.matches.map(match => ({
           teamA: match.teamA,
@@ -159,8 +163,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
         setPendingMixInMatches([])
         setPendingMixInMatches(schedule)
         setFullRotationSchedule(schedule)
+        setScheduleQuality(generated.quality)
         setShowRotationTable(true)
-        const successMsg = `Đã tạo thành công ${schedule.length} trận xoay vòng cho ${X} người trên ${generated.courtsPerRound} sân.`
+        const qualityNote = generated.quality?.timedOut
+          ? `\nLưu ý: thuật toán đã dừng sau ${Math.round(generated.quality.runtimeMs)}ms để tránh treo UI.`
+          : ''
+        const successMsg = `Đã tạo thành công ${schedule.length} trận xoay vòng cho ${X} người trên ${generated.courtsPerRound} sân.${qualityNote}`
         if (Platform.OS === 'web') window.alert(successMsg)
         else Alert.alert('Thành công', successMsg)
       } catch (error: any) {
@@ -781,6 +789,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                 schedule={pendingMixInMatches.length > 0 ? pendingMixInMatches : fullRotationSchedule}
                 mode={scheduleMode}
                 minGamesPerPlayer={minGamesPerPlayer}
+                quality={scheduleQuality}
               />
 
               {showRotationTable && fullRotationSchedule.some(m => m.rotation) && (
@@ -1143,7 +1152,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
               <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A' }}>
                 LƯỢT TRẬN ĐỀ XUẤT
               </Text>
-              <TouchableOpacity onPress={() => { setPendingMixInMatches([]); setSittingOutPlayers([]) }}>
+              <TouchableOpacity onPress={() => { setPendingMixInMatches([]); setSittingOutPlayers([]); setScheduleQuality(undefined) }}>
                 <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884' }}>Xóa tất cả</Text>
               </TouchableOpacity>
             </View>

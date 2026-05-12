@@ -30,6 +30,11 @@ type Props = {
   schedule: ScheduledMatch[]
   mode: 'full' | 'limited'
   minGamesPerPlayer: number
+  quality?: {
+    runtimeMs: number
+    timedOut: boolean
+    fallbackUsed: boolean
+  }
 }
 
 const pairKey = (a: string, b: string) => a < b ? `${a}_${b}` : `${b}_${a}`
@@ -39,7 +44,7 @@ function increment(map: Map<string, number>, a: string, b: string) {
   map.set(key, (map.get(key) || 0) + 1)
 }
 
-export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPlayer }: Props) {
+export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPlayer, quality }: Props) {
   const [expanded, setExpanded] = useState(false)
   const playerIds = useMemo(() => players.map(p => String(p.id)), [players])
   const playerNameById = useMemo(() => {
@@ -181,6 +186,12 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
       {report.underTarget.length > 0 && (
         <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#854F0B', lineHeight: 15, marginBottom: 8 }}>
           Chua du target {report.targetGames} tran: {report.underTarget.map(row => `${row.name} (${row.games})`).join(', ')}
+        </Text>
+      )}
+
+      {quality?.timedOut && (
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#854F0B', lineHeight: 15, marginBottom: 8 }}>
+          Scheduler da dung sau {Math.round(quality.runtimeMs)}ms de tranh treo UI. Lich nay co the chua toi uu tuyet doi.
         </Text>
       )}
 
