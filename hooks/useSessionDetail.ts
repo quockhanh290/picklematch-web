@@ -75,6 +75,7 @@ export type SessionDetailRecord = {
   has_rated?: boolean
   is_owner_managed?: boolean
   owner_format?: string
+  owner_sessions?: any[] | Record<string, any> | null
   sub_court_numbers?: number[]
   is_unlimited?: boolean
   format_metadata?: any
@@ -101,6 +102,9 @@ export type SessionMatch = {
   players_snapshot?: {
     team_a: string[]
     team_b: string[]
+    rotation?: number
+    court?: number
+    sitter_id?: string
   } | null
   created_at: string
   updated_at: string

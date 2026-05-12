@@ -2,6 +2,7 @@ import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { SHADOW as LAYOUT_SHADOW, RADIUS } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import type { SessionMatch } from '@/hooks/useSessionDetail'
+import { buildRoundRobinDoublesSchedule } from '@/lib/roundRobinScheduler'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
@@ -16,19 +17,6 @@ const RESPONSIVE_CARD_HEIGHT = RESPONSIVE_CARD_WIDTH * 1.25
 const RESPONSIVE_FONT_SIZE = SCREEN_WIDTH > 400 ? 56 : SCREEN_WIDTH > 360 ? 48 : 42
 const RESPONSIVE_GAP = SCREEN_WIDTH > 360 ? 8 : 4
 
-// Helper for combinations (needed for the fixed schedule)
-function getCombos(arr: number[], k: number): number[][] {
-  const res: number[][] = [], tmp: number[] = []
-  function go(s: number) {
-    if (tmp.length === k) { res.push([...tmp]); return }
-    for (let i = s; i <= arr.length - (k - tmp.length); i++) {
-      tmp.push(arr[i]); go(i + 1); tmp.pop()
-    }
-  }
-  go(0)
-  return res
-}
-
 interface Props {
   sessionId: string
   matches: SessionMatch[]
@@ -36,6 +24,7 @@ interface Props {
   onUpdated: () => void
   onClose?: () => void
   isAfterEnd?: boolean
+  courtCount?: number
 }
 
 type PendingMatch = { 
@@ -46,7 +35,7 @@ type PendingMatch = {
   sitterId?: string
 }
 
-export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfterEnd }: Omit<Props, 'onClose'>) {
+export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfterEnd, courtCount = 1 }: Omit<Props, 'onClose'>) {
   const theme = useAppTheme()
   const [submitting, setSubmitting] = useState(false)
   const [isMixInMode, setIsMixInMode] = useState(true)
@@ -127,134 +116,64 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
       .join(' & ')
   }
 
-  // --- EXACT ALGORITHM FROM roundrobin13.jsx ---
   const handleGenerateFixedSchedule = () => {
-    const X = activePlayers.length;
+    const X = activePlayers.length
     if (X < 4) {
-      const msg = `Cần ít nhất 4 người để tạo lịch (hiện có ${X}).`;
-      if (Platform.OS === 'web') window.alert(msg);
-      else Alert.alert('Yêu cầu thêm người', msg);
-      return;
+      const msg = `Cần ít nhất 4 người để tạo lịch (hiện có ${X}).`
+      if (Platform.OS === 'web') window.alert(msg)
+      else Alert.alert('Yêu cầu thêm người', msg)
+      return
     }
+
+    const effectiveCourts = Math.min(Math.max(1, Math.floor(courtCount || 1)), Math.floor(X / 4))
 
     const performGeneration = () => {
       try {
-        setSubmitting(true);
-        // Simple sort by name, but use ID as hidden tie-breaker for absolute stability
-        const sortedPlayers = [...activePlayers].sort((a, b) => 
+        setSubmitting(true)
+        const sortedPlayers = [...activePlayers].sort((a, b) =>
           a.name.localeCompare(b.name) || String(a.id).localeCompare(String(b.id))
-        );
-        setScheduledPlayers(sortedPlayers);
-        
-        const pIds = sortedPlayers.map(p => String(p.id));
-        const X = sortedPlayers.length;
-        const playersIdx = [...Array(X).keys()];
-        const pm: any = {};
-        const om: any = {};
-        const sitCnt: any = Object.fromEntries(playersIdx.map(p => [p, 0]));
-        const gamesCnt: any = Object.fromEntries(playersIdx.map(p => [p, 0]));
-        const schedule: PendingMatch[] = [];
+        )
+        setScheduledPlayers(sortedPlayers)
 
-        const pk = (a: number, b: number) => a < b ? `${a}_${b}` : `${b}_${a}`;
-        const gv = (m: any, a: number, b: number) => m[pk(a, b)] || 0;
-        const inc = (m: any, a: number, b: number) => { const k = pk(a, b); m[k] = (m[k] || 0) + 1; };
-        
-        const minCourtScore = (combo: number[], partnerMap: any) => Math.min(
-          gv(partnerMap, combo[0], combo[1]) + gv(partnerMap, combo[2], combo[3]),
-          gv(partnerMap, combo[0], combo[2]) + gv(partnerMap, combo[1], combo[3]),
-          gv(partnerMap, combo[0], combo[3]) + gv(partnerMap, combo[1], combo[2])
-        );
+        const generated = buildRoundRobinDoublesSchedule(
+          sortedPlayers.map(p => String(p.id)),
+          effectiveCourts
+        )
+        const schedule: PendingMatch[] = generated.matches.map(match => ({
+          teamA: match.teamA,
+          teamB: match.teamB,
+          rotation: match.rotation,
+          court: match.court,
+          sitterId: match.sitterIds.join(',')
+        }))
 
-        const bestSplitOf = (combo: number[], partnerMap: any) => {
-          const opts = [[[combo[0], combo[1]], [combo[2], combo[3]]], [[combo[0], combo[2]], [combo[1], combo[3]]], [[combo[0], combo[3]], [combo[1], combo[2]]]];
-          return opts.reduce((best, cur) => {
-            const s = (t: any) => gv(partnerMap, t[0][0], t[0][1]) + gv(partnerMap, t[1][0], t[1][1]);
-            return s(cur) < s(best) ? cur : best;
-          });
-        };
-
-        const matchesPerRotation = Math.floor(X / 4);
-        const totalRounds = X;
-
-        for (let r = 0; r < totalRounds; r++) {
-          // 1. Identify who sits out
-          const potentialSitters = [...playersIdx].sort((a, b) => 
-            sitCnt[a] !== sitCnt[b] ? sitCnt[a] - sitCnt[b] : gamesCnt[b] - gamesCnt[a]
-          );
-          const numSitters = X % (matchesPerRotation * 4);
-          const roundSitters = potentialSitters.slice(0, numSitters);
-          roundSitters.forEach(s => sitCnt[s]++);
-          const active = playersIdx.filter(p => !roundSitters.includes(p));
-
-          // 2. Exhaustive Partition Search (Exactly like roundrobin13.jsx)
-          let bestPartition: number[][] = [];
-          let bestScore = Infinity;
-
-          const findBestPartition = (rem: number[], currentPartition: number[][], currentScore: number) => {
-            if (currentPartition.length === matchesPerRotation) {
-              if (currentScore < bestScore) {
-                bestScore = currentScore;
-                bestPartition = [...currentPartition];
-              }
-              return currentScore === 0; // Early exit
-            }
-
-            const combos = getCombos(rem, 4);
-            // Limit to avoid infinite hang on very large X, but for 13 players (C(12,4)=495) it's perfect
-            const limit = X > 15 ? 100 : combos.length; 
-            
-            for (let i = 0; i < limit; i++) {
-              const combo = combos[i];
-              const score = minCourtScore(combo, pm);
-              const nextRem = rem.filter(p => !combo.includes(p));
-              if (findBestPartition(nextRem, [...currentPartition, combo], currentScore + score)) return true;
-            }
-            return false;
-          };
-
-          findBestPartition(active, [], 0);
-
-          // 3. Commit best result
-          const courts = bestPartition.map(court => bestSplitOf(court, pm));
-          courts.forEach(([tA, tB], cIdx) => {
-            inc(pm, tA[0], tA[1]); inc(pm, tB[0], tB[1]);
-            tA.forEach(a => tB.forEach(b => inc(om, a, b)));
-            schedule.push({ 
-              teamA: [pIds[tA[0]], pIds[tA[1]]], 
-              teamB: [pIds[tB[0]], pIds[tB[1]]],
-              rotation: r + 1,
-              court: cIdx + 1,
-              sitterId: roundSitters.map(s => pIds[s]).join(',')
-            });
-            [...tA, ...tB].forEach(p => gamesCnt[p]++);
-          });
-        }
-
-        setPendingMixInMatches([]);
-        setPendingMixInMatches(schedule);
-        setFullRotationSchedule(schedule);
-        setShowRotationTable(true);
-        const successMsg = `Đã tạo thành công danh sách ${schedule.length} trận đấu xoay vòng chuẩn (thuật toán Exhaustive Search) cho ${X} người.`;
-        if (Platform.OS === 'web') window.alert(successMsg);
-        else Alert.alert('Thành công', successMsg);
+        setPendingMixInMatches([])
+        setPendingMixInMatches(schedule)
+        setFullRotationSchedule(schedule)
+        setShowRotationTable(true)
+        const successMsg = `Đã tạo thành công ${schedule.length} trận xoay vòng cho ${X} người trên ${generated.courtsPerRound} sân.`
+        if (Platform.OS === 'web') window.alert(successMsg)
+        else Alert.alert('Thành công', successMsg)
       } catch (error: any) {
-        if (Platform.OS === 'web') window.alert('Lỗi: ' + error.message);
-        else Alert.alert('Lỗi thuật toán', error.message);
+        if (Platform.OS === 'web') window.alert('Lỗi: ' + error.message)
+        else Alert.alert('Lỗi thuật toán', error.message)
       } finally {
-        setSubmitting(false);
+        setSubmitting(false)
       }
-    };
+    }
 
-    const confirmMsg = `Hệ thống sẽ chạy thuật toán Exhaustive Search để tạo ${X * Math.floor(X / 4)} trận đấu tối ưu cho ${X} người. Bạn có chắc chắn?`;
+    const expectedMatches = Math.ceil((X * (X - 1)) / 4)
+    const confirmMsg = `Tạo lịch xoay vòng cho ${X} người trên ${effectiveCourts} sân (${expectedMatches} trận dự kiến)?`
     if (Platform.OS === 'web') {
-      if (window.confirm(confirmMsg)) performGeneration();
+      if (window.confirm(confirmMsg)) performGeneration()
     } else {
       Alert.alert('Xác nhận', confirmMsg, [
         { text: 'Hủy', style: 'cancel' },
         { text: 'Đồng ý', onPress: performGeneration }
-      ]);
+      ])
     }
-  };
+  }
+
   const validMatches = matches.filter(m => m.status !== 'cancelled')
   const finishedMatches = matches.filter(m => m.status === 'finished')
 
@@ -647,6 +566,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
       session_id: sessionId,
       team_a_no: 0,
       team_b_no: 0,
+      court_no: match.court,
       status: 'playing',
       players_snapshot: { 
         team_a: match.teamA, 
@@ -779,72 +699,73 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                     BẢNG LỊCH ĐẤU CHI TIẾT ({scheduledPlayers.length} NGƯỜI)
                   </Text>
                   
-                  {Array.from({ length: scheduledPlayers.length }).map((_, rIdx) => {
-                    const rotationNum = rIdx + 1;
-                    const rotationMatches = fullRotationSchedule.filter(m => m.rotation === rotationNum);
-                    
-                    // Even if no matches found in fullRotationSchedule (shouldn't happen if generated),
-                    // we show the rotation header to keep the table structure fixed.
-                    const sitterIds = rotationMatches.length > 0 
-                      ? (rotationMatches[0]?.sitterId?.split(',') || [])
-                      : [];
-                    const sitterNames = sitterIds
-                      .map(id => scheduledPlayers.find(p => String(p.id) === id)?.name || 'N/A')
-                      .sort()
-                      .join(', ');
+                  {(() => {
+                    const totalRotations = Math.max(0, ...fullRotationSchedule.map(m => m.rotation || 0));
+                    const courtsInSchedule = Math.max(1, ...fullRotationSchedule.map(m => m.court || 1));
 
-                    return (
-                      <View key={rotationNum} style={{ marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#E5E3DC', pb: 8 }}>
-                        <View style={{ backgroundColor: '#E1F5EE', padding: 6, borderRadius: 4, marginBottom: 8 }}>
-                          <Text style={{ fontSize: 12, fontWeight: '800', color: '#0F6E56' }}>
-                            Rotation {rotationNum} — {sitterNames ? `${sitterNames} nghỉ` : 'Cả sân cùng đánh'}
-                          </Text>
-                        </View>
-                        
-                        <View style={{ gap: 4 }}>
-                          <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F1EFE8', paddingBottom: 4 }}>
-                            <Text style={{ flex: 0.5, fontSize: 10, fontWeight: '700', color: '#7A8884' }}>Trận</Text>
-                            <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#0F6E56' }}>Đội Xanh</Text>
-                            <Text style={{ flex: 0.5, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>vs</Text>
-                            <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#1d4ed8' }}>Đội Tím</Text>
-                            <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#B4B2A9', textAlign: 'right' }}>Chờ</Text>
+                    return Array.from({ length: totalRotations }).map((_, rIdx) => {
+                      const rotationNum = rIdx + 1;
+                      const rotationMatches = fullRotationSchedule.filter(m => m.rotation === rotationNum);
+                      const sitterIds = rotationMatches.length > 0
+                        ? (rotationMatches[0]?.sitterId?.split(',').filter(Boolean) || [])
+                        : [];
+                      const sitterNames = sitterIds
+                        .map(id => scheduledPlayers.find(p => String(p.id) === id)?.name || 'N/A')
+                        .sort()
+                        .join(', ');
+
+                      return (
+                        <View key={rotationNum} style={{ marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#E5E3DC', pb: 8 }}>
+                          <View style={{ backgroundColor: '#E1F5EE', padding: 6, borderRadius: 4, marginBottom: 8 }}>
+                            <Text style={{ fontSize: 12, fontWeight: '800', color: '#0F6E56' }}>
+                              Rotation {rotationNum} - {sitterNames ? `${sitterNames} nghỉ` : 'Cả sân cùng đánh'}
+                            </Text>
                           </View>
-                          
-                          {rotationMatches.map((m, mIdx) => {
-                            const matchNum = (rIdx * 3) + mIdx + 1;
-                            const playingIds = new Set([...m.teamA, ...m.teamB]);
-                            const waitingNames = scheduledPlayers
-                              .filter(p => !sitterIds.includes(String(p.id)) && !playingIds.has(String(p.id)))
-                              .map(p => p.name.split(' ').pop()) // Just last name for space
-                              .sort((a, b) => (a || '').localeCompare(b || ''))
-                              .join(', ');
 
-                            return (
-                              <View key={mIdx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}>
-                                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '600' }}>{matchNum}</Text>
-                                <Text style={{ flex: 2, fontSize: 11, color: '#0F6E56' }} numberOfLines={1}>
-                                  {m.teamA
-                                    .map(id => scheduledPlayers.find(p => String(p.id) === id)?.name.split(' ').pop() || '')
-                                    .sort((a, b) => a.localeCompare(b))
-                                    .join(', ')}
-                                </Text>
-                                <Text style={{ flex: 0.5, fontSize: 10, color: '#B4B2A9', textAlign: 'center' }}>vs</Text>
-                                <Text style={{ flex: 2, fontSize: 11, color: '#1d4ed8' }} numberOfLines={1}>
-                                  {m.teamB
-                                    .map(id => scheduledPlayers.find(p => String(p.id) === id)?.name.split(' ').pop() || '')
-                                    .sort((a, b) => a.localeCompare(b))
-                                    .join(', ')}
-                                </Text>
-                                <Text style={{ flex: 2, fontSize: 9, color: '#7A8884', textAlign: 'right' }} numberOfLines={1}>{waitingNames}</Text>
-                              </View>
-                            );
-                          })}
+                          <View style={{ gap: 4 }}>
+                            <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F1EFE8', paddingBottom: 4 }}>
+                              <Text style={{ flex: 0.5, fontSize: 10, fontWeight: '700', color: '#7A8884' }}>Trận</Text>
+                              <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#0F6E56' }}>Đội Xanh</Text>
+                              <Text style={{ flex: 0.5, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>vs</Text>
+                              <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#1d4ed8' }}>Đội Tím</Text>
+                              <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#B4B2A9', textAlign: 'right' }}>Chờ</Text>
+                            </View>
+
+                            {rotationMatches.map((m, mIdx) => {
+                              const matchNum = (rIdx * courtsInSchedule) + mIdx + 1;
+                              const playingIds = new Set([...m.teamA, ...m.teamB]);
+                              const waitingNames = scheduledPlayers
+                                .filter(p => !sitterIds.includes(String(p.id)) && !playingIds.has(String(p.id)))
+                                .map(p => p.name.split(' ').pop())
+                                .sort((a, b) => (a || '').localeCompare(b || ''))
+                                .join(', ');
+
+                              return (
+                                <View key={mIdx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}>
+                                  <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '600' }}>{matchNum}</Text>
+                                  <Text style={{ flex: 2, fontSize: 11, color: '#0F6E56' }} numberOfLines={1}>
+                                    {m.teamA
+                                      .map(id => scheduledPlayers.find(p => String(p.id) === id)?.name.split(' ').pop() || '')
+                                      .sort((a, b) => a.localeCompare(b))
+                                      .join(', ')}
+                                  </Text>
+                                  <Text style={{ flex: 0.5, fontSize: 10, color: '#B4B2A9', textAlign: 'center' }}>vs</Text>
+                                  <Text style={{ flex: 2, fontSize: 11, color: '#1d4ed8' }} numberOfLines={1}>
+                                    {m.teamB
+                                      .map(id => scheduledPlayers.find(p => String(p.id) === id)?.name.split(' ').pop() || '')
+                                      .sort((a, b) => a.localeCompare(b))
+                                      .join(', ')}
+                                  </Text>
+                                  <Text style={{ flex: 2, fontSize: 9, color: '#7A8884', textAlign: 'right' }} numberOfLines={1}>{waitingNames}</Text>
+                                </View>
+                              );
+                            })}
+                          </View>
                         </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
+                      );
+                    });
+                  })()}
+                </View>              )}
 
             {activeMatches.length === 0 ? (
               <View style={{

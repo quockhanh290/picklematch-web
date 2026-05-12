@@ -37,56 +37,90 @@ function bestSplitOf([a, b, c, d], pm) {
 }
 
 // ─── Core scheduler ───────────────────────────────────────────────────────────
-function buildSchedule(n = 13) {
+function buildSchedule(n = 13, courtCount = 3, roundsCount) {
   const players = [...Array(n).keys()];
+  const courtsPerRound = Math.min(Math.max(1, Math.floor(courtCount)), Math.floor(n / 4));
+  const sittersPerRound = n - courtsPerRound * 4;
+  const targetRounds = roundsCount ?? Math.ceil((n * (n - 1) / 4) / Math.max(1, courtsPerRound));
   const pm = {}, om = {};
-  const sitCnt   = Object.fromEntries(players.map(p => [p, 0]));
+  const sitCnt = Object.fromEntries(players.map(p => [p, 0]));
   const gamesCnt = Object.fromEntries(players.map(p => [p, 0]));
-  const rounds   = [];
+  const rounds = [];
 
-  for (let r = 0; r < n; r++) {
-    // Who sits out? → fewest sitouts; tiebreak: most games played
-    const out = [...players].sort((a, b) =>
-      sitCnt[a] !== sitCnt[b] ? sitCnt[a] - sitCnt[b] : gamesCnt[b] - gamesCnt[a]
-    )[0];
-    sitCnt[out]++;
-    const active = players.filter(p => p !== out);
+  if (n < 4 || courtsPerRound < 1) {
+    return { rounds, pm, om, gamesCnt, sitCnt, players, allPairs: getCombos(players, 2), pVals: [], oVals: [], courtsPerRound, sittersPerRound };
+  }
 
-    // Exhaustive partition search: all C(12,4)×C(8,4) = 34,650 ways to split
-    // 3 courts of 4, score = sum of minimum partner-repeat scores across courts.
-    // Early exit as soon as score = 0 (perfect, can't improve).
-    let bestP = null, bestScore = Infinity;
-    outer:
-    for (const c1 of getCombos(active, 4)) {
-      const rem = active.filter(p => !c1.includes(p));
-      for (const c2 of getCombos(rem, 4)) {
-        const c3  = rem.filter(p => !c2.includes(p));
-        const score = minCourtScore(c1, pm) + minCourtScore(c2, pm) + minCourtScore(c3, pm);
-        if (score < bestScore) {
-          bestScore = score; bestP = [c1, c2, c3];
-          if (score === 0) break outer;
-        }
+  const splitScore = ([[a, b], [c, d]]) => {
+    const partnerRepeats = gv(pm, a, b) + gv(pm, c, d);
+    const opponentRepeats = gv(om, a, c) + gv(om, a, d) + gv(om, b, c) + gv(om, b, d);
+    return partnerRepeats * 100 + opponentRepeats;
+  };
+
+  const bestSplit = (court) => {
+    const [a, b, c, d] = court;
+    const opts = [[[a,b],[c,d]], [[a,c],[b,d]], [[a,d],[b,c]]];
+    return opts.reduce((best, cur) => splitScore(cur) < splitScore(best) ? cur : best);
+  };
+
+  const courtScore = (court) => splitScore(bestSplit(court));
+
+  const choosePartition = (active) => {
+    let bestP = [], bestScore = Infinity;
+    const candidateLimit = courtsPerRound <= 3 ? Infinity : 80;
+
+    const search = (remaining, partition, score) => {
+      if (partition.length === courtsPerRound) {
+        if (score < bestScore) { bestScore = score; bestP = partition.map(c => [...c]); }
+        return score === 0;
       }
-    }
+      if (score >= bestScore) return false;
 
-    // Commit best partition + splits, update state
-    const courts = bestP.map(court => bestSplitOf(court, pm));
+      const anchor = remaining[0];
+      const candidates = getCombos(remaining.slice(1), 3)
+        .map(rest => [anchor, ...rest])
+        .sort((a, b) => courtScore(a) - courtScore(b))
+        .slice(0, candidateLimit);
+
+      for (const court of candidates) {
+        const next = remaining.filter(p => !court.includes(p));
+        if (search(next, [...partition, court], score + courtScore(court))) return true;
+      }
+      return false;
+    };
+
+    search(active, [], 0);
+    return bestP;
+  };
+
+  for (let r = 0; r < Math.max(1, Math.floor(targetRounds)); r++) {
+    const sitters = [...players]
+      .sort((a, b) => sitCnt[a] !== sitCnt[b] ? sitCnt[a] - sitCnt[b] : gamesCnt[b] - gamesCnt[a])
+      .slice(0, sittersPerRound);
+    sitters.forEach(p => sitCnt[p]++);
+
+    const active = players
+      .filter(p => !sitters.includes(p))
+      .sort((a, b) => gamesCnt[a] !== gamesCnt[b] ? gamesCnt[a] - gamesCnt[b] : a - b);
+
+    const bestP = choosePartition(active);
+    const courts = bestP.map(court => bestSplit(court));
+
     courts.forEach(([tA, tB]) => {
       inc(pm, tA[0], tA[1]); inc(pm, tB[0], tB[1]);
       tA.forEach(a => tB.forEach(b => inc(om, a, b)));
       [...tA, ...tB].forEach(p => gamesCnt[p]++);
     });
-    rounds.push({ r: r + 1, out, courts, score: bestScore });
+    rounds.push({ r: r + 1, out: sitters, courts, score: 0 });
   }
 
   const allPairs = getCombos(players, 2);
   return {
-    rounds, pm, om, gamesCnt, sitCnt, players, allPairs,
+    rounds, pm, om, gamesCnt, sitCnt, players, allPairs, courtsPerRound, sittersPerRound,
     pVals: allPairs.map(([a,b]) => gv(pm, a, b)),
     oVals: allPairs.map(([a,b]) => gv(om, a, b)),
   };
 }
-
 // ─── Labels ───────────────────────────────────────────────────────────────────
 const RAW_LABELS = ['A','B','C','D','E','F','G','H','I','J','K','L','M'];
 
@@ -214,6 +248,8 @@ export default function App() {
 
 // ─── Schedule View ────────────────────────────────────────────────────────────
 function ScheduleView({ rounds, lbl }) {
+  const sitterLabel = out => Array.isArray(out) ? out.map(lbl).join(', ') : lbl(out);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {rounds.map(({ r, out, courts, score }) => (
@@ -227,7 +263,7 @@ function ScheduleView({ rounds, lbl }) {
                 </span>
               )}
               <span style={{ fontSize: 12, color: '#6b7280', background: '#fee2e2', padding: '3px 10px', borderRadius: 12, fontWeight: 600, border: '1px solid #fecaca' }}>
-                Nghỉ: {lbl(out)}
+                Nghỉ: {sitterLabel(out)}
               </span>
             </div>
           </div>

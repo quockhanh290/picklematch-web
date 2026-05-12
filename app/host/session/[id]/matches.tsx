@@ -34,13 +34,15 @@ export default function HostMatchRoute() {
     return <AppLoading fullScreen />
   }
 
-  const ownerDetails = session?.owner_sessions?.[0] || session?.owner_sessions || {}
+  const rawOwnerDetails = session?.owner_sessions
+  const ownerDetails = Array.isArray(rawOwnerDetails) ? (rawOwnerDetails[0] || {}) : (rawOwnerDetails || {})
   const processedPlayers = session ? buildArrangementPlayers({ ...session, owner_sessions: ownerDetails }) : []
+  const courtCount = Math.max(1, (session?.sub_court_numbers || ownerDetails.sub_court_numbers || []).length || 1)
 
   const startTs = session?.slot?.start_time ? new Date(session.slot.start_time).getTime() : 0
   const isWayPastStart = startTs > 0 && (Date.now() - startTs) > (12 * 3600000)
   const isAfterEnd = (session?.slot?.end_time ? new Date(session.slot.end_time).getTime() <= Date.now() : false) || 
-                     ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion'].includes(session?.status) || 
+                     ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion'].includes(session?.status ?? '') || 
                      isWayPastStart
 
   return (
@@ -54,6 +56,7 @@ export default function HostMatchRoute() {
         players={processedPlayers}
         onUpdated={fetchSession}
         isAfterEnd={isAfterEnd}
+        courtCount={courtCount}
       />
     </View>
   )
