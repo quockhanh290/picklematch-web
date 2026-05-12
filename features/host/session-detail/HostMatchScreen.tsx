@@ -6,7 +6,7 @@ import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
 import { Minus, Plus, SwordsIcon } from 'lucide-react-native'
-import React, { useState } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Alert, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
@@ -15,6 +15,19 @@ const RESPONSIVE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 80 : SCREEN_WIDTH > 360 ? 70 
 const RESPONSIVE_CARD_HEIGHT = RESPONSIVE_CARD_WIDTH * 1.25
 const RESPONSIVE_FONT_SIZE = SCREEN_WIDTH > 400 ? 56 : SCREEN_WIDTH > 360 ? 48 : 42
 const RESPONSIVE_GAP = SCREEN_WIDTH > 360 ? 8 : 4
+
+// Helper for combinations (needed for the fixed schedule)
+function getCombos(arr: number[], k: number): number[][] {
+  const res: number[][] = [], tmp: number[] = []
+  function go(s: number) {
+    if (tmp.length === k) { res.push([...tmp]); return }
+    for (let i = s; i <= arr.length - (k - tmp.length); i++) {
+      tmp.push(arr[i]); go(i + 1); tmp.pop()
+    }
+  }
+  go(0)
+  return res
+}
 
 interface Props {
   sessionId: string
@@ -25,39 +38,70 @@ interface Props {
   isAfterEnd?: boolean
 }
 
-type PendingMatch = { teamA: string[], teamB: string[] }
+type PendingMatch = { 
+  teamA: string[]
+  teamB: string[]
+  rotation?: number
+  court?: number
+  sitterId?: string
+}
 
 export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfterEnd }: Omit<Props, 'onClose'>) {
   const theme = useAppTheme()
   const [submitting, setSubmitting] = useState(false)
   const [isMixInMode, setIsMixInMode] = useState(true)
   const [showAllProgress, setShowAllProgress] = useState(false)
+  const [showRotationTable, setShowRotationTable] = useState(false)
   const [pendingMixInMatches, setPendingMixInMatches] = useState<PendingMatch[]>([])
+  const [fullRotationSchedule, setFullRotationSchedule] = useState<PendingMatch[]>([])
+  const [scheduledPlayers, setScheduledPlayers] = useState<ArrangementPlayer[]>([])
   const [sittingOutPlayers, setSittingOutPlayers] = useState<string[]>([]) // player IDs sitting out
   const [localScores, setLocalScores] = useState<Record<string, { a: number, b: number }>>({})
 
   // Sync local scores when matches change, but carefully to avoid flickering
-  React.useEffect(() => {
+  useEffect(() => {
+    const newScores: Record<string, { a: number, b: number }> = {}
+    matches.forEach(m => {
+      if (m.status === 'playing' || m.status === 'finished') {
+        newScores[m.id] = { a: m.score_a || 0, b: m.score_b || 0 }
+      }
+    })
     setLocalScores(prev => {
-      const next = { ...prev }
-      let changed = false
-      matches.forEach(m => {
-        if (m.status === 'playing') {
-          // Only sync if we don't have it yet, or if the server score is different from our local one
-          // and we're not in the middle of a rapid update
-          if (!next[m.id] || (next[m.id].a !== m.score_a && next[m.id].b !== m.score_b)) {
-            // To prevent jumping, we only overwrite if the server data is actually newer 
-            // or if we don't have local state yet
-            if (!next[m.id]) {
-              next[m.id] = { a: m.score_a, b: m.score_b }
-              changed = true
-            }
-          }
-        }
-      })
-      return changed ? next : prev
+      const hasChanged = Object.keys(newScores).some(id => 
+        !prev[id] || prev[id].a !== newScores[id].a || prev[id].b !== newScores[id].b
+      )
+      return hasChanged ? newScores : prev
     })
   }, [matches])
+
+  useEffect(() => {
+    if (fullRotationSchedule.length === 0 && matches.some(m => m.players_snapshot?.rotation)) {
+      const restored = matches
+        .filter(m => m.players_snapshot?.rotation)
+        .map(m => ({
+          teamA: m.players_snapshot.team_a,
+          teamB: m.players_snapshot.team_b,
+          rotation: m.players_snapshot.rotation,
+          court: m.players_snapshot.court,
+          sitterId: m.players_snapshot.sitter_id
+        }))
+        .sort((a, b) => (a.rotation || 0) - (b.rotation || 0) || (a.court || 0) - (b.court || 0));
+      if (restored.length > 0) {
+        setFullRotationSchedule(restored);
+        // Also ensure scheduledPlayers is populated
+        const allIds = new Set<string>();
+        restored.forEach(r => {
+          r.teamA.forEach((id: string) => allIds.add(id));
+          r.teamB.forEach((id: string) => allIds.add(id));
+          if (r.sitterId) r.sitterId.split(',').forEach((id: string) => allIds.add(id));
+        });
+        const stableList = players
+          .filter(p => allIds.has(String(p.id)))
+          .sort((a, b) => a.name.localeCompare(b.name) || String(a.id).localeCompare(String(b.id)));
+        setScheduledPlayers(stableList);
+      }
+    }
+  }, [matches, fullRotationSchedule.length, players]);
 
   const activeMatches = matches.filter(m => m.status === 'playing')
   const historyMatches = matches.filter(m => m.status === 'finished' || m.status === 'cancelled')
@@ -73,20 +117,196 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
 
   const teamIds = Object.keys(teamGroups).sort((a, b) => Number(a) - Number(b))
 
-  // --- Mix-in rotation completion check ---
-  // Build a map: playerA -> Set of playerIds they've shared a match with
-  const metMap = new Map<string, Set<string>>()
   const activePlayers = players.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show')
-  activePlayers.forEach(p => metMap.set(p.id, new Set()))
 
+  const getMatchPlayerNames = (snapshotUids: string[]) => {
+    if (!snapshotUids || snapshotUids.length === 0) return 'Đang cập nhật'
+    return snapshotUids
+      .map(uid => players.find(p => p.id === uid)?.name || 'Người chơi')
+      .sort((a, b) => a.localeCompare(b))
+      .join(' & ')
+  }
+
+  // --- EXACT ALGORITHM FROM roundrobin13.jsx ---
+  const handleGenerateFixedSchedule = () => {
+    const X = activePlayers.length;
+    if (X < 4) {
+      const msg = `Cần ít nhất 4 người để tạo lịch (hiện có ${X}).`;
+      if (Platform.OS === 'web') window.alert(msg);
+      else Alert.alert('Yêu cầu thêm người', msg);
+      return;
+    }
+
+    const performGeneration = () => {
+      try {
+        setSubmitting(true);
+        // Simple sort by name, but use ID as hidden tie-breaker for absolute stability
+        const sortedPlayers = [...activePlayers].sort((a, b) => 
+          a.name.localeCompare(b.name) || String(a.id).localeCompare(String(b.id))
+        );
+        setScheduledPlayers(sortedPlayers);
+        
+        const pIds = sortedPlayers.map(p => String(p.id));
+        const X = sortedPlayers.length;
+        const playersIdx = [...Array(X).keys()];
+        const pm: any = {};
+        const om: any = {};
+        const sitCnt: any = Object.fromEntries(playersIdx.map(p => [p, 0]));
+        const gamesCnt: any = Object.fromEntries(playersIdx.map(p => [p, 0]));
+        const schedule: PendingMatch[] = [];
+
+        const pk = (a: number, b: number) => a < b ? `${a}_${b}` : `${b}_${a}`;
+        const gv = (m: any, a: number, b: number) => m[pk(a, b)] || 0;
+        const inc = (m: any, a: number, b: number) => { const k = pk(a, b); m[k] = (m[k] || 0) + 1; };
+        
+        const minCourtScore = (combo: number[], partnerMap: any) => Math.min(
+          gv(partnerMap, combo[0], combo[1]) + gv(partnerMap, combo[2], combo[3]),
+          gv(partnerMap, combo[0], combo[2]) + gv(partnerMap, combo[1], combo[3]),
+          gv(partnerMap, combo[0], combo[3]) + gv(partnerMap, combo[1], combo[2])
+        );
+
+        const bestSplitOf = (combo: number[], partnerMap: any) => {
+          const opts = [[[combo[0], combo[1]], [combo[2], combo[3]]], [[combo[0], combo[2]], [combo[1], combo[3]]], [[combo[0], combo[3]], [combo[1], combo[2]]]];
+          return opts.reduce((best, cur) => {
+            const s = (t: any) => gv(partnerMap, t[0][0], t[0][1]) + gv(partnerMap, t[1][0], t[1][1]);
+            return s(cur) < s(best) ? cur : best;
+          });
+        };
+
+        const matchesPerRotation = Math.floor(X / 4);
+        const totalRounds = X;
+
+        for (let r = 0; r < totalRounds; r++) {
+          // 1. Identify who sits out
+          const potentialSitters = [...playersIdx].sort((a, b) => 
+            sitCnt[a] !== sitCnt[b] ? sitCnt[a] - sitCnt[b] : gamesCnt[b] - gamesCnt[a]
+          );
+          const numSitters = X % (matchesPerRotation * 4);
+          const roundSitters = potentialSitters.slice(0, numSitters);
+          roundSitters.forEach(s => sitCnt[s]++);
+          const active = playersIdx.filter(p => !roundSitters.includes(p));
+
+          // 2. Exhaustive Partition Search (Exactly like roundrobin13.jsx)
+          let bestPartition: number[][] = [];
+          let bestScore = Infinity;
+
+          const findBestPartition = (rem: number[], currentPartition: number[][], currentScore: number) => {
+            if (currentPartition.length === matchesPerRotation) {
+              if (currentScore < bestScore) {
+                bestScore = currentScore;
+                bestPartition = [...currentPartition];
+              }
+              return currentScore === 0; // Early exit
+            }
+
+            const combos = getCombos(rem, 4);
+            // Limit to avoid infinite hang on very large X, but for 13 players (C(12,4)=495) it's perfect
+            const limit = X > 15 ? 100 : combos.length; 
+            
+            for (let i = 0; i < limit; i++) {
+              const combo = combos[i];
+              const score = minCourtScore(combo, pm);
+              const nextRem = rem.filter(p => !combo.includes(p));
+              if (findBestPartition(nextRem, [...currentPartition, combo], currentScore + score)) return true;
+            }
+            return false;
+          };
+
+          findBestPartition(active, [], 0);
+
+          // 3. Commit best result
+          const courts = bestPartition.map(court => bestSplitOf(court, pm));
+          courts.forEach(([tA, tB], cIdx) => {
+            inc(pm, tA[0], tA[1]); inc(pm, tB[0], tB[1]);
+            tA.forEach(a => tB.forEach(b => inc(om, a, b)));
+            schedule.push({ 
+              teamA: [pIds[tA[0]], pIds[tA[1]]], 
+              teamB: [pIds[tB[0]], pIds[tB[1]]],
+              rotation: r + 1,
+              court: cIdx + 1,
+              sitterId: roundSitters.map(s => pIds[s]).join(',')
+            });
+            [...tA, ...tB].forEach(p => gamesCnt[p]++);
+          });
+        }
+
+        setPendingMixInMatches([]);
+        setPendingMixInMatches(schedule);
+        setFullRotationSchedule(schedule);
+        setShowRotationTable(true);
+        const successMsg = `Đã tạo thành công danh sách ${schedule.length} trận đấu xoay vòng chuẩn (thuật toán Exhaustive Search) cho ${X} người.`;
+        if (Platform.OS === 'web') window.alert(successMsg);
+        else Alert.alert('Thành công', successMsg);
+      } catch (error: any) {
+        if (Platform.OS === 'web') window.alert('Lỗi: ' + error.message);
+        else Alert.alert('Lỗi thuật toán', error.message);
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    const confirmMsg = `Hệ thống sẽ chạy thuật toán Exhaustive Search để tạo ${X * Math.floor(X / 4)} trận đấu tối ưu cho ${X} người. Bạn có chắc chắn?`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMsg)) performGeneration();
+    } else {
+      Alert.alert('Xác nhận', confirmMsg, [
+        { text: 'Hủy', style: 'cancel' },
+        { text: 'Đồng ý', onPress: performGeneration }
+      ]);
+    }
+  };
+  const validMatches = matches.filter(m => m.status !== 'cancelled')
   const finishedMatches = matches.filter(m => m.status === 'finished')
+
+  // Helper to safely get players from snapshot (handles both Object and String/JSON)
+  const getPlayersFromSnapshot = (snapshot: any): { team_a: string[], team_b: string[] } => {
+    try {
+      if (!snapshot) return { team_a: [], team_b: [] }
+      const parsed = typeof snapshot === 'string' ? JSON.parse(snapshot) : snapshot
+      return {
+        team_a: (parsed.team_a || []).map((id: any) => String(id)),
+        team_b: (parsed.team_b || []).map((id: any) => String(id))
+      }
+    } catch (e) {
+      return { team_a: [], team_b: [] }
+    }
+  }
+
+  // Count total matches played per player (ONLY playing or finished)
+  const matchesPlayed = new Map<string, number>()
+  activePlayers.forEach(p => matchesPlayed.set(String(p.id), 0))
+  validMatches.forEach(m => {
+    const { team_a, team_b } = getPlayersFromSnapshot(m.players_snapshot)
+    const all = [...team_a, ...team_b]
+    all.forEach(pid => {
+      if (matchesPlayed.has(pid)) {
+        matchesPlayed.set(pid, (matchesPlayed.get(pid) ?? 0) + 1)
+      }
+    })
+  })
+
+  // Maps to track encounters (using safe snapshot)
+  const metMap = new Map<string, Set<string>>()
+  const partnerMap = new Map<string, Set<string>>()
+  activePlayers.forEach(p => {
+    metMap.set(String(p.id), new Set())
+    partnerMap.set(String(p.id), new Set())
+  })
+
   finishedMatches.forEach(m => {
-    const snapshot = m.players_snapshot
-    const teamA: string[] = snapshot?.team_a || []
-    const teamB: string[] = snapshot?.team_b || []
-    // Only count cross-team encounters (opponents), NOT same-team partners
-    teamA.forEach(pid => {
-      teamB.forEach(opponent => {
+    const { team_a, team_b } = getPlayersFromSnapshot(m.players_snapshot)
+    
+    if (team_a.length === 2) {
+      partnerMap.get(team_a[0])?.add(team_a[1])
+      partnerMap.get(team_a[1])?.add(team_a[0])
+    }
+    if (team_b.length === 2) {
+      partnerMap.get(team_b[0])?.add(team_b[1])
+      partnerMap.get(team_b[1])?.add(team_b[0])
+    }
+
+    team_a.forEach(pid => {
+      team_b.forEach(opponent => {
         if (metMap.has(pid)) metMap.get(pid)!.add(opponent)
         if (metMap.has(opponent)) metMap.get(opponent)!.add(pid)
       })
@@ -95,16 +315,17 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
 
   const totalPlayers = activePlayers.length
   const isRotationComplete = totalPlayers >= 2 && activePlayers.every(p => {
-    const met = metMap.get(p.id)
+    const met = metMap.get(String(p.id))
     return met && met.size >= totalPlayers - 1
   })
 
   // Player with fewest encounters (for progress tracking)
   const playerEncounterCounts = activePlayers.map(p => ({
-    id: p.id,
+    id: String(p.id),
     name: p.name,
-    met: metMap.get(p.id)?.size ?? 0
-  })).sort((a, b) => a.met - b.met)
+    met: metMap.get(String(p.id))?.size ?? 0,
+    played: matchesPlayed.get(String(p.id)) ?? 0
+  })).sort((a, b) => a.name.localeCompare(b.name))
 
   const handleUpdateScore = async (matchId: string, team: 'a' | 'b', delta: number) => {
     if (isAfterEnd) return
@@ -288,55 +509,135 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
 
   const getPlayerNames = (teamNo: number) => teamGroups[String(teamNo)]?.map(p => p.name).join(' - ') || `Đội ${teamNo}`
 
-  const getMatchPlayerNames = (snapshotUids: string[]) => {
-    if (!snapshotUids || snapshotUids.length === 0) return 'Đang cập nhật'
-    return snapshotUids.map(uid => players.find(p => p.id === uid)?.name || 'Người chơi').join(' & ')
-  }
+
 
   const handleGenerateMixInRound = () => {
     if (isAfterEnd) return
-    const eligible = [...players.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show')]
-    if (eligible.length < 4) {
-      Alert.alert('Chưa đủ người', 'Cần ít nhất 4 người để bốc thăm thi đấu.')
+    
+    // 1. Identify who is TRULY available
+    const busyFromDb = new Set(matches
+      .filter(m => m.status === 'playing' || m.status === 'pending')
+      .flatMap(m => {
+        const { team_a, team_b } = getPlayersFromSnapshot(m.players_snapshot)
+        return [...team_a, ...team_b]
+      })
+    )
+    const alreadyPendingIds = new Set(pendingMixInMatches.flatMap(m => [
+      ...m.teamA.map(pid => String(pid)), 
+      ...m.teamB.map(pid => String(pid))
+    ]))
+    
+    const trulyAvailable = activePlayers.filter(p => {
+      const sid = String(p.id)
+      return !busyFromDb.has(sid) && !alreadyPendingIds.has(sid)
+    })
+
+    if (trulyAvailable.length < 4) {
+      Alert.alert('Hết người rảnh', 'Tất cả mọi người đều đang thi đấu hoặc đã có lịch chờ.')
       return
     }
 
-    // Count total matches played per player
-
-    const matchesPlayed = new Map<string, number>()
-    eligible.forEach(p => matchesPlayed.set(p.id, 0))
-    matches.forEach(m => {
-      const all = [...(m.players_snapshot?.team_a || []), ...(m.players_snapshot?.team_b || [])]
-      all.forEach(pid => {
-        if (matchesPlayed.has(pid)) matchesPlayed.set(pid, (matchesPlayed.get(pid) ?? 0) + 1)
+    // 2. Projected Matches Calculation
+    const projectedMatches = new Map<string, number>()
+    activePlayers.forEach(p => projectedMatches.set(String(p.id), matchesPlayed.get(String(p.id)) ?? 0))
+    
+    pendingMixInMatches.forEach(m => {
+      [...m.teamA, ...m.teamB].forEach(pid => {
+        const sid = String(pid)
+        if (projectedMatches.has(sid)) {
+          projectedMatches.set(sid, (projectedMatches.get(sid) ?? 0) + 1)
+        }
       })
     })
 
-    // Assign a random order upfront so tiebreaks are unbiased.
-    // Using lastMatchTime as tiebreaker is WRONG because players in the "last
-    // created match" of a round always get the most recent timestamp and end up
-    // sitting out repeatedly — creating a systematic gap over many rounds.
-    const randomTie = new Map(eligible.map(p => [p.id, Math.random()]))
-
-    const sorted = [...eligible].sort((a, b) => {
-      const diff = (matchesPlayed.get(a.id) ?? 0) - (matchesPlayed.get(b.id) ?? 0)
-      if (diff !== 0) return diff
-      return randomTie.get(a.id)! - randomTie.get(b.id)! // unbiased tiebreak
+    // 3. Hard Match-Gap Filter (Priority #1)
+    const checkedInPlayers = activePlayers.filter(p => p.checkInStatus === 'checked_in')
+    const referenceGroup = checkedInPlayers.length > 0 ? checkedInPlayers : activePlayers
+    const allProjectedCounts = referenceGroup.map(p => projectedMatches.get(String(p.id)) ?? 0)
+    const globalMinMatches = Math.min(...allProjectedCounts)
+    
+    // Only allow people who won't violate the Match Gap-1 rule
+    const allowedByMatch = trulyAvailable.filter(p => {
+      const pCount = projectedMatches.get(String(p.id)) ?? 0
+      return pCount <= globalMinMatches + 1
     })
 
-    const numMatches = Math.floor(sorted.length / 4)
-    const playing = sorted.slice(0, numMatches * 4)
-    playing.sort(() => Math.random() - 0.5) // randomize pairings within eligible group
-
-    const proposals: PendingMatch[] = []
-    for (let i = 0; i < numMatches; i++) {
-      proposals.push({
-        teamA: [playing[i * 4].id, playing[i * 4 + 1].id],
-        teamB: [playing[i * 4 + 2].id, playing[i * 4 + 3].id],
-      })
+    if (allowedByMatch.length < 4) {
+      Alert.alert('Chờ cân bằng', 'Cần đợi một số người đánh xong để đảm bảo khoảng cách trận đấu không quá 1.')
+      return
     }
-    const sittingOut = sorted.slice(numMatches * 4).map(p => p.id)
-    setPendingMixInMatches(proposals)
+
+    // 4. Secondary Sorting: Prioritize Encounter Balance (Soft Constraint)
+    const allMetCounts = referenceGroup.map(p => metMap.get(String(p.id))?.size ?? 0)
+    const globalMinMet = Math.min(...allMetCounts)
+    
+    const sortedAllowed = [...allowedByMatch].sort((a, b) => {
+      const sA = String(a.id); const sB = String(b.id)
+      
+      // Tier 1: Matches Played (Lower is better)
+      const countA = projectedMatches.get(sA) ?? 0
+      const countB = projectedMatches.get(sB) ?? 0
+      if (countA !== countB) return countA - countB
+      
+      // Tier 2: Encounter Gap (If someone is already >2 ahead of the minimum, they get lower priority)
+      const metA = metMap.get(sA)?.size ?? 0
+      const metB = metMap.get(sB)?.size ?? 0
+      const isOverA = metA > globalMinMet + 2
+      const isOverB = metB > globalMinMet + 2
+      if (isOverA !== isOverB) return isOverA ? 1 : -1
+      
+      // Tier 3: Absolute number of encounters
+      if (metA !== metB) return metA - metB
+      
+      return Math.random() - 0.5
+    })
+    
+    // Pick the most urgent seed
+    const seedPlayer = sortedAllowed[0]
+    const others = sortedAllowed.slice(1)
+    
+    // We want to pick 3 people from 'others' who have NOT met seedPlayer
+    const seedMet = metMap.get(String(seedPlayer.id))
+    const notMetOthers = others.filter(o => !seedMet?.has(String(o.id)))
+    const metOthers = others.filter(o => seedMet?.has(String(o.id)))
+    
+    // Take as many as possible from notMetOthers, fill the rest from metOthers
+    const finalFour = [seedPlayer, ...notMetOthers.slice(0, 3)]
+    if (finalFour.length < 4) {
+      finalFour.push(...metOthers.slice(0, 4 - finalFour.length))
+    }
+    
+    let bestMatch: PendingMatch = { teamA: [], teamB: [] }
+    let lowestMatchScore = Infinity
+
+    // Try 200 combinations within these 4 specific people to find the best teams
+    for (let i = 0; i < 200; i++) {
+      const shuffle = [...finalFour].sort(() => Math.random() - 0.5)
+      const teamA = [shuffle[0].id, shuffle[1].id]
+      const teamB = [shuffle[2].id, shuffle[3].id]
+      
+      let score = 0
+      teamA.forEach(pA => {
+        teamB.forEach(pB => {
+          if (!metMap.get(pA)?.has(pB)) score -= 1000 
+          else score += 1
+        })
+      })
+      if (partnerMap.get(teamA[0])?.has(teamA[1])) score += 50
+      if (partnerMap.get(teamB[0])?.has(teamB[1])) score += 50
+
+      if (score < lowestMatchScore) {
+        lowestMatchScore = score
+        bestMatch = { teamA, teamB }
+      }
+    }
+
+    setPendingMixInMatches(prev => [...prev, bestMatch])
+    const newPendingIds = new Set([...alreadyPendingIds, ...bestMatch.teamA, ...bestMatch.teamB])
+    const sittingOut = activePlayers.filter(p => {
+      const sid = String(p.id)
+      return !busyFromDb.has(sid) && !newPendingIds.has(sid)
+    }).map(p => p.id)
     setSittingOutPlayers(sittingOut)
   }
 
@@ -347,7 +648,13 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
       team_a_no: 0,
       team_b_no: 0,
       status: 'playing',
-      players_snapshot: { team_a: match.teamA, team_b: match.teamB }
+      players_snapshot: { 
+        team_a: match.teamA, 
+        team_b: match.teamB,
+        rotation: match.rotation,
+        court: match.court,
+        sitter_id: match.sitterId
+      }
     })
     setSubmitting(false)
     if (error) {
@@ -389,7 +696,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A' }}>ĐANG DIỄN RA</Text>
               <View style={{
-                backgroundColor: activeMatches.length > 0 ? theme.primary : '#F1EFE8',
+                backgroundColor: activeMatches.length > 0 ? theme?.primary : '#F1EFE8',
                 paddingHorizontal: 10,
                 paddingVertical: 4,
                 borderRadius: 999,
@@ -398,12 +705,146 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                 gap: 4
               }}>
                 <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: activeMatches.length > 0 ? '#E1F5EE' : '#B4B2A9' }} />
-                <View style={{ width: 6, height: 6, borderRadius: RADIUS.full, backgroundColor: activeMatches.length > 0 ? '#E1F5EE' : '#B4B2A9' }} />
                 <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.headline, color: activeMatches.length > 0 ? 'white' : '#7A8884' }}>
                   {activeMatches.length} TRẬN LIVE
                 </Text>
               </View>
             </View>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+                <TouchableOpacity
+                  onPress={handleGenerateMixInRound}
+                  disabled={submitting}
+                  style={{
+                    flex: 1,
+                    backgroundColor: theme?.primary,
+                    padding: 16,
+                    borderRadius: RADIUS.lg,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: submitting ? 0.6 : 1,
+                    ...LAYOUT_SHADOW.sm
+                  }}
+                >
+                  <SwordsIcon size={20} color="white" style={{ marginRight: 8 }} />
+                  <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>Bốc 1 trận</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={handleGenerateFixedSchedule}
+                  disabled={submitting}
+                  style={{
+                    flex: 1,
+                    backgroundColor: activePlayers.length >= 4 ? '#1d4ed8' : '#64748b',
+                    padding: 16,
+                    borderRadius: RADIUS.lg,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: submitting ? 0.6 : 1,
+                    ...LAYOUT_SHADOW.sm
+                  }}
+                >
+                  <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
+                    {activePlayers.length >= 4 ? `Lịch ${activePlayers.length} người` : `Cần >= 4 người (đang có ${activePlayers.length})`}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {fullRotationSchedule.length > 0 && (
+                <TouchableOpacity 
+                  onPress={() => setShowRotationTable(!showRotationTable)}
+                  style={{ 
+                    backgroundColor: '#F5F1E8', 
+                    padding: 12, 
+                    borderRadius: RADIUS.md, 
+                    marginBottom: 20,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1,
+                    borderColor: '#E5E3DC'
+                  }}
+                >
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, color: '#1A2E2A' }}>
+                    {showRotationTable ? 'Ẩn bảng tiến độ' : 'Xem bảng tiến độ xoay vòng'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {showRotationTable && fullRotationSchedule.some(m => m.rotation) && (
+                <View style={{ backgroundColor: '#F9F8F4', borderRadius: RADIUS.lg, padding: 12, marginBottom: 24, borderWidth: 1, borderColor: '#E5E3DC' }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: '#1A2E2A', marginBottom: 12, textAlign: 'center' }}>
+                    BẢNG LỊCH ĐẤU CHI TIẾT ({scheduledPlayers.length} NGƯỜI)
+                  </Text>
+                  
+                  {Array.from({ length: scheduledPlayers.length }).map((_, rIdx) => {
+                    const rotationNum = rIdx + 1;
+                    const rotationMatches = fullRotationSchedule.filter(m => m.rotation === rotationNum);
+                    
+                    // Even if no matches found in fullRotationSchedule (shouldn't happen if generated),
+                    // we show the rotation header to keep the table structure fixed.
+                    const sitterIds = rotationMatches.length > 0 
+                      ? (rotationMatches[0]?.sitterId?.split(',') || [])
+                      : [];
+                    const sitterNames = sitterIds
+                      .map(id => scheduledPlayers.find(p => String(p.id) === id)?.name || 'N/A')
+                      .sort()
+                      .join(', ');
+
+                    return (
+                      <View key={rotationNum} style={{ marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#E5E3DC', pb: 8 }}>
+                        <View style={{ backgroundColor: '#E1F5EE', padding: 6, borderRadius: 4, marginBottom: 8 }}>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: '#0F6E56' }}>
+                            Rotation {rotationNum} — {sitterNames ? `${sitterNames} nghỉ` : 'Cả sân cùng đánh'}
+                          </Text>
+                        </View>
+                        
+                        <View style={{ gap: 4 }}>
+                          <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F1EFE8', paddingBottom: 4 }}>
+                            <Text style={{ flex: 0.5, fontSize: 10, fontWeight: '700', color: '#7A8884' }}>Trận</Text>
+                            <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#0F6E56' }}>Đội Xanh</Text>
+                            <Text style={{ flex: 0.5, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>vs</Text>
+                            <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#1d4ed8' }}>Đội Tím</Text>
+                            <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#B4B2A9', textAlign: 'right' }}>Chờ</Text>
+                          </View>
+                          
+                          {rotationMatches.map((m, mIdx) => {
+                            const matchNum = (rIdx * 3) + mIdx + 1;
+                            const playingIds = new Set([...m.teamA, ...m.teamB]);
+                            const waitingNames = scheduledPlayers
+                              .filter(p => !sitterIds.includes(String(p.id)) && !playingIds.has(String(p.id)))
+                              .map(p => p.name.split(' ').pop()) // Just last name for space
+                              .sort((a, b) => (a || '').localeCompare(b || ''))
+                              .join(', ');
+
+                            return (
+                              <View key={mIdx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}>
+                                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '600' }}>{matchNum}</Text>
+                                <Text style={{ flex: 2, fontSize: 11, color: '#0F6E56' }} numberOfLines={1}>
+                                  {m.teamA
+                                    .map(id => scheduledPlayers.find(p => String(p.id) === id)?.name.split(' ').pop() || '')
+                                    .sort((a, b) => a.localeCompare(b))
+                                    .join(', ')}
+                                </Text>
+                                <Text style={{ flex: 0.5, fontSize: 10, color: '#B4B2A9', textAlign: 'center' }}>vs</Text>
+                                <Text style={{ flex: 2, fontSize: 11, color: '#1d4ed8' }} numberOfLines={1}>
+                                  {m.teamB
+                                    .map(id => scheduledPlayers.find(p => String(p.id) === id)?.name.split(' ').pop() || '')
+                                    .sort((a, b) => a.localeCompare(b))
+                                    .join(', ')}
+                                </Text>
+                                <Text style={{ flex: 2, fontSize: 9, color: '#7A8884', textAlign: 'right' }} numberOfLines={1}>{waitingNames}</Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
 
             {activeMatches.length === 0 ? (
               <View style={{
@@ -423,7 +864,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                 <View style={{
                   position: 'absolute',
                   top: 0, left: 0, right: 0, bottom: 0,
-                  backgroundColor: theme.primary,
+                  backgroundColor: theme?.primary,
                   opacity: 0.15
                 }} />
 
@@ -714,8 +1155,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
               </View>
             )}
             {pendingMixInMatches.map((match, idx) => {
-              const teamAPlayers = match.teamA.map(pid => players.find(p => p.id === pid))
-              const teamBPlayers = match.teamB.map(pid => players.find(p => p.id === pid))
+              const teamAPlayers = match.teamA
+                .map(pid => players.find(p => p.id === pid))
+                .sort((a, b) => (a?.name || '').localeCompare(b?.name || ''))
+              const teamBPlayers = match.teamB
+                .map(pid => players.find(p => p.id === pid))
+                .sort((a, b) => (a?.name || '').localeCompare(b?.name || ''))
               return (
                 <View key={idx} style={{
                   backgroundColor: '#F5F1E8',
@@ -725,6 +1170,17 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                   borderColor: '#E5E3DC',
                   overflow: 'hidden'
                 }}>
+                  {match.rotation && (
+                    <View style={{ backgroundColor: '#E1F5EE', paddingHorizontal: 12, paddingVertical: 4 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#0F6E56', fontWeight: '800' }}>
+                        ROTATION {match.rotation} — {
+                          match.sitterId?.split(',')
+                            .map(id => players.find(p => String(p.id) === id)?.name || 'N/A')
+                            .join(', ')
+                        } nghỉ
+                      </Text>
+                    </View>
+                  )}
                   <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12 }}>
                     <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       {/* CẶP 1 */}
@@ -823,12 +1279,15 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
             {!isRotationComplete && finishedMatches.length > 0 && totalPlayers >= 4 && (
               <View style={{ backgroundColor: '#F5F1E8', borderRadius: RADIUS.lg, padding: 12, marginBottom: 16 }}>
                 <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#7A8884', marginBottom: 8, letterSpacing: 0.5 }}>
-                  TIẾN ĐỘ XOAY VÒNG
+                  GỢI Ý ƯU TIÊN (DỰA TRÊN SỐ TRẬN)
                 </Text>
-                {(showAllProgress ? playerEncounterCounts : playerEncounterCounts.slice(0, 4)).map(({ id, name, met }) => (
+                {(showAllProgress ? playerEncounterCounts : playerEncounterCounts.slice(0, 4)).map(({ id, name, met, played }) => (
                   <View key={id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#1A2E2A', fontWeight: '600', flex: 1 }}>{name}</Text>
-                    <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#1A2E2A', fontWeight: '600' }}>{name}</Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884' }}>Đã đánh {played} trận</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', flex: 2 }}>
                       {Array.from({ length: totalPlayers - 1 }).map((_, i) => (
                         <View
                           key={i}
@@ -843,9 +1302,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                         />
                       ))}
                     </View>
-                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: met >= totalPlayers - 1 ? '#0F6E56' : '#854F0B', width: 28, textAlign: 'right' }}>
-                      {met}/{totalPlayers - 1}
-                    </Text>
+                    <View style={{ width: 45, alignItems: 'flex-end' }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: met >= totalPlayers - 1 ? '#0F6E56' : '#854F0B', fontWeight: '800' }}>
+                        {met}/{totalPlayers - 1}
+                      </Text>
+                      <Text style={{ fontSize: 8, color: '#B4B2A9', fontWeight: '600' }}>GẶP MẶT</Text>
+                    </View>
                   </View>
                 ))}
                 {playerEncounterCounts.length > 4 && (

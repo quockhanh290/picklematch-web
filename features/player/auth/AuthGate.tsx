@@ -168,48 +168,6 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
     }
   }, [authStatus, fontsLoaded, navReady, pathname, segments, userRole, router, isWeb, isPublicRoute, isProfileSetupRoute, isHostRoute, isOnboardingRoute, isHostLoginRoute, isRegisterRoute, isPlayerRoute])
 
-  // 5. Synchronous Render Guard
-  // Don't render anything while determining auth status or loading fonts
-  if (authStatus === 'loading' || !fontsLoaded) {
-    if (status !== 'online') {
-      return (
-        <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-          <AppLoading label={status === 'offline' ? "KHÔNG CÓ KẾT NỐI" : "ĐANG KẾT NỐI LẠI..."} />
-          <Text style={{ 
-            marginTop: 8, 
-            color: theme.onSurfaceVariant, 
-            fontFamily: SCREEN_FONTS.body, 
-            fontSize: 14,
-            textAlign: 'center' 
-          }}>
-            {status === 'offline' 
-              ? "Vui lòng kiểm tra kết nối mạng của bạn để tiếp tục." 
-              : "Kết nối mạng của bạn có vẻ không ổn định. Đang thử lại..."}
-          </Text>
-          <TouchableOpacity 
-            onPress={() => status === 'offline' ? retry() : router.replace(pathname as any)} 
-            style={{ 
-              marginTop: 32, 
-              paddingVertical: 12, 
-              paddingHorizontal: 24, 
-              borderRadius: 100, 
-              backgroundColor: theme.secondaryContainer 
-            }}
-          >
-            <Text style={{ color: theme.onSecondaryContainer, fontFamily: SCREEN_FONTS.medium }}>
-              {status === 'offline' ? 'Thử lại ngay' : 'Thử tải lại trang'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )
-    }
-    return (
-      <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }}>
-        <AppLoading label="ĐANG XÁC THỰC..." />
-      </View>
-    )
-  }
-
   // Security: Only render children if it's a public route OR if auth is in a valid state for the route.
   // This prevents "flashing" protected UI before the redirect useEffect kicks in.
   const shouldRenderChildren = isPublicRoute || 
@@ -217,18 +175,68 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
     (authStatus === 'needs_setup' && isProfileSetupRoute) || 
     (authStatus === 'needs_onboarding' && isOnboardingRoute)
 
-  if (!shouldRenderChildren) {
-    return (
-      <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }}>
-        <AppLoading label="ĐANG CHUYỂN HƯỚNG..." />
-      </View>
-    )
-  }
-
+  // 5. Synchronous Render Guard
+  // We ALWAYS render children (the Stack) to ensure the navigation context is present.
+  // We overlay the loading/redirecting UI on top.
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      {children}
+      
+      {(authStatus === 'loading' || !fontsLoaded || !shouldRenderChildren) && (
+        <View style={{ 
+          ...Platform.select({
+            web: { position: 'fixed' as any },
+            default: { position: 'absolute' }
+          }),
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: theme.background, 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          zIndex: 10000 
+        }}>
+          {authStatus === 'loading' || !fontsLoaded ? (
+            status !== 'online' ? (
+              <View style={{ alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+                <AppLoading label={status === 'offline' ? "KHÔNG CÓ KẾT NỐI" : "ĐANG KẾT NỐI LẠI..."} />
+                <Text style={{ 
+                  marginTop: 8, 
+                  color: theme.onSurfaceVariant, 
+                  fontFamily: SCREEN_FONTS.body, 
+                  fontSize: 14,
+                  textAlign: 'center' 
+                }}>
+                  {status === 'offline' 
+                    ? "Vui lòng kiểm tra kết nối mạng của bạn để tiếp tục." 
+                    : "Kết nối mạng của bạn có vẻ không ổn định. Đang thử lại..."}
+                </Text>
+                <TouchableOpacity 
+                  onPress={() => status === 'offline' ? retry() : router.replace(pathname as any)} 
+                  style={{ 
+                    marginTop: 32, 
+                    paddingVertical: 12, 
+                    paddingHorizontal: 24, 
+                    borderRadius: 100, 
+                    backgroundColor: theme.secondaryContainer 
+                  }}
+                >
+                  <Text style={{ color: theme.onSecondaryContainer, fontFamily: SCREEN_FONTS.medium }}>
+                    {status === 'offline' ? 'Thử lại ngay' : 'Thử tải lại trang'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <AppLoading label="ĐANG XÁC THỰC..." />
+            )
+          ) : (
+            <AppLoading label="ĐANG CHUYỂN HƯỚNG..." />
+          )}
+        </View>
+      )}
+
       {persistenceWarning && (
         <View style={{ 
+          position: 'absolute',
+          top: 0, left: 0, right: 0,
           backgroundColor: theme.warningContainer, 
           paddingVertical: 10, 
           paddingHorizontal: 16,
@@ -237,7 +245,7 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
           gap: 12,
           borderBottomWidth: 1,
           borderBottomColor: theme.warningStrong + '30',
-          zIndex: 9999
+          zIndex: 10001
         }}>
           <AlertTriangle size={18} color={theme.warningStrong} />
           <Text style={{ 
@@ -254,7 +262,6 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
           </TouchableOpacity>
         </View>
       )}
-      {children}
-    </>
+    </View>
   )
 }

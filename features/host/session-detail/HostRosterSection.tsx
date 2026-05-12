@@ -145,7 +145,8 @@ export function HostRosterSection({
         const serverStatus = (p as any).checkInStatus
         if (serverStatus && serverStatus !== 'pending') {
           next[p.id] = serverStatus
-        } else if (serverStatus === 'pending') {
+        } else if (serverStatus === 'pending' && !next[p.id]) {
+          // Only delete if we don't have a local optimistic status
           delete next[p.id]
         }
       })
