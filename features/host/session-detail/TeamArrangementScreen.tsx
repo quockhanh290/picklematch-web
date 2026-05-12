@@ -3,30 +3,42 @@ import { Text, View, TouchableOpacity, ScrollView, Platform, Alert } from 'react
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
-import { RefreshCw, ShieldCheck } from 'lucide-react-native'
+import { ShieldCheck } from 'lucide-react-native'
 import { getInitials, type ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { BrandedFooter } from '@/components/design/BrandedFooter'
+import { arrangeFixedTeams } from '@/lib/scheduler/fixedTeamPairing'
+import { buildFixedTeamScheduleDraft, type FixedTeamScheduledMatch } from '@/lib/scheduler/fixedTeamSchedule'
+import { getTeamSkill, hasCompleteFixedPair, type FixedTeamOptimizationProfile } from '@/lib/scheduler/scoring'
+import { ScheduleCoverageReport } from './ScheduleCoverageReport'
 
 type Props = {
   onClose: () => void
   players: ArrangementPlayer[]
   maxPlayers: number
+  courtCount?: number
   sessionId: string
   onUpdated: () => void
   onGoToMatches?: () => void
+  onApplySchedule?: (payload: {
+    matches: FixedTeamScheduledMatch[]
+    players: ArrangementPlayer[]
+    quality: { runtimeMs: number, timedOut: boolean, fallbackUsed: boolean }
+  }) => void
   isAfterEnd?: boolean
 }
 
-export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId, onUpdated, onGoToMatches, isAfterEnd }: Props) {
+export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount = 1, sessionId, onUpdated, onGoToMatches, onApplySchedule, isAfterEnd }: Props) {
   const theme = useAppTheme()
+  const maxTeamCount = Math.max(1, Math.floor(players.length / 2))
+  const defaultTeamCount = Math.max(1, Math.min(maxTeamCount, Math.ceil(players.length / 2)))
   const [arrangedPlayers, setArrangedPlayers] = useState<ArrangementPlayer[]>(players)
   const [submitting, setSubmitting] = useState(false)
-  const [targetNumTeams, setTargetNumTeams] = useState(Math.max(2, Math.ceil(players.length / 2)))
+  const [targetNumTeams, setTargetNumTeams] = useState(defaultTeamCount)
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null)
   const [hasOngoingMatches, setHasOngoingMatches] = useState(false)
   const [checkingMatches, setCheckingMatches] = useState(false)
-  const [keepPartners, setKeepPartners] = useState(false)
+  const [optimizationProfile, setOptimizationProfile] = useState<FixedTeamOptimizationProfile>('balanced')
 
   // Sync state when players change or mount
   React.useEffect(() => {
@@ -49,256 +61,51 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
       }
     }
 
-    setArrangedPlayers(players)
-    setTargetNumTeams(Math.max(2, Math.ceil(players.length / 2)))
+    setArrangedPlayers(hasCompleteFixedPair(players) ? players : arrangeFixedTeams(players, defaultTeamCount, { profile: optimizationProfile, preserveExistingPairs: false }))
+    setTargetNumTeams(defaultTeamCount)
     checkOngoing()
-  }, [players, sessionId])
+  }, [defaultTeamCount, optimizationProfile, players, sessionId])
 
   const teamOptions = Array.from({ length: targetNumTeams }, (_, i) => i + 1)
 
-  const calculateTotalSatisfaction = (currentPlayers: ArrangementPlayer[]) => {
-    let score = 0
-    const teams = new Map<number, ArrangementPlayer[]>()
-    currentPlayers.forEach(p => {
-      if (p.team > 0) {
-        if (!teams.has(p.team)) teams.set(p.team, [])
-        teams.get(p.team)!.push(p)
-      }
-    })
-
-    currentPlayers.forEach(p => {
-      if (p.team <= 0) return
-      const partner = teams.get(p.team)?.find(o => o.id !== p.id)
-      const opponents = currentPlayers.filter(o => o.team > 0 && o.team !== p.team)
-
-      // Partner Preference
-      if (p.metadata?.partner_gender_pref && p.metadata.partner_gender_pref !== 'any' && partner) {
-        const partnerGender = String(partner.gender || '').toLowerCase()
-        const pref = p.metadata.partner_gender_pref
-        if ((pref === 'female' && (partnerGender === 'female' || partnerGender === 'nữ')) ||
-            (pref === 'male' && (partnerGender === 'male' || partnerGender === 'nam'))) {
-          score += 10
-        }
-      }
-
-      // Opponent Preference
-      if (p.metadata?.opponent_gender_pref && p.metadata.opponent_gender_pref !== 'any' && opponents.length > 0) {
-        const pref = p.metadata.opponent_gender_pref
-        const matchedOpponent = opponents.some(o => {
-          const oGender = String(o.gender || '').toLowerCase()
-          return (pref === 'female' && (oGender === 'female' || oGender === 'nữ')) ||
-                 (pref === 'male' && (oGender === 'male' || oGender === 'nam'))
-        })
-        if (matchedOpponent) score += 5
-      }
-    })
-    return score
-  }
+  const hasFixedPairs = () => hasCompleteFixedPair(arrangedPlayers)
+  const draftSchedule = React.useMemo(
+    () => buildFixedTeamScheduleDraft(arrangedPlayers, courtCount, optimizationProfile),
+    [arrangedPlayers, courtCount, optimizationProfile]
+  )
 
   const autoBalanceTeams = () => {
-    if (keepPartners) {
-      // MODE: Keep existing partners but re-assign teams to balance match difficulty
-      const teamsMap = new Map<number, ArrangementPlayer[]>()
-      arrangedPlayers.forEach(p => {
-        if (p.team > 0) {
-          if (!teamsMap.has(p.team)) teamsMap.set(p.team, [])
-          teamsMap.get(p.team)!.push(p)
-        }
-      })
-      
-      const existingTeams = Array.from(teamsMap.values()).map(players => ({
-        players,
-        avgElo: players.reduce((acc, p) => acc + (p.pvna || 0), 0) / players.length
-      }))
-      
-      const waitingPlayers = arrangedPlayers.filter(p => p.team <= 0)
-      if (isAfterEnd) return
-      
-      // Shuffle and then pick best of several tries
-      let bestResult: ArrangementPlayer[] = []
-      let bestScore = -1
-
-      for (let round = 0; round < 20; round++) {
-        let currentTry: ArrangementPlayer[] = []
-        const shuffledTeams = [...existingTeams].sort(() => Math.random() - 0.5)
-        
-        shuffledTeams.forEach((t, idx) => {
-          const newTeamNo = idx + 1
-          t.players.forEach(p => {
-            currentTry.push({ ...p, team: newTeamNo <= targetNumTeams ? newTeamNo : 0 })
-          })
-        })
-        waitingPlayers.forEach(p => currentTry.push({ ...p, team: 0 }))
-
-        const currentScore = calculateTotalSatisfaction(currentTry)
-        // Also consider skill balance between opponents in matches (T1 vs T2, T3 vs T4)
-        let skillBalancePenalty = 0
-        for (let i = 1; i < targetNumTeams; i += 2) {
-          const t1 = shuffledTeams[i-1]
-          const t2 = shuffledTeams[i]
-          if (t1 && t2) {
-            skillBalancePenalty += Math.abs(t1.avgElo - t2.avgElo) * 10
-          }
-        }
-
-        const finalScore = currentScore - skillBalancePenalty
-        if (finalScore > bestScore) {
-          bestScore = finalScore
-          bestResult = currentTry
-        }
-      }
-      
-      setArrangedPlayers(bestResult)
-      return
-    }
-
-    // MODE: Change partners (Traditional Auto-balance)
     if (isAfterEnd) return
-    // 1. Initial Skill-based Balance (Greedy Snake/High-Low)
-    const sorted = [...arrangedPlayers].sort((a, b) => {
-      const valA = a.pvna ?? (a.elo / 100)
-      const valB = b.pvna ?? (b.elo / 100)
-      return valB - valA
-    })
-
-    let initialResult: ArrangementPlayer[] = []
-    const playersPerTeam = 2 
-    let left = 0
-    let right = sorted.length - 1
-    const used = new Set()
-    
-    for (let t = 1; t <= targetNumTeams; t++) {
-      for (let i = 0; i < playersPerTeam; i++) {
-        if (used.size >= sorted.length) break
-        let pickedIdx = -1
-        if (i % 2 === 0) {
-          while (left < sorted.length && used.has(sorted[left].id)) left++
-          if (left < sorted.length) pickedIdx = left
-        } else {
-          while (right >= 0 && used.has(sorted[right].id)) right--
-          if (right >= 0 && right >= left) pickedIdx = right
-        }
-        if (pickedIdx !== -1) {
-          const p = sorted[pickedIdx]
-          initialResult.push({ ...p, team: t })
-          used.add(p.id)
-        }
-      }
-    }
-    sorted.forEach(p => { if (!used.has(p.id)) initialResult.push({ ...p, team: 0 }) })
-
-    // 2. Optimization Phase: Smart Randomized Swapping
-    // Instead of picking the absolute best, we try many combinations and pick one that is 
-    // "Great" (High satisfaction + Good balance) but potentially different each time.
-    let candidates: { players: ArrangementPlayer[], score: number }[] = []
-    
-    for (let round = 0; round < 50; round++) {
-      let currentTry = round === 0 ? [...initialResult] : [...initialResult].sort(() => Math.random() - 0.5)
-      
-      // If not the first round, do a quick skill-based re-assignment
-      if (round > 0) {
-        const tempUsed = new Set()
-        let tempResult: ArrangementPlayer[] = []
-        const currentSorted = [...currentTry].sort((a, b) => (b.pvna || 0) - (a.pvna || 0))
-        
-        // Simple assignment
-        let tNo = 1
-        let pCount = 0
-        currentSorted.forEach(p => {
-          if (tNo <= targetNumTeams) {
-            tempResult.push({ ...p, team: tNo })
-            pCount++
-            if (pCount >= 2) { tNo++; pCount = 0; }
-          } else {
-            tempResult.push({ ...p, team: 0 })
-          }
-        })
-        currentTry = tempResult
-      }
-
-      // Small random swaps to improve satisfaction
-      for (let swap = 0; swap < 10; swap++) {
-        const idx1 = Math.floor(Math.random() * currentTry.length)
-        const idx2 = Math.floor(Math.random() * currentTry.length)
-        const p1 = currentTry[idx1]; const p2 = currentTry[idx2]
-        
-        if (p1.team > 0 && p2.team > 0 && p1.team !== p2.team) {
-          const skillDiff = Math.abs((p1.pvna || 0) - (p2.pvna || 0))
-          if (skillDiff <= 0.4) { // Tight skill constraint for balance
-            const t1 = p1.team
-            currentTry[idx1] = { ...p1, team: p2.team }
-            currentTry[idx2] = { ...p2, team: t1 }
-          }
-        }
-      }
-
-      const score = calculateTotalSatisfaction(currentTry)
-      candidates.push({ players: currentTry, score })
-    }
-
-    // Sort candidates by score and pick randomly from the top 5
-    candidates.sort((a, b) => b.score - a.score)
-    const bestCandidates = candidates.slice(0, 5)
-    const finalPick = bestCandidates[Math.floor(Math.random() * bestCandidates.length)]
-    
-    setArrangedPlayers(finalPick.players)
+    setArrangedPlayers(arrangeFixedTeams(arrangedPlayers, targetNumTeams, { profile: optimizationProfile, preserveExistingPairs: false }))
   }
 
-  const shuffleTeams = () => {
+  const handleOptimizationProfileChange = (profile: FixedTeamOptimizationProfile) => {
+    setOptimizationProfile(profile)
     if (isAfterEnd) return
-    let result: ArrangementPlayer[] = []
-    
-    if (keepPartners) {
-      // 1. Group existing teams
-      const teamsMap = new Map<number, ArrangementPlayer[]>()
-      arrangedPlayers.forEach(p => {
-        if (p.team > 0) {
-          if (!teamsMap.has(p.team)) teamsMap.set(p.team, [])
-          teamsMap.get(p.team)!.push(p)
-        }
-      })
-      
-      const waitingPlayers = arrangedPlayers.filter(p => p.team <= 0)
-      const existingTeams = Array.from(teamsMap.values())
-      
-      // 2. Shuffle the teams themselves
-      const shuffledTeams = [...existingTeams].sort(() => Math.random() - 0.5)
-      
-      // 3. Assign to new team numbers while keeping members together
-      shuffledTeams.forEach((teamPlayers, idx) => {
-        const newTeamNo = idx + 1
-        teamPlayers.forEach(p => {
-          result.push({ ...p, team: newTeamNo <= targetNumTeams ? newTeamNo : 0 })
-        })
-      })
-      
-      // 4. Handle players who were waiting or don't fit in new team count
-      waitingPlayers.forEach(p => {
-        if (!result.find(rp => rp.id === p.id)) {
-          result.push({ ...p, team: 0 })
-        }
-      })
-    } else {
-      // Standard shuffle (Change partners)
-      const shuffled = [...arrangedPlayers].sort(() => Math.random() - 0.5)
-      const playersPerTeam = 2
-      
-      result = shuffled.map((p, idx) => {
-        const teamIdx = Math.floor(idx / playersPerTeam) + 1
-        return {
-          ...p,
-          team: teamIdx <= targetNumTeams ? teamIdx : 0
-        }
-      })
-    }
+    setArrangedPlayers(current => arrangeFixedTeams(current, targetNumTeams, { profile, preserveExistingPairs: false }))
+  }
 
-    setArrangedPlayers(result)
+  const handleTeamCountChange = (teamCount: number) => {
+    setTargetNumTeams(teamCount)
+    if (isAfterEnd) return
+    setArrangedPlayers(current => arrangeFixedTeams(current, teamCount, { profile: optimizationProfile, preserveExistingPairs: false }))
   }
 
   const totalPlayers = arrangedPlayers.length
 
   const handleSave = async () => {
     if (isAfterEnd) return
+    const invalidTeams = teamOptions
+      .map(teamNo => ({ teamNo, count: getTeamPlayers(teamNo).length }))
+      .filter(team => team.count !== 2)
+    if (invalidTeams.length > 0) {
+      Alert.alert(
+        'Chua du doi',
+        `Moi doi can dung 2 nguoi. Doi can chinh: ${invalidTeams.map(team => `Doi ${team.teamNo} (${team.count})`).join(', ')}`
+      )
+      return
+    }
+
     if (hasOngoingMatches) {
       const confirm = await new Promise((resolve) => {
         Alert.alert(
@@ -346,6 +153,63 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
     }
   }
 
+  const handleApplySchedule = async () => {
+    if (isAfterEnd) return
+    if (!onApplySchedule || draftSchedule.matches.length === 0) {
+      await handleSave()
+      return
+    }
+
+    const invalidTeams = teamOptions
+      .map(teamNo => ({ teamNo, count: getTeamPlayers(teamNo).length }))
+      .filter(team => team.count !== 2)
+    if (invalidTeams.length > 0) {
+      Alert.alert(
+        'Chua du doi',
+        `Moi doi can dung 2 nguoi. Doi can chinh: ${invalidTeams.map(team => `Doi ${team.teamNo} (${team.count})`).join(', ')}`
+      )
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const assignments = arrangedPlayers
+        .filter(p => p.team > 0)
+        .map(p => ({
+          player_id: p.id,
+          team_no: p.team
+        }))
+
+      const { error: saveError } = await supabase.rpc('save_session_teams', {
+        p_session_id: sessionId,
+        p_assignments: assignments
+      })
+
+      if (saveError) throw saveError
+
+      onApplySchedule({
+        matches: draftSchedule.matches,
+        players: draftSchedule.players,
+        quality: {
+          runtimeMs: draftSchedule.quality.runtimeMs,
+          timedOut: draftSchedule.quality.timedOut,
+          fallbackUsed: draftSchedule.quality.fallbackUsed,
+        },
+      })
+      onUpdated()
+      onClose()
+    } catch (error: any) {
+      console.error('[TeamArrangement] Failed to apply schedule:', error)
+      if (Platform.OS !== 'web') {
+        Alert.alert('Lỗi', `Không thể áp dụng lịch: ${error.message || 'Lỗi không xác định'}`)
+      } else {
+        alert(`Lỗi: ${error.message || 'Không thể áp dụng lịch'}`)
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const getTeamPlayers = (t: number) => arrangedPlayers.filter(p => p.team === t)
   
   const AVATAR_COLORS = [
@@ -368,8 +232,8 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
 
   const isWeb = Platform.OS === 'web'
   const totalSkill = arrangedPlayers.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
-  const targetBalance = totalPlayers > 0 ? totalSkill / totalPlayers : 0
-  const maxSkill = 6.0 
+  const targetBalance = targetNumTeams > 0 ? totalSkill / targetNumTeams : 0
+  const maxSkill = 12.0
 
   return (
     <View style={{ flex: 1, backgroundColor: 'white' }}>
@@ -407,10 +271,10 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
             }}>SỐ LƯỢNG ĐỘI (Tham gia: {totalPlayers}/{maxPlayers})</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={{ flexDirection: 'row', gap: 8 }}>
-                {Array.from({ length: Math.max(0, totalPlayers - 1) }, (_, i) => i + 2).map(n => (
+                {Array.from({ length: maxTeamCount }, (_, i) => i + 1).map(n => (
                   <TouchableOpacity
                     key={n}
-                    onPress={() => setTargetNumTeams(n)}
+                    onPress={() => handleTeamCountChange(n)}
                     activeOpacity={0.8}
                     style={{
                       paddingHorizontal: 16,
@@ -435,50 +299,47 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
             </ScrollView>
           </View>
 
-          {/* Rotation Settings */}
-          <View style={{ 
-            flexDirection: 'row', 
-            alignItems: 'center', 
-            justifyContent: 'space-between', 
-            backgroundColor: '#F5F1E8',
-            padding: 12,
-            borderRadius: 12,
-            marginBottom: 16
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontSize: 18 }}>🔄</Text>
-              <View>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '700' }}>Chế độ xoay vòng</Text>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884' }}>
-                  {keepPartners ? 'Giữ nguyên các cặp đã ghép' : 'Đổi cặp ngẫu nhiên mỗi lượt'}
-                </Text>
-              </View>
+          {/* Optimization Profile */}
+          <View style={{ marginBottom: 16 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '600', color: '#7A8884', marginBottom: 10, letterSpacing: 0.5 }}>
+              ƯU TIÊN TỐI ƯU
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {[
+                { key: 'balanced', label: 'Cân bằng', hint: 'Pref + trình' },
+                { key: 'preference', label: 'Preference', hint: 'Ưu tiên mong muốn' },
+                { key: 'skill', label: 'Cân trình', hint: 'Ít lệch điểm' },
+              ].map(option => {
+                const selected = optimizationProfile === option.key
+                return (
+                  <TouchableOpacity
+                    key={option.key}
+                    onPress={() => handleOptimizationProfileChange(option.key as FixedTeamOptimizationProfile)}
+                    activeOpacity={0.85}
+                    style={{
+                      flex: 1,
+                      borderRadius: 12,
+                      borderWidth: 1.5,
+                      borderColor: selected ? '#0F6E56' : '#E5E3DC',
+                      backgroundColor: selected ? '#E1F5EE' : 'white',
+                      paddingHorizontal: 8,
+                      paddingVertical: 9,
+                    }}
+                  >
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: selected ? '#0F6E56' : '#1A2E2A', fontWeight: '900', textAlign: 'center' }}>
+                      {option.label}
+                    </Text>
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', textAlign: 'center', marginTop: 2 }} numberOfLines={1}>
+                      {option.hint}
+                    </Text>
+                  </TouchableOpacity>
+                )
+              })}
             </View>
-            <TouchableOpacity 
-              onPress={() => setKeepPartners(!keepPartners)}
-              activeOpacity={0.8}
-              style={{
-                width: 50,
-                height: 26,
-                borderRadius: 13,
-                backgroundColor: keepPartners ? '#0F6E56' : '#D5D2C8',
-                padding: 2,
-                justifyContent: 'center'
-              }}
-            >
-              <View style={{
-                width: 22,
-                height: 22,
-                borderRadius: 11,
-                backgroundColor: 'white',
-                alignSelf: keepPartners ? 'flex-end' : 'flex-start',
-                ...LAYOUT_SHADOW.xs
-              }} />
-            </TouchableOpacity>
           </View>
 
           {/* Action Buttons */}
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
+          <View style={{ flexDirection: 'row', marginBottom: 24 }}>
             <TouchableOpacity 
               onPress={autoBalanceTeams}
               activeOpacity={0.8}
@@ -503,34 +364,9 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
                 fontWeight: '700',
                 color: 'white',
                 textTransform: 'uppercase'
-              }}>Chia thông minh</Text>
+              }}>{hasFixedPairs() ? 'Cân bằng cặp' : 'Tạo cặp cố định'}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              onPress={shuffleTeams}
-              disabled={isAfterEnd}
-              activeOpacity={0.7}
-              style={{ 
-                flex: 1,
-                flexDirection: 'row', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                gap: 8, 
-                backgroundColor: '#F5F1E8', 
-                paddingVertical: 14, 
-                borderRadius: 12,
-                opacity: isAfterEnd ? 0.5 : 1
-              }}
-            >
-              <RefreshCw size={16} color="#1A2E2A" />
-              <Text style={{ 
-                fontFamily: SCREEN_FONTS.headline, 
-                fontSize: 13, 
-                fontWeight: '700',
-                color: '#1A2E2A',
-                textTransform: 'uppercase'
-              }}>Xáo ngẫu nhiên</Text>
-            </TouchableOpacity>
           </View>
 
           {/* Preview Grid */}
@@ -542,8 +378,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
             {teamOptions.map((t) => {
               const ps = getTeamPlayers(t)
               const teamSkill = ps.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
-              const teamAvg = ps.length > 0 ? teamSkill / ps.length : 0
-              const balance = teamAvg - targetBalance
+              const balance = teamSkill - targetBalance
               const isEmpty = ps.length === 0
 
               const balanceStyle = balance > 0
@@ -589,7 +424,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
                           color: '#1A2E2A',
                           fontWeight: '900'
                         }}>
-                          {teamAvg.toFixed(2)}
+                          {teamSkill.toFixed(2)}
                         </Text>
                         <View style={{ 
                           backgroundColor: balanceStyle.bg, 
@@ -611,7 +446,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
                       <View style={{ height: 4, backgroundColor: '#E5E3DC', borderRadius: 2, marginBottom: 10, overflow: 'hidden' }}>
                         <View style={{ 
                           height: '100%', 
-                          width: `${Math.min(100, (teamAvg / maxSkill) * 100)}%`, 
+                          width: `${Math.min(100, (teamSkill / maxSkill) * 100)}%`,
                           backgroundColor: balance < 0 ? '#D85A30' : '#0F6E56' 
                         }} />
                       </View>
@@ -781,6 +616,48 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
             })}
           </View>
 
+          {/* Live schedule draft */}
+          {draftSchedule.matches.length > 0 && (
+            <View style={{ marginBottom: 24 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#7A8884', marginBottom: 12, letterSpacing: 0.5 }}>
+                LỊCH NHÁP TỪ CÁC CẶP
+              </Text>
+              <ScheduleCoverageReport
+                players={draftSchedule.players}
+                schedule={draftSchedule.matches}
+                mode="full"
+                minGamesPerPlayer={1}
+                variant="fixed"
+                quality={draftSchedule.quality}
+              />
+              <View style={{ backgroundColor: '#F9F8F4', borderRadius: 12, borderWidth: 1, borderColor: '#E5E3DC', overflow: 'hidden' }}>
+                {draftSchedule.matches.slice(0, 8).map((match, idx) => {
+                  const teamAName = match.teamA.map(id => arrangedPlayers.find(p => String(p.id) === id)?.name || 'N/A').join(' / ')
+                  const teamBName = match.teamB.map(id => arrangedPlayers.find(p => String(p.id) === id)?.name || 'N/A').join(' / ')
+                  return (
+                    <View key={`${match.rotation}-${match.court}-${idx}`} style={{ padding: 10, borderTopWidth: idx === 0 ? 0 : 1, borderTopColor: '#E5E3DC' }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800', marginBottom: 4 }}>
+                        Vòng {match.rotation} · Sân {match.court}
+                      </Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '800' }} numberOfLines={2}>
+                        Đội {match.teamANo}: {teamAName}
+                      </Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', marginVertical: 2 }}>vs</Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '800' }} numberOfLines={2}>
+                        Đội {match.teamBNo}: {teamBName}
+                      </Text>
+                    </View>
+                  )
+                })}
+                {draftSchedule.matches.length > 8 && (
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', padding: 10, textAlign: 'center' }}>
+                    Còn {draftSchedule.matches.length - 8} trận sẽ hiển thị ở màn quản lý trận sau khi áp dụng.
+                  </Text>
+                )}
+              </View>
+            </View>
+          )}
+
           <BrandedFooter />
           <View style={{ height: 100 }} />
         </View>
@@ -808,7 +685,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, fontWeight: '700', color: '#7A8884', textTransform: 'uppercase' }}>Hủy</Text>
         </TouchableOpacity>
         <TouchableOpacity 
-          onPress={handleSave}
+          onPress={handleApplySchedule}
           disabled={submitting || isAfterEnd}
           style={{ 
             flex: 2, 
@@ -821,7 +698,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, sessionId,
           }}
         >
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, fontWeight: '700', color: 'white', textTransform: 'uppercase' }}>
-            {submitting ? 'ĐANG LƯU...' : (isAfterEnd ? 'ĐÃ ĐÓNG' : 'Lưu sắp xếp')}
+            {submitting ? 'ĐANG LƯU...' : (isAfterEnd ? 'ĐÃ ĐÓNG' : (onApplySchedule ? 'Áp dụng lịch này' : 'Lưu sắp xếp'))}
           </Text>
         </TouchableOpacity>
       </View>

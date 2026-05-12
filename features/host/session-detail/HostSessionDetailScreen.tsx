@@ -3,7 +3,7 @@ import * as Linking from 'expo-linking'
 import { Platform, Pressable, RefreshControl, ScrollView, Share, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Trophy, LayoutDashboard, CheckCircle2, Check, AlertTriangle } from 'lucide-react-native'
+import { Trophy, CheckCircle2, Check, AlertTriangle } from 'lucide-react-native'
 import { Alert } from 'react-native'
 import { supabase } from '@/lib/supabase'
 
@@ -95,7 +95,7 @@ export function HostSessionDetailScreen({
 
   const handleCompleteCheckIn = async () => {
     // Message for confirmation
-    const message = 'Sau khi hoàn tất Check-in, hệ thống sẽ tự động sắp xếp đội cân bằng dựa trên trình độ. Tiếp tục?'
+    const message = 'Sau khi hoan tat Check-in, ban se chuyen sang man Quan ly tran de sap lich theo hinh thuc choi. Tiep tuc?'
     
     const confirmAction = async () => {
       try {
@@ -110,81 +110,6 @@ export function HostSessionDetailScreen({
           throw rpcError
         }
         console.log('[CheckIn] RPC Success')
-
-        // 2. Perform Auto-Arrangement for "Present" players
-        console.log('[CheckIn] Fetching present players...')
-        const { data: playersData, error: fetchError } = await supabase
-          .from('session_players')
-          .select('player_id, check_in_status')
-          .eq('session_id', id)
-          .eq('status', 'confirmed')
-
-        if (fetchError) {
-          console.error('[CheckIn] Fetch Error:', fetchError)
-          throw fetchError
-        }
-
-        const presentPlayerIds = (playersData ?? [])
-          .filter(sp => sp.check_in_status === 'present')
-          .map(sp => sp.player_id)
-
-        console.log('[CheckIn] Present players count:', presentPlayerIds.length)
-
-        if (presentPlayerIds.length >= 2) {
-          console.log('[CheckIn] Applying system auto-balance logic...')
-          const presentPlayers = processedPlayers
-            .filter(p => presentPlayerIds.includes(p.id))
-            .sort((a, b) => {
-              const valA = Number(a.pvna || (a.elo / 100) || 0)
-              const valB = Number(b.pvna || (b.elo / 100) || 0)
-              return valB - valA
-            })
-
-          const numTeams = Math.max(2, Math.ceil(presentPlayers.length / 2))
-          const playersPerTeam = 2 // We want 2 people per team
-          
-          const assignments: { player_id: string, team_no: number }[] = []
-          const result: any[] = []
-          const used = new Set()
-          
-          let left = 0
-          let right = presentPlayers.length - 1
-          let teamIdx = 1
-
-          while (result.length < presentPlayers.length) {
-            for (let i = 0; i < playersPerTeam; i++) {
-              if (result.length >= presentPlayers.length) break
-              
-              let pickedIdx = -1
-              if (i % 2 === 0) {
-                pickedIdx = left++
-              } else {
-                pickedIdx = right--
-              }
-              
-              if (pickedIdx >= 0 && pickedIdx < presentPlayers.length) {
-                const p = presentPlayers[pickedIdx]
-                result.push(p)
-                assignments.push({
-                  player_id: p.id,
-                  team_no: teamIdx
-                })
-              }
-            }
-            teamIdx++
-          }
-
-          console.log('[CheckIn] Saving system arrangements...', assignments.length)
-          const { error: arrangementError } = await supabase.rpc('save_session_teams', {
-            p_session_id: id,
-            p_assignments: assignments
-          })
-
-          if (arrangementError) {
-            console.error('[CheckIn] Arrangement Error:', arrangementError)
-            throw arrangementError
-          }
-        }
 
         onRefresh()
         setIsCheckInMode(false)
@@ -485,43 +410,26 @@ export function HostSessionDetailScreen({
                 </View>
               )}
             </TouchableOpacity>
-
-            <TouchableOpacity 
-              onPress={() => router.push(`/host/session/${id}/arrangement` as any)}
-              style={{ 
-                flex: 1,
-                flexDirection: 'row', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                gap: 8, 
-                backgroundColor: theme.primary, 
-                paddingVertical: 12, 
-                borderRadius: RADIUS.lg,
-                borderWidth: 1,
-                borderColor: theme.primary
-              }}
-            >
-              <LayoutDashboard size={18} color={theme.onPrimary} />
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.onPrimary }}>SẮP ĐỘI</Text>
-            </TouchableOpacity>
           </View>
         )}
-        <HostRosterSection
-          players={processedPlayers}
-          maxPlayers={session.max_players}
-          sessionStatus={session.status}
-          hostId={session.host.id}
-          hideEmptySlots={false}
-          requireApproval={session.require_approval || session.owner_sessions?.require_approval}
-          sessionId={id}
-          onUpdated={onRefresh}
-          onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
-          checkInCompleted={isCheckInCompleted}
-          isCheckInMode={isCheckInMode}
-          startTime={session.slot.start_time}
-          isHost={isHost}
-          isAfterEnd={isAfterEnd}
-        />
+        {(!isCheckInCompleted || isAfterEnd || isCancelled) && (
+          <HostRosterSection
+            players={processedPlayers}
+            maxPlayers={session.max_players}
+            sessionStatus={session.status}
+            hostId={session.host.id}
+            hideEmptySlots={false}
+            requireApproval={session.require_approval || session.owner_sessions?.require_approval}
+            sessionId={id}
+            onUpdated={onRefresh}
+            onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
+            checkInCompleted={isCheckInCompleted}
+            isCheckInMode={isCheckInMode}
+            startTime={session.slot.start_time}
+            isHost={isHost}
+            isAfterEnd={isAfterEnd}
+          />
+        )}
 
         <View style={{ marginTop: 24 }}>
           <SessionActionButtons
@@ -544,6 +452,7 @@ export function HostSessionDetailScreen({
             editPathname="/host/create-session"
             onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
             checkInCompleted={isCheckInCompleted}
+            hideArrangementCta={true}
             hideInputResult={false}
             matchesCount={matches.length}
           />

@@ -26,6 +26,7 @@ interface SessionActionButtonsProps {
   leaveSession: () => void
   onArrangementPress?: () => void
   checkInCompleted?: boolean
+  hideArrangementCta?: boolean
   hideInputResult?: boolean
   matchesCount?: number
 }
@@ -292,6 +293,7 @@ const HostActiveActionsView = ({
   leaveSession,
   onArrangementPress,
   checkInCompleted,
+  hideArrangementCta,
   hideInputResult,
   theme
 }: any) => {
@@ -303,7 +305,7 @@ const HostActiveActionsView = ({
   return (
     <View style={{ width: '100%' }}>
       {/* New Top CTA */}
-      {checkInCompleted && (
+      {checkInCompleted && !hideArrangementCta && (
         <TouchableOpacity
           onPress={onArrangementPress}
           disabled={!isFull}
@@ -456,6 +458,7 @@ const HostActions = ({
   onArrangementPress,
   editPathname,
   checkInCompleted,
+  hideArrangementCta,
   hideInputResult,
   isCancelled,
   matchesCount,
@@ -571,6 +574,7 @@ const HostActions = ({
       leaveSession={leaveSession}
       onArrangementPress={onArrangementPress}
       checkInCompleted={checkInCompleted}
+      hideArrangementCta={hideArrangementCta}
       hideInputResult={hideInputResult}
       theme={theme}
     />
@@ -898,6 +902,7 @@ export const SessionActionButtons: React.FC<SessionActionButtonsProps> = ({
   leaveSession,
   onArrangementPress,
   checkInCompleted,
+  hideArrangementCta,
   hideInputResult,
   matchesCount,
 }) => {
@@ -970,6 +975,7 @@ export const SessionActionButtons: React.FC<SessionActionButtonsProps> = ({
             leaveSession={leaveSession}
             onArrangementPress={onArrangementPress}
             checkInCompleted={checkInCompleted}
+            hideArrangementCta={hideArrangementCta}
             isCancelled={isCancelled}
             isInvalidPlayerCount={isInvalidPlayerCount}
             theme={theme}

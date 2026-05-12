@@ -1,17 +1,22 @@
-import { BrandedFooter } from '@/components/design/BrandedFooter'
+﻿import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { SHADOW as LAYOUT_SHADOW, RADIUS } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import type { SessionMatch } from '@/hooks/useSessionDetail'
 import { buildRoundRobinDoublesScheduleAsync } from '@/lib/roundRobinSchedulerClient'
 import type { SchedulePriority } from '@/lib/roundRobinScheduler'
+import type { FixedTeamScheduledMatch } from '@/lib/scheduler/fixedTeamSchedule'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
-import { Minus, Plus, SwordsIcon } from 'lucide-react-native'
+import { LayoutDashboard, Minus, Plus, SwordsIcon } from 'lucide-react-native'
 import React, { useState, useEffect, useMemo } from 'react'
 import { Alert, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { MatchControlHeader } from './MatchControlHeader'
+import { MatchControlSection } from './MatchControlSection'
+import { MatchPlayerManagementPanel } from './MatchPlayerManagementPanel'
 import { ScheduleCoverageReport } from './ScheduleCoverageReport'
 import { ScheduleSetupPanel, type ScheduleMode } from './ScheduleSetupPanel'
+import { TeamArrangementScreen } from './TeamArrangementScreen'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const IS_SMALL_DEVICE = SCREEN_WIDTH < 375
@@ -28,17 +33,20 @@ interface Props {
   onClose?: () => void
   isAfterEnd?: boolean
   courtCount?: number
+  maxPlayers?: number
 }
 
 type PendingMatch = { 
   teamA: string[]
   teamB: string[]
+  teamANo?: number
+  teamBNo?: number
   rotation?: number
   court?: number
   sitterId?: string
 }
 
-export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfterEnd, courtCount = 1 }: Omit<Props, 'onClose'>) {
+export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfterEnd, courtCount = 1, maxPlayers }: Omit<Props, 'onClose'>) {
   const theme = useAppTheme()
   const [submitting, setSubmitting] = useState(false)
   const [isMixInMode, setIsMixInMode] = useState(true)
@@ -49,12 +57,17 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   const [editingPendingIndex, setEditingPendingIndex] = useState<number | null>(null)
   const [showAllProgress, setShowAllProgress] = useState(false)
   const [showRotationTable, setShowRotationTable] = useState(false)
+  const [showScheduleDiagnostics, setShowScheduleDiagnostics] = useState(false)
+  const [showScheduleSetupPage, setShowScheduleSetupPage] = useState(false)
+  const [showInlineTeamArrangement, setShowInlineTeamArrangement] = useState(false)
   const [pendingMixInMatches, setPendingMixInMatches] = useState<PendingMatch[]>([])
   const [fullRotationSchedule, setFullRotationSchedule] = useState<PendingMatch[]>([])
   const [scheduleQuality, setScheduleQuality] = useState<{ runtimeMs: number, timedOut: boolean, fallbackUsed: boolean } | undefined>()
   const [scheduledPlayers, setScheduledPlayers] = useState<ArrangementPlayer[]>([])
   const [sittingOutPlayers, setSittingOutPlayers] = useState<string[]>([]) // player IDs sitting out
   const [localScores, setLocalScores] = useState<Record<string, { a: number, b: number }>>({})
+  const [updatingPlayerId, setUpdatingPlayerId] = useState<string | null>(null)
+  const [playerStatusOverrides, setPlayerStatusOverrides] = useState<Record<string, 'present' | 'no_show'>>({})
 
   // Sync local scores when matches change, but carefully to avoid flickering
   useEffect(() => {
@@ -73,16 +86,34 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   }, [matches])
 
   useEffect(() => {
+    setPlayerStatusOverrides(prev => {
+      const next = { ...prev }
+      let changed = false
+      players.forEach(player => {
+        const id = String(player.id)
+        if (next[id] && player.checkInStatus === next[id]) {
+          delete next[id]
+          changed = true
+        }
+      })
+      return changed ? next : prev
+    })
+  }, [players])
+
+  useEffect(() => {
     if (fullRotationSchedule.length === 0 && matches.some(m => m.players_snapshot?.rotation)) {
       const restored = matches
         .filter(m => m.players_snapshot?.rotation)
-        .map(m => ({
-          teamA: m.players_snapshot.team_a,
-          teamB: m.players_snapshot.team_b,
-          rotation: m.players_snapshot.rotation,
-          court: m.players_snapshot.court,
-          sitterId: m.players_snapshot.sitter_id
-        }))
+        .map(m => {
+          const snapshot = (m.players_snapshot || {}) as any
+          return {
+            teamA: snapshot.team_a || [],
+            teamB: snapshot.team_b || [],
+            rotation: snapshot.rotation,
+            court: snapshot.court,
+            sitterId: snapshot.sitter_id
+          }
+        })
         .sort((a, b) => (a.rotation || 0) - (b.rotation || 0) || (a.court || 0) - (b.court || 0));
       if (restored.length > 0) {
         setFullRotationSchedule(restored);
@@ -114,8 +145,16 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   }, {} as Record<string, ArrangementPlayer[]>)
 
   const teamIds = Object.keys(teamGroups).sort((a, b) => Number(a) - Number(b))
+  const fixedTeamIds = teamIds.filter(teamId => (teamGroups[teamId] || []).length === 2)
 
-  const activePlayers = players.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show')
+  const effectivePlayers = useMemo(() => {
+    return players.map(player => {
+      const override = playerStatusOverrides[String(player.id)]
+      return override ? { ...player, checkInStatus: override } : player
+    })
+  }, [playerStatusOverrides, players])
+
+  const activePlayers = effectivePlayers.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show')
 
   const getMatchPlayerNames = (snapshotUids: string[]) => {
     if (!snapshotUids || snapshotUids.length === 0) return 'Đang cập nhật'
@@ -362,6 +401,53 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     })
   }, [activeMatches])
 
+  const pendingRoundCount = pendingRotationGroups.length || (pendingMixInMatches.length > 0 ? 1 : 0)
+
+  const scheduleNeedsRefresh = useMemo(() => {
+    if (pendingMixInMatches.length === 0 && fullRotationSchedule.length === 0) return false
+    const activeIds = new Set(activePlayers.map(player => String(player.id)))
+    const scheduleIds = new Set<string>()
+    const scheduleSource = pendingMixInMatches.length > 0 ? pendingMixInMatches : fullRotationSchedule
+
+    scheduleSource.forEach(match => {
+      match.teamA.forEach(id => scheduleIds.add(String(id)))
+      match.teamB.forEach(id => scheduleIds.add(String(id)))
+    })
+
+    if ([...scheduleIds].some(id => !activeIds.has(id))) return true
+    if (scheduledPlayers.length > 0 && activeIds.size !== scheduledPlayers.length) return true
+    if (scheduledPlayers.some(player => !activeIds.has(String(player.id)))) return true
+    return false
+  }, [activePlayers, fullRotationSchedule, pendingMixInMatches, scheduledPlayers])
+
+  const handleSetPlayerAvailability = async (playerId: string, status: 'present' | 'no_show') => {
+    if (isAfterEnd) return
+    const previousStatus = effectivePlayers.find(player => String(player.id) === playerId)?.checkInStatus
+    setPlayerStatusOverrides(prev => ({ ...prev, [playerId]: status }))
+    setUpdatingPlayerId(playerId)
+    const { error } = await supabase
+      .from('session_players')
+      .update({ check_in_status: status })
+      .eq('session_id', sessionId)
+      .eq('player_id', playerId)
+
+    setUpdatingPlayerId(null)
+    if (error) {
+      setPlayerStatusOverrides(prev => {
+        const next = { ...prev }
+        if (previousStatus === 'present' || previousStatus === 'no_show') {
+          next[playerId] = previousStatus
+        } else {
+          delete next[playerId]
+        }
+        return next
+      })
+      Alert.alert('Lỗi', 'Không thể cập nhật người chơi.')
+      return
+    }
+    onUpdated()
+  }
+
   const handleUpdateScore = async (matchId: string, team: 'a' | 'b', delta: number) => {
     if (isAfterEnd) return
     const currentScore = localScores[matchId]?.[team] ?? 0
@@ -429,19 +515,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     }
   }
 
-  const getMatchFormat = (tANo: number, tBNo: number) => {
-    const pA = teamGroups[String(tANo)] || []
-    const pB = teamGroups[String(tBNo)] || []
-    const all = [...pA, ...pB]
-    const males = all.filter(p => String(p.gender || '').toLowerCase() === 'male' || String(p.gender || '').toLowerCase() === 'nam').length
-    const females = all.filter(p => String(p.gender || '').toLowerCase() === 'female' || String(p.gender || '').toLowerCase() === 'nữ').length
-
-    if (males === 4) return '4M'
-    if (females === 4) return '4F'
-    if (males === 2 && females === 2) return '2M2F'
-    return 'OTHER'
-  }
-
   const handleCreateMatch = async (teamA: number, teamB: number) => {
     if (isAfterEnd) return
     setSubmitting(true)
@@ -459,83 +532,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     if (!error) onUpdated()
   }
 
-  const handleCreateAllMatches = async () => {
-    if (isAfterEnd) return
-    const schedulingTeams = teamIds.length % 2 === 0 ? [...teamIds] : [...teamIds, '0']
-    const numRounds = schedulingTeams.length - 1
-    const message = `Tạo lịch thi đấu tự động cho tất cả các đội? Hệ thống sẽ ưu tiên xáo trộn để đa dạng hóa các trận Nam/Nữ/Mixed.`
-
-    const performCreate = async () => {
-      setSubmitting(true)
-
-      // 1. Generate all match pairings using Circle Method
-      const matchPool: { tA: number, tB: number, format: string }[] = []
-      const currentTeams = [...schedulingTeams]
-
-      for (let round = 0; round < numRounds; round++) {
-        for (let i = 0; i < currentTeams.length / 2; i++) {
-          const tA = Number(currentTeams[i])
-          const tB = Number(currentTeams[currentTeams.length - 1 - i])
-          if (tA !== 0 && tB !== 0) {
-            matchPool.push({ tA, tB, format: getMatchFormat(tA, tB) })
-          }
-        }
-        // Rotate
-        const last = currentTeams.pop()!
-        currentTeams.splice(1, 0, last)
-      }
-
-      // 2. Diversity Sort: Re-order matches to avoid consecutive/simultaneous formats
-      const finalSchedule: typeof matchPool = []
-      const remainingMatches = [...matchPool]
-      let lastFormats: string[] = [] // Keep track of the last few formats (to handle multi-court)
-      const maxHistory = Math.max(2, (players.length / 4)) // Roughly the number of concurrent matches possible
-
-      while (remainingMatches.length > 0) {
-        // Find a match that hasn't appeared recently
-        let bestIdx = remainingMatches.findIndex(m => !lastFormats.includes(m.format))
-        if (bestIdx === -1) bestIdx = 0 // Fallback to first if all formats recently used
-
-        const picked = remainingMatches.splice(bestIdx, 1)[0]
-        finalSchedule.push(picked)
-
-        lastFormats.push(picked.format)
-        if (lastFormats.length > maxHistory) lastFormats.shift()
-      }
-
-      // 3. Batch Insert into Supabase
-      const insertData = finalSchedule.map(m => ({
-        session_id: sessionId,
-        team_a_no: m.tA,
-        team_b_no: m.tB,
-        status: 'playing',
-        players_snapshot: {
-          team_a: teamGroups[String(m.tA)]?.map(p => p.id),
-          team_b: teamGroups[String(m.tB)]?.map(p => p.id)
-        }
-      }))
-
-      const { error } = await supabase.from('session_matches').insert(insertData)
-
-      if (error) {
-        console.error('[CreateAllMatches] Error:', error)
-        Alert.alert('Lỗi', 'Không thể tạo lịch thi đấu tự động.')
-      }
-
-      setSubmitting(false)
-      onUpdated()
-    }
-
-    if (Platform.OS === 'web') {
-      if (window.confirm(message)) await performCreate()
-    } else {
-      Alert.alert('Tạo lịch đấu', message, [
-        { text: 'HỦY', style: 'cancel' },
-        { text: 'TẠO NGAY', onPress: performCreate }
-      ])
-    }
-  }
-
   const getTeamSkill = (teamNo: number) => {
     const members = teamGroups[String(teamNo)] || []
     if (members.length === 0) return 0
@@ -544,6 +540,29 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
 
   const getPlayerNames = (teamNo: number) => teamGroups[String(teamNo)]?.map(p => p.name).join(' - ') || `Đội ${teamNo}`
 
+  const handleApplyFixedDraftSchedule = (payload: {
+    matches: FixedTeamScheduledMatch[]
+    players: ArrangementPlayer[]
+    quality: { runtimeMs: number, timedOut: boolean, fallbackUsed: boolean }
+  }) => {
+    const schedule: PendingMatch[] = payload.matches.map(match => ({
+      teamA: match.teamA,
+      teamB: match.teamB,
+      teamANo: match.teamANo,
+      teamBNo: match.teamBNo,
+      rotation: match.rotation,
+      court: match.court,
+    }))
+
+    setScheduledPlayers(payload.players)
+    setPendingMixInMatches(schedule)
+    setFullRotationSchedule(schedule)
+    setSittingOutPlayers([])
+    setScheduleQuality(payload.quality)
+    setShowRotationTable(true)
+    setShowInlineTeamArrangement(false)
+  }
+
 
 
   const handleGenerateMixInRound = () => {
@@ -551,7 +570,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     
     // 1. Identify who is TRULY available
     const busyFromDb = new Set(matches
-      .filter(m => m.status === 'playing' || m.status === 'pending')
+      .filter(m => m.status === 'playing' || String(m.status) === 'pending')
       .flatMap(m => {
         const { team_a, team_b } = getPlayersFromSnapshot(m.players_snapshot)
         return [...team_a, ...team_b]
@@ -680,8 +699,8 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     setSubmitting(true)
     const { error } = await supabase.from('session_matches').insert({
       session_id: sessionId,
-      team_a_no: 0,
-      team_b_no: 0,
+      team_a_no: match.teamANo || 0,
+      team_b_no: match.teamBNo || 0,
       court_no: match.court,
       status: 'playing',
       players_snapshot: { 
@@ -706,8 +725,8 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     setSubmitting(true)
     const insertData = rotationMatches.map(match => ({
       session_id: sessionId,
-      team_a_no: 0,
-      team_b_no: 0,
+      team_a_no: match.teamANo || 0,
+      team_b_no: match.teamBNo || 0,
       court_no: match.court,
       status: 'playing',
       players_snapshot: {
@@ -728,6 +747,156 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
       setPendingMixInMatches(prev => prev.filter(match => !startedKeys.has(getPendingMatchKey(match))))
       onUpdated()
     }
+  }
+
+  const renderScheduleSetupContent = () => (
+    <>
+      <MatchPlayerManagementPanel
+        players={effectivePlayers}
+        scheduledPlayers={scheduledPlayers}
+        hasPendingSchedule={pendingMixInMatches.length > 0 || fullRotationSchedule.length > 0}
+        needsScheduleRefresh={scheduleNeedsRefresh}
+        updatingPlayerId={updatingPlayerId}
+        onSetPlayerStatus={handleSetPlayerAvailability}
+        onRegenerateSchedule={handleGenerateFixedSchedule}
+      />
+
+      <View style={{ flexDirection: 'row', backgroundColor: '#F5F1E8', borderRadius: RADIUS.lg, padding: 4, marginBottom: 16 }}>
+        <TouchableOpacity
+          onPress={() => setIsMixInMode(true)}
+          style={{ flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: isMixInMode ? 'white' : 'transparent', borderRadius: RADIUS.md, ...(isMixInMode ? LAYOUT_SHADOW.sm : {}) }}
+        >
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: isMixInMode ? '#0F6E56' : '#7A8884' }}>ĐỔI CẶP (MIX-IN)</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setIsMixInMode(false)}
+          style={{ flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: !isMixInMode ? 'white' : 'transparent', borderRadius: RADIUS.md, ...(!isMixInMode ? LAYOUT_SHADOW.sm : {}) }}
+        >
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: !isMixInMode ? '#0F6E56' : '#7A8884' }}>CỐ ĐỊNH (CÁC ĐỘI)</Text>
+        </TouchableOpacity>
+      </View>
+
+      {isMixInMode ? (
+        <ScheduleSetupPanel
+          activePlayerCount={activePlayers.length}
+          defaultCourtCount={courtCount}
+          scheduleMode={scheduleMode}
+          onScheduleModeChange={setScheduleMode}
+          schedulePriority={schedulePriority}
+          onSchedulePriorityChange={setSchedulePriority}
+          minGamesPerPlayer={minGamesPerPlayer}
+          onMinGamesPerPlayerChange={setMinGamesPerPlayer}
+          scheduleCourtCount={scheduleCourtCount}
+          onScheduleCourtCountChange={setScheduleCourtCount}
+        />
+      ) : (
+        <View style={{ backgroundColor: '#F9F8F4', borderRadius: RADIUS.md, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: '#E5E3DC' }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864', lineHeight: 16 }}>
+            Chế độ cố định dùng các đội đã xếp sẵn. Cần số người chẵn để tạo lịch giữa các đội.
+          </Text>
+          <TouchableOpacity
+            onPress={() => setShowInlineTeamArrangement(true)}
+            style={{ marginTop: 10, backgroundColor: 'white', borderRadius: RADIUS.md, borderWidth: 1, borderColor: '#0F6E56', paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+          >
+            <LayoutDashboard size={16} color="#0F6E56" />
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
+              TẠO / CHỈNH CẶP & XEM LỊCH NHÁP
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <TouchableOpacity
+        onPress={isMixInMode ? handleGenerateFixedSchedule : () => setShowInlineTeamArrangement(true)}
+        disabled={submitting || activePlayers.length < 4}
+        style={{
+          backgroundColor: activePlayers.length >= 4 ? '#2563EB' : '#64748b',
+          borderRadius: RADIUS.lg,
+          paddingVertical: 13,
+          alignItems: 'center',
+          opacity: submitting ? 0.65 : 1,
+          marginTop: 4,
+          marginBottom: 16,
+        }}
+      >
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: 'white', fontWeight: '900' }}>
+          {isMixInMode
+            ? activePlayers.length >= 4 ? `TẠO LỊCH XOAY VÒNG (${activePlayers.length})` : `CẦN >= 4 NGƯỜI (${activePlayers.length})`
+            : activePlayers.length >= 4
+              ? fixedTeamIds.length >= 2 ? `XEM / ÁP DỤNG LỊCH CỐ ĐỊNH (${fixedTeamIds.length} ĐỘI)` : 'TẠO CẶP & LỊCH NHÁP'
+              : `CẦN >= 4 NGƯỜI (${activePlayers.length})`}
+        </Text>
+      </TouchableOpacity>
+
+      <MatchControlSection
+        title="CHI TIET THUAT TOAN"
+        subtitle="Mo khi can audit coverage, runtime va chat luong lich."
+        expanded={showScheduleDiagnostics}
+        onToggle={() => setShowScheduleDiagnostics(value => !value)}
+      >
+        <ScheduleCoverageReport
+          players={scheduledPlayers.length > 0 ? scheduledPlayers : activePlayers}
+          schedule={pendingMixInMatches.length > 0 ? pendingMixInMatches : fullRotationSchedule}
+          mode={scheduleMode}
+          minGamesPerPlayer={minGamesPerPlayer}
+          quality={scheduleQuality}
+          variant={isMixInMode ? 'mix-in' : 'fixed'}
+        />
+      </MatchControlSection>
+    </>
+  )
+
+  if (showScheduleSetupPage && !isAfterEnd) {
+    if (showInlineTeamArrangement) {
+      return (
+        <View style={{ flex: 1, backgroundColor: 'white' }}>
+          <TouchableOpacity
+            onPress={() => setShowInlineTeamArrangement(false)}
+            style={{ alignSelf: 'flex-start', backgroundColor: '#F5F1E8', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, margin: 20, marginBottom: 0, borderWidth: 1, borderColor: '#E5E3DC' }}
+          >
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
+              ← QUAY LẠI THIẾT LẬP LỊCH
+            </Text>
+          </TouchableOpacity>
+          <TeamArrangementScreen
+            sessionId={sessionId}
+            players={activePlayers}
+            maxPlayers={maxPlayers || players.length}
+            courtCount={scheduleCourtCount}
+            onUpdated={onUpdated}
+            onClose={() => setShowInlineTeamArrangement(false)}
+            onApplySchedule={handleApplyFixedDraftSchedule}
+            isAfterEnd={isAfterEnd}
+          />
+        </View>
+      )
+    }
+
+    return (
+      <View style={{ flex: 1, backgroundColor: 'white' }}>
+        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+          <TouchableOpacity
+            onPress={() => setShowScheduleSetupPage(false)}
+            style={{ alignSelf: 'flex-start', backgroundColor: '#F5F1E8', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 16, borderWidth: 1, borderColor: '#E5E3DC' }}
+          >
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
+              ← QUAY LẠI QUẢN LÝ TRẬN
+            </Text>
+          </TouchableOpacity>
+
+          <View style={{ backgroundColor: '#1A2E2A', borderRadius: RADIUS.xl, padding: 16, marginBottom: 16 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: 'white', fontWeight: '900' }}>
+              THIẾT LẬP LỊCH TRẬN
+            </Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#DDEBE4', marginTop: 4 }}>
+              Cập nhật người chơi, chế độ chơi, số sân và tạo lại lịch khi có thay đổi.
+            </Text>
+          </View>
+
+          {renderScheduleSetupContent()}
+        </ScrollView>
+      </View>
+    )
   }
 
   return (
@@ -758,77 +927,29 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
         )}
         {!isAfterEnd && (
           <View style={{ marginBottom: 32 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A' }}>ĐANG DIỄN RA</Text>
-              <View style={{
-                backgroundColor: activeMatches.length > 0 ? theme?.primary : '#F1EFE8',
-                paddingHorizontal: 10,
-                paddingVertical: 4,
-                borderRadius: 999,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 4
-              }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: activeMatches.length > 0 ? '#E1F5EE' : '#B4B2A9' }} />
-                <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.headline, color: activeMatches.length > 0 ? 'white' : '#7A8884' }}>
-                  {activeMatches.length} TRẬN LIVE
+            <MatchControlHeader
+              activePlayerCount={activePlayers.length}
+              liveMatchCount={activeMatches.length}
+              pendingMatchCount={pendingMixInMatches.length}
+              pendingRoundCount={pendingRoundCount}
+              courtCount={Math.min(Math.max(1, Math.floor(scheduleCourtCount || 1)), Math.max(1, Math.floor(activePlayers.length / 4)))}
+            />
+
+              <TouchableOpacity
+                onPress={() => setShowScheduleSetupPage(true)}
+                style={{
+                  backgroundColor: scheduleNeedsRefresh ? '#A05A16' : '#0F6E56',
+                  borderRadius: RADIUS.lg,
+                  paddingVertical: 13,
+                  alignItems: 'center',
+                  marginBottom: 16,
+                  ...LAYOUT_SHADOW.sm,
+                }}
+              >
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: 'white', fontWeight: '900' }}>
+                  {scheduleNeedsRefresh ? 'CẬP NHẬT LỊCH TRẬN' : 'THIẾT LẬP / CẬP NHẬT LỊCH TRẬN'}
                 </Text>
-              </View>
-            </View>
-
-              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-                <TouchableOpacity
-                  onPress={handleGenerateMixInRound}
-                  disabled={submitting}
-                  style={{
-                    flex: 1,
-                    backgroundColor: theme?.primary,
-                    padding: 16,
-                    borderRadius: RADIUS.lg,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    opacity: submitting ? 0.6 : 1,
-                    ...LAYOUT_SHADOW.sm
-                  }}
-                >
-                  <SwordsIcon size={20} color="white" style={{ marginRight: 8 }} />
-                  <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>Bốc 1 trận</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={handleGenerateFixedSchedule}
-                  disabled={submitting}
-                  style={{
-                    flex: 1,
-                    backgroundColor: activePlayers.length >= 4 ? '#1d4ed8' : '#64748b',
-                    padding: 16,
-                    borderRadius: RADIUS.lg,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    opacity: submitting ? 0.6 : 1,
-                    ...LAYOUT_SHADOW.sm
-                  }}
-                >
-                  <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
-                    {activePlayers.length >= 4 ? `Lịch ${activePlayers.length} người` : `Cần >= 4 người (đang có ${activePlayers.length})`}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <ScheduleSetupPanel
-                activePlayerCount={activePlayers.length}
-                defaultCourtCount={courtCount}
-                scheduleMode={scheduleMode}
-                onScheduleModeChange={setScheduleMode}
-                schedulePriority={schedulePriority}
-                onSchedulePriorityChange={setSchedulePriority}
-                minGamesPerPlayer={minGamesPerPlayer}
-                onMinGamesPerPlayerChange={setMinGamesPerPlayer}
-                scheduleCourtCount={scheduleCourtCount}
-                onScheduleCourtCountChange={setScheduleCourtCount}
-              />
+              </TouchableOpacity>
               {fullRotationSchedule.length > 0 && (
                 <TouchableOpacity 
                   onPress={() => setShowRotationTable(!showRotationTable)}
@@ -849,14 +970,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                   </Text>
                 </TouchableOpacity>
               )}
-
-              <ScheduleCoverageReport
-                players={scheduledPlayers.length > 0 ? scheduledPlayers : activePlayers}
-                schedule={pendingMixInMatches.length > 0 ? pendingMixInMatches : fullRotationSchedule}
-                mode={scheduleMode}
-                minGamesPerPlayer={minGamesPerPlayer}
-                quality={scheduleQuality}
-              />
 
               {showRotationTable && fullRotationSchedule.some(m => m.rotation) && (
                 <View style={{ backgroundColor: '#F9F8F4', borderRadius: RADIUS.lg, padding: 12, marginBottom: 24, borderWidth: 1, borderColor: '#E5E3DC' }}>
@@ -880,7 +993,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                         .join(', ');
 
                       return (
-                        <View key={rotationNum} style={{ marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#E5E3DC', pb: 8 }}>
+                        <View key={rotationNum} style={{ marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#E5E3DC', paddingBottom: 8 }}>
                           <View style={{ backgroundColor: '#E1F5EE', padding: 6, borderRadius: 4, marginBottom: 8 }}>
                             <Text style={{ fontSize: 12, fontWeight: '800', color: '#0F6E56' }}>
                               Rotation {rotationNum} - {sitterNames ? `${sitterNames} nghỉ` : 'Cả sân cùng đánh'}
@@ -930,6 +1043,24 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                     });
                   })()}
                 </View>              )}
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A' }}>DANG DIEN RA</Text>
+              <View style={{
+                backgroundColor: activeMatches.length > 0 ? theme?.primary : '#F1EFE8',
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 999,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4
+              }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: activeMatches.length > 0 ? '#E1F5EE' : '#B4B2A9' }} />
+                <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.headline, color: activeMatches.length > 0 ? 'white' : '#7A8884' }}>
+                  {activeMatches.length} TRAN LIVE
+                </Text>
+              </View>
+            </View>
 
             {activeMatches.length === 0 ? (
               <View style={{
@@ -1229,7 +1360,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
               <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A' }}>
                 LƯỢT TRẬN ĐỀ XUẤT
               </Text>
-              <TouchableOpacity onPress={() => { setPendingMixInMatches([]); setSittingOutPlayers([]); setScheduleQuality(undefined) }}>
+              <TouchableOpacity onPress={() => { setPendingMixInMatches([]); setFullRotationSchedule([]); setSittingOutPlayers([]); setScheduleQuality(undefined) }}>
                 <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884' }}>Xóa tất cả</Text>
               </TouchableOpacity>
             </View>
@@ -1257,7 +1388,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                   BẮT ĐẦU THEO VÒNG / NHIỀU SÂN
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                  {pendingRotationGroups.slice(0, 4).map(group => (
+                  {pendingRotationGroups.map(group => (
                     <TouchableOpacity
                       key={group.rotation}
                       onPress={() => handleConfirmRotationMatches(group.matches)}
@@ -1403,24 +1534,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                 </View>
               )
             })}
-          </View>
-        )}
-
-        {/* Toggle Mode */}
-        {!isAfterEnd && (
-          <View style={{ flexDirection: 'row', backgroundColor: '#F5F1E8', borderRadius: RADIUS.lg, padding: 4, marginBottom: 24 }}>
-            <TouchableOpacity
-              onPress={() => setIsMixInMode(true)}
-              style={{ flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: isMixInMode ? 'white' : 'transparent', borderRadius: RADIUS.md, ...(isMixInMode ? LAYOUT_SHADOW.sm : {}) }}
-            >
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: isMixInMode ? '#0F6E56' : '#7A8884' }}>ĐỔI CẶP (MIX-IN)</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setIsMixInMode(false)}
-              style={{ flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: !isMixInMode ? 'white' : 'transparent', borderRadius: RADIUS.md, ...(!isMixInMode ? LAYOUT_SHADOW.sm : {}) }}
-            >
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: !isMixInMode ? '#0F6E56' : '#7A8884' }}>CỐ ĐỊNH (CÁC ĐỘI)</Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -1577,16 +1690,15 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A' }}>LỊCH THI ĐẤU</Text>
               {(() => {
-                const confirmedCount = players.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show').length
-                const isOdd = confirmedCount % 2 !== 0
+                const canOpenFixedSetup = activePlayers.length >= 4
                 return (
                   <TouchableOpacity
-                    onPress={isOdd ? undefined : handleCreateAllMatches}
-                    disabled={isOdd}
-                    style={{ backgroundColor: isOdd ? '#F0EDE6' : '#E1F5EE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, opacity: isOdd ? 0.6 : 1 }}
+                    onPress={canOpenFixedSetup ? () => { setShowScheduleSetupPage(true); setShowInlineTeamArrangement(true) } : undefined}
+                    disabled={!canOpenFixedSetup}
+                    style={{ backgroundColor: canOpenFixedSetup ? '#E1F5EE' : '#F0EDE6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, opacity: canOpenFixedSetup ? 1 : 0.6 }}
                   >
-                    <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: isOdd ? '#B4B2A9' : '#0F6E56' }}>
-                      {isOdd ? '⚠ SỐ NGƯỜI LẺ' : '⚡ TẠO LỊCH TỰ ĐỘNG'}
+                    <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: canOpenFixedSetup ? '#0F6E56' : '#B4B2A9' }}>
+                      {canOpenFixedSetup ? '⚡ TẠO / XEM LỊCH NHÁP' : '⚠ CẦN >= 4 NGƯỜI'}
                     </Text>
                   </TouchableOpacity>
                 )
@@ -1597,14 +1709,14 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
             {players.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show').length % 2 !== 0 && (
               <View style={{ backgroundColor: '#FEF9EE', borderRadius: RADIUS.md, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#F5DFA0' }}>
                 <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#854F0B', marginBottom: 4 }}>
-                  ⚠ Không thể tạo lịch cố định khi số người lẻ
+                  ⚠ Có người dự bị trong chế độ cố định
                 </Text>
                 <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', lineHeight: 16 }}>
-                  Chế độ cố định cặp cần số người chẵn để xếp đội 2 người. Hãy chờ thêm người check-in, hoặc chuyển sang{' '}
+                  Người lẻ sẽ không nằm trong cặp cố định/lịch nháp hiện tại. Nếu muốn xoay đều người lẻ, chuyển sang{' '}
                   <Text style={{ color: '#0F6E56', fontWeight: '700' }} onPress={() => setIsMixInMode(true)}>
                     Đổi Cặp (Mix-In)
                   </Text>
-                  {' '}để xử lý số người lẻ tốt hơn.
+                  {' '}để xử lý linh hoạt hơn.
                 </Text>
               </View>
             )}

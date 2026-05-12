@@ -1,5 +1,5 @@
 import React from 'react'
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
+import { useLocalSearchParams, useFocusEffect } from 'expo-router'
 import { useAuth } from '@/lib/useAuth'
 import { useSessionDetail } from '@/hooks/useSessionDetail'
 import { AppLoading, SecondaryNavbar } from '@/components/design'
@@ -12,7 +12,6 @@ export default function HostMatchRoute() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const { userId } = useAuth()
   const theme = useAppTheme()
-  const router = useRouter()
 
   const {
     loading,
@@ -57,6 +56,7 @@ export default function HostMatchRoute() {
         onUpdated={fetchSession}
         isAfterEnd={isAfterEnd}
         courtCount={courtCount}
+        maxPlayers={session?.max_players}
       />
     </View>
   )
