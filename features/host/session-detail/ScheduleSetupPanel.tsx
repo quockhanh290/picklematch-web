@@ -37,12 +37,12 @@ export function ScheduleSetupPanel({
   return (
     <View style={{ backgroundColor: '#F5F1E8', borderRadius: RADIUS.lg, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#E5E3DC' }}>
       <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#596864', marginBottom: 8 }}>
-        CHE DO TAO LICH
+        CHẾ ĐỘ TẠO LỊCH
       </Text>
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
         {[
           { id: 'full' as const, label: 'Full rotation' },
-          { id: 'limited' as const, label: 'Toi thieu tran' },
+          { id: 'limited' as const, label: 'Tối thiểu trận' },
         ].map(mode => {
           const active = scheduleMode === mode.id
           return (
@@ -70,13 +70,13 @@ export function ScheduleSetupPanel({
       {scheduleMode === 'limited' && (
         <>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#596864', marginBottom: 8 }}>
-            UU TIEN XEP LICH
+            ƯU TIÊN XẾP LỊCH
           </Text>
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
             {[
-              { id: 'balanced' as const, label: 'Can bang' },
-              { id: 'partner' as const, label: 'Doi partner' },
-              { id: 'opponent' as const, label: 'Gap doi thu' },
+              { id: 'balanced' as const, label: 'Cân bằng' },
+              { id: 'partner' as const, label: 'Đổi partner' },
+              { id: 'opponent' as const, label: 'Gặp đối thủ' },
             ].map(priority => {
               const active = schedulePriority === priority.id
               return (
@@ -106,7 +106,7 @@ export function ScheduleSetupPanel({
       {scheduleMode === 'limited' && (
         <View style={{ marginBottom: 12 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginBottom: 6 }}>
-            So tran toi thieu moi nguoi
+            Số trận tối thiểu mỗi người
           </Text>
           <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
             {Array.from({ length: maxGameOptions }).map((_, idx) => {
@@ -138,7 +138,7 @@ export function ScheduleSetupPanel({
       )}
 
       <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#596864', marginBottom: 8 }}>
-        SO SAN DUNG DE TEST LICH
+        SỐ SÂN DÙNG ĐỂ TEST LỊCH
       </Text>
       <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
         {Array.from({ length: maxCourtOptions }).map((_, idx) => {
@@ -158,14 +158,14 @@ export function ScheduleSetupPanel({
               }}
             >
               <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: active ? 'white' : '#596864', fontWeight: '800' }}>
-                {count} san
+                {count} sân
               </Text>
             </TouchableOpacity>
           )
         })}
       </View>
       <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 8 }}>
-        Mac dinh keo co {defaultCourtCount} san. Tuy chon nay chi dung de generate/test lich tren man nay.
+        Mặc định kèo có {defaultCourtCount} sân. Tuỳ chọn này chỉ dùng để generate/test lịch trên màn này.
       </Text>
     </View>
   )

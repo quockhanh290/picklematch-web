@@ -278,6 +278,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   })
 
   const getPendingMatchPlayerIds = (match: PendingMatch) => [...match.teamA, ...match.teamB].map(String)
+  const getPendingMatchKey = (match: PendingMatch) => [
+    match.rotation || 0,
+    match.court || 0,
+    [...match.teamA].map(String).sort().join('-'),
+    [...match.teamB].map(String).sort().join('-'),
+  ].join('|')
 
   const underMinPlayerIds = activePlayers
     .filter(p => (matchesPlayed.get(String(p.id)) ?? 0) < minGamesPerPlayer)
@@ -324,6 +330,37 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
       }
     }))
   }
+
+  const pendingRotationGroups = useMemo(() => {
+    const groups = new Map<number, PendingMatch[]>()
+    pendingMixInMatches
+      .filter(match => match.rotation)
+      .forEach(match => {
+        const rotation = match.rotation || 0
+        const rotationMatches = groups.get(rotation) || []
+        rotationMatches.push(match)
+        groups.set(rotation, rotationMatches)
+      })
+
+    return [...groups.entries()]
+      .map(([rotation, rotationMatches]) => ({
+        rotation,
+        matches: rotationMatches.sort((a, b) => (a.court || 0) - (b.court || 0)),
+      }))
+      .sort((a, b) => a.rotation - b.rotation)
+  }, [pendingMixInMatches])
+
+  const sortedActiveMatches = useMemo(() => {
+    return [...activeMatches].sort((a, b) => {
+      const rotationA = a.players_snapshot?.rotation || 0
+      const rotationB = b.players_snapshot?.rotation || 0
+      if (rotationA !== rotationB) return rotationA - rotationB
+      const courtA = a.players_snapshot?.court || (a as any).court_no || 0
+      const courtB = b.players_snapshot?.court || (b as any).court_no || 0
+      if (courtA !== courtB) return courtA - courtB
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    })
+  }, [activeMatches])
 
   const handleUpdateScore = async (matchId: string, team: 'a' | 'b', delta: number) => {
     if (isAfterEnd) return
@@ -664,6 +701,35 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     }
   }
 
+  const handleConfirmRotationMatches = async (rotationMatches: PendingMatch[]) => {
+    if (rotationMatches.length === 0 || isAfterEnd) return
+    setSubmitting(true)
+    const insertData = rotationMatches.map(match => ({
+      session_id: sessionId,
+      team_a_no: 0,
+      team_b_no: 0,
+      court_no: match.court,
+      status: 'playing',
+      players_snapshot: {
+        team_a: match.teamA,
+        team_b: match.teamB,
+        rotation: match.rotation,
+        court: match.court,
+        sitter_id: match.sitterId
+      }
+    }))
+    const { error } = await supabase.from('session_matches').insert(insertData)
+    setSubmitting(false)
+
+    if (error) {
+      Alert.alert('Lỗi', 'Không thể bắt đầu lượt đấu này')
+    } else {
+      const startedKeys = new Set(rotationMatches.map(getPendingMatchKey))
+      setPendingMixInMatches(prev => prev.filter(match => !startedKeys.has(getPendingMatchKey(match))))
+      onUpdated()
+    }
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: 'white' }}>
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
@@ -827,14 +893,13 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                               <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#0F6E56' }}>Đội Xanh</Text>
                               <Text style={{ flex: 0.5, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>vs</Text>
                               <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#1d4ed8' }}>Đội Tím</Text>
-                              <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#B4B2A9', textAlign: 'right' }}>Chờ</Text>
+                              <Text style={{ flex: 2, fontSize: 10, fontWeight: '700', color: '#B4B2A9', textAlign: 'right' }}>Nghỉ</Text>
                             </View>
 
                             {rotationMatches.map((m, mIdx) => {
                               const matchNum = (rIdx * courtsInSchedule) + mIdx + 1;
-                              const playingIds = new Set([...m.teamA, ...m.teamB]);
-                              const waitingNames = scheduledPlayers
-                                .filter(p => !sitterIds.includes(String(p.id)) && !playingIds.has(String(p.id)))
+                              const restingNames = scheduledPlayers
+                                .filter(p => sitterIds.includes(String(p.id)))
                                 .map(p => p.name.split(' ').pop())
                                 .sort((a, b) => (a || '').localeCompare(b || ''))
                                 .join(', ');
@@ -855,7 +920,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                                       .sort((a, b) => a.localeCompare(b))
                                       .join(', ')}
                                   </Text>
-                                  <Text style={{ flex: 2, fontSize: 9, color: '#7A8884', textAlign: 'right' }} numberOfLines={1}>{waitingNames}</Text>
+                                  <Text style={{ flex: 2, fontSize: 9, color: '#7A8884', textAlign: 'right' }} numberOfLines={1}>{restingNames || '-'}</Text>
                                 </View>
                               );
                             })}
@@ -939,9 +1004,11 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                 }} />
               </View>
             ) : (
-              activeMatches.map(match => {
+              sortedActiveMatches.map(match => {
                 const scoreA = localScores[match.id]?.a ?? match.score_a
                 const scoreB = localScores[match.id]?.b ?? match.score_b
+                const liveRotation = match.players_snapshot?.rotation
+                const liveCourt = match.players_snapshot?.court || (match as any).court_no
 
                 return (
                   <View key={match.id} style={{
@@ -967,6 +1034,16 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#0F6E56' }} />
                         <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#0F6E56', fontWeight: '800' }}>TRẬN ĐẤU LIVE</Text>
+                        {!!liveCourt && (
+                          <View style={{ backgroundColor: 'white', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: '#D5D2C8' }}>
+                            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', fontWeight: '800' }}>Sân {liveCourt}</Text>
+                          </View>
+                        )}
+                        {!!liveRotation && (
+                          <View style={{ backgroundColor: '#E1F5EE', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
+                            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#0F6E56', fontWeight: '800' }}>Vòng {liveRotation}</Text>
+                          </View>
+                        )}
                       </View>
                       <View style={{ backgroundColor: '#1A2E2A', paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.xs }}>
                         <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: 'white', fontWeight: '700' }}>
@@ -1171,6 +1248,33 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                   <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B4B2A9', marginTop: 4 }}>
                     Họ sẽ được ưu tiên chơi ở lượt tiếp theo.
                   </Text>
+                </View>
+              </View>
+            )}
+            {pendingRotationGroups.length > 0 && (
+              <View style={{ backgroundColor: '#E1F5EE', borderRadius: RADIUS.md, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: '#B7E4D5' }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', marginBottom: 8, fontWeight: '900' }}>
+                  BẮT ĐẦU THEO VÒNG / NHIỀU SÂN
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                  {pendingRotationGroups.slice(0, 4).map(group => (
+                    <TouchableOpacity
+                      key={group.rotation}
+                      onPress={() => handleConfirmRotationMatches(group.matches)}
+                      disabled={submitting}
+                      style={{
+                        backgroundColor: '#0F6E56',
+                        borderRadius: 999,
+                        paddingHorizontal: 12,
+                        paddingVertical: 7,
+                        opacity: submitting ? 0.7 : 1,
+                      }}
+                    >
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: 'white', fontWeight: '900' }}>
+                        Vòng {group.rotation} ({group.matches.length} sân)
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               </View>
             )}

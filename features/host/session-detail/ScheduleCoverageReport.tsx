@@ -156,25 +156,25 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <View>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900' }}>
-            COVERAGE REPORT
+            BÁO CÁO ĐỘ PHỦ LỊCH
           </Text>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 2 }}>
-            Audit lich vua generate truoc khi bat dau danh.
+            Kiểm tra lịch vừa tạo trước khi bắt đầu đánh.
           </Text>
         </View>
         <View style={{ backgroundColor: hasWarnings ? '#FFF4D6' : '#E1F5EE', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: hasWarnings ? '#854F0B' : '#0F6E56', fontWeight: '900' }}>
-            {hasWarnings ? 'CAN XEM' : 'ON'}
+            {hasWarnings ? 'CẦN XEM' : 'ỔN'}
           </Text>
         </View>
       </View>
 
       <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         {[
-          { label: 'Tran', value: `${schedule.length}` },
+          { label: 'Trận', value: `${schedule.length}` },
           { label: 'Game/ng', value: `${report.minGames}-${report.maxGames}` },
           { label: 'Full partner', value: `${report.fullPartnerCount}/${players.length}` },
-          { label: 'Full doi thu', value: `${report.fullOpponentCount}/${players.length}` },
+          { label: 'Full đối thủ', value: `${report.fullOpponentCount}/${players.length}` },
         ].map(item => (
           <View key={item.label} style={{ backgroundColor: 'white', borderRadius: RADIUS.md, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#E5E3DC' }}>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800' }}>{item.label}</Text>
@@ -185,13 +185,13 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
 
       {report.underTarget.length > 0 && (
         <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#854F0B', lineHeight: 15, marginBottom: 8 }}>
-          Chua du target {report.targetGames} tran: {report.underTarget.map(row => `${row.name} (${row.games})`).join(', ')}
+          Chưa đủ mục tiêu {report.targetGames} trận: {report.underTarget.map(row => `${row.name} (${row.games})`).join(', ')}
         </Text>
       )}
 
       {quality?.timedOut && (
         <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#854F0B', lineHeight: 15, marginBottom: 8 }}>
-          Scheduler da dung sau {Math.round(quality.runtimeMs)}ms de tranh treo UI. Lich nay co the chua toi uu tuyet doi.
+          Scheduler đã dừng sau {Math.round(quality.runtimeMs)}ms để tránh treo UI. Lịch này có thể chưa tối ưu tuyệt đối.
         </Text>
       )}
 
@@ -199,12 +199,12 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
         <View style={{ backgroundColor: 'white', borderRadius: RADIUS.md, padding: 10, borderWidth: 1, borderColor: '#F5DFA0', marginBottom: 10 }}>
           {report.repeatedPartners.length > 0 && (
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#854F0B', lineHeight: 15 }}>
-              Partner lap: {report.repeatedPartners.slice(0, 4).map(item => `${item.names} x${item.count}`).join(', ')}
+              Partner lặp: {report.repeatedPartners.slice(0, 4).map(item => `${item.names} x${item.count}`).join(', ')}
             </Text>
           )}
           {report.repeatedOpponents.length > 0 && (
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#854F0B', lineHeight: 15, marginTop: report.repeatedPartners.length > 0 ? 4 : 0 }}>
-              Doi thu lap nhieu: {report.repeatedOpponents.slice(0, 4).map(item => `${item.names} x${item.count}`).join(', ')}
+              Đối thủ lặp nhiều: {report.repeatedOpponents.slice(0, 4).map(item => `${item.names} x${item.count}`).join(', ')}
             </Text>
           )}
         </View>
@@ -216,15 +216,15 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '900' }}>{row.name}</Text>
               <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: row.games >= report.targetGames ? '#0F6E56' : '#854F0B', fontWeight: '900' }}>
-                {row.games}/{report.targetGames} tran
+                {row.games}/{report.targetGames} trận
               </Text>
             </View>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 5 }}>
-              Partner {row.partners}/{players.length - 1} | Doi thu {row.opponents}/{players.length - 1}
+              Partner {row.partners}/{players.length - 1} | Đối thủ {row.opponents}/{players.length - 1}
             </Text>
             {(row.missingPartners.length > 0 || row.missingOpponents.length > 0) && (
               <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#9C968A', lineHeight: 14, marginTop: 4 }} numberOfLines={expanded ? undefined : 2}>
-                Thieu partner: {row.missingPartners.length ? row.missingPartners.join(', ') : 'none'} | Thieu doi thu: {row.missingOpponents.length ? row.missingOpponents.join(', ') : 'none'}
+                Thiếu partner: {row.missingPartners.length ? row.missingPartners.join(', ') : 'không'} | Thiếu đối thủ: {row.missingOpponents.length ? row.missingOpponents.join(', ') : 'không'}
               </Text>
             )}
           </View>
@@ -234,7 +234,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
       {report.rows.length > 5 && (
         <TouchableOpacity onPress={() => setExpanded(prev => !prev)} style={{ alignSelf: 'center', paddingTop: 10 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
-            {expanded ? 'Thu gon report' : `Xem tat ca ${report.rows.length} nguoi`}
+            {expanded ? 'Thu gọn báo cáo' : `Xem tất cả ${report.rows.length} người`}
           </Text>
         </TouchableOpacity>
       )}
