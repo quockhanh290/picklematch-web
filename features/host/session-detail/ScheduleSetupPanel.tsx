@@ -67,37 +67,41 @@ export function ScheduleSetupPanel({
         })}
       </View>
 
-      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#596864', marginBottom: 8 }}>
-        UU TIEN XEP LICH
-      </Text>
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-        {[
-          { id: 'balanced' as const, label: 'Can bang' },
-          { id: 'partner' as const, label: 'Doi partner' },
-          { id: 'opponent' as const, label: 'Gap doi thu' },
-        ].map(priority => {
-          const active = schedulePriority === priority.id
-          return (
-            <TouchableOpacity
-              key={priority.id}
-              onPress={() => onSchedulePriorityChange(priority.id)}
-              style={{
-                flex: 1,
-                paddingVertical: 8,
-                borderRadius: RADIUS.md,
-                backgroundColor: active ? '#A05A16' : 'white',
-                borderWidth: 1,
-                borderColor: active ? '#A05A16' : '#D5D2C8',
-                alignItems: 'center'
-              }}
-            >
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: active ? 'white' : '#596864', fontWeight: '800' }}>
-                {priority.label}
-              </Text>
-            </TouchableOpacity>
-          )
-        })}
-      </View>
+      {scheduleMode === 'limited' && (
+        <>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#596864', marginBottom: 8 }}>
+            UU TIEN XEP LICH
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+            {[
+              { id: 'balanced' as const, label: 'Can bang' },
+              { id: 'partner' as const, label: 'Doi partner' },
+              { id: 'opponent' as const, label: 'Gap doi thu' },
+            ].map(priority => {
+              const active = schedulePriority === priority.id
+              return (
+                <TouchableOpacity
+                  key={priority.id}
+                  onPress={() => onSchedulePriorityChange(priority.id)}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 8,
+                    borderRadius: RADIUS.md,
+                    backgroundColor: active ? '#A05A16' : 'white',
+                    borderWidth: 1,
+                    borderColor: active ? '#A05A16' : '#D5D2C8',
+                    alignItems: 'center'
+                  }}
+                >
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: active ? 'white' : '#596864', fontWeight: '800' }}>
+                    {priority.label}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+        </>
+      )}
 
       {scheduleMode === 'limited' && (
         <View style={{ marginBottom: 12 }}>

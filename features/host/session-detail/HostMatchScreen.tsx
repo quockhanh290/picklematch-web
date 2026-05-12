@@ -149,8 +149,8 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
           effectiveCourts,
           undefined,
           scheduleMode === 'limited'
-            ? { minGamesPerPlayer, priority: schedulePriority, maxRuntimeMs: 2_500 }
-            : { priority: schedulePriority, maxRuntimeMs: 1_500 }
+            ? { minGamesPerPlayer, priority: schedulePriority, maxRuntimeMs: 2_000 }
+            : { priority: 'balanced', maxRuntimeMs: 1_500 }
         )
         const schedule: PendingMatch[] = generated.matches.map(match => ({
           teamA: match.teamA,
