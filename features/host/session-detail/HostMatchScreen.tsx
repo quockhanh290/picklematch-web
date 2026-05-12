@@ -2,13 +2,15 @@ import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { SHADOW as LAYOUT_SHADOW, RADIUS } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import type { SessionMatch } from '@/hooks/useSessionDetail'
-import { buildRoundRobinDoublesSchedule } from '@/lib/roundRobinScheduler'
+import { buildRoundRobinDoublesSchedule, type SchedulePriority } from '@/lib/roundRobinScheduler'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
 import { Minus, Plus, SwordsIcon } from 'lucide-react-native'
 import React, { useState, useEffect, useMemo } from 'react'
 import { Alert, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { ScheduleCoverageReport } from './ScheduleCoverageReport'
+import { ScheduleSetupPanel, type ScheduleMode } from './ScheduleSetupPanel'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const IS_SMALL_DEVICE = SCREEN_WIDTH < 375
@@ -39,6 +41,11 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   const theme = useAppTheme()
   const [submitting, setSubmitting] = useState(false)
   const [isMixInMode, setIsMixInMode] = useState(true)
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('full')
+  const [schedulePriority, setSchedulePriority] = useState<SchedulePriority>('balanced')
+  const [scheduleCourtCount, setScheduleCourtCount] = useState(Math.max(1, Math.floor(courtCount || 1)))
+  const [minGamesPerPlayer, setMinGamesPerPlayer] = useState(4)
+  const [editingPendingIndex, setEditingPendingIndex] = useState<number | null>(null)
   const [showAllProgress, setShowAllProgress] = useState(false)
   const [showRotationTable, setShowRotationTable] = useState(false)
   const [pendingMixInMatches, setPendingMixInMatches] = useState<PendingMatch[]>([])
@@ -125,7 +132,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
       return
     }
 
-    const effectiveCourts = Math.min(Math.max(1, Math.floor(courtCount || 1)), Math.floor(X / 4))
+    const effectiveCourts = Math.min(Math.max(1, Math.floor(scheduleCourtCount || 1)), Math.floor(X / 4))
 
     const performGeneration = () => {
       try {
@@ -137,7 +144,9 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
 
         const generated = buildRoundRobinDoublesSchedule(
           sortedPlayers.map(p => String(p.id)),
-          effectiveCourts
+          effectiveCourts,
+          undefined,
+          scheduleMode === 'limited' ? { minGamesPerPlayer, priority: schedulePriority } : { priority: schedulePriority }
         )
         const schedule: PendingMatch[] = generated.matches.map(match => ({
           teamA: match.teamA,
@@ -162,8 +171,12 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
       }
     }
 
-    const expectedMatches = Math.ceil((X * (X - 1)) / 4)
-    const confirmMsg = `Tạo lịch xoay vòng cho ${X} người trên ${effectiveCourts} sân (${expectedMatches} trận dự kiến)?`
+    const rawLimitedMatches = Math.ceil((X * Math.min(minGamesPerPlayer, X - 1)) / 4)
+    const expectedMatches = scheduleMode === 'limited'
+      ? rawLimitedMatches
+      : Math.ceil((X * (X - 1)) / 4)
+    const modeLabel = scheduleMode === 'limited' ? `ít nhất ${minGamesPerPlayer} trận/người` : 'full rotation'
+    const confirmMsg = `Tạo lịch ${modeLabel} cho ${X} người trên ${effectiveCourts} sân (${expectedMatches} trận dự kiến)?`
     if (Platform.OS === 'web') {
       if (window.confirm(confirmMsg)) performGeneration()
     } else {
@@ -194,7 +207,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   // Count total matches played per player (ONLY playing or finished)
   const matchesPlayed = new Map<string, number>()
   activePlayers.forEach(p => matchesPlayed.set(String(p.id), 0))
-  validMatches.forEach(m => {
+  finishedMatches.forEach(m => {
     const { team_a, team_b } = getPlayersFromSnapshot(m.players_snapshot)
     const all = [...team_a, ...team_b]
     all.forEach(pid => {
@@ -233,18 +246,76 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   })
 
   const totalPlayers = activePlayers.length
+  const getShortName = (playerId: string) => {
+    const player = activePlayers.find(p => String(p.id) === String(playerId))
+    const name = player?.name?.trim() || 'P'
+    return name.split(/\s+/).pop()?.slice(0, 2).toUpperCase() || name.slice(0, 2).toUpperCase()
+  }
+
   const isRotationComplete = totalPlayers >= 2 && activePlayers.every(p => {
+    const partner = partnerMap.get(String(p.id))
     const met = metMap.get(String(p.id))
-    return met && met.size >= totalPlayers - 1
+    return partner && met && partner.size >= totalPlayers - 1 && met.size >= totalPlayers - 1
   })
 
   // Player with fewest encounters (for progress tracking)
   const playerEncounterCounts = activePlayers.map(p => ({
     id: String(p.id),
     name: p.name,
+    partners: partnerMap.get(String(p.id))?.size ?? 0,
     met: metMap.get(String(p.id))?.size ?? 0,
     played: matchesPlayed.get(String(p.id)) ?? 0
-  })).sort((a, b) => a.name.localeCompare(b.name))
+  })).sort((a, b) => {
+    return a.name.localeCompare(b.name)
+  })
+
+  const getPendingMatchPlayerIds = (match: PendingMatch) => [...match.teamA, ...match.teamB].map(String)
+
+  const underMinPlayerIds = activePlayers
+    .filter(p => (matchesPlayed.get(String(p.id)) ?? 0) < minGamesPerPlayer)
+    .map(p => String(p.id))
+
+  const underMinPlayerIdSet = new Set(underMinPlayerIds)
+
+  const getManualSwapInfo = (match: PendingMatch) => {
+    const matchIds = getPendingMatchPlayerIds(match)
+    const requiredIds = matchIds.filter(id => underMinPlayerIdSet.has(id))
+    const fillerIds = matchIds.filter(id => !underMinPlayerIdSet.has(id))
+    const canShow =
+      scheduleMode === 'limited' &&
+      underMinPlayerIds.length > 0 &&
+      underMinPlayerIds.length < 4 &&
+      requiredIds.length > 0 &&
+      fillerIds.length > 0
+
+    return { canShow, requiredIds, fillerIds, matchIds }
+  }
+
+  const getManualSwapCandidates = (match: PendingMatch, oldPlayerId: string) => {
+    const matchIds = new Set(getPendingMatchPlayerIds(match).filter(id => id !== oldPlayerId))
+    return activePlayers
+      .filter(player => {
+        const id = String(player.id)
+        return !matchIds.has(id) && !underMinPlayerIdSet.has(id) && (matchesPlayed.get(id) ?? 0) >= minGamesPerPlayer
+      })
+      .sort((a, b) => {
+        const gamesA = matchesPlayed.get(String(a.id)) ?? 0
+        const gamesB = matchesPlayed.get(String(b.id)) ?? 0
+        if (gamesA !== gamesB) return gamesA - gamesB
+        return a.name.localeCompare(b.name)
+      })
+  }
+
+  const handleReplacePendingPlayer = (matchIndex: number, oldPlayerId: string, newPlayerId: string) => {
+    setPendingMixInMatches(prev => prev.map((match, index) => {
+      if (index !== matchIndex) return match
+      return {
+        ...match,
+        teamA: match.teamA.map(id => String(id) === oldPlayerId ? newPlayerId : id),
+        teamB: match.teamB.map(id => String(id) === oldPlayerId ? newPlayerId : id),
+      }
+    }))
+  }
 
   const handleUpdateScore = async (matchId: string, team: 'a' | 'b', delta: number) => {
     if (isAfterEnd) return
@@ -672,6 +743,18 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                 </TouchableOpacity>
               </View>
 
+              <ScheduleSetupPanel
+                activePlayerCount={activePlayers.length}
+                defaultCourtCount={courtCount}
+                scheduleMode={scheduleMode}
+                onScheduleModeChange={setScheduleMode}
+                schedulePriority={schedulePriority}
+                onSchedulePriorityChange={setSchedulePriority}
+                minGamesPerPlayer={minGamesPerPlayer}
+                onMinGamesPerPlayerChange={setMinGamesPerPlayer}
+                scheduleCourtCount={scheduleCourtCount}
+                onScheduleCourtCountChange={setScheduleCourtCount}
+              />
               {fullRotationSchedule.length > 0 && (
                 <TouchableOpacity 
                   onPress={() => setShowRotationTable(!showRotationTable)}
@@ -692,6 +775,13 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                   </Text>
                 </TouchableOpacity>
               )}
+
+              <ScheduleCoverageReport
+                players={scheduledPlayers.length > 0 ? scheduledPlayers : activePlayers}
+                schedule={pendingMixInMatches.length > 0 ? pendingMixInMatches : fullRotationSchedule}
+                mode={scheduleMode}
+                minGamesPerPlayer={minGamesPerPlayer}
+              />
 
               {showRotationTable && fullRotationSchedule.some(m => m.rotation) && (
                 <View style={{ backgroundColor: '#F9F8F4', borderRadius: RADIUS.lg, padding: 12, marginBottom: 24, borderWidth: 1, borderColor: '#E5E3DC' }}>
@@ -1082,6 +1172,8 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
               const teamBPlayers = match.teamB
                 .map(pid => players.find(p => p.id === pid))
                 .sort((a, b) => (a?.name || '').localeCompare(b?.name || ''))
+              const manualSwapInfo = getManualSwapInfo(match)
+              const isEditingThisPending = editingPendingIndex === idx
               return (
                 <View key={idx} style={{
                   backgroundColor: '#F5F1E8',
@@ -1146,6 +1238,55 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                       <Text style={{ color: 'white', fontSize: 11, fontFamily: SCREEN_FONTS.headline, fontWeight: '800' }}>BẮT ĐẦU</Text>
                     </TouchableOpacity>
                   </View>
+                  {manualSwapInfo.canShow && (
+                    <View style={{ borderTopWidth: 1, borderTopColor: '#E5E3DC', padding: 10, backgroundColor: '#FFFCF5' }}>
+                      <TouchableOpacity
+                        onPress={() => setEditingPendingIndex(isEditingThisPending ? null : idx)}
+                        style={{ alignSelf: 'flex-start', backgroundColor: isEditingThisPending ? '#0F6E56' : 'white', borderWidth: 1, borderColor: '#0F6E56', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, marginBottom: isEditingThisPending ? 10 : 0 }}
+                      >
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: isEditingThisPending ? 'white' : '#0F6E56', fontWeight: '800' }}>
+                          {isEditingThisPending ? 'ĐÓNG CHỈNH NGƯỜI' : 'CHỈNH NGƯỜI ĐÁNH BÙ'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {isEditingThisPending && (
+                        <View style={{ gap: 10 }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', lineHeight: 15 }}>
+                            Chỉ hiện khi còn {underMinPlayerIds.length} người chưa đủ tối thiểu. Bạn có thể đổi người đã đủ min nếu họ không muốn đánh thêm.
+                          </Text>
+                          {manualSwapInfo.fillerIds.map(oldId => {
+                            const oldPlayer = activePlayers.find(p => String(p.id) === oldId)
+                            const candidates = getManualSwapCandidates(match, oldId)
+                            return (
+                              <View key={oldId} style={{ backgroundColor: 'white', borderRadius: RADIUS.md, padding: 8, borderWidth: 1, borderColor: '#E5E3DC' }}>
+                                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#854F0B', marginBottom: 6 }}>
+                                  Đổi {oldPlayer?.name || 'người đánh bù'} ({matchesPlayed.get(oldId) ?? 0}/{minGamesPerPlayer}+)
+                                </Text>
+                                <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                                  {candidates.length === 0 ? (
+                                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B4B2A9' }}>Không có người thay phù hợp.</Text>
+                                  ) : candidates.map(candidate => {
+                                    const candidateId = String(candidate.id)
+                                    return (
+                                      <TouchableOpacity
+                                        key={candidateId}
+                                        onPress={() => handleReplacePendingPlayer(idx, oldId, candidateId)}
+                                        style={{ backgroundColor: '#F5F1E8', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, borderWidth: 1, borderColor: '#D5D2C8' }}
+                                      >
+                                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#1A2E2A', fontWeight: '700' }}>
+                                          {candidate.name} ({matchesPlayed.get(candidateId) ?? 0})
+                                        </Text>
+                                      </TouchableOpacity>
+                                    )
+                                  })}
+                                </View>
+                              </View>
+                            )
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  )}
                 </View>
               )
             })}
@@ -1196,38 +1337,90 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
               </View>
             )}
 
-            {/* Progress: Who hasn't met everyone yet */}
+            {/* Progress: partner/opponent coverage for every player */}
             {!isRotationComplete && finishedMatches.length > 0 && totalPlayers >= 4 && (
               <View style={{ backgroundColor: '#F5F1E8', borderRadius: RADIUS.lg, padding: 12, marginBottom: 16 }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#7A8884', marginBottom: 8, letterSpacing: 0.5 }}>
-                  GỢI Ý ƯU TIÊN (DỰA TRÊN SỐ TRẬN)
-                </Text>
-                {(showAllProgress ? playerEncounterCounts : playerEncounterCounts.slice(0, 4)).map(({ id, name, met, played }) => (
-                  <View key={id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#1A2E2A', fontWeight: '600' }}>{name}</Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884' }}>Đã đánh {played} trận</Text>
+                <View style={{ marginBottom: 10 }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', letterSpacing: 0.5 }}>
+                    TIẾN TRÌNH XOAY VÒNG
+                  </Text>
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 2 }}>
+                    Theo dõi từng người: lượt đã đánh, partner unique và đối thủ unique sau khi xác nhận kết quả.
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                  {[
+                    { label: 'Đã có', color: '#0F6E56' },
+                    { label: 'Chưa có', color: '#E5E3DC' },
+                    { label: 'Đối thủ', color: '#2563eb' },
+                  ].map(item => (
+                    <View key={item.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'white', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: '#E5E3DC' }}>
+                      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: item.color }} />
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', fontWeight: '700' }}>{item.label}</Text>
                     </View>
-                    <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', flex: 2 }}>
-                      {Array.from({ length: totalPlayers - 1 }).map((_, i) => (
-                        <View
-                          key={i}
-                          style={{
-                            width: 10,
-                            height: 10,
-                            borderRadius: 5,
-                            backgroundColor: i < met ? '#0F6E56' : '#E5E3DC',
-                            borderWidth: 1,
-                            borderColor: i < met ? '#0F6E56' : '#C8C4BA',
-                          }}
-                        />
-                      ))}
-                    </View>
-                    <View style={{ width: 45, alignItems: 'flex-end' }}>
-                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: met >= totalPlayers - 1 ? '#0F6E56' : '#854F0B', fontWeight: '800' }}>
-                        {met}/{totalPlayers - 1}
+                  ))}
+                </View>
+                {(showAllProgress ? playerEncounterCounts : playerEncounterCounts.slice(0, 4)).map(({ id, name, partners, met, played }) => (
+                  <View key={id} style={{ backgroundColor: 'white', borderRadius: RADIUS.md, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: '#E8E2D6' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <View>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '800' }}>{name}</Text>
+                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884' }}>
+                          {played}/{totalPlayers - 1} trận đã xác nhận
+                        </Text>
+                      </View>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: partners >= totalPlayers - 1 && met >= totalPlayers - 1 && played >= totalPlayers - 1 ? '#0F6E56' : '#854F0B', fontWeight: '800' }}>
+                        {Math.min(partners, met, played)}/{totalPlayers - 1}
                       </Text>
-                      <Text style={{ fontSize: 8, color: '#B4B2A9', fontWeight: '600' }}>GẶP MẶT</Text>
+                    </View>
+                    <View style={{ gap: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ width: 58, fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', fontWeight: '800' }}>Lượt đấu</Text>
+                        <View style={{ flex: 1, flexDirection: 'row', gap: 4, flexWrap: 'wrap' }}>
+                          {Array.from({ length: totalPlayers - 1 }).map((_, i) => (
+                            <View key={i} style={{
+                              width: 22, height: 22, borderRadius: 11,
+                              backgroundColor: i < played ? '#7c3aed' : '#F1EFE8',
+                              borderWidth: 1, borderColor: i < played ? '#7c3aed' : '#D5D2C8',
+                              alignItems: 'center', justifyContent: 'center'
+                            }}>
+                              <Text style={{ fontSize: 8, fontFamily: SCREEN_FONTS.headline, color: i < played ? 'white' : '#B4B2A9', fontWeight: '800' }}>{i + 1}</Text>
+                            </View>
+                          ))}
+                        </View>
+                        <Text style={{ width: 34, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: played >= totalPlayers - 1 ? '#7c3aed' : '#854F0B', fontWeight: '800' }}>
+                          {played}/{totalPlayers - 1}
+                        </Text>
+                      </View>
+                      {[
+                        { label: 'Partner', ids: partnerMap.get(id) ?? new Set<string>(), color: '#0F6E56' },
+                        { label: 'Đối thủ', ids: metMap.get(id) ?? new Set<string>(), color: '#2563eb' },
+                      ].map(row => (
+                        <View key={row.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={{ width: 58, fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', fontWeight: '800' }}>{row.label}</Text>
+                          <View style={{ flex: 1, flexDirection: 'row', gap: 4, flexWrap: 'wrap' }}>
+                            {activePlayers.filter(p => String(p.id) !== id).map(other => {
+                              const otherId = String(other.id)
+                              const isDone = row.ids.has(otherId)
+                              return (
+                                <View key={otherId} style={{
+                                  width: 22, height: 22, borderRadius: 11,
+                                  backgroundColor: isDone ? row.color : '#F1EFE8',
+                                  borderWidth: 1, borderColor: isDone ? row.color : '#D5D2C8',
+                                  alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                  <Text style={{ fontSize: 8, fontFamily: SCREEN_FONTS.headline, color: isDone ? 'white' : '#9C968A', fontWeight: '800' }}>
+                                    {getShortName(otherId)}
+                                  </Text>
+                                </View>
+                              )
+                            })}
+                          </View>
+                          <Text style={{ width: 34, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: row.ids.size >= totalPlayers - 1 ? row.color : '#854F0B', fontWeight: '800' }}>
+                            {row.ids.size}/{totalPlayers - 1}
+                          </Text>
+                        </View>
+                      ))}
                     </View>
                   </View>
                 ))}

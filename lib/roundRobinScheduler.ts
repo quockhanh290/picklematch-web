@@ -15,8 +15,16 @@ export type RoundRobinSchedule = {
   sitCount: Record<string, number>
 }
 
+export type SchedulePriority = 'balanced' | 'partner' | 'opponent'
+
+export type RoundRobinScheduleOptions = {
+  minGamesPerPlayer?: number
+  priority?: SchedulePriority
+}
+
 type PairMap = Record<string, number>
 type Split = [[number, number], [number, number]]
+type PartnerPair = [number, number]
 
 const pairKey = (a: number, b: number) => (a < b ? `${a}_${b}` : `${b}_${a}`)
 const getPairValue = (map: PairMap, a: number, b: number) => map[pairKey(a, b)] || 0
@@ -46,7 +54,14 @@ function getCombos(arr: number[], k: number): number[][] {
   return result
 }
 
-function splitScore(split: Split, partnerMap: PairMap, opponentMap: PairMap) {
+function getLocalSplitWeights(priority: SchedulePriority = 'balanced') {
+  if (priority === 'partner') return { partner: 160, opponent: 8 }
+  if (priority === 'opponent') return { partner: 25, opponent: 90 }
+  return { partner: 90, opponent: 12 }
+}
+
+function splitScore(split: Split, partnerMap: PairMap, opponentMap: PairMap, priority: SchedulePriority = 'balanced') {
+  const weights = getLocalSplitWeights(priority)
   const [[a, b], [c, d]] = split
   const partnerRepeats = getPairValue(partnerMap, a, b) + getPairValue(partnerMap, c, d)
   const opponentRepeats =
@@ -55,7 +70,7 @@ function splitScore(split: Split, partnerMap: PairMap, opponentMap: PairMap) {
     getPairValue(opponentMap, b, c) +
     getPairValue(opponentMap, b, d)
 
-  return partnerRepeats * 100 + opponentRepeats
+  return partnerRepeats * weights.partner + opponentRepeats * weights.opponent
 }
 
 function splitOptions([a, b, c, d]: number[]): Split[] {
@@ -66,23 +81,24 @@ function splitOptions([a, b, c, d]: number[]): Split[] {
   ]
 }
 
-function bestSplitOf(court: number[], partnerMap: PairMap, opponentMap: PairMap): Split {
+function bestSplitOf(court: number[], partnerMap: PairMap, opponentMap: PairMap, priority: SchedulePriority = 'balanced'): Split {
   return splitOptions(court).reduce((best, current) => {
-    return splitScore(current, partnerMap, opponentMap) < splitScore(best, partnerMap, opponentMap)
+    return splitScore(current, partnerMap, opponentMap, priority) < splitScore(best, partnerMap, opponentMap, priority)
       ? current
       : best
   })
 }
 
-function courtScore(court: number[], partnerMap: PairMap, opponentMap: PairMap) {
-  return splitScore(bestSplitOf(court, partnerMap, opponentMap), partnerMap, opponentMap)
+function courtScore(court: number[], partnerMap: PairMap, opponentMap: PairMap, priority: SchedulePriority = 'balanced') {
+  return splitScore(bestSplitOf(court, partnerMap, opponentMap, priority), partnerMap, opponentMap, priority)
 }
 
 function chooseBestPartition(
   active: number[],
   courtCount: number,
   partnerMap: PairMap,
-  opponentMap: PairMap
+  opponentMap: PairMap,
+  priority: SchedulePriority = 'balanced'
 ) {
   let bestPartition: number[][] = []
   let bestScore = Number.POSITIVE_INFINITY
@@ -103,11 +119,11 @@ function chooseBestPartition(
     const anchor = remaining[0]
     const candidates = getCombos(remaining.slice(1), 3)
       .map(rest => [anchor, ...rest])
-      .sort((left, right) => courtScore(left, partnerMap, opponentMap) - courtScore(right, partnerMap, opponentMap))
+      .sort((left, right) => courtScore(left, partnerMap, opponentMap, priority) - courtScore(right, partnerMap, opponentMap, priority))
       .slice(0, candidateLimit)
 
     for (const court of candidates) {
-      const nextScore = score + courtScore(court, partnerMap, opponentMap)
+      const nextScore = score + courtScore(court, partnerMap, opponentMap, priority)
       const nextRemaining = remaining.filter(player => !court.includes(player))
       if (search(nextRemaining, [...partition, court], nextScore)) return true
     }
@@ -119,16 +135,627 @@ function chooseBestPartition(
   return bestPartition
 }
 
+function buildExhaustiveSingleCourtSchedule(playerIndexes: number[]): Split[] | null {
+  if (playerIndexes.length !== 9) return null
+
+  // Precomputed exact Kirkman-style schedule for 9 players on 1 court.
+  // It avoids runtime backtracking on the UI thread while preserving:
+  // partner pair = exactly 1, opponent pair = exactly 2.
+  const template: Split[] = [
+    [[0, 1], [2, 3]],
+    [[4, 7], [6, 8]],
+    [[0, 2], [4, 5]],
+    [[1, 6], [5, 7]],
+    [[0, 3], [6, 7]],
+    [[2, 8], [3, 7]],
+    [[0, 4], [1, 8]],
+    [[2, 5], [3, 8]],
+    [[0, 5], [1, 3]],
+    [[1, 4], [5, 6]],
+    [[0, 6], [7, 8]],
+    [[2, 7], [3, 4]],
+    [[0, 7], [2, 4]],
+    [[1, 2], [3, 6]],
+    [[0, 8], [1, 5]],
+    [[1, 7], [5, 8]],
+    [[2, 6], [4, 8]],
+    [[3, 5], [4, 6]],
+  ]
+
+  return template.map(([[a, b], [c, d]]) => [[playerIndexes[a], playerIndexes[b]], [playerIndexes[c], playerIndexes[d]]] as Split)
+}
+
+function reorderSingleCourtMatchesForPace(matches: Split[], playerIndexes: number[]) {
+  const remaining = [...matches]
+  const ordered: Split[] = []
+  const gamesCount = Object.fromEntries(playerIndexes.map(player => [player, 0])) as Record<number, number>
+  let previousPlayers = new Set<number>()
+
+  while (remaining.length > 0) {
+    let bestIndex = 0
+    let bestScore = Number.POSITIVE_INFINITY
+
+    remaining.forEach((match, index) => {
+      const playersInMatch = [...match[0], ...match[1]]
+      const projectedCounts = { ...gamesCount }
+      playersInMatch.forEach(player => { projectedCounts[player] += 1 })
+      const counts = playerIndexes.map(player => projectedCounts[player])
+      const range = Math.max(...counts) - Math.min(...counts)
+      const alreadyBusyPenalty = playersInMatch.filter(player => previousPlayers.has(player)).length
+      const currentGameSum = playersInMatch.reduce((sum, player) => sum + gamesCount[player], 0)
+      const maxCurrentGames = Math.max(...playersInMatch.map(player => gamesCount[player]))
+
+      const score =
+        range * 1000 +
+        alreadyBusyPenalty * 100 +
+        maxCurrentGames * 10 +
+        currentGameSum
+
+      if (score < bestScore) {
+        bestScore = score
+        bestIndex = index
+      }
+    })
+
+    const [picked] = remaining.splice(bestIndex, 1)
+    ordered.push(picked)
+    const pickedPlayers = [...picked[0], ...picked[1]]
+    pickedPlayers.forEach(player => { gamesCount[player] += 1 })
+    previousPlayers = new Set(pickedPlayers)
+  }
+
+  return ordered
+}
+
+type RoundCandidate = {
+  courts: Split[]
+  sitters: number[]
+}
+
+type SearchState = {
+  rounds: RoundCandidate[]
+  partnerMap: PairMap
+  opponentMap: PairMap
+  gamesCount: Record<number, number>
+  sitCount: Record<number, number>
+}
+
+const fullRotationTemplateCache = new Map<string, RoundCandidate[]>()
+const exactPartnerTemplatePlayerCounts = new Set([4, 5, 8, 9, 12, 13, 16, 17, 20])
+const nearExactPartnerTemplatePlayerCounts = new Set([6, 7, 10, 11, 14, 15, 18, 19])
+
+const SCORE_WEIGHTS: Record<SchedulePriority, {
+  partnerRepeat: number
+  partnerMissing: number
+  opponentOverTarget: number
+  opponentMissing: number
+  opponentDistance: number
+  gamesRange: number
+  sitRange: number
+  uniquePartnerReward: number
+  uniqueOpponentReward: number
+}> = {
+  balanced: {
+    partnerRepeat: 1_000_000,
+    partnerMissing: 500_000,
+    opponentOverTarget: 100_000,
+    opponentMissing: 25_000,
+    opponentDistance: 1_000,
+    gamesRange: 500,
+    sitRange: 250,
+    uniquePartnerReward: 1_000,
+    uniqueOpponentReward: 100,
+  },
+  partner: {
+    partnerRepeat: 1_500_000,
+    partnerMissing: 800_000,
+    opponentOverTarget: 80_000,
+    opponentMissing: 20_000,
+    opponentDistance: 800,
+    gamesRange: 500,
+    sitRange: 250,
+    uniquePartnerReward: 1_500,
+    uniqueOpponentReward: 250,
+  },
+  opponent: {
+    partnerRepeat: 400_000,
+    partnerMissing: 150_000,
+    opponentOverTarget: 500_000,
+    opponentMissing: 250_000,
+    opponentDistance: 4_000,
+    gamesRange: 500,
+    sitRange: 250,
+    uniquePartnerReward: 400,
+    uniqueOpponentReward: 1_200,
+  },
+}
+
+const clonePairMap = (map: PairMap): PairMap => ({ ...map })
+const cloneCountMap = (map: Record<number, number>) => ({ ...map })
+
+function buildCirclePartnerRounds(playerIndexes: number[]) {
+  const dummy = -1
+  const circle = playerIndexes.length % 2 === 0
+    ? [...playerIndexes]
+    : [...playerIndexes, dummy]
+  const rounds: Array<Array<[number, number]>> = []
+
+  for (let round = 0; round < circle.length - 1; round += 1) {
+    const pairs: Array<[number, number]> = []
+    for (let index = 0; index < circle.length / 2; index += 1) {
+      const left = circle[index]
+      const right = circle[circle.length - 1 - index]
+      if (left !== dummy && right !== dummy) pairs.push([left, right])
+    }
+    rounds.push(pairs)
+
+    const fixed = circle[0]
+    const rotated = [fixed, circle[circle.length - 1], ...circle.slice(1, circle.length - 1)]
+    circle.splice(0, circle.length, ...rotated)
+  }
+
+  return rounds
+}
+
+function opponentRepeatScore(split: Split, opponentMap: PairMap, priority: SchedulePriority) {
+  const [[a, b], [c, d]] = split
+  const opponentRepeats =
+    getPairValue(opponentMap, a, c) +
+    getPairValue(opponentMap, a, d) +
+    getPairValue(opponentMap, b, c) +
+    getPairValue(opponentMap, b, d)
+  const weights = getLocalSplitWeights(priority)
+  return opponentRepeats * weights.opponent
+}
+
+function pairPartnerPairsForTemplate(
+  partnerPairs: PartnerPair[],
+  opponentMap: PairMap,
+  priority: SchedulePriority
+): Split[] {
+  let bestMatches: Split[] = []
+  let bestScore = Number.POSITIVE_INFINITY
+
+  function search(remaining: Array<[number, number]>, matches: Split[], score: number) {
+    if (score > bestScore) return
+    if (remaining.length === 0) {
+      if (score < bestScore) {
+        bestScore = score
+        bestMatches = matches.map(match => [[...match[0]], [...match[1]]] as Split)
+      }
+      return
+    }
+
+    const first = remaining[0]
+    for (let index = 1; index < remaining.length; index += 1) {
+      const second = remaining[index]
+      const split: Split = [[first[0], first[1]], [second[0], second[1]]]
+      const nextRemaining = remaining.filter((_, itemIndex) => itemIndex !== 0 && itemIndex !== index)
+      search(nextRemaining, [...matches, split], score + opponentRepeatScore(split, opponentMap, priority))
+    }
+  }
+
+  search(partnerPairs, [], 0)
+  return bestMatches
+}
+
+function buildAllPartnerPairs(playerIndexes: number[]): PartnerPair[] {
+  return getCombos(playerIndexes, 2).map(([a, b]) => [a, b])
+}
+
+function findMostConstrainedPartnerPairIndex(remaining: PartnerPair[]) {
+  let bestIndex = 0
+  let bestCandidateCount = Number.POSITIVE_INFINITY
+
+  remaining.forEach(([a, b], index) => {
+    const candidateCount = remaining.filter(([c, d], candidateIndex) => {
+      return candidateIndex !== index && a !== c && a !== d && b !== c && b !== d
+    }).length
+
+    if (candidateCount < bestCandidateCount) {
+      bestCandidateCount = candidateCount
+      bestIndex = index
+    }
+  })
+
+  return bestIndex
+}
+
+function buildGreedyPartnerPairMatches(
+  playerIndexes: number[],
+  priority: SchedulePriority
+): Split[] | null {
+  const remaining = buildAllPartnerPairs(playerIndexes)
+  const opponentMap: PairMap = {}
+
+  if (remaining.length % 2 === 1) {
+    // A full doubles match consumes 2 partner pairs, so odd pair counts need
+    // exactly one repeated partner pair to still cover every unique partner.
+    remaining.push([playerIndexes[0], playerIndexes[1]])
+  }
+
+  const matches: Split[] = []
+
+  while (remaining.length > 0) {
+    const firstIndex = findMostConstrainedPartnerPairIndex(remaining)
+    const [first] = remaining.splice(firstIndex, 1)
+    const candidateIndexes = remaining
+      .map((pair, index) => ({ pair, index }))
+      .filter(({ pair: [c, d] }) => first[0] !== c && first[0] !== d && first[1] !== c && first[1] !== d)
+      .sort((left, right) => {
+        if (priority === 'partner') return left.index - right.index
+        const leftSplit: Split = [[first[0], first[1]], [left.pair[0], left.pair[1]]]
+        const rightSplit: Split = [[first[0], first[1]], [right.pair[0], right.pair[1]]]
+        return opponentRepeatScore(leftSplit, opponentMap, priority) - opponentRepeatScore(rightSplit, opponentMap, priority)
+      })
+
+    const selected = candidateIndexes[0]
+    if (!selected) return null
+
+    const [second] = remaining.splice(selected.index, 1)
+    const split: Split = [[first[0], first[1]], [second[0], second[1]]]
+    matches.push(split)
+    split[0].forEach(a => split[1].forEach(b => incrementPair(opponentMap, a, b)))
+  }
+
+  return matches
+}
+
+function packTemplateMatchesIntoRounds(matches: Split[], playerIndexes: number[], courtsPerRound: number): RoundCandidate[] {
+  const remaining = [...matches]
+  const rounds: RoundCandidate[] = []
+  const gamesCount = Object.fromEntries(playerIndexes.map(player => [player, 0])) as Record<number, number>
+
+  while (remaining.length > 0) {
+    const courts: Split[] = []
+    const playingThisRound = new Set<number>()
+
+    while (courts.length < courtsPerRound) {
+      let bestIndex = -1
+      let bestScore = Number.POSITIVE_INFINITY
+
+      remaining.forEach((match, index) => {
+        const matchPlayers = [...match[0], ...match[1]]
+        if (matchPlayers.some(player => playingThisRound.has(player))) return
+
+        const projectedCounts = { ...gamesCount }
+        matchPlayers.forEach(player => { projectedCounts[player] += 1 })
+        const counts = playerIndexes.map(player => projectedCounts[player])
+        const range = Math.max(...counts) - Math.min(...counts)
+        const currentGameSum = matchPlayers.reduce((sum, player) => sum + gamesCount[player], 0)
+        const score = range * 1_000 + currentGameSum
+
+        if (score < bestScore) {
+          bestScore = score
+          bestIndex = index
+        }
+      })
+
+      if (bestIndex < 0) break
+
+      const [picked] = remaining.splice(bestIndex, 1)
+      courts.push(picked)
+      ;[...picked[0], ...picked[1]].forEach(player => {
+        playingThisRound.add(player)
+        gamesCount[player] += 1
+      })
+    }
+
+    rounds.push({
+      courts,
+      sitters: playerIndexes.filter(player => !playingThisRound.has(player)),
+    })
+  }
+
+  return rounds
+}
+
+function buildFastFullRotationTemplateRounds(
+  playerIndexes: number[],
+  courtsPerRound: number,
+  priority: SchedulePriority
+): RoundCandidate[] | null {
+  if (playerIndexes.length > 20) return null
+  if (playerIndexes.length < 4) return null
+  if (!exactPartnerTemplatePlayerCounts.has(playerIndexes.length) && !nearExactPartnerTemplatePlayerCounts.has(playerIndexes.length)) return null
+  const cacheKey = `${playerIndexes.length}:${courtsPerRound}:${priority}`
+  const cached = fullRotationTemplateCache.get(cacheKey)
+  if (cached) return cached.map(round => ({
+    courts: round.courts.map(([teamA, teamB]) => [[...teamA], [...teamB]] as Split),
+    sitters: [...round.sitters],
+  }))
+
+  const partnerRounds = buildCirclePartnerRounds(playerIndexes)
+  const canUseExactPartnerRounds = partnerRounds.every(round => round.length % 2 === 0)
+
+  const opponentMap: PairMap = {}
+  const matches: Split[] = []
+
+  if (canUseExactPartnerRounds) {
+    partnerRounds.forEach(partnerPairs => {
+      const roundMatches = pairPartnerPairsForTemplate(partnerPairs, opponentMap, priority)
+      matches.push(...roundMatches)
+
+      roundMatches.forEach(([teamA, teamB]) => {
+        teamA.forEach(a => teamB.forEach(b => incrementPair(opponentMap, a, b)))
+      })
+    })
+  } else {
+    const greedyMatches = buildGreedyPartnerPairMatches(playerIndexes, priority)
+    if (!greedyMatches) return null
+    matches.push(...greedyMatches)
+  }
+
+  const packedRounds = packTemplateMatchesIntoRounds(matches, playerIndexes, courtsPerRound)
+  fullRotationTemplateCache.set(cacheKey, packedRounds)
+  return packedRounds.map(round => ({
+    courts: round.courts.map(([teamA, teamB]) => [[...teamA], [...teamB]] as Split),
+    sitters: [...round.sitters],
+  }))
+}
+
+function applyRoundCandidate(state: SearchState, candidate: RoundCandidate): SearchState {
+  const next: SearchState = {
+    rounds: [...state.rounds, candidate],
+    partnerMap: clonePairMap(state.partnerMap),
+    opponentMap: clonePairMap(state.opponentMap),
+    gamesCount: cloneCountMap(state.gamesCount),
+    sitCount: cloneCountMap(state.sitCount),
+  }
+
+  candidate.sitters.forEach(player => { next.sitCount[player] += 1 })
+  candidate.courts.forEach(([teamA, teamB]) => {
+    incrementPair(next.partnerMap, teamA[0], teamA[1])
+    incrementPair(next.partnerMap, teamB[0], teamB[1])
+    teamA.forEach(a => teamB.forEach(b => incrementPair(next.opponentMap, a, b)))
+    ;[...teamA, ...teamB].forEach(player => { next.gamesCount[player] += 1 })
+  })
+
+  return next
+}
+
+function countUniquePairs(map: PairMap) {
+  return Object.keys(map).filter(key => map[key] > 0).length
+}
+
+function scoreSearchState(
+  state: SearchState,
+  playerIndexes: number[],
+  finalScore = false,
+  priority: SchedulePriority = 'balanced'
+) {
+  const weights = SCORE_WEIGHTS[priority]
+  const allPairs = getCombos(playerIndexes, 2)
+  let partnerMissing = 0
+  let partnerRepeat = 0
+  let opponentMissing = 0
+  let opponentOverTarget = 0
+  let opponentDistance = 0
+
+  allPairs.forEach(([a, b]) => {
+    const partnerCount = getPairValue(state.partnerMap, a, b)
+    const opponentCount = getPairValue(state.opponentMap, a, b)
+    if (partnerCount === 0) partnerMissing += 1
+    if (partnerCount > 1) partnerRepeat += partnerCount - 1
+    if (opponentCount === 0) opponentMissing += 1
+    if (opponentCount > 2) opponentOverTarget += opponentCount - 2
+    opponentDistance += Math.abs(opponentCount - 2)
+  })
+
+  const games = playerIndexes.map(player => state.gamesCount[player])
+  const sits = playerIndexes.map(player => state.sitCount[player])
+  const gamesRange = Math.max(...games) - Math.min(...games)
+  const sitRange = Math.max(...sits) - Math.min(...sits)
+
+  if (finalScore) {
+    return (
+      partnerRepeat * weights.partnerRepeat +
+      partnerMissing * weights.partnerMissing +
+      opponentOverTarget * weights.opponentOverTarget +
+      opponentMissing * weights.opponentMissing +
+      opponentDistance * weights.opponentDistance +
+      gamesRange * weights.gamesRange +
+      sitRange * weights.sitRange
+    )
+  }
+
+  return (
+    partnerRepeat * weights.partnerRepeat +
+    opponentOverTarget * Math.round(weights.opponentOverTarget * 0.75) +
+    gamesRange * Math.round(weights.gamesRange * 1.5) +
+    sitRange * Math.round(weights.sitRange * 1.2) -
+    countUniquePairs(state.partnerMap) * weights.uniquePartnerReward -
+    countUniquePairs(state.opponentMap) * weights.uniqueOpponentReward
+  )
+}
+
+function splitOptionsForCourt(court: number[], state: SearchState, priority: SchedulePriority) {
+  return splitOptions(court)
+    .sort((left, right) => splitScore(left, state.partnerMap, state.opponentMap, priority) - splitScore(right, state.partnerMap, state.opponentMap, priority))
+}
+
+function generateCourtCombinations(active: number[], courtCount: number, state: SearchState, limit: number, priority: SchedulePriority) {
+  const results: Split[][] = []
+
+  function search(remaining: number[], courts: Split[]) {
+    if (results.length >= limit) return
+    if (courts.length === courtCount) {
+      results.push(courts)
+      return
+    }
+
+    const anchor = remaining[0]
+    const courtCandidates = getCombos(remaining.slice(1), 3)
+      .map(rest => [anchor, ...rest])
+      .sort((left, right) => courtScore(left, state.partnerMap, state.opponentMap, priority) - courtScore(right, state.partnerMap, state.opponentMap, priority))
+      .slice(0, courtCount <= 2 ? 16 : 10)
+
+    for (const court of courtCandidates) {
+      const nextRemaining = remaining.filter(player => !court.includes(player))
+      const splitCandidates = splitOptionsForCourt(court, state, priority).slice(0, 2)
+      for (const split of splitCandidates) {
+        search(nextRemaining, [...courts, split])
+        if (results.length >= limit) return
+      }
+    }
+  }
+
+  search(active, [])
+  return results
+}
+
+function generateRoundCandidates(
+  state: SearchState,
+  playerIndexes: number[],
+  courtsPerRound: number,
+  sittersPerRound: number,
+  targetGamesPerPlayer?: number | null,
+  priority: SchedulePriority = 'balanced'
+) {
+  const activeSlots = courtsPerRound * 4
+  const candidates: RoundCandidate[] = []
+  const orderedForSitting = [...playerIndexes].sort((a, b) => {
+    if (state.sitCount[a] !== state.sitCount[b]) return state.sitCount[a] - state.sitCount[b]
+    if (state.gamesCount[a] !== state.gamesCount[b]) return state.gamesCount[b] - state.gamesCount[a]
+    return a - b
+  })
+
+  const sitterSets = sittersPerRound === 0
+    ? [[]]
+    : getCombos(orderedForSitting.slice(0, Math.min(playerIndexes.length, sittersPerRound + 6)), sittersPerRound)
+      .slice(0, 28)
+
+  sitterSets.forEach(sitters => {
+    const sitterSet = new Set(sitters)
+    const active = playerIndexes
+      .filter(player => !sitterSet.has(player))
+      .sort((a, b) => {
+        if (state.gamesCount[a] !== state.gamesCount[b]) return state.gamesCount[a] - state.gamesCount[b]
+        return a - b
+      })
+      .slice(0, activeSlots)
+
+    if (active.length !== activeSlots) return
+    generateCourtCombinations(active, courtsPerRound, state, 32, priority).forEach(courts => {
+      candidates.push({ courts, sitters })
+    })
+  })
+
+  return candidates
+    .map(candidate => ({ candidate, score: scoreSearchState(applyRoundCandidate(state, candidate), playerIndexes, false, priority) }))
+    .sort((left, right) => left.score - right.score)
+    .slice(0, 80)
+    .map(item => item.candidate)
+}
+
+function buildBeamSearchSchedule(
+  playerIndexes: number[],
+  courtsPerRound: number,
+  sittersPerRound: number,
+  targetRounds: number,
+  targetGamesPerPlayer?: number | null,
+  totalMatchesTarget?: number | null,
+  priority: SchedulePriority = 'balanced'
+) {
+  const emptyCounts = Object.fromEntries(playerIndexes.map(player => [player, 0])) as Record<number, number>
+  const initialState: SearchState = {
+    rounds: [],
+    partnerMap: {},
+    opponentMap: {},
+    gamesCount: { ...emptyCounts },
+    sitCount: { ...emptyCounts },
+  }
+  const beamWidth = playerIndexes.length <= 13 ? 36 : 18
+  let beam: SearchState[] = [initialState]
+
+  for (let round = 0; round < targetRounds; round += 1) {
+    const matchesRemaining = totalMatchesTarget
+      ? totalMatchesTarget - (beam[0]?.rounds.reduce((sum, item) => sum + item.courts.length, 0) ?? 0)
+      : null
+    const courtsThisRound = matchesRemaining
+      ? Math.min(courtsPerRound, matchesRemaining)
+      : courtsPerRound
+    const sittersThisRound = playerIndexes.length - courtsThisRound * 4
+    const nextBeam: SearchState[] = []
+    beam.forEach(state => {
+      generateRoundCandidates(state, playerIndexes, courtsThisRound, sittersThisRound, targetGamesPerPlayer, priority)
+        .forEach(candidate => nextBeam.push(applyRoundCandidate(state, candidate)))
+    })
+
+    beam = nextBeam
+      .sort((left, right) => scoreSearchState(left, playerIndexes, false, priority) - scoreSearchState(right, playerIndexes, false, priority))
+      .slice(0, beamWidth)
+
+    if (beam.length === 0) break
+  }
+
+  return beam
+    .sort((left, right) => scoreSearchState(left, playerIndexes, true, priority) - scoreSearchState(right, playerIndexes, true, priority))[0] || initialState
+}
+
+function extendStateToMinimumGames(
+  state: SearchState,
+  playerIndexes: number[],
+  courtsPerRound: number,
+  targetGamesPerPlayer: number,
+  priority: SchedulePriority
+) {
+  let current = state
+  const maxExtraRounds = playerIndexes.length * 2
+
+  for (let extraRound = 0; extraRound < maxExtraRounds; extraRound += 1) {
+    const games = playerIndexes.map(player => current.gamesCount[player])
+    if (Math.min(...games) >= targetGamesPerPlayer) break
+
+    const sittersThisRound = playerIndexes.length - courtsPerRound * 4
+    const candidates = generateRoundCandidates(current, playerIndexes, courtsPerRound, sittersThisRound, targetGamesPerPlayer, priority)
+    if (candidates.length === 0) break
+
+    const bestCandidate = candidates
+      .map(candidate => {
+        const next = applyRoundCandidate(current, candidate)
+        const nextGames = playerIndexes.map(player => next.gamesCount[player])
+        const underTarget = nextGames.filter(count => count < targetGamesPerPlayer).length
+        const minGames = Math.min(...nextGames)
+        const range = Math.max(...nextGames) - minGames
+        const score =
+          underTarget * 1_000_000 -
+          minGames * 100_000 +
+          range * 10_000 +
+          scoreSearchState(next, playerIndexes, false, priority)
+        return { candidate, score }
+      })
+      .sort((left, right) => left.score - right.score)[0]?.candidate
+
+    if (!bestCandidate) break
+    current = applyRoundCandidate(current, bestCandidate)
+  }
+
+  return current
+}
+
 export function buildRoundRobinDoublesSchedule(
   playerIds: string[],
   courtCount: number,
-  rounds?: number
+  rounds?: number,
+  options: RoundRobinScheduleOptions = {}
 ): RoundRobinSchedule {
   const normalizedCourtCount = Math.max(1, Math.floor(courtCount || 1))
   const players = playerIds.map(String)
   const courtsPerRound = Math.min(normalizedCourtCount, Math.floor(players.length / 4))
-  const requiredMatchesForPartnerCoverage = Math.ceil((players.length * (players.length - 1)) / 4)
-  const targetRounds = rounds ?? Math.ceil(requiredMatchesForPartnerCoverage / Math.max(1, courtsPerRound))
+  const priority = options.priority || 'balanced'
+  const minGamesPerPlayer = options.minGamesPerPlayer
+  const targetGamesPerPlayer = minGamesPerPlayer && minGamesPerPlayer > 0
+    ? Math.min(Math.floor(minGamesPerPlayer), Math.max(1, players.length - 1))
+    : null
+  const requiredMatchesForPartnerCoverage = targetGamesPerPlayer
+    ? Math.ceil((players.length * targetGamesPerPlayer) / 4)
+    : Math.ceil((players.length * (players.length - 1)) / 4)
+  const targetRounds = rounds ?? (
+    targetGamesPerPlayer
+      ? Math.max(1, Math.ceil(requiredMatchesForPartnerCoverage / Math.max(1, courtsPerRound)))
+      : Math.ceil(requiredMatchesForPartnerCoverage / Math.max(1, courtsPerRound))
+  )
 
   if (players.length < 4 || courtsPerRound < 1) {
     return {
@@ -149,29 +776,68 @@ export function buildRoundRobinDoublesSchedule(
   const sitCountByIndex = Object.fromEntries(playerIndexes.map(player => [player, 0])) as Record<number, number>
   const gamesCountByIndex = Object.fromEntries(playerIndexes.map(player => [player, 0])) as Record<number, number>
   const matches: RoundRobinMatch[] = []
+  const exactSingleCourtMatches = !rounds && !targetGamesPerPlayer && courtsPerRound === 1
+    ? buildExhaustiveSingleCourtSchedule(playerIndexes)
+    : null
+  const fastTemplateRounds = !exactSingleCourtMatches && !rounds && !targetGamesPerPlayer
+    ? buildFastFullRotationTemplateRounds(playerIndexes, courtsPerRound, priority)
+    : null
 
-  for (let round = 0; round < Math.max(1, Math.floor(targetRounds)); round += 1) {
-    const sitters = [...playerIndexes]
-      .sort((a, b) => {
-        if (sitCountByIndex[a] !== sitCountByIndex[b]) return sitCountByIndex[a] - sitCountByIndex[b]
-        if (gamesCountByIndex[a] !== gamesCountByIndex[b]) return gamesCountByIndex[b] - gamesCountByIndex[a]
-        return a - b
+  if (exactSingleCourtMatches) {
+    const pacedMatches = reorderSingleCourtMatchesForPace(exactSingleCourtMatches, playerIndexes)
+
+    pacedMatches.forEach(([teamA, teamB], index) => {
+      incrementPair(partnerMap, teamA[0], teamA[1])
+      incrementPair(partnerMap, teamB[0], teamB[1])
+      teamA.forEach(a => teamB.forEach(b => incrementPair(opponentMap, a, b)))
+      ;[...teamA, ...teamB].forEach(player => { gamesCountByIndex[player] += 1 })
+
+      const playing = new Set([...teamA, ...teamB])
+      playerIndexes
+        .filter(player => !playing.has(player))
+        .forEach(player => { sitCountByIndex[player] += 1 })
+
+      matches.push({
+        teamA: teamA.map(player => players[player]),
+        teamB: teamB.map(player => players[player]),
+        rotation: index + 1,
+        court: 1,
+        sitterIds: playerIndexes.filter(player => !playing.has(player)).map(player => players[player]),
       })
-      .slice(0, sittersPerRound)
+    })
 
-    sitters.forEach(player => { sitCountByIndex[player] += 1 })
+    return {
+      matches,
+      rounds: exactSingleCourtMatches.length,
+      courtsPerRound,
+      sittersPerRound,
+      gamesCount: Object.fromEntries(players.map((player, index) => [player, gamesCountByIndex[index]])),
+      sitCount: Object.fromEntries(players.map((player, index) => [player, sitCountByIndex[index]])),
+    }
+  }
 
-    const active = playerIndexes
-      .filter(player => !sitters.includes(player))
-      .sort((a, b) => {
-        if (gamesCountByIndex[a] !== gamesCountByIndex[b]) return gamesCountByIndex[a] - gamesCountByIndex[b]
-        return a - b
-      })
+  let beamState: SearchState | null = null
+  if (!fastTemplateRounds) {
+    beamState = buildBeamSearchSchedule(
+      playerIndexes,
+      courtsPerRound,
+      sittersPerRound,
+      Math.max(1, Math.floor(targetRounds)),
+      targetGamesPerPlayer,
+      targetGamesPerPlayer ? requiredMatchesForPartnerCoverage : null,
+      priority
+    )
 
-    const partition = chooseBestPartition(active, courtsPerRound, partnerMap, opponentMap)
-    const courts = partition.map(court => bestSplitOf(court, partnerMap, opponentMap))
+    if (targetGamesPerPlayer) {
+      beamState = extendStateToMinimumGames(beamState, playerIndexes, courtsPerRound, targetGamesPerPlayer, priority)
+    }
+  }
 
-    courts.forEach(([teamA, teamB], courtIndex) => {
+  const scheduledRounds = fastTemplateRounds || beamState?.rounds || []
+
+  scheduledRounds.forEach((round, roundIndex) => {
+    round.sitters.forEach(player => { sitCountByIndex[player] += 1 })
+    round.courts.forEach(([teamA, teamB], courtIndex) => {
       incrementPair(partnerMap, teamA[0], teamA[1])
       incrementPair(partnerMap, teamB[0], teamB[1])
       teamA.forEach(a => teamB.forEach(b => incrementPair(opponentMap, a, b)))
@@ -180,16 +846,16 @@ export function buildRoundRobinDoublesSchedule(
       matches.push({
         teamA: teamA.map(player => players[player]),
         teamB: teamB.map(player => players[player]),
-        rotation: round + 1,
+        rotation: roundIndex + 1,
         court: courtIndex + 1,
-        sitterIds: sitters.map(player => players[player]),
+        sitterIds: round.sitters.map(player => players[player]),
       })
     })
-  }
+  })
 
   return {
     matches,
-    rounds: Math.max(1, Math.floor(targetRounds)),
+    rounds: scheduledRounds.length,
     courtsPerRound,
     sittersPerRound,
     gamesCount: Object.fromEntries(players.map((player, index) => [player, gamesCountByIndex[index]])),
