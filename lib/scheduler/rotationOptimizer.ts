@@ -622,6 +622,25 @@ export function optimizeRotationPlan(
       optimizeMatchSplit(nextMatches, m2Idx)
     }
 
+    const hasBackToBack = (schedule: RotationScheduledMatch[]) => {
+      const pRots = new Map<string, number[]>()
+      schedule.forEach(m => {
+        getMatchPlayers(m).forEach(p => {
+          if (!pRots.has(p)) pRots.set(p, [])
+          pRots.get(p)!.push(m.rotation || 0)
+        })
+      })
+      for (const rots of pRots.values()) {
+        const sorted = [...rots].sort((a, b) => a - b)
+        for (let j = 0; j < sorted.length - 1; j++) {
+          if (sorted[j + 1] - sorted[j] === 1) return true
+        }
+      }
+      return false
+    }
+
+    if (hasBackToBack(nextMatches)) continue
+
     const nextScore = calculatePlanScore(nextMatches, playerIds, playerById, quotas, effectiveCourtCount)
     if (nextScore > bestScore) {
       bestScore = nextScore

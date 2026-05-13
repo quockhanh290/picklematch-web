@@ -75,6 +75,9 @@ type Props = {
     overallScore?: number
   }
   playerStatsInitiallyExpanded?: boolean
+  hideSummary?: boolean
+  hidePlayerStats?: boolean
+  focusedPlayerId?: string | null
 }
 
 const pairKey = (a: string, b: string) => a < b ? `${a}_${b}` : `${b}_${a}`
@@ -118,7 +121,7 @@ function formatPlayerListWithGender(players: (ArrangementPlayer | undefined)[]) 
   }).join(' / ')
 }
 
-export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPlayer, variant = 'mix-in', quality, playerStatsInitiallyExpanded = true }: Props) {
+export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPlayer, variant = 'mix-in', quality, playerStatsInitiallyExpanded = true, hideSummary = false, hidePlayerStats = false, focusedPlayerId = null }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [playerStatsExpanded, setPlayerStatsExpanded] = useState(playerStatsInitiallyExpanded)
   const [expandedPreferenceRows, setExpandedPreferenceRows] = useState<Set<string>>(() => new Set())
@@ -426,7 +429,19 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
 
   if (schedule.length === 0 || players.length < 4) return null
 
-  const visibleRows = expanded ? report.rows : report.rows.slice(0, 5)
+  const visibleRows = useMemo(() => {
+    let baseRows = (expanded || hideSummary) ? report.rows : report.rows.slice(0, 5)
+    if (focusedPlayerId) {
+      const focusedIndex = baseRows.findIndex(r => r.id === focusedPlayerId)
+      if (focusedIndex !== -1) {
+        const focusedRow = baseRows[focusedIndex]
+        const remaining = baseRows.filter(r => r.id !== focusedPlayerId)
+        return [focusedRow, ...remaining]
+      }
+    }
+    return baseRows
+  }, [expanded, hideSummary, report.rows, focusedPlayerId])
+
   const hasWarnings = report.underTarget.length > 0 || report.repeatedPartners.length > 0 || report.repeatedOpponents.length > 0
   const scoreTone = report.overallScore >= 80
     ? { bg: '#E1F5EE', fg: '#0F6E56', border: '#88D4B5' }
@@ -435,66 +450,70 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
       : { bg: '#FEE2E2', fg: '#B91C1C', border: '#FCA5A5' }
 
   return (
-    <View style={{ backgroundColor: '#F8F3E8', borderRadius: 24, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: hasWarnings ? '#EBCB79' : '#B9DDC8' }}>
-      <View style={{ backgroundColor: '#FFFCF5', borderRadius: 20, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E5E3DC', overflow: 'hidden' }}>
-        <View style={{ position: 'absolute', right: -34, top: -42, width: 120, height: 120, borderRadius: 60, backgroundColor: scoreTone.bg, opacity: 0.48 }} />
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <View style={{ 
-            width: 68, height: 68, borderRadius: 20,
-            backgroundColor: scoreTone.bg,
-            alignItems: 'center', justifyContent: 'center',
-            borderWidth: 2, borderColor: scoreTone.border
-          }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 26, color: scoreTone.fg, fontWeight: '900', lineHeight: 30 }}>
-              {report.overallScore}
-            </Text>
+    <View style={hideSummary ? { marginTop: 0 } : { backgroundColor: '#F8F3E8', borderRadius: 24, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: hasWarnings ? '#EBCB79' : '#B9DDC8' }}>
+      {!hideSummary && (
+        <>
+          <View style={{ backgroundColor: '#FFFCF5', borderRadius: 20, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E5E3DC', overflow: 'hidden' }}>
+            <View style={{ position: 'absolute', right: -34, top: -42, width: 120, height: 120, borderRadius: 60, backgroundColor: scoreTone.bg, opacity: 0.48 }} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ 
+                  width: 68, height: 68, borderRadius: 20,
+                  backgroundColor: scoreTone.bg,
+                  alignItems: 'center', justifyContent: 'center',
+                  borderWidth: 2, borderColor: scoreTone.border
+                }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 26, color: scoreTone.fg, fontWeight: '900', lineHeight: 30 }}>
+                    {report.overallScore}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900' }}>ĐIỂM CHẤT LƯỢNG</Text>
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '700' }}>DỰA TRÊN TRÌNH ĐỘ, PREF & NGHỈ</Text>
+                </View>
+              </View>
+              <View style={{ backgroundColor: scoreTone.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: scoreTone.border }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: scoreTone.fg, fontWeight: '900' }}>
+                  {hasWarnings ? 'CẦN TỐI ƯU THÊM' : 'LỊCH TUYỆT VỜI'}
+                </Text>
+              </View>
+            </View>
+            <View style={{ height: 8, borderRadius: 999, backgroundColor: '#F1EFE8', overflow: 'hidden' }}>
+              <View style={{ width: `${Math.max(0, Math.min(100, report.overallScore))}%`, height: '100%', borderRadius: 999, backgroundColor: scoreTone.border }} />
+            </View>
           </View>
-          <View>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900' }}>ĐIỂM CHẤT LƯỢNG</Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '700' }}>DỰA TRÊN TRÌNH ĐỘ, PREF & NGHỈ</Text>
-          </View>
-        </View>
-        <View style={{ backgroundColor: scoreTone.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: scoreTone.border }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: scoreTone.fg, fontWeight: '900' }}>
-            {hasWarnings ? 'CẦN TỐI ƯU THÊM' : 'LỊCH TUYỆT VỜI'}
-          </Text>
-        </View>
-      </View>
-        <View style={{ height: 8, borderRadius: 999, backgroundColor: '#F1EFE8', overflow: 'hidden' }}>
-          <View style={{ width: `${Math.max(0, Math.min(100, report.overallScore))}%`, height: '100%', borderRadius: 999, backgroundColor: scoreTone.border }} />
-        </View>
-      </View>
 
-      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        {[
-          { label: 'Trận', value: `${schedule.length}` },
-          { label: 'Game/ng', value: `${report.minGames}-${report.maxGames}` },
-          { label: 'Unique partner/min', value: `${report.minUniquePartners}-${report.maxUniquePartners}/${report.uniqueTargetGames}` },
-          { label: 'Unique đối thủ/min', value: `${report.minUniqueOpponents}-${report.maxUniqueOpponents}/${report.uniqueOpponentTargetGames}` },
-          { label: 'Pref partner', value: report.partnerPrefTotal ? `${report.partnerPrefHits}/${report.partnerPrefTotal}` : '-' },
-          { label: 'Pref đối thủ', value: report.opponentPrefTotal ? `${report.opponentPrefHits}/${report.opponentPrefTotal}` : '-' },
-          { label: 'Nghỉ TB', value: report.avgRestAcrossPlayers },
-          { label: 'Min nghỉ', value: report.minRestAcrossPlayers },
-          { 
-            label: '% HL PARTNER', 
-            value: report.partnerPrefTotal > 0 ? `${Math.round((report.partnerPrefHits / report.partnerPrefTotal) * 100)}%` : '100%'
-          },
-          { 
-            label: '% HL ĐỐI THỦ', 
-            value: report.opponentPrefTotal > 0 ? `${Math.round((report.opponentPrefHits / report.opponentPrefTotal) * 100)}%` : '100%'
-          },
-          { label: 'Lệch trình TB', value: report.avgSkillGap.toFixed(2) },
-          { label: 'Lệch max', value: report.maxSkillGap.toFixed(2) },
-          { label: 'Player pref >=75%', value: report.preferencePlayerTargetPercent },
-          { label: 'Trận lệch nặng', value: report.heavySkillGapCount },
-        ].map(item => (
-          <View key={item.label} style={{ backgroundColor: 'white', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: '#E5E3DC', width: '48.5%', minHeight: 64, marginBottom: 8 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800' }}>{item.label}</Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: '#1A2E2A', fontWeight: '900', marginTop: 4 }}>{item.value}</Text>
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+            {[
+              { label: 'Trận', value: `${schedule.length}` },
+              { label: 'Game/ng', value: `${report.minGames}-${report.maxGames}` },
+              { label: 'Unique partner/min', value: `${report.minUniquePartners}-${report.maxUniquePartners}/${report.uniqueTargetGames}` },
+              { label: 'Unique đối thủ/min', value: `${report.minUniqueOpponents}-${report.maxUniqueOpponents}/${report.uniqueOpponentTargetGames}` },
+              { label: 'Pref partner', value: report.partnerPrefTotal ? `${report.partnerPrefHits}/${report.partnerPrefTotal}` : '-' },
+              { label: 'Pref đối thủ', value: report.opponentPrefTotal ? `${report.opponentPrefHits}/${report.opponentPrefTotal}` : '-' },
+              { label: 'Nghỉ TB', value: report.avgRestAcrossPlayers },
+              { label: 'Min nghỉ', value: report.minRestAcrossPlayers },
+              { 
+                label: '% HL PARTNER', 
+                value: report.partnerPrefTotal > 0 ? `${Math.round((report.partnerPrefHits / report.partnerPrefTotal) * 100)}%` : '100%'
+              },
+              { 
+                label: '% HL ĐỐI THỦ', 
+                value: report.opponentPrefTotal > 0 ? `${Math.round((report.opponentPrefHits / report.opponentPrefTotal) * 100)}%` : '100%'
+              },
+              { label: 'Lệch trình TB', value: report.avgSkillGap.toFixed(2) },
+              { label: 'Lệch max', value: report.maxSkillGap.toFixed(2) },
+              { label: 'Player pref >=75%', value: report.preferencePlayerTargetPercent },
+              { label: 'Trận lệch nặng', value: report.heavySkillGapCount },
+            ].map(item => (
+              <View key={item.label} style={{ backgroundColor: 'white', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: '#E5E3DC', width: '48.5%', minHeight: 64, marginBottom: 8 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800' }}>{item.label}</Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: '#1A2E2A', fontWeight: '900', marginTop: 4 }}>{item.value}</Text>
+              </View>
+            ))}
           </View>
-        ))}
-      </View>
+        </>
+      )}
 
 
       {quality?.timedOut && (
@@ -545,27 +564,30 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
         </View>
       )}
 
-      <TouchableOpacity
-        onPress={() => setPlayerStatsExpanded(prev => !prev)}
-        activeOpacity={0.82}
-        style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.md, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E5E3DC', marginBottom: playerStatsExpanded ? 10 : 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
-      >
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '900' }}>
-            {'Chi ti\u1ebft stats ng\u01b0\u1eddi ch\u01a1i'}
+      {!hideSummary && !hidePlayerStats && (
+        <TouchableOpacity
+          onPress={() => setPlayerStatsExpanded(prev => !prev)}
+          activeOpacity={0.82}
+          style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.md, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E5E3DC', marginBottom: playerStatsExpanded ? 10 : 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '900' }}>
+              {'Chi ti\u1ebft stats ng\u01b0\u1eddi ch\u01a1i'}
+            </Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', marginTop: 2 }}>
+              {playerStatsExpanded ? '\u0110ang hi\u1ec3n th\u1ecb chi ti\u1ebft t\u1eebng ng\u01b0\u1eddi' : `B\u1ea5m \u0111\u1ec3 xem ${report.rows.length} ng\u01b0\u1eddi`}
+            </Text>
+          </View>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
+            {playerStatsExpanded ? 'Thu g\u1ecdn' : 'M\u1edf'}
           </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', marginTop: 2 }}>
-            {playerStatsExpanded ? '\u0110ang hi\u1ec3n th\u1ecb chi ti\u1ebft t\u1eebng ng\u01b0\u1eddi' : `B\u1ea5m \u0111\u1ec3 xem ${report.rows.length} ng\u01b0\u1eddi`}
-          </Text>
-        </View>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
-          {playerStatsExpanded ? 'Thu g\u1ecdn' : 'M\u1edf'}
-        </Text>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      )}
 
-      {playerStatsExpanded && (
+      {!hidePlayerStats && playerStatsExpanded && (
       <View style={{ gap: 10 }}>
         {visibleRows.map(row => {
+          const isFocused = row.id === focusedPlayerId
           const playerGameTarget = report.uniqueTargetGames
           const hasEnoughGames = row.games >= playerGameTarget
           const initials = row.name.split(' ').filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase() || '?'
@@ -583,7 +605,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
           ]
 
           return (
-            <View key={row.id} style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.lg, padding: 12, borderWidth: 1, borderColor: hasEnoughGames ? '#BFE3D6' : '#F5DFA0', overflow: 'hidden' }}>
+            <View key={row.id} style={{ backgroundColor: isFocused ? '#E1F5EE' : '#FFFCF5', borderRadius: RADIUS.lg, padding: 12, borderWidth: isFocused ? 2 : 1, borderColor: isFocused ? '#0F6E56' : (hasEnoughGames ? '#BFE3D6' : '#F5DFA0'), overflow: 'hidden' }}>
             <View style={{ position: 'absolute', width: 72, height: 72, borderRadius: 36, backgroundColor: '#F8E8C8', opacity: 0.55, right: -26, top: -30 }} />
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 }}>
@@ -696,7 +718,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
           </View>
           )
         })}
-      {report.rows.length > 5 && (
+      {report.rows.length > 5 && !hideSummary && !hidePlayerStats && (
         <TouchableOpacity onPress={() => setExpanded(prev => !prev)} style={{ alignSelf: 'center', paddingTop: 10 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
             {expanded ? 'Thu gọn báo cáo' : `Xem tất cả ${report.rows.length} người`}

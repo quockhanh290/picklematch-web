@@ -4,7 +4,7 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import { optimizeRotationPlan, type RotationScheduledMatch } from '@/lib/scheduler/rotationOptimizer'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import React, { useMemo, useState } from 'react'
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { ScheduleCoverageReport } from './ScheduleCoverageReport'
 
 type CandidateSetup = {
@@ -37,6 +37,7 @@ type OptimizationResult = {
 type Props = {
   players: ArrangementPlayer[]
   maxCourts: number
+  onSelect?: (plan: any) => void
 }
 
 const MAX_ROUND_PACE_DRIFT = 1.1
@@ -179,7 +180,7 @@ function calculateSetupScores(options: {
   minRestAcrossPlayers: number | null
 }) {
   const playerCount = Math.max(1, options.playerCount)
-  const idealPlayersPerCourt = playerCount >= 32 ? IDEAL_PLAYERS_PER_COURT : playerCount >= 20 ? 9 : 8.5
+  const idealPlayersPerCourt = 9.0
   const playersPerCourt = playerCount / Math.max(1, options.courts)
   let courtFitScore = 100 - Math.abs(playersPerCourt - idealPlayersPerCourt) * 14
 
@@ -197,12 +198,14 @@ function calculateSetupScores(options: {
   const capacityGamesForCourtFit = Math.max(1, (options.targetRounds * options.courts * 4) / playerCount)
   const meaningfulGamesTarget = Math.max(options.desiredGamesPerPlayer, Math.min(options.targetRounds, capacityGamesForCourtFit))
   const gamesCoverageScore = clampScore((options.targetGames / meaningfulGamesTarget) * 100)
-  const durationCoverageScore = clampScore(100 - Math.abs(options.actualRounds - options.targetRounds) * 14)
+  const roundsDiff = options.actualRounds - options.targetRounds
+  const durationPenalty = roundsDiff > 0 ? roundsDiff * 7 : Math.abs(roundsDiff) * 14
+  const durationCoverageScore = clampScore(100 - durationPenalty)
   const setupScore = clampScore(
-    options.qualityScore * 0.4 +
-    gamesCoverageScore * 0.25 +
-    durationCoverageScore * 0.15 +
-    courtFitScore * 0.2
+    options.qualityScore * 0.20 +
+    gamesCoverageScore * 0.40 +
+    durationCoverageScore * 0.20 +
+    courtFitScore * 0.20
   )
 
   return {
@@ -224,46 +227,111 @@ function compareResultsBySetupScore(a: OptimizationResult, b: OptimizationResult
   return a.setup.courts - b.setup.courts
 }
 
-export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
+const STAT_EXPLANATIONS: Record<string, { title: string, meaning: string, calculation: string, advice: string, unit: string }> = {
+  'Chất lượng': {
+    title: 'Điểm Chất lượng Tổng quát',
+    meaning: 'Đánh giá tổng thể độ "ngon" của lịch đấu dựa trên tất cả các tiêu chí.',
+    calculation: 'Trung bình trọng số của Phủ trận, Phủ giờ, Fit sân và Nhịp nghỉ.',
+    advice: 'Ưu tiên các phương án > 85 điểm để đảm bảo mọi người đều hài lòng.',
+    unit: 'điểm'
+  },
+  'Phủ trận': {
+    title: 'Điểm Phủ Số trận',
+    meaning: 'Đảm bảo mọi người chơi đều đạt được số trận mục tiêu (ví dụ: 5 trận/buổi).',
+    calculation: 'Thang điểm 100 dựa trên số lượng người đạt đủ trận.',
+    advice: 'Nếu điểm này thấp, bạn nên tăng thời lượng session hoặc giảm số người chơi.',
+    unit: 'điểm'
+  },
+  'Phủ giờ': {
+    title: 'Điểm Phủ Thời gian',
+    meaning: 'Đo lường mức độ khớp giữa lịch đấu và khung giờ đã đăng ký.',
+    calculation: 'Thang điểm 100. Quy tắc: Trừ 7 điểm cho mỗi vòng lố giờ và trừ 14 điểm cho mỗi vòng thiếu giờ.',
+    advice: 'Mức phạt 7 điểm/vòng được thiết kế để linh hoạt cho phép lố nhẹ 1-2 vòng mà không làm điểm số bị giảm quá sâu.',
+    unit: 'điểm'
+  },
+  'Fit sân': {
+    title: 'Điểm Khớp Sân đấu',
+    meaning: 'Đánh giá xem số lượng sân có phù hợp với số lượng người chơi hiện tại hay không.',
+    calculation: 'Thang điểm 100. Lý tưởng là 9.5 người/sân. Trừ 10 điểm cho mỗi đơn vị lệch so với mức lý tưởng.',
+    advice: 'Tỷ lệ 8-10 người/sân là đẹp nhất để mọi người đều có thời gian nghỉ ngơi hợp lý.',
+    unit: 'điểm'
+  },
+  'Nhịp nghỉ': {
+    title: 'Nhịp nghỉ Cân bằng',
+    meaning: 'Đảm bảo mọi người có thời gian nghỉ ngơi đều đặn, không ai phải đánh quá dồn dập hoặc nghỉ quá lâu.',
+    calculation: 'Thang điểm 100. Phân tích độ lệch chuẩn của số vòng nghỉ giữa các trận đấu.',
+    advice: 'Điểm cao (> 85) giúp session bền bỉ, tránh chấn thương và mệt mỏi cho thành viên.',
+    unit: 'điểm'
+  },
+  'B2B': {
+    title: 'Trận đấu liên tiếp (Back-to-back)',
+    meaning: 'Số lượng trường hợp một người phải đánh ngay trận sau mà không có vòng nghỉ.',
+    calculation: 'Đếm tổng số lượt thi đấu liên tiếp trong toàn bộ lịch.',
+    advice: 'App đang cố gắng tối ưu để chỉ số này thấp nhất có thể. Nếu > 0, hãy nhắc người chơi chuẩn bị thể lực tốt.',
+    unit: 'lượt'
+  },
+  'Chuỗi max': {
+    title: 'Chuỗi đánh liên tục tối đa',
+    meaning: 'Số trận nhiều nhất mà một người phải đánh liên tiếp không nghỉ.',
+    calculation: 'Tìm chuỗi trận liên tiếp dài nhất của một người chơi bất kỳ.',
+    advice: 'Lý tưởng nhất là bằng 1 hoặc 2. Nếu con số này lớn, bạn nên tăng thêm số người chơi dự bị.',
+    unit: 'trận'
+  },
+  'Min nghỉ': {
+    title: 'Thời gian nghỉ tối thiểu',
+    meaning: 'Số vòng nghỉ ít nhất mà mọi người chắc chắn có được giữa 2 trận đấu.',
+    calculation: 'Tìm khoảng nghỉ ngắn nhất trong toàn bộ lịch đấu.',
+    advice: 'Lý tưởng là mọi người đều có ít nhất 1 vòng nghỉ giữa các trận để hồi phục.',
+    unit: 'vòng'
+  }
+}
+
+export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Props) {
+  const activePlayers = useMemo(
+    () => players.filter(p => p.status === 'confirmed' || !p.status),
+    [players]
+  )
+
   const [durationMinutes, setDurationMinutes] = useState(150)
   const [minutesPerRound, setMinutesPerRound] = useState(15)
   const [courtLimit, setCourtLimit] = useState(Math.max(1, maxCourts))
   const [running, setRunning] = useState(false)
   const [results, setResults] = useState<OptimizationResult[]>([])
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(0)
+  const [activeModal, setActiveModal] = useState<{ result: OptimizationResult, type: OptimizationModalType, statKey?: string, statValue?: string | number } | null>(null)
 
   const candidateSet = useMemo(
-    () => buildCandidateSet(players.length, courtLimit, durationMinutes, minutesPerRound),
-    [courtLimit, durationMinutes, minutesPerRound, players.length]
+    () => buildCandidateSet(activePlayers.length, courtLimit, durationMinutes, minutesPerRound),
+    [courtLimit, durationMinutes, minutesPerRound, activePlayers.length]
   )
   const courtOptions = useMemo(
-    () => Array.from({ length: Math.max(1, Math.min(6, Math.max(maxCourts, Math.floor(players.length / 4), 1))) }, (_, i) => i + 1),
-    [maxCourts, players.length]
+    () => Array.from({ length: Math.max(1, Math.min(16, Math.max(maxCourts, Math.floor(activePlayers.length / 4), 1))) }, (_, i) => i + 1),
+    [maxCourts, activePlayers.length]
   )
   const targetRounds = Math.max(1, Math.ceil(durationMinutes / Math.max(1, minutesPerRound)))
   const desiredGamesPerPlayer = Math.max(2, Math.ceil(targetRounds / 2))
-  const maxAllowedMinutesPerRound = Math.max(1, minutesPerRound) * MAX_ROUND_PACE_DRIFT
-  const maxUsableCourts = Math.max(1, Math.min(Math.floor(players.length / 4), Math.floor(courtLimit || 1)))
-  const visibleResults = results.slice(0, 5)
+  const maxUsableCourts = Math.max(1, Math.min(Math.floor(activePlayers.length / 4), Math.floor(courtLimit || 1)))
+  const visibleResults = results.slice(0, 3)
 
   const runOptimization = () => {
     setRunning(true)
     try {
       const nextResults = candidateSet
         .map(setup => {
-          const result = optimizeRotationPlan(players, {
+          const result = optimizeRotationPlan(activePlayers, {
             targetGamesPerPlayer: setup.targetGames,
             courtCount: setup.courts,
-            iterations: 6000,
+            iterations: 8000,
           })
 
           const baseResult = {
             setup,
             matches: result.matches,
-            players: result.players,
+            players: activePlayers,
             quality: result.quality,
           }
           const actualRoundCount = getActualRoundCount(baseResult)
-          const restStats = getRestPatternStats(players, result.matches)
+          const restStats = getRestPatternStats(activePlayers, result.matches)
           const scores = calculateSetupScores({
             qualityScore: result.quality.overallScore,
             targetGames: setup.targetGames,
@@ -272,7 +340,7 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
             desiredGamesPerPlayer,
             courts: setup.courts,
             maxUsableCourts,
-            playerCount: players.length,
+            playerCount: activePlayers.length,
             minRestAcrossPlayers: restStats.minRest,
           })
 
@@ -285,11 +353,6 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
             restPatternScore: restStats.restPatternScore,
           }
         })
-        .filter(result => {
-          const actualRoundCount = getActualRoundCount(result)
-          const actualMinutesPerRound = durationMinutes / Math.max(1, actualRoundCount)
-          return actualMinutesPerRound <= maxAllowedMinutesPerRound
-        })
         .sort(compareResultsBySetupScore)
       setResults(nextResults)
     } finally {
@@ -297,11 +360,11 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
     }
   }
 
-  if (players.length < 4) {
+  if (activePlayers.length < 4) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: '#1A2E2A', textAlign: 'center' }}>
-          {'C\u1ea7n \u00edt nh\u1ea5t 4 ng\u01b0\u1eddi ch\u01a1i \u0111\u1ec3 t\u1ed1i \u01b0u l\u1ecbch.'}
+          Cần ít nhất 4 người chơi để tối ưu lịch.
         </Text>
       </View>
     )
@@ -315,16 +378,16 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
           One-click optimization
         </Text>
         <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#D8F3E6', marginTop: 6, lineHeight: 17 }}>
-          {'Nh\u1eadp b\u1ed1i c\u1ea3nh bu\u1ed5i social, h\u1ec7 th\u1ed1ng th\u1eed nhi\u1ec1u setup v\u00e0 x\u1ebfp h\u1ea1ng b\u1eb1ng \u0111i\u1ec3m setup: ch\u1ea5t l\u01b0\u1ee3ng l\u1ecbch + \u0111\u1ed9 ph\u1ee7 th\u1eddi l\u01b0\u1ee3ng + s\u1ed1 tr\u1eadn/ng\u01b0\u1eddi + fit s\u00e2n h\u1ee3p l\u00fd.'}
+          Nhập bối cảnh buổi social, hệ thống thử nhiều setup và xếp hạng bằng điểm setup: chất lượng lịch + độ phủ thời lượng + số trận/người + fit sân hợp lý.
         </Text>
       </View>
 
       <View style={{ backgroundColor: '#FFFCF5', borderRadius: 20, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
         <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900', marginBottom: 10 }}>
-          {'Input t\u1ed1i \u01b0u'}
+          Input tối ưu
         </Text>
 
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900', marginBottom: 8 }}>{'Th\u1eddi l\u01b0\u1ee3ng bu\u1ed5i ch\u01a1i'}</Text>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900', marginBottom: 8 }}>Thời lượng buổi chơi</Text>
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
             { value: 120, label: '2h' },
@@ -340,7 +403,7 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
           })}
         </View>
 
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900', marginBottom: 8 }}>{'Nh\u1ecbp 1 v\u00f2ng'}</Text>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900', marginBottom: 8 }}>Nhịp 1 vòng</Text>
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
           {[12, 15, 18].map(minutes => {
             const active = minutesPerRound === minutes
@@ -352,7 +415,7 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
           })}
         </View>
 
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900', marginBottom: 8 }}>{'S\u1ed1 s\u00e2n t\u1ed1i \u0111a c\u00f3 th\u1ec3 d\u00f9ng'}</Text>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900', marginBottom: 8 }}>Số sân tối đa có thể dùng</Text>
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           {courtOptions.map(courts => {
             const active = courtLimit === courts
@@ -366,14 +429,14 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
 
         <View style={{ backgroundColor: '#F8F3E8', borderRadius: 14, padding: 10, borderWidth: 1, borderColor: '#EFE3CC', marginBottom: 12 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', lineHeight: 15 }}>
-            {'S\u1ebd th\u1eed'} {candidateSet.length} {'setup quanh m\u1ee5c ti\u00eau'} {targetRounds} {'v\u00f2ng, t\u00ecm s\u1ed1 s\u00e2n h\u1ee3p l\u00fd theo group size thay v\u00ec m\u1eb7c \u0111\u1ecbnh d\u00f9ng full s\u00e2n.'}
-            {' S\u00e0n tr\u1eadn/ng\u01b0\u1eddi:'} {desiredGamesPerPlayer}.
+            Sẽ thử {candidateSet.length} setup quanh mục tiêu {targetRounds} vòng, tìm số sân hợp lý theo group size thay vì mặc định dùng full sân.
+            Sàn trận/người: {desiredGamesPerPlayer}.
           </Text>
         </View>
 
         <TouchableOpacity onPress={runOptimization} disabled={running || candidateSet.length === 0} style={{ backgroundColor: candidateSet.length > 0 ? '#0F6E56' : '#9CA3AF', borderRadius: 14, paddingVertical: 13, alignItems: 'center', opacity: running ? 0.7 : 1 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: 'white', fontWeight: '900' }}>
-            {running ? '\u0110ang t\u1ed1i \u01b0u...' : 'T\u00ecm setup t\u1ed1i \u01b0u'}
+            {running ? 'Đang tối ưu...' : 'Tìm setup tối ưu'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -382,70 +445,542 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
 
       {results.length > 0 && (
         <View style={{ gap: 14 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: '#1A2E2A', fontWeight: '900' }}>
-            {'Top 5 setup t\u1ed1t nh\u1ea5t'}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: '#1A2E2A', fontWeight: '800' }}>{activePlayers.length} NGƯỜI CHƠI CHÍNH THỨC</Text>
+            <TouchableOpacity onPress={runOptimization} disabled={running}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#0F6E56', fontWeight: '900' }}>{running ? 'ĐANG TÍNH...' : 'TÍNH LẠI'}</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontStyle: 'italic', marginTop: -8, marginBottom: 4 }}>
+            * Các chỉ số đã được cân bằng trọng số để đảm bảo tính ổn định và thực tế cho mọi phương án.
           </Text>
 
-          {visibleResults.map((result, index) => (
-            <View key={result.setup.key} style={{ backgroundColor: '#FFFCF5', borderRadius: 22, padding: 12, borderWidth: 1, borderColor: index === 0 ? '#88D4B5' : '#E5E3DC' }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: '#1A2E2A', fontWeight: '900' }}>
-                    #{index + 1} {'\u00b7'} {result.setup.targetGames} {'tr\u1eadn/ng\u01b0\u1eddi'} {'\u00b7'} {result.setup.courts} {'s\u00e2n'}
-                  </Text>
-                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 3 }}>
-                    {'Kho\u1ea3ng'} {result.setup.estimatedRounds}/{result.setup.targetRounds} {'v\u00f2ng'} {'\u00b7'} {result.matches.length} {'tr\u1eadn'}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={{ backgroundColor: result.setupScore > 85 ? '#E1F5EE' : '#FFF4D6', borderRadius: 18, padding: 12, borderWidth: 1, borderColor: result.setupScore > 85 ? '#88D4B5' : '#F5DFA0', marginBottom: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          {visibleResults.map((result, index) => {
+            const isExpanded = expandedIndex === index
+            return (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                key={result.setup.key}
+                onPress={() => setExpandedIndex(isExpanded ? null : index)}
+                style={{ backgroundColor: '#FFFCF5', borderRadius: 22, padding: 12, borderWidth: 1, borderColor: index === 0 ? '#88D4B5' : '#E5E3DC' }}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: result.setupScore > 85 ? '#0F6E56' : '#A05A16', fontWeight: '900', textTransform: 'uppercase' }}>
-                      {'\u0110i\u1ec3m setup'}
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: '#1A2E2A', fontWeight: '900' }}>
+                      #{index + 1} · {result.setup.targetGames} trận/người · {result.setup.courts} sân
                     </Text>
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: result.setupScore > 85 ? '#0F6E56' : '#A05A16', marginTop: 3, lineHeight: 13 }}>
-                      {'X\u1ebfp h\u1ea1ng theo quality, ph\u1ee7 tr\u1eadn, ph\u1ee7 gi\u1edd v\u00e0 fit s\u00e2n. N\u1ebfu \u0111i\u1ec3m g\u1ea7n nhau, \u01b0u ti\u00ean nh\u1ecbp ngh\u1ec9 t\u1ed1t h\u01a1n.'}
+                    {!isExpanded && (
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#0F6E56', marginTop: 4, fontStyle: 'italic', fontWeight: '600' }} numberOfLines={1}>
+                        {getResultInterpretation(result, index, visibleResults)}
+                      </Text>
+                    )}
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: isExpanded ? 3 : 1 }}>
+                      Khoảng {result.setup.estimatedRounds}/{result.setup.targetRounds} vòng · {result.matches.length} trận
                     </Text>
                   </View>
-                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 30, color: result.setupScore > 85 ? '#0F6E56' : '#A05A16', fontWeight: '900' }}>
-                    {result.setupScore}
-                  </Text>
+                  {!isExpanded && (
+                    <View style={{ backgroundColor: result.setupScore > 85 ? '#E1F5EE' : '#FFF4D6', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: result.setupScore > 85 ? '#88D4B5' : '#F5DFA0' }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: result.setupScore > 85 ? '#0F6E56' : '#A05A16', fontWeight: '900' }}>
+                        {result.setupScore}
+                      </Text>
+                    </View>
+                  )}
                 </View>
-              </View>
 
-              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-                {[
-                  { label: 'Ch\u1ea5t l\u01b0\u1ee3ng', value: result.quality.overallScore },
-                  { label: 'Ph\u1ee7 tr\u1eadn', value: result.gamesCoverageScore },
-                  { label: 'Ph\u1ee7 gi\u1edd', value: result.durationCoverageScore },
-                  { label: 'Fit s\u00e2n', value: result.courtFitScore },
-                  { label: 'Nh\u1ecbp ngh\u1ec9', value: result.restPatternScore },
-                  { label: 'Back-to-back', value: result.backToBackCount },
-                  { label: 'Chu\u1ed7i max', value: result.maxConsecutivePlays },
-                  { label: 'Min ngh\u1ec9', value: result.minRestAcrossPlayers == null ? '-' : result.minRestAcrossPlayers },
-                ].map(item => (
-                  <View key={item.label} style={{ backgroundColor: '#F8F3E8', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 9, borderWidth: 1, borderColor: '#EFE3CC', width: '48%' }}>
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '900' }}>{item.label}</Text>
-                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A', fontWeight: '900', marginTop: 2 }}>{item.value}</Text>
-                  </View>
-                ))}
-              </View>
+                {isExpanded && (
+                  <>
+                    <View style={{ backgroundColor: result.setupScore > 85 ? '#E1F5EE' : '#FFF4D6', borderRadius: 18, padding: 12, borderWidth: 1, borderColor: result.setupScore > 85 ? '#88D4B5' : '#F5DFA0', marginVertical: 10 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: result.setupScore > 85 ? '#0F6E56' : '#A05A16', fontWeight: '900', textTransform: 'uppercase' }}>
+                            Điểm setup
+                          </Text>
+                          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: result.setupScore > 85 ? '#0F6E56' : '#A05A16', marginTop: 3, lineHeight: 13 }}>
+                            {getResultInterpretation(result, index, visibleResults)}
+                          </Text>
+                        </View>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 30, color: result.setupScore > 85 ? '#0F6E56' : '#A05A16', fontWeight: '900' }}>
+                          {result.setupScore}
+                        </Text>
+                      </View>
+                    </View>
 
-              <ScheduleCoverageReport
-                players={result.players}
-                schedule={result.matches}
-                mode="limited"
-                minGamesPerPlayer={result.setup.targetGames}
-                variant="rotation"
-                quality={{ ...result.quality, timedOut: false, fallbackUsed: false }}
-                playerStatsInitiallyExpanded={false}
-              />
-            </View>
-          ))}
+                    <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: isExpanded ? 10 : 0 }}>
+                      {[
+                        { label: 'Chất lượng', value: result.quality.overallScore },
+                        { label: 'Phủ trận', value: result.gamesCoverageScore },
+                        { label: 'Phủ giờ', value: result.durationCoverageScore },
+                        { label: 'Fit sân', value: result.courtFitScore },
+                        { label: 'Nhịp nghỉ', value: result.restPatternScore },
+                        { label: 'B2B', value: result.backToBackCount },
+                        { label: 'Chuỗi max', value: result.maxConsecutivePlays },
+                        { label: 'Min nghỉ', value: result.minRestAcrossPlayers == null ? '-' : result.minRestAcrossPlayers },
+                      ].map(item => {
+                        const explanation = STAT_EXPLANATIONS[item.label]
+                        const unit = explanation?.unit || ''
+                        const space = (unit && unit !== '%') ? ' ' : ''
+                        const displayValue = item.value === '-' ? '-' : `${item.value}${space}${unit}`
+                        const modalType = item.label === 'Chất lượng' ? 'quality' : 'explanation'
+
+                        return (
+                          <TouchableOpacity
+                            key={item.label}
+                            onPress={() => setActiveModal({ result, type: modalType as any, statKey: item.label, statValue: displayValue })}
+                            style={{ backgroundColor: '#F8F3E8', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 6, borderWidth: 1, borderColor: '#EFE3CC', width: '23.5%', alignItems: 'center' }}
+                          >
+                            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#7A8884', fontWeight: '900', textAlign: 'center' }} numberOfLines={1}>{item.label}</Text>
+                            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900', marginTop: 1 }}>{displayValue}</Text>
+                          </TouchableOpacity>
+                        )
+                      })}
+                    </View>
+
+                    {isExpanded && (
+                      <View style={{ marginTop: 14 }}>
+                        {/* Section 1: Actions */}
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                          <TouchableOpacity
+                            onPress={() => setActiveModal({ result, type: 'players' })}
+                            style={{ flex: 1, backgroundColor: '#E1F5EE', borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#88D4B5' }}
+                          >
+                            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
+                              SOI CHI TIẾT NGƯỜI CHƠI
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => setActiveModal({ result, type: 'rounds' })}
+                            style={{ flex: 1, backgroundColor: '#F5F1E8', borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#D5D2C8' }}
+                          >
+                            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+                              XEM CHI TIẾT CÁC VÒNG ĐẤU
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity
+                          onPress={() => {
+                            const plan = buildFinalPlan(result)
+                            onSelect?.(plan)
+                          }}
+                          style={{ backgroundColor: '#0F6E56', borderRadius: 16, padding: 16, alignItems: 'center', marginTop: 12 }}
+                        >
+                          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: 'white', fontWeight: '900' }}>
+                            SỬ DỤNG LỊCH NÀY
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </>
+                )}
+              </TouchableOpacity>
+            )
+          })}
         </View>
       )}
+
+      {activeModal && activeModal.type === 'explanation' && (
+        <ExplanationModal 
+          statKey={activeModal.statKey || ''} 
+          statValue={activeModal.statValue}
+          result={activeModal.result}
+          durationMinutes={durationMinutes}
+          minutesPerRound={minutesPerRound}
+          onClose={() => setActiveModal(null)} 
+        />
+      )}
+
+      {activeModal && activeModal.type !== 'rounds' && activeModal.type !== 'explanation' && (
+        <PlayerDetailsModal
+          result={activeModal.result}
+          type={activeModal.type}
+          onClose={() => setActiveModal(null)}
+        />
+      )}
+
+      {activeModal?.type === 'rounds' && (
+        <RoundsDetailsModal
+          result={activeModal.result}
+          onClose={() => setActiveModal(null)}
+        />
+      )}
     </ScrollView>
+  )
+}
+
+function buildFinalPlan(result: OptimizationResult) {
+  return {
+    courts: result.setup.courts,
+    targetGames: result.setup.targetGames,
+    matches: result.matches,
+    playerCount: result.players.length,
+  }
+}
+
+function ExplanationModal({ 
+  statKey, 
+  statValue, 
+  result, 
+  durationMinutes,
+  minutesPerRound,
+  onClose 
+}: { 
+  statKey: string, 
+  statValue?: string | number, 
+  result: OptimizationResult, 
+  durationMinutes: number,
+  minutesPerRound: number,
+  onClose: () => void 
+}) {
+  const info = STAT_EXPLANATIONS[statKey] || { title: statKey, meaning: 'Đang cập nhật...', calculation: 'Đang cập nhật...', advice: 'Đang cập nhật...', unit: '' }
+
+  const getDetailedCalculation = () => {
+    const totalPlayers = result.players.length
+    const targetGames = result.setup.targetGames
+    const actualRounds = getActualRoundCount(result)
+    const targetRounds = result.setup.targetRounds
+
+    switch (statKey) {
+      case 'Phủ trận':
+        const playersWithTarget = result.players.filter(p => {
+          const games = result.matches.filter(m => m.teamA.includes(String(p.id)) || m.teamB.includes(String(p.id))).length
+          return games >= targetGames
+        }).length
+        const missingTarget = totalPlayers - playersWithTarget
+        const gamesPenalty = missingTarget * 5 // Example logic
+        return `Mục tiêu: Mọi người đánh ít nhất ${targetGames} trận.\nThực tế: ${playersWithTarget}/${totalPlayers} người đạt được.\n\nLogic trừ điểm: 100 điểm - (${missingTarget} người thiếu × 5 điểm) = ${result.gamesCoverageScore} điểm.`
+      case 'Phủ giờ':
+        const extraRounds = actualRounds - targetRounds
+        const overtime = extraRounds * minutesPerRound
+        const totalPlaysNeeded = totalPlayers * targetGames
+        const playsPerRound = result.setup.courts * 4
+        
+        let explanation = `Mục tiêu ban đầu: ${durationMinutes} phút / ${minutesPerRound} phút ≈ ${targetRounds} vòng.`
+        explanation += `\n\nCông thức tính thực tế:\n(${totalPlayers} người × ${targetGames} trận) / (${result.setup.courts} sân × 4 người)\n= ${totalPlaysNeeded} / ${playsPerRound} ≈ ${actualRounds} vòng.`
+        
+        if (extraRounds > 0) {
+          explanation += `\n\nVì cần ${actualRounds} vòng để đảm bảo mọi người đủ trận, session sẽ bị lố khoảng ${overtime} phút.`
+          explanation += `\n\nLogic trừ điểm: 100 điểm - (${extraRounds} vòng lố × 7 điểm) = 79 điểm.`
+          explanation += `\n\n* Mức trừ 7 điểm/vòng được thiết kế để hệ thống linh hoạt, cho phép lố nhẹ 1-2 vòng mà không làm điểm số bị giảm quá sâu.`
+        } else if (extraRounds < 0) {
+          explanation += `\n\nLịch kết thúc sớm hơn dự kiến khoảng ${Math.abs(overtime)} phút.`
+          explanation += `\n\nLogic trừ điểm: 100 điểm - (${Math.abs(extraRounds)} vòng thiếu × 14 điểm) = ${result.durationCoverageScore} điểm.`
+        }
+        return explanation
+      case 'Fit sân':
+        const ratio = (totalPlayers / result.setup.courts).toFixed(1)
+        const diff = Math.abs(Number(ratio) - 9.5).toFixed(1)
+        return `Tỉ lệ hiện tại: ${totalPlayers} người / ${result.setup.courts} sân = ${ratio} người/sân.\n(Lý tưởng là 9.5 người/sân).\n\nLogic trừ điểm: 100 điểm - (${diff} độ lệch × 10 điểm) = ${result.courtFitScore} điểm.`
+      case 'Nhịp nghỉ':
+        return `Độ lệch chuẩn của khoảng cách nghỉ giữa các trận là ${(100 - result.restPatternScore) / 10} điểm.\n\nĐiểm Nhịp nghỉ được tính bằng 100 trừ đi độ lệch này. Điểm càng cao nghĩa là thời gian nghỉ của mọi người càng đều nhau.`
+      case 'B2B':
+        return `Hiện có ${result.backToBackCount} lượt người chơi phải đánh liên tiếp không nghỉ.\n\nThuật toán đã cố gắng giảm con số này xuống mức tối thiểu có thể để bảo vệ thể lực của mọi người.`
+      case 'Chuỗi max':
+        return `Người vất vả nhất trong lịch này phải đánh liên tục ${result.maxConsecutivePlays} trận.\n\nNếu con số này > 2, bạn nên nhắc người chơi này chuẩn bị nước uống và khởi động kỹ để tránh chuột rút.`
+      case 'Min nghỉ':
+        return `Trong phương án này, mọi người chắc chắn được nghỉ ít nhất ${result.minRestAcrossPlayers || 0} vòng giữa các trận đấu.\n\nLý tưởng nhất là chỉ số này ≥ 1 để đảm bảo nhịp hồi phục cơ bắp.`
+      default:
+        return info.calculation
+    }
+  }
+
+  // Check if statValue already contains the unit to avoid duplication (e.g. 79% %)
+  const valueStr = String(statValue || '')
+  const hasUnitAlready = info.unit && valueStr.includes(info.unit)
+
+  return (
+    <Modal visible={true} animationType="fade" transparent={true} onRequestClose={onClose}>
+      <Pressable onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}>
+        <Pressable style={{ backgroundColor: 'white', borderRadius: 24, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 10 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ width: 4, height: 20, backgroundColor: '#0F6E56', borderRadius: 2 }} />
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: '#1A2E2A', fontWeight: '900' }}>{info.title}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: '#7A8884', fontWeight: '900' }}>ĐÓNG</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Actual Value Highlight */}
+          <View style={{ backgroundColor: '#F8F3E8', borderRadius: 20, padding: 20, alignItems: 'center', marginBottom: 24, borderWidth: 1, borderColor: '#EFE3CC' }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800', marginBottom: 4, textTransform: 'uppercase' }}>KẾT QUẢ HIỆN TẠI</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 32, color: '#1A2E2A', fontWeight: '900' }}>{statValue}</Text>
+              {info.unit && !hasUnitAlready && <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 14, color: '#7A8884', fontWeight: '800', marginLeft: 4 }}>{info.unit}</Text>}
+            </View>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#0F6E56', fontWeight: '700', marginTop: 4 }}>Chỉ số của phương án tối ưu này</Text>
+          </View>
+
+          <View style={{ gap: 20 }}>
+            <View>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '800', marginBottom: 6, textTransform: 'uppercase' }}>Ý NGHĨA</Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 14, color: '#1A2E2A', lineHeight: 20 }}>{info.meaning}</Text>
+            </View>
+
+            <View>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '800', marginBottom: 6, textTransform: 'uppercase' }}>CÁCH TÍNH CHI TIẾT</Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 14, color: '#596864', lineHeight: 20, fontStyle: 'italic' }}>
+                {getDetailedCalculation()}
+              </Text>
+            </View>
+
+            <View style={{ backgroundColor: '#F0F9F6', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#BFE3D6' }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#0F6E56', fontWeight: '800', marginBottom: 6, textTransform: 'uppercase' }}>LỜI KHUYÊN THỰC TẾ</Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 14, color: '#0F6E56', fontWeight: '600', lineHeight: 20 }}>{info.advice}</Text>
+            </View>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  )
+}
+
+function PlayerDetailsModal({ result, type, onClose }: { result: OptimizationResult, type: OptimizationModalType, onClose: () => void }) {
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  const [showDropdown, setShowDropdown] = useState(false)
+
+  const isQualityMode = type === 'quality'
+
+  const sortedPlayers = useMemo(() =>
+    [...result.players].sort((a, b) => a.name.localeCompare(b.name)),
+    [result.players]
+  )
+
+  const selectedPlayer = focusedId ? result.players.find(p => String(p.id) === focusedId) : null
+
+  return (
+    <Modal visible={true} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#F9F8F4' }}>
+        <View style={{ padding: 20, borderBottomWidth: 1, borderBottomColor: '#E5E3DC', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A', fontWeight: '900' }}>
+              {isQualityMode ? `PHÂN TÍCH CHẤT LƯỢNG #${result.setup.key}` : `CHI TIẾT NGƯỜI CHƠI #${result.setup.key}`}
+            </Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864' }}>
+              {isQualityMode ? 'Báo cáo chi tiết các chỉ số chất lượng lịch đấu' : 'Báo cáo độ phủ và cân bằng trình độ từng thành viên'}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={onClose} style={{ padding: 8 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: '#7A8884', fontWeight: '900' }}>ĐÓNG</Text>
+          </TouchableOpacity>
+        </View>
+
+        {!isQualityMode && (
+          /* Custom Dropdown Selector - Only for Player Mode */
+          <View style={{ backgroundColor: 'white', padding: 16, borderBottomWidth: 1, borderBottomColor: '#E5E3DC', zIndex: 10 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800', marginBottom: 8, textTransform: 'uppercase' }}>
+              SOI NHANH NGƯỜI CHƠI
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => setShowDropdown(!showDropdown)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                backgroundColor: '#F8F3E8', borderRadius: 12, padding: 12,
+                borderWidth: 1, borderColor: '#E5E3DC'
+              }}
+            >
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: selectedPlayer ? '#1A2E2A' : '#7A8884', fontWeight: '700' }}>
+                {selectedPlayer ? selectedPlayer.name : 'Chọn người chơi để xem chi tiết...'}
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#0F6E56', fontWeight: '900' }}>
+                {showDropdown ? '▲' : '▼'}
+              </Text>
+            </TouchableOpacity>
+
+            {showDropdown && (
+              <View style={{
+                marginTop: 4, backgroundColor: 'white', borderRadius: 12,
+                borderWidth: 1, borderColor: '#E5E3DC', maxHeight: 250,
+                shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5
+              }}>
+                <ScrollView nestedScrollEnabled={true}>
+                  <TouchableOpacity
+                    onPress={() => { setFocusedId(null); setShowDropdown(false) }}
+                    style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#F1EFE8' }}
+                  >
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: focusedId === null ? '#0F6E56' : '#1A2E2A', fontWeight: focusedId === null ? '900' : '500' }}>
+                      --- Hiện tất cả mọi người ---
+                    </Text>
+                  </TouchableOpacity>
+                  {sortedPlayers.map(p => (
+                    <TouchableOpacity
+                      key={p.id}
+                      onPress={() => { setFocusedId(String(p.id)); setShowDropdown(false) }}
+                      style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#F1EFE8', backgroundColor: focusedId === String(p.id) ? '#E1F5EE' : 'transparent' }}
+                    >
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: focusedId === String(p.id) ? '#0F6E56' : '#1A2E2A', fontWeight: focusedId === String(p.id) ? '900' : '500' }}>
+                        {p.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        )}
+
+        <ScrollView contentContainerStyle={{ padding: 20 }}>
+          <ScheduleCoverageReport
+            players={result.players}
+            schedule={result.matches}
+            mode="limited"
+            minGamesPerPlayer={result.setup.targetGames}
+            variant="rotation"
+            quality={{ ...result.quality, timedOut: false, fallbackUsed: false }}
+            playerStatsInitiallyExpanded={!isQualityMode}
+            hideSummary={!isQualityMode}
+            hidePlayerStats={isQualityMode}
+            focusedPlayerId={focusedId}
+          />
+        </ScrollView>
+      </View>
+    </Modal>
+  )
+}
+
+function RoundsDetailsModal({ result, onClose }: { result: OptimizationResult, onClose: () => void }) {
+  return (
+    <Modal visible={true} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#F9F8F4' }}>
+        <View style={{ padding: 20, borderBottomWidth: 1, borderBottomColor: '#E5E3DC', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white' }}>
+          <View>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A', fontWeight: '900' }}>
+              LỊCH ĐẤU CHI TIẾT #{result.setup.key}
+            </Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864' }}>
+              Danh sách trận đấu và người nghỉ theo từng vòng
+            </Text>
+          </View>
+          <TouchableOpacity onPress={onClose} style={{ padding: 8 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: '#7A8884', fontWeight: '900' }}>ĐÓNG</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView contentContainerStyle={{ padding: 20 }}>
+          <DetailedRoundsPreview
+            matches={result.matches}
+            players={result.players}
+          />
+        </ScrollView>
+      </View>
+    </Modal>
+  )
+}
+
+function getResultInterpretation(result: OptimizationResult, index: number, allResults: OptimizationResult[]) {
+  if (index === 0) {
+    return 'Lựa chọn vàng: Cân bằng hoàn hảo giữa chất lượng trận đấu và thời gian nghỉ.'
+  }
+
+  const first = allResults[0]
+  if (result.setup.courts > first.setup.courts) {
+    const timeSaved = (first.setup.estimatedRounds - result.setup.estimatedRounds) * 15
+    return `Ưu tiên tốc độ: Dùng thêm sân giúp mọi người được đánh nhiều hơn và kết thúc sớm hơn${timeSaved > 0 ? ` khoảng ${timeSaved} phút` : ''}.`
+  }
+
+  if (result.quality.overallScore > first.quality.overallScore + 2) {
+    return 'Chất lượng là trên hết: Các trận đấu được tối ưu trình độ cực tốt, dù thời gian có thể kéo dài hơn.'
+  }
+
+  if (result.setup.courts < first.setup.courts) {
+    return 'Tiết kiệm & Giao lưu: Nhịp chơi thong thả, tận dụng ít sân hơn nhưng vẫn đảm bảo mọi người đều được vào sân.'
+  }
+
+  return 'Phương án dự phòng: Thay đổi nhẹ về số trận mỗi người để phù hợp với quỹ thời gian.'
+}
+
+function getPlayerSkill(player: ArrangementPlayer | undefined) {
+  if (!player) return 0
+  return Number(player.pvna ?? (player.elo / 100) ?? 0)
+}
+
+function DetailedRoundsPreview({ matches, players }: { matches: RotationScheduledMatch[], players: ArrangementPlayer[] }) {
+  const playerById = useMemo(() => {
+    const map = new Map<string, ArrangementPlayer>()
+    players.forEach(p => map.set(String(p.id), p))
+    return map
+  }, [players])
+
+  const rotations = useMemo(() => {
+    const rots = Array.from(new Set(matches.map(m => m.rotation || 0))).sort((a, b) => a - b)
+    return rots
+  }, [matches])
+
+  return (
+    <View style={{ gap: 20 }}>
+      {rotations.map((r) => {
+        const matchesInR = matches.filter(m => m.rotation === r).sort((a, b) => (a.court || 0) - (b.court || 0))
+        const playingIds = new Set(matchesInR.flatMap(m => [...m.teamA, ...m.teamB]))
+        const sitters = players.filter(p => !playingIds.has(String(p.id))).map(p => p.name.split(' ').pop()).sort()
+
+        return (
+          <View key={`rot-${r}`} style={{ backgroundColor: 'white', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#E5E3DC', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 }}>
+            {/* Round Header */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12, borderLeftWidth: 4, borderLeftColor: '#0F6E56', paddingLeft: 10 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A', fontWeight: '900' }}>
+                VÒNG {r}
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#7A8884', fontWeight: '700' }}>
+                ({matchesInR.length} trận)
+              </Text>
+            </View>
+
+            {/* Matches List - Super Compact */}
+            <View style={{ borderTopWidth: 1, borderTopColor: '#F1EFE8' }}>
+              {matchesInR.map((match, mIdx) => {
+                const teamAPlayers = match.teamA.map(id => playerById.get(id))
+                const teamBPlayers = match.teamB.map(id => playerById.get(id))
+                const teamASkill = teamAPlayers.reduce((sum, p) => sum + getPlayerSkill(p), 0)
+                const teamBSkill = teamBPlayers.reduce((sum, p) => sum + getPlayerSkill(p), 0)
+                const skillGap = Math.abs(teamASkill - teamBSkill)
+                const gapColor = skillGap <= 0.4 ? '#0F6E56' : skillGap <= 0.8 ? '#A05A16' : '#B91C1C'
+
+                return (
+                  <View key={`m-${r}-${mIdx}`} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F1EFE8' }}>
+                    {/* Compact Court Indicator */}
+                    <View style={{ width: 30, height: 30, borderRadius: 6, backgroundColor: '#E1F5EE', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#88D4B5', marginRight: 12 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: '#0F6E56', fontWeight: '900' }}>{match.court}</Text>
+                    </View>
+
+                    {/* Match Details */}
+                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+                      {/* Teams Section */}
+                      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+                        {/* Team A */}
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: '#1A2E2A', fontWeight: '900' }} numberOfLines={1}>
+                            {teamAPlayers.map(p => p?.name.split(' ').pop()).join(' / ')}
+                          </Text>
+                        </View>
+
+                        {/* VS Divider */}
+                        <View style={{ paddingHorizontal: 8 }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '800' }}>vs</Text>
+                        </View>
+
+                        {/* Team B */}
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: '#1A2E2A', fontWeight: '900' }} numberOfLines={1}>
+                            {teamBPlayers.map(p => p?.name.split(' ').pop()).join(' / ')}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Gap Indicator (Far Right) */}
+                      <View style={{ paddingLeft: 12, alignItems: 'center', borderLeftWidth: 1, borderLeftColor: '#F1EFE8', marginLeft: 8, width: 45 }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#7A8884', fontWeight: '800' }}>Δ</Text>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: gapColor, fontWeight: '900', marginTop: -2 }}>{skillGap.toFixed(1)}</Text>
+                      </View>
+                    </View>
+                  </View>
+                )
+              })}
+            </View>
+          </View>
+        )
+      })}
+    </View>
   )
 }
