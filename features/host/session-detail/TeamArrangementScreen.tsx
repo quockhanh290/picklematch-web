@@ -3,7 +3,7 @@ import { Text, View, TouchableOpacity, ScrollView, Platform, Alert } from 'react
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
-import { ShieldCheck } from 'lucide-react-native'
+import { ShieldCheck, ChevronDown, ChevronRight } from 'lucide-react-native'
 import { getInitials, type ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { BrandedFooter } from '@/components/design/BrandedFooter'
@@ -11,6 +11,7 @@ import { arrangeFixedTeams } from '@/lib/scheduler/fixedTeamPairing'
 import { buildFixedTeamScheduleDraft, type FixedTeamScheduledMatch } from '@/lib/scheduler/fixedTeamSchedule'
 import { getTeamSkill, hasCompleteFixedPair, type FixedTeamOptimizationProfile } from '@/lib/scheduler/scoring'
 import { optimizeSocialPlan } from '@/lib/scheduler/socialOptimizer'
+import { optimizeRotationPlan } from '@/lib/scheduler/rotationOptimizer'
 import { ScheduleCoverageReport } from './ScheduleCoverageReport'
 
 type Props = {
@@ -45,6 +46,9 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
   const [targetGamesPerTeam, setTargetGamesPerTeam] = useState(4)
   const [tempCourtCount, setTempCourtCount] = useState(courtCount)
   const [showDetailedSchedule, setShowDetailedSchedule] = useState(false)
+  const [socialSubMode, setSocialSubMode] = useState<'fixed' | 'rotation'>('fixed')
+  const [previewExpanded, setPreviewExpanded] = useState(true)
+  const [distributionExpanded, setDistributionExpanded] = useState(true)
 
   // Sync state when players change or mount
   React.useEffect(() => {
@@ -78,26 +82,39 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
   const draftSchedule = React.useMemo(
     () => {
       if (optimizationProfile === 'social') {
-        const result = optimizeSocialPlan(arrangedPlayers, {
-          targetGamesPerTeam,
-          courtCount: tempCourtCount,
-          iterations: 20000
-        })
-        return {
-          matches: result.matches,
-          players: result.players,
-          quality: {
-            runtimeMs: result.quality.runtimeMs,
-            timedOut: false,
-            fallbackUsed: false,
-            pairingScore: result.quality.score,
-            overallScore: result.quality.overallScore
+        if (socialSubMode === 'rotation') {
+          const result = optimizeRotationPlan(arrangedPlayers, {
+            targetGamesPerPlayer: targetGamesPerTeam,
+            courtCount: tempCourtCount,
+            iterations: 20000
+          })
+          return {
+            matches: result.matches,
+            players: result.players,
+            quality: result.quality
+          }
+        } else {
+          const result = optimizeSocialPlan(arrangedPlayers, {
+            targetGamesPerTeam,
+            courtCount: tempCourtCount,
+            iterations: 20000
+          })
+          return {
+            matches: result.matches,
+            players: result.players,
+            quality: {
+              runtimeMs: result.quality.runtimeMs,
+              timedOut: false,
+              fallbackUsed: false,
+              pairingScore: result.quality.score,
+              overallScore: result.quality.overallScore
+            }
           }
         }
       }
       return buildFixedTeamScheduleDraft(arrangedPlayers, courtCount, optimizationProfile as FixedTeamOptimizationProfile)
     },
-    [arrangedPlayers, courtCount, optimizationProfile]
+    [arrangedPlayers, courtCount, optimizationProfile, socialSubMode]
   )
 
   const autoBalanceTeams = () => {
@@ -395,8 +412,55 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                 ))}
               </View>
               <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#166534', marginTop: 8, fontStyle: 'italic' }}>
-                * Hệ thống sẽ tự động ghép cặp và tạo lịch để mỗi người đánh khoảng {targetGamesPerTeam} trận với đối thủ cân sức nhất.
+                * Mỗi người sẽ chơi đúng {targetGamesPerTeam} trận.
               </Text>
+
+              <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#DCFCE7' }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#166534', marginBottom: 10 }}>
+                  CHẾ ĐỘ GHÉP CẶP
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {[
+                    { key: 'fixed', label: 'Cố định cặp', icon: '🔒' },
+                    { key: 'rotation', label: 'Xoay vòng', icon: '🔄' },
+                  ].map(mode => {
+                    const active = socialSubMode === mode.key
+                    return (
+                      <TouchableOpacity
+                        key={mode.key}
+                        onPress={() => setSocialSubMode(mode.key as any)}
+                        style={{
+                          flex: 1,
+                          backgroundColor: active ? '#166534' : 'white',
+                          paddingVertical: 10,
+                          borderRadius: 10,
+                          borderWidth: 1,
+                          borderColor: '#166534',
+                          alignItems: 'center',
+                          flexDirection: 'row',
+                          justifyContent: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <Text style={{ fontSize: 12 }}>{mode.icon}</Text>
+                        <Text style={{ 
+                          fontFamily: SCREEN_FONTS.headline, 
+                          fontSize: 11, 
+                          color: active ? 'white' : '#166534',
+                          fontWeight: '700' 
+                        }}>
+                          {mode.label}
+                        </Text>
+                      </TouchableOpacity>
+                    )
+                  })}
+                </View>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#166534', marginTop: 6, fontStyle: 'italic', opacity: 0.8 }}>
+                  {socialSubMode === 'rotation' 
+                    ? '• Ưu tiên Partner mới mỗi trận • Coi mỗi người là cá nhân độc lập' 
+                    : '• Giữ nguyên Team hiện tại • Chỉ tối ưu hóa đối thủ và khoảng nghỉ'}
+                </Text>
+              </View>
 
                 <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#DCFCE7' }}>
                   <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#166534', marginBottom: 8 }}>
@@ -422,12 +486,21 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
 
                   <TouchableOpacity
                     onPress={() => {
-                      const result = optimizeSocialPlan(arrangedPlayers, {
-                        targetGamesPerTeam,
-                        courtCount: tempCourtCount,
-                        iterations: 20000
-                      })
-                      setArrangedPlayers([...result.players])
+                      if (socialSubMode === 'rotation') {
+                        const result = optimizeRotationPlan(arrangedPlayers, {
+                          targetGamesPerPlayer: targetGamesPerTeam,
+                          courtCount: tempCourtCount,
+                          iterations: 20000
+                        })
+                        setArrangedPlayers([...result.players])
+                      } else {
+                        const result = optimizeSocialPlan(arrangedPlayers, {
+                          targetGamesPerTeam,
+                          courtCount: tempCourtCount,
+                          iterations: 20000
+                        })
+                        setArrangedPlayers([...result.players])
+                      }
                     }}
                     style={{
                       backgroundColor: '#166534',
@@ -493,12 +566,32 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
 
           </View>
 
-          {/* Preview Grid */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#7A8884' }}>📋 Xem trước đội hình</Text>
-          </View>
+          {/* Preview Grid Header */}
+          <TouchableOpacity 
+            onPress={() => setPreviewExpanded(!previewExpanded)}
+            activeOpacity={0.7}
+            style={{ 
+              flexDirection: 'row', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              marginBottom: 12,
+              backgroundColor: '#F8FAF9',
+              padding: 10,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: '#E5E3DC'
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#1A2E2A' }}>
+                📋 XEM TRƯỚC ĐỘI HÌNH ({teamOptions.length} ĐỘI)
+              </Text>
+            </View>
+            {previewExpanded ? <ChevronDown size={16} color="#7A8884" /> : <ChevronRight size={16} color="#7A8884" />}
+          </TouchableOpacity>
           
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', marginBottom: 24 }}>
+          {previewExpanded && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', marginBottom: 24 }}>
             {teamOptions.map((t) => {
               const ps = getTeamPlayers(t)
               const teamSkill = ps.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
@@ -625,10 +718,34 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
               )
             })}
           </View>
+          )}
 
-          {/* Distribution Detail */}
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#7A8884', marginBottom: 12, letterSpacing: 0.5 }}>PHÂN BỔ CHI TIẾT</Text>
-          <View style={{ marginBottom: 30 }}>
+          {/* Distribution Detail Header */}
+          <TouchableOpacity 
+            onPress={() => setDistributionExpanded(!distributionExpanded)}
+            activeOpacity={0.7}
+            style={{ 
+              flexDirection: 'row', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              marginBottom: 12,
+              backgroundColor: '#F8FAF9',
+              padding: 10,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: '#E5E3DC'
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#1A2E2A' }}>
+                👥 PHÂN BỔ CHI TIẾT ({arrangedPlayers.length} NGƯỜI)
+              </Text>
+            </View>
+            {distributionExpanded ? <ChevronDown size={16} color="#7A8884" /> : <ChevronRight size={16} color="#7A8884" />}
+          </TouchableOpacity>
+          
+          {distributionExpanded && (
+            <View style={{ marginBottom: 30 }}>
             {[...displayPlayers].sort((a, b) => a.team - b.team).map((player, pIdx) => {
               const avatar = getAvatarColor(player.name || '')
               const initials = getInitialsLocal(player.name || 'N')
@@ -739,6 +856,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
               )
             })}
           </View>
+          )}
 
           {/* Live schedule draft */}
           {draftSchedule.matches.length > 0 && (
@@ -757,12 +875,11 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                 </TouchableOpacity>
               </View>
 
-              <ScheduleCoverageReport
+              <ScheduleCoverageReport 
+                schedule={draftSchedule.matches} 
                 players={draftSchedule.players}
-                schedule={draftSchedule.matches}
-                mode={optimizationProfile === 'social' ? 'limited' : 'full'}
-                minGamesPerPlayer={optimizationProfile === 'social' ? targetGamesPerTeam : 1}
-                variant="fixed"
+                minGamesPerPlayer={targetGamesPerTeam}
+                variant={optimizationProfile === 'social' ? (socialSubMode === 'rotation' ? 'rotation' : 'social') : 'fixed'}
                 quality={draftSchedule.quality}
               />
 

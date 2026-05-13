@@ -56,11 +56,12 @@ type Props = {
   schedule: ScheduledMatch[]
   mode: 'full' | 'limited'
   minGamesPerPlayer: number
-  variant?: 'mix-in' | 'fixed'
+  variant?: 'mix-in' | 'fixed' | 'social' | 'rotation'
   quality?: {
     runtimeMs: number
     timedOut: boolean
     fallbackUsed: boolean
+    overallScore?: number
   }
 }
 
@@ -347,6 +348,9 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
     }
   }, [minGamesPerPlayer, mode, playerById, playerIds, playerNameById, schedule, variant, quality])
 
+  const isRotation = variant === 'rotation'
+  const isSocial = variant === 'social' || isRotation
+
   if (schedule.length === 0 || players.length < 4) return null
 
   const visibleRows = expanded ? report.rows : report.rows.slice(0, 5)
@@ -397,7 +401,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
           { label: 'Lệch trình TB', value: report.avgSkillGap.toFixed(2) },
           { label: 'Lệch max', value: report.maxSkillGap.toFixed(2) },
         ].map(item => (
-          <View key={item.label} style={{ backgroundColor: 'white', borderRadius: RADIUS.md, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#E5E3DC' }}>
+          <View key={item.label} style={{ backgroundColor: 'white', borderRadius: RADIUS.md, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#E5E3DC', minWidth: '22%', marginBottom: 8 }}>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800' }}>{item.label}</Text>
             <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900', marginTop: 2 }}>{item.value}</Text>
           </View>
