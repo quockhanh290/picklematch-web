@@ -23,7 +23,10 @@ type OptimizationResult = {
   durationCoverageScore: number
   gamesCoverageScore: number
   courtFitScore: number
+  restPatternScore: number
   minRestAcrossPlayers: number | null
+  backToBackCount: number
+  maxConsecutivePlays: number
   quality: {
     runtimeMs: number
     score: number
@@ -37,9 +40,23 @@ type Props = {
 }
 
 const MAX_ROUND_PACE_DRIFT = 1.1
+const IDEAL_PLAYERS_PER_COURT = 9.5
+const CLOSE_SCORE_TOLERANCE = 2
+
+type RestPatternStats = {
+  minRest: number | null
+  backToBackCount: number
+  maxConsecutivePlays: number
+  averageRestDeviation: number
+  restPatternScore: number
+}
 
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function uniqueNumbers(values: number[]) {
+  return [...new Set(values)].filter(Number.isFinite)
 }
 
 function buildCandidateSet(playerCount: number, maxCourts: number, durationMinutes: number, minutesPerRound: number) {
@@ -49,12 +66,20 @@ function buildCandidateSet(playerCount: number, maxCourts: number, durationMinut
   const desiredGamesPerPlayer = Math.max(2, Math.ceil(targetRounds / 2))
   const maxAllowedMinutesPerRound = safeMinutesPerRound * MAX_ROUND_PACE_DRIFT
   const playableCourts = Math.max(1, Math.min(Math.floor(safePlayerCount / 4), Math.floor(maxCourts || 1)))
+  const idealCourts = Math.max(1, Math.round(safePlayerCount / IDEAL_PLAYERS_PER_COURT))
+  const candidateCourts = uniqueNumbers([
+    idealCourts - 1,
+    idealCourts,
+    idealCourts + 1,
+    idealCourts + 2,
+    playableCourts,
+  ]).filter(courts => courts >= 1 && courts <= playableCourts).sort((a, b) => a - b)
   const candidates: CandidateSetup[] = []
   const seen = new Set<string>()
 
-  for (let courts = 1; courts <= playableCourts; courts++) {
+  candidateCourts.forEach(courts => {
     const rawTarget = Math.ceil((targetRounds * courts * 4) / safePlayerCount)
-    ;[rawTarget - 1, rawTarget, rawTarget + 1, rawTarget + 2].forEach(targetGames => {
+    uniqueNumbers([rawTarget - 1, rawTarget, rawTarget + 1, rawTarget + 2]).forEach(targetGames => {
       if (targetGames < desiredGamesPerPlayer || targetGames > 12) return
       const estimatedRounds = Math.ceil(Math.ceil((targetGames * safePlayerCount) / 4) / courts)
       const estimatedMinutesPerRound = durationMinutes / estimatedRounds
@@ -64,7 +89,7 @@ function buildCandidateSet(playerCount: number, maxCourts: number, durationMinut
       seen.add(key)
       candidates.push({ key, courts, targetGames, estimatedRounds, targetRounds })
     })
-  }
+  })
 
   return candidates.sort((a, b) => {
     const aCoversDuration = a.estimatedRounds >= targetRounds
@@ -84,8 +109,12 @@ function getActualRoundCount(result: Pick<OptimizationResult, 'matches' | 'setup
   return new Set(result.matches.map(match => match.rotation || 0)).size || result.setup.estimatedRounds
 }
 
-function getMinimumRestAcrossPlayers(players: ArrangementPlayer[], matches: RotationScheduledMatch[]) {
+function getRestPatternStats(players: ArrangementPlayer[], matches: RotationScheduledMatch[]): RestPatternStats {
   let minRest: number | null = null
+  let backToBackCount = 0
+  let maxConsecutivePlays = 0
+  let totalRestDeviation = 0
+  let restGapCount = 0
   const rotationsByPlayer = new Map<string, number[]>()
   players.forEach(player => rotationsByPlayer.set(String(player.id), []))
 
@@ -98,13 +127,44 @@ function getMinimumRestAcrossPlayers(players: ArrangementPlayer[], matches: Rota
 
   rotationsByPlayer.forEach(rotations => {
     const sorted = [...new Set(rotations)].sort((a, b) => a - b)
+    let currentStreak = sorted.length > 0 ? 1 : 0
+    let playerMaxStreak = currentStreak
+
     for (let index = 1; index < sorted.length; index++) {
-      const rest = Math.max(0, sorted[index] - sorted[index - 1] - 1)
+      const gap = sorted[index] - sorted[index - 1]
+      const rest = Math.max(0, gap - 1)
       minRest = minRest == null ? rest : Math.min(minRest, rest)
+
+      if (gap === 1) {
+        backToBackCount += 1
+        currentStreak += 1
+      } else {
+        currentStreak = 1
+      }
+
+      playerMaxStreak = Math.max(playerMaxStreak, currentStreak)
+      totalRestDeviation += Math.abs(rest - 1)
+      restGapCount += 1
     }
+
+    maxConsecutivePlays = Math.max(maxConsecutivePlays, playerMaxStreak)
   })
 
-  return minRest
+  const averageRestDeviation = restGapCount > 0 ? totalRestDeviation / restGapCount : 0
+  const restPatternScore = clampScore(
+    100 -
+    backToBackCount * 5 -
+    Math.max(0, maxConsecutivePlays - 2) * 15 -
+    averageRestDeviation * 18
+  )
+
+  return {
+    minRest,
+    backToBackCount,
+    maxConsecutivePlays,
+    averageRestDeviation,
+    restPatternScore,
+  }
 }
 
 function calculateSetupScores(options: {
@@ -119,21 +179,21 @@ function calculateSetupScores(options: {
   minRestAcrossPlayers: number | null
 }) {
   const playerCount = Math.max(1, options.playerCount)
-  const idealPlayersPerCourt = playerCount >= 32 ? 9.5 : playerCount >= 20 ? 9 : 8.5
+  const idealPlayersPerCourt = playerCount >= 32 ? IDEAL_PLAYERS_PER_COURT : playerCount >= 20 ? 9 : 8.5
   const playersPerCourt = playerCount / Math.max(1, options.courts)
-  const structuralCourtScore = playersPerCourt <= 8
-    ? Math.min(62, clampScore(100 - Math.abs(playersPerCourt - idealPlayersPerCourt) * 18))
-    : clampScore(100 - Math.abs(playersPerCourt - idealPlayersPerCourt) * 18)
-  const minRestScore = options.minRestAcrossPlayers == null
-    ? 60
-    : options.minRestAcrossPlayers >= 2
-      ? 100
-      : options.minRestAcrossPlayers === 1
-        ? 92
-        : 25
+  let courtFitScore = 100 - Math.abs(playersPerCourt - idealPlayersPerCourt) * 14
+
+  if (playersPerCourt < 8) {
+    courtFitScore -= (8 - playersPerCourt) * 18
+  }
+
+  if (playersPerCourt > 11) {
+    courtFitScore -= (playersPerCourt - 11) * 10
+  }
+
   const maxEfficientCourts = Math.max(1, Math.floor(playerCount / idealPlayersPerCourt))
   const overCourtPenalty = Math.max(0, options.courts - Math.min(options.maxUsableCourts, maxEfficientCourts)) * 8
-  const courtFitScore = clampScore(structuralCourtScore * 0.55 + minRestScore * 0.45 - overCourtPenalty)
+  courtFitScore = clampScore(courtFitScore - overCourtPenalty)
   const capacityGamesForCourtFit = Math.max(1, (options.targetRounds * options.courts * 4) / playerCount)
   const meaningfulGamesTarget = Math.max(options.desiredGamesPerPlayer, Math.min(options.targetRounds, capacityGamesForCourtFit))
   const gamesCoverageScore = clampScore((options.targetGames / meaningfulGamesTarget) * 100)
@@ -154,10 +214,14 @@ function calculateSetupScores(options: {
 }
 
 function compareResultsBySetupScore(a: OptimizationResult, b: OptimizationResult) {
-  if (b.setupScore !== a.setupScore) return b.setupScore - a.setupScore
+  const scoreDiff = b.setupScore - a.setupScore
+  if (Math.abs(scoreDiff) > CLOSE_SCORE_TOLERANCE) return scoreDiff
+  if (b.restPatternScore !== a.restPatternScore) return b.restPatternScore - a.restPatternScore
+  if (a.backToBackCount !== b.backToBackCount) return a.backToBackCount - b.backToBackCount
+  if (a.maxConsecutivePlays !== b.maxConsecutivePlays) return a.maxConsecutivePlays - b.maxConsecutivePlays
   if (a.setup.targetGames !== b.setup.targetGames) return b.setup.targetGames - a.setup.targetGames
   if (b.quality.overallScore !== a.quality.overallScore) return b.quality.overallScore - a.quality.overallScore
-  return b.setup.courts - a.setup.courts
+  return a.setup.courts - b.setup.courts
 }
 
 export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
@@ -199,7 +263,7 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
             quality: result.quality,
           }
           const actualRoundCount = getActualRoundCount(baseResult)
-          const minRestAcrossPlayers = getMinimumRestAcrossPlayers(players, result.matches)
+          const restStats = getRestPatternStats(players, result.matches)
           const scores = calculateSetupScores({
             qualityScore: result.quality.overallScore,
             targetGames: setup.targetGames,
@@ -209,13 +273,16 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
             courts: setup.courts,
             maxUsableCourts,
             playerCount: players.length,
-            minRestAcrossPlayers,
+            minRestAcrossPlayers: restStats.minRest,
           })
 
           return {
             ...baseResult,
             ...scores,
-            minRestAcrossPlayers,
+            minRestAcrossPlayers: restStats.minRest,
+            backToBackCount: restStats.backToBackCount,
+            maxConsecutivePlays: restStats.maxConsecutivePlays,
+            restPatternScore: restStats.restPatternScore,
           }
         })
         .filter(result => {
@@ -248,7 +315,7 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
           One-click optimization
         </Text>
         <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#D8F3E6', marginTop: 6, lineHeight: 17 }}>
-          {'Nh\u1eadp b\u1ed1i c\u1ea3nh bu\u1ed5i social, h\u1ec7 th\u1ed1ng th\u1eed nhi\u1ec1u setup v\u00e0 x\u1ebfp h\u1ea1ng b\u1eb1ng \u0111i\u1ec3m setup: ch\u1ea5t l\u01b0\u1ee3ng l\u1ecbch + \u0111\u1ed9 ph\u1ee7 th\u1eddi l\u01b0\u1ee3ng + s\u1ed1 tr\u1eadn/ng\u01b0\u1eddi + m\u1ee9c d\u00f9ng s\u00e2n.'}
+          {'Nh\u1eadp b\u1ed1i c\u1ea3nh bu\u1ed5i social, h\u1ec7 th\u1ed1ng th\u1eed nhi\u1ec1u setup v\u00e0 x\u1ebfp h\u1ea1ng b\u1eb1ng \u0111i\u1ec3m setup: ch\u1ea5t l\u01b0\u1ee3ng l\u1ecbch + \u0111\u1ed9 ph\u1ee7 th\u1eddi l\u01b0\u1ee3ng + s\u1ed1 tr\u1eadn/ng\u01b0\u1eddi + fit s\u00e2n h\u1ee3p l\u00fd.'}
         </Text>
       </View>
 
@@ -339,7 +406,7 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
                       {'\u0110i\u1ec3m setup'}
                     </Text>
                     <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: result.setupScore > 85 ? '#0F6E56' : '#A05A16', marginTop: 3, lineHeight: 13 }}>
-                      {'D\u00f9ng \u0111\u1ec3 x\u1ebfp h\u1ea1ng top 5: ch\u1ea5t l\u01b0\u1ee3ng + ph\u1ee7 tr\u1eadn + ph\u1ee7 gi\u1edd + fit s\u00e2n theo group size v\u00e0 min ngh\u1ec9.'}
+                      {'X\u1ebfp h\u1ea1ng theo quality, ph\u1ee7 tr\u1eadn, ph\u1ee7 gi\u1edd v\u00e0 fit s\u00e2n. N\u1ebfu \u0111i\u1ec3m g\u1ea7n nhau, \u01b0u ti\u00ean nh\u1ecbp ngh\u1ec9 t\u1ed1t h\u01a1n.'}
                     </Text>
                   </View>
                   <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 30, color: result.setupScore > 85 ? '#0F6E56' : '#A05A16', fontWeight: '900' }}>
@@ -354,6 +421,9 @@ export function OneClickOptimizationScreen({ players, maxCourts }: Props) {
                   { label: 'Ph\u1ee7 tr\u1eadn', value: result.gamesCoverageScore },
                   { label: 'Ph\u1ee7 gi\u1edd', value: result.durationCoverageScore },
                   { label: 'Fit s\u00e2n', value: result.courtFitScore },
+                  { label: 'Nh\u1ecbp ngh\u1ec9', value: result.restPatternScore },
+                  { label: 'Back-to-back', value: result.backToBackCount },
+                  { label: 'Chu\u1ed7i max', value: result.maxConsecutivePlays },
                   { label: 'Min ngh\u1ec9', value: result.minRestAcrossPlayers == null ? '-' : result.minRestAcrossPlayers },
                 ].map(item => (
                   <View key={item.label} style={{ backgroundColor: '#F8F3E8', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 9, borderWidth: 1, borderColor: '#EFE3CC', width: '48%' }}>
