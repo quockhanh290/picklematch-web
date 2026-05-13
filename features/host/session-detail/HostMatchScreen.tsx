@@ -4,10 +4,10 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import type { SessionMatch } from '@/hooks/useSessionDetail'
 import { buildRoundRobinDoublesScheduleAsync } from '@/lib/roundRobinSchedulerClient'
 import type { SchedulePriority } from '@/lib/roundRobinScheduler'
-import type { FixedTeamScheduledMatch } from '@/lib/scheduler/fixedTeamSchedule'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
+import { router } from 'expo-router'
 import { LayoutDashboard, Minus, Plus, SwordsIcon } from 'lucide-react-native'
 import React, { useState, useEffect, useMemo } from 'react'
 import { Alert, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
@@ -19,11 +19,9 @@ import { ScheduleSetupPanel, type ScheduleMode } from './ScheduleSetupPanel'
 import { TeamArrangementScreen } from './TeamArrangementScreen'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
-const IS_SMALL_DEVICE = SCREEN_WIDTH < 375
 const RESPONSIVE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 80 : SCREEN_WIDTH > 360 ? 70 : 64
 const RESPONSIVE_CARD_HEIGHT = RESPONSIVE_CARD_WIDTH * 1.25
 const RESPONSIVE_FONT_SIZE = SCREEN_WIDTH > 400 ? 56 : SCREEN_WIDTH > 360 ? 48 : 42
-const RESPONSIVE_GAP = SCREEN_WIDTH > 360 ? 8 : 4
 
 interface Props {
   sessionId: string
@@ -236,7 +234,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     }
   }
 
-  const validMatches = matches.filter(m => m.status !== 'cancelled')
   const finishedMatches = matches.filter(m => m.status === 'finished')
 
   // Helper to safely get players from snapshot (handles both Object and String/JSON)
@@ -806,6 +803,22 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
             <LayoutDashboard size={16} color="#0F6E56" />
             <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
               TẠO / CHỈNH CẶP & XEM LỊCH NHÁP
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push(`/host/session/${sessionId}/one-click-optimization` as any)}
+            disabled={activePlayers.length < 4}
+            style={{
+              marginTop: 8,
+              backgroundColor: activePlayers.length >= 4 ? '#12352F' : '#9CA3AF',
+              borderRadius: RADIUS.md,
+              paddingVertical: 11,
+              alignItems: 'center',
+              opacity: activePlayers.length >= 4 ? 1 : 0.65,
+            }}
+          >
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#FFF5DE', fontWeight: '900' }}>
+              TỐI ƯU TỰ ĐỘNG 1-CLICK
             </Text>
           </TouchableOpacity>
         </View>

@@ -1,15 +1,14 @@
 import React, { useState } from 'react'
 import { Text, View, TouchableOpacity, ScrollView, Platform, Alert } from 'react-native'
-import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { RADIUS, SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
+import { SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
 import { ShieldCheck, ChevronDown, ChevronRight } from 'lucide-react-native'
-import { getInitials, type ArrangementPlayer } from '@/lib/sessionDetail'
+import { type ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { arrangeFixedTeams } from '@/lib/scheduler/fixedTeamPairing'
 import { buildFixedTeamScheduleDraft, type FixedTeamScheduledMatch } from '@/lib/scheduler/fixedTeamSchedule'
-import { getTeamSkill, hasCompleteFixedPair, type FixedTeamOptimizationProfile } from '@/lib/scheduler/scoring'
+import { hasCompleteFixedPair, type FixedTeamOptimizationProfile } from '@/lib/scheduler/scoring'
 import { optimizeSocialPlan } from '@/lib/scheduler/socialOptimizer'
 import { optimizeRotationPlan } from '@/lib/scheduler/rotationOptimizer'
 import { ScheduleCoverageReport } from './ScheduleCoverageReport'
@@ -33,7 +32,6 @@ type Props = {
 }
 
 export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount = 1, sessionId, onUpdated, onGoToMatches, onApplySchedule, isAfterEnd }: Props) {
-  const theme = useAppTheme()
   const maxTeamCount = Math.max(1, Math.floor(players.length / 2))
   const defaultTeamCount = Math.max(1, Math.min(maxTeamCount, Math.ceil(players.length / 2)))
   const [arrangedPlayers, setArrangedPlayers] = useState<ArrangementPlayer[]>(players)
@@ -41,8 +39,8 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
   const [targetNumTeams, setTargetNumTeams] = useState(defaultTeamCount)
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null)
   const [hasOngoingMatches, setHasOngoingMatches] = useState(false)
-  const [checkingMatches, setCheckingMatches] = useState(false)
-  const [optimizationProfile, setOptimizationProfile] = useState<FixedTeamOptimizationProfile | 'social'>('balanced')
+  const [, setCheckingMatches] = useState(false)
+  const [optimizationProfile, setOptimizationProfile] = useState<FixedTeamOptimizationProfile | 'social'>('social')
   const [targetGamesPerTeam, setTargetGamesPerTeam] = useState(4)
   const [tempCourtCount, setTempCourtCount] = useState(courtCount)
   const [showDetailedSchedule, setShowDetailedSchedule] = useState(false)
@@ -72,14 +70,18 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
       }
     }
 
-    setArrangedPlayers(hasCompleteFixedPair(players) ? players : arrangeFixedTeams(players, defaultTeamCount, { profile: optimizationProfile, preserveExistingPairs: false }))
+    setArrangedPlayers(hasCompleteFixedPair(players)
+      ? players
+      : arrangeFixedTeams(players, defaultTeamCount, {
+        profile: optimizationProfile === 'social' ? 'balanced' : optimizationProfile,
+        preserveExistingPairs: false,
+      }))
     setTargetNumTeams(defaultTeamCount)
     checkOngoing()
   }, [defaultTeamCount, optimizationProfile, players, sessionId])
 
   const teamOptions = Array.from({ length: targetNumTeams }, (_, i) => i + 1)
 
-  const hasFixedPairs = () => hasCompleteFixedPair(arrangedPlayers)
   const draftSchedule = React.useMemo(
     () => {
       if (optimizationProfile === 'social') {
@@ -118,11 +120,6 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
     [arrangedPlayers, courtCount, optimizationProfile, rebalanceTick, socialSubMode, targetGamesPerTeam, tempCourtCount]
   )
 
-  const autoBalanceTeams = () => {
-    if (isAfterEnd) return
-    setArrangedPlayers(arrangeFixedTeams(arrangedPlayers, targetNumTeams, { profile: optimizationProfile, preserveExistingPairs: false }))
-  }
-
   const handleOptimizationProfileChange = (profile: FixedTeamOptimizationProfile | 'social') => {
     setOptimizationProfile(profile)
     if (isAfterEnd) return
@@ -134,13 +131,6 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
     }
   }
 
-  const handleTeamCountChange = (teamCount: number) => {
-    setTargetNumTeams(teamCount)
-    if (isAfterEnd) return
-    setArrangedPlayers(current => arrangeFixedTeams(current, teamCount, { profile: optimizationProfile, preserveExistingPairs: false }))
-  }
-
-  const totalPlayers = arrangedPlayers.length
   const displayPlayers = optimizationProfile === 'social' ? draftSchedule.players : arrangedPlayers
   const isFixedPairSocial = optimizationProfile === 'social' && socialSubMode === 'fixed'
   const fixedPairWaitingPlayers = isFixedPairSocial
@@ -318,46 +308,6 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
             </View>
           )}
 
-          {/* Team Count Selector */}
-          <View style={{ marginBottom: 24 }}>
-            <Text style={{ 
-              fontFamily: SCREEN_FONTS.label, 
-              fontSize: 11, 
-              fontWeight: '600',
-              color: '#7A8884', 
-              marginBottom: 10,
-              letterSpacing: 0.5
-            }}>SỐ LƯỢNG ĐỘI (Tham gia: {totalPlayers}/{maxPlayers})</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {Array.from({ length: maxTeamCount }, (_, i) => i + 1).map(n => (
-                  <TouchableOpacity
-                    key={n}
-                    onPress={() => handleTeamCountChange(n)}
-                    activeOpacity={0.8}
-                    style={{
-                      paddingHorizontal: 16,
-                      paddingVertical: 7,
-                      borderRadius: 999,
-                      backgroundColor: targetNumTeams === n ? '#0F6E56' : 'white',
-                      borderWidth: 1.5,
-                      borderColor: targetNumTeams === n ? '#0F6E56' : '#E5E3DC',
-                    }}
-                  >
-                    <Text style={{ 
-                      fontFamily: SCREEN_FONTS.label, 
-                      fontSize: 12, 
-                      fontWeight: '600',
-                      color: targetNumTeams === n ? 'white' : '#7A8884' 
-                    }}>
-                      {n} Đội
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-
           {/* Optimization Profile */}
           <View style={{ marginBottom: 16 }}>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '600', color: '#7A8884', marginBottom: 10, letterSpacing: 0.5 }}>
@@ -365,8 +315,6 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
             </Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               {[
-                { key: 'balanced', label: 'Cân bằng', hint: 'Pref + trình' },
-                { key: 'skill', label: 'Cân trình', hint: 'Ít lệch điểm' },
                 { key: 'social', label: 'Tối ưu Social', hint: 'Ghép & Xếp linh hoạt' },
               ].map(option => {
                 const selected = optimizationProfile === option.key
@@ -553,37 +501,6 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                 </View>
               </View>
             )}
-
-          {/* Action Buttons */}
-          <View style={{ flexDirection: 'row', marginBottom: 24 }}>
-            <TouchableOpacity 
-              onPress={autoBalanceTeams}
-              activeOpacity={0.8}
-              style={{ 
-                flex: 1,
-                flexDirection: 'row', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                gap: 8, 
-                backgroundColor: '#0F6E56', 
-                paddingVertical: 14, 
-                borderRadius: 12,
-                ...LAYOUT_SHADOW.sm,
-                opacity: isAfterEnd ? 0.5 : 1
-              }}
-              disabled={isAfterEnd}
-            >
-              <ShieldCheck size={18} color="white" />
-              <Text style={{ 
-                fontFamily: SCREEN_FONTS.headline, 
-                fontSize: 14, 
-                fontWeight: '700',
-                color: 'white',
-                textTransform: 'uppercase'
-              }}>{hasFixedPairs() ? 'Cân bằng cặp' : 'Tạo cặp cố định'}</Text>
-            </TouchableOpacity>
-
-          </View>
 
           {/* Preview Grid Header */}
           <TouchableOpacity 

@@ -74,6 +74,7 @@ type Props = {
     fallbackUsed: boolean
     overallScore?: number
   }
+  playerStatsInitiallyExpanded?: boolean
 }
 
 const pairKey = (a: string, b: string) => a < b ? `${a}_${b}` : `${b}_${a}`
@@ -117,8 +118,9 @@ function formatPlayerListWithGender(players: (ArrangementPlayer | undefined)[]) 
   }).join(' / ')
 }
 
-export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPlayer, variant = 'mix-in', quality }: Props) {
+export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPlayer, variant = 'mix-in', quality, playerStatsInitiallyExpanded = true }: Props) {
   const [expanded, setExpanded] = useState(false)
+  const [playerStatsExpanded, setPlayerStatsExpanded] = useState(playerStatsInitiallyExpanded)
   const [expandedPreferenceRows, setExpandedPreferenceRows] = useState<Set<string>>(() => new Set())
   const playerIds = useMemo(() => players.map(p => String(p.id)), [players])
   const playerNameById = useMemo(() => {
@@ -543,6 +545,25 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
         </View>
       )}
 
+      <TouchableOpacity
+        onPress={() => setPlayerStatsExpanded(prev => !prev)}
+        activeOpacity={0.82}
+        style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.md, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E5E3DC', marginBottom: playerStatsExpanded ? 10 : 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '900' }}>
+            {'Chi ti\u1ebft stats ng\u01b0\u1eddi ch\u01a1i'}
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', marginTop: 2 }}>
+            {playerStatsExpanded ? '\u0110ang hi\u1ec3n th\u1ecb chi ti\u1ebft t\u1eebng ng\u01b0\u1eddi' : `B\u1ea5m \u0111\u1ec3 xem ${report.rows.length} ng\u01b0\u1eddi`}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
+          {playerStatsExpanded ? 'Thu g\u1ecdn' : 'M\u1edf'}
+        </Text>
+      </TouchableOpacity>
+
+      {playerStatsExpanded && (
       <View style={{ gap: 10 }}>
         {visibleRows.map(row => {
           const playerGameTarget = report.uniqueTargetGames
@@ -675,14 +696,14 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
           </View>
           )
         })}
-      </View>
-
       {report.rows.length > 5 && (
         <TouchableOpacity onPress={() => setExpanded(prev => !prev)} style={{ alignSelf: 'center', paddingTop: 10 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
             {expanded ? 'Thu gọn báo cáo' : `Xem tất cả ${report.rows.length} người`}
           </Text>
         </TouchableOpacity>
+      )}
+      </View>
       )}
     </View>
   )
