@@ -114,7 +114,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
       }
       return buildFixedTeamScheduleDraft(arrangedPlayers, courtCount, optimizationProfile as FixedTeamOptimizationProfile)
     },
-    [arrangedPlayers, courtCount, optimizationProfile, socialSubMode]
+    [arrangedPlayers, courtCount, optimizationProfile, socialSubMode, targetGamesPerTeam, tempCourtCount]
   )
 
   const autoBalanceTeams = () => {
@@ -141,6 +141,12 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
 
   const totalPlayers = arrangedPlayers.length
   const displayPlayers = optimizationProfile === 'social' ? draftSchedule.players : arrangedPlayers
+  const isFixedPairSocial = optimizationProfile === 'social' && socialSubMode === 'fixed'
+  const fixedPairWaitingPlayers = isFixedPairSocial
+    ? arrangedPlayers.filter(player => player.team <= 0)
+    : []
+  const hasFixedPairWaitingPlayers = fixedPairWaitingPlayers.length > 0
+  const fixedPairWaitingNames = fixedPairWaitingPlayers.map(player => player.name).join(', ')
 
   const handleSave = async () => {
     if (isAfterEnd) return
@@ -460,6 +466,34 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                     ? '• Ưu tiên Partner mới mỗi trận • Coi mỗi người là cá nhân độc lập' 
                     : '• Giữ nguyên Team hiện tại • Chỉ tối ưu hóa đối thủ và khoảng nghỉ'}
                 </Text>
+                {hasFixedPairWaitingPlayers && (
+                  <View style={{
+                    marginTop: 10,
+                    backgroundColor: '#FEF3C7',
+                    borderWidth: 1,
+                    borderColor: '#F59E0B',
+                    borderRadius: 8,
+                    padding: 10,
+                  }}>
+                    <Text style={{
+                      fontFamily: SCREEN_FONTS.headline,
+                      fontSize: 11,
+                      color: '#92400E',
+                      fontWeight: '900',
+                    }}>
+                      CO {fixedPairWaitingPlayers.length} NGUOI CHUA CO CAP
+                    </Text>
+                    <Text style={{
+                      fontFamily: SCREEN_FONTS.label,
+                      fontSize: 10,
+                      color: '#92400E',
+                      marginTop: 4,
+                      lineHeight: 15,
+                    }}>
+                      {fixedPairWaitingNames} se ngoi ngoai lich co dinh cap. Chuyen sang Xoay vong neu muon tat ca nguoi choi duoc xep tran.
+                    </Text>
+                  </View>
+                )}
               </View>
 
                 <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#DCFCE7' }}>
