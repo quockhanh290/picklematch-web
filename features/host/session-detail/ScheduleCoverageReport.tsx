@@ -25,6 +25,10 @@ type PlayerCoverage = {
   games: number
   partners: number
   opponents: number
+  avgRest?: string
+  minRest?: number | null
+  consecutive?: number
+  rotations?: number[]
   missingPartners: string[]
   missingOpponents: string[]
 }
@@ -261,6 +265,12 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
           for (let i = 0; i < rots.length - 1; i++) totalGap += (rots[i+1] - rots[i] - 1)
           return (totalGap / (games - 1)).toFixed(1)
         })(),
+        minRest: (() => {
+          const rots = (playerRotations.get(id) || []).sort((a, b) => a - b)
+          const gaps: number[] = []
+          for (let i = 0; i < rots.length - 1; i++) gaps.push(rots[i+1] - rots[i] - 1)
+          return gaps.length ? Math.min(...gaps) : null
+        })(),
         consecutive: (() => {
           const rots = (playerRotations.get(id) || []).sort((a, b) => a - b)
           let count = 0
@@ -308,11 +318,24 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
       : mode === 'limited'
         ? Math.min(minGamesPerPlayer, Math.max(1, playerIds.length - 1))
         : Math.max(1, playerIds.length - 1)
+    const uniqueTargetGames = Math.max(1, minGamesPerPlayer)
     const partnerTarget = variant === 'fixed' ? 1 : Math.max(1, playerIds.length - 1)
     const opponentTarget = variant === 'fixed' ? Math.max(1, playerIds.length - 2) : Math.max(1, playerIds.length - 1)
     const underTarget = rows.filter(row => row.games < targetGames)
     const fullPartnerRows = rows.filter(row => row.partners >= partnerTarget)
     const fullOpponentRows = rows.filter(row => row.opponents >= opponentTarget)
+    const partnerCounts = rows.map(row => row.partners)
+    const opponentCounts = rows.map(row => row.opponents)
+    const avgRestValues = rows
+      .map(row => Number(row.avgRest))
+      .filter(value => Number.isFinite(value))
+    const minRestValues = rows
+      .map(row => row.minRest)
+      .filter((value): value is number => typeof value === 'number')
+    const avgRestAcrossPlayers = avgRestValues.length
+      ? (avgRestValues.reduce((sum, value) => sum + value, 0) / avgRestValues.length).toFixed(1)
+      : '-'
+    const minRestAcrossPlayers = minRestValues.length ? Math.min(...minRestValues).toString() : '-'
 
     const avgSkillGap = schedule.length > 0 ? totalSkillGap / schedule.length : 0
     
@@ -322,11 +345,18 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
     return {
       rows,
       targetGames,
+      uniqueTargetGames,
       underTarget,
       repeatedPartners: repeatedPartners.sort((a, b) => b.count - a.count || a.names.localeCompare(b.names)),
       repeatedOpponents: repeatedOpponents.sort((a, b) => b.count - a.count || a.names.localeCompare(b.names)),
       minGames: games.length ? Math.min(...games) : 0,
       maxGames: games.length ? Math.max(...games) : 0,
+      minUniquePartners: partnerCounts.length ? Math.min(...partnerCounts) : 0,
+      maxUniquePartners: partnerCounts.length ? Math.max(...partnerCounts) : 0,
+      minUniqueOpponents: opponentCounts.length ? Math.min(...opponentCounts) : 0,
+      maxUniqueOpponents: opponentCounts.length ? Math.max(...opponentCounts) : 0,
+      avgRestAcrossPlayers,
+      minRestAcrossPlayers,
       fullPartnerCount: fullPartnerRows.length,
       fullOpponentCount: fullOpponentRows.length,
       partnerTarget,
@@ -348,25 +378,29 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
     }
   }, [minGamesPerPlayer, mode, playerById, playerIds, playerNameById, schedule, variant, quality])
 
-  const isRotation = variant === 'rotation'
-  const isSocial = variant === 'social' || isRotation
-
   if (schedule.length === 0 || players.length < 4) return null
 
   const visibleRows = expanded ? report.rows : report.rows.slice(0, 5)
   const hasWarnings = report.underTarget.length > 0 || report.repeatedPartners.length > 0 || report.repeatedOpponents.length > 0
+  const scoreTone = report.overallScore >= 80
+    ? { bg: '#E1F5EE', fg: '#0F6E56', border: '#88D4B5' }
+    : report.overallScore >= 60
+      ? { bg: '#FFF4D6', fg: '#A05A16', border: '#F5DFA0' }
+      : { bg: '#FEE2E2', fg: '#B91C1C', border: '#FCA5A5' }
 
   return (
-    <View style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.lg, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: hasWarnings ? '#F5DFA0' : '#D9E9DF' }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+    <View style={{ backgroundColor: '#F8F3E8', borderRadius: 24, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: hasWarnings ? '#EBCB79' : '#B9DDC8' }}>
+      <View style={{ backgroundColor: '#FFFCF5', borderRadius: 20, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E5E3DC', overflow: 'hidden' }}>
+        <View style={{ position: 'absolute', right: -34, top: -42, width: 120, height: 120, borderRadius: 60, backgroundColor: scoreTone.bg, opacity: 0.48 }} />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <View style={{ 
-            width: 48, height: 48, borderRadius: 12, 
-            backgroundColor: report.overallScore >= 80 ? '#E1F5EE' : report.overallScore >= 60 ? '#FFF4D6' : '#FEE2E2',
+            width: 68, height: 68, borderRadius: 20,
+            backgroundColor: scoreTone.bg,
             alignItems: 'center', justifyContent: 'center',
-            borderWidth: 2, borderColor: report.overallScore >= 80 ? '#0F6E56' : report.overallScore >= 60 ? '#D97706' : '#EF4444'
+            borderWidth: 2, borderColor: scoreTone.border
           }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: report.overallScore >= 80 ? '#0F6E56' : report.overallScore >= 60 ? '#D97706' : '#B91C1C', fontWeight: '900' }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 26, color: scoreTone.fg, fontWeight: '900', lineHeight: 30 }}>
               {report.overallScore}
             </Text>
           </View>
@@ -375,10 +409,14 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '700' }}>DỰA TRÊN TRÌNH ĐỘ, PREF & NGHỈ</Text>
           </View>
         </View>
-        <View style={{ backgroundColor: hasWarnings ? '#FFF4D6' : '#E1F5EE', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: hasWarnings ? '#F5DFA0' : '#A7F3D0' }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: hasWarnings ? '#854F0B' : '#0F6E56', fontWeight: '900' }}>
+        <View style={{ backgroundColor: scoreTone.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: scoreTone.border }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: scoreTone.fg, fontWeight: '900' }}>
             {hasWarnings ? 'CẦN TỐI ƯU THÊM' : 'LỊCH TUYỆT VỜI'}
           </Text>
+        </View>
+      </View>
+        <View style={{ height: 8, borderRadius: 999, backgroundColor: '#F1EFE8', overflow: 'hidden' }}>
+          <View style={{ width: `${Math.max(0, Math.min(100, report.overallScore))}%`, height: '100%', borderRadius: 999, backgroundColor: scoreTone.border }} />
         </View>
       </View>
 
@@ -386,10 +424,12 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
         {[
           { label: 'Trận', value: `${schedule.length}` },
           { label: 'Game/ng', value: `${report.minGames}-${report.maxGames}` },
-          { label: 'Full partner', value: `${report.fullPartnerCount}/${players.length}` },
-          { label: 'Full đối thủ', value: `${report.fullOpponentCount}/${players.length}` },
+          { label: 'Unique partner/min', value: `${report.minUniquePartners}-${report.maxUniquePartners}/${report.uniqueTargetGames}` },
+          { label: 'Unique đối thủ/min', value: `${report.minUniqueOpponents}-${report.maxUniqueOpponents}/${report.uniqueTargetGames}` },
           { label: 'Pref partner', value: report.partnerPrefTotal ? `${report.partnerPrefHits}/${report.partnerPrefTotal}` : '-' },
           { label: 'Pref đối thủ', value: report.opponentPrefTotal ? `${report.opponentPrefHits}/${report.opponentPrefTotal}` : '-' },
+          { label: 'Nghỉ TB', value: report.avgRestAcrossPlayers },
+          { label: 'Min nghỉ', value: report.minRestAcrossPlayers },
           { 
             label: '% HL PARTNER', 
             value: report.partnerPrefTotal > 0 ? `${Math.round((report.partnerPrefHits / report.partnerPrefTotal) * 100)}%` : '100%'
@@ -401,9 +441,9 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
           { label: 'Lệch trình TB', value: report.avgSkillGap.toFixed(2) },
           { label: 'Lệch max', value: report.maxSkillGap.toFixed(2) },
         ].map(item => (
-          <View key={item.label} style={{ backgroundColor: 'white', borderRadius: RADIUS.md, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#E5E3DC', minWidth: '22%', marginBottom: 8 }}>
+          <View key={item.label} style={{ backgroundColor: 'white', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: '#E5E3DC', width: '48.5%', minHeight: 64, marginBottom: 8 }}>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800' }}>{item.label}</Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900', marginTop: 2 }}>{item.value}</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: '#1A2E2A', fontWeight: '900', marginTop: 4 }}>{item.value}</Text>
           </View>
         ))}
       </View>

@@ -309,7 +309,7 @@ function calculatePlanScore(
     const sorted = [...rotations].sort((a, b) => a - b)
     for (let i = 0; i < sorted.length - 1; i++) {
       const gap = sorted[i + 1] - sorted[i]
-      if (gap === 1) restPenalty += ROTATION_SCORE_WEIGHTS.planConsecutiveRest
+      if (gap === 1) hardPenalty += 1_000_000
       if (gap > 5) restPenalty += Math.min(35, (gap - 5) * ROTATION_SCORE_WEIGHTS.planLongRest)
     }
   })
@@ -472,7 +472,7 @@ export function optimizeRotationPlan(
     while (matchesInRotation < effectiveCourtCount) {
       const eligible = playerIds.filter(id => {
         const state = states.get(id)!
-        return state.games < state.quota && !usedThisRotation.has(id)
+        return state.games < state.quota && !usedThisRotation.has(id) && state.lastRotation !== rotation - 1
       })
 
       if (eligible.length < 4) break
