@@ -116,6 +116,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
     const partnerMap = new Map<string, number>()
     const opponentMap = new Map<string, number>()
     const gamesCount = new Map<string, number>(playerIds.map(id => [id, 0]))
+    const playerRotations = new Map<string, number[]>(playerIds.map(id => [id, []]))
     const partnerByPlayer = new Map<string, Set<string>>(playerIds.map(id => [id, new Set<string>()]))
     const opponentByPlayer = new Map<string, Set<string>>(playerIds.map(id => [id, new Set<string>()]))
 
@@ -146,7 +147,11 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
       totalSkillGap += skillGap
       maxSkillGap = Math.max(maxSkillGap, skillGap)
 
-      all.forEach(id => gamesCount.set(id, (gamesCount.get(id) || 0) + 1))
+      all.forEach(id => {
+        gamesCount.set(id, (gamesCount.get(id) || 0) + 1)
+        if (!playerRotations.has(id)) playerRotations.set(id, [])
+        playerRotations.get(id)!.push(match.rotation || 0)
+      })
 
       if (teamA.length === 2) {
         increment(partnerMap, teamA[0], teamA[1])
@@ -165,7 +170,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
         opponentByPlayer.get(b)?.add(a)
       }))
 
-      all.forEach(id => {
+      all.forEach((id, playerIndex) => {
         const player = playerById.get(id)
         const partners = (teamA.includes(id) ? teamA : teamB)
           .filter(otherId => otherId !== id)
@@ -180,7 +185,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
             matchPartnerPrefHits++
           } else {
             preferenceMisses.push({
-              key: `${matchIndex}-${id}-partner`,
+              key: `${matchIndex}-${id}-${playerIndex}-partner`,
               playerName: player.name,
               type: 'partner',
               preferred: formatPrefLabel(player.metadata.partner_gender_pref),
@@ -196,7 +201,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
             matchOpponentPrefHits++
           } else {
             preferenceMisses.push({
-              key: `${matchIndex}-${id}-opponent`,
+              key: `${matchIndex}-${id}-${playerIndex}-opponent`,
               playerName: player.name,
               type: 'opponent',
               preferred: formatPrefLabel(player.metadata.opponent_gender_pref),
@@ -247,6 +252,21 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
         games: gamesCount.get(id) || 0,
         partners: partnerSet.size,
         opponents: opponentSet.size,
+        avgRest: (() => {
+          const rots = (playerRotations.get(id) || []).sort((a, b) => a - b)
+          const games = gamesCount.get(id) || 0
+          if (games <= 1) return '-'
+          let totalGap = 0
+          for (let i = 0; i < rots.length - 1; i++) totalGap += (rots[i+1] - rots[i] - 1)
+          return (totalGap / (games - 1)).toFixed(1)
+        })(),
+        consecutive: (() => {
+          const rots = (playerRotations.get(id) || []).sort((a, b) => a - b)
+          let count = 0
+          for (let i = 0; i < rots.length - 1; i++) if (rots[i+1] - rots[i] === 1) count++
+          return count
+        })(),
+        rotations: (playerRotations.get(id) || []).sort((a, b) => a - b),
         missingPartners: variant === 'fixed'
           ? (partnerSet.size > 0 ? [] : ['Chưa có partner'])
           : otherIds.filter(otherId => !partnerSet.has(otherId)).map(otherId => playerNameById.get(otherId) || 'Player'),
@@ -293,6 +313,11 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
     const fullPartnerRows = rows.filter(row => row.partners >= partnerTarget)
     const fullOpponentRows = rows.filter(row => row.opponents >= opponentTarget)
 
+    const avgSkillGap = schedule.length > 0 ? totalSkillGap / schedule.length : 0
+    
+    // Sử dụng trực tiếp điểm số từ thuật toán để đảm bảo đồng bộ 100%
+    const overallScore = quality?.overallScore || 0
+
     return {
       rows,
       targetGames,
@@ -309,12 +334,18 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
       partnerPrefTotal: variant === 'fixed' ? fixedPartnerPrefTotal : partnerPrefTotal,
       opponentPrefHits,
       opponentPrefTotal,
-      avgSkillGap: schedule.length > 0 ? totalSkillGap / schedule.length : 0,
+      avgSkillGap,
       maxSkillGap,
       preferenceMisses,
-      matchQualities: matchQualities.sort((a, b) => b.skillGap - a.skillGap),
+      overallScore,
+      matchQualities: matchQualities.sort((a, b) => {
+        const [rotA, courtA] = a.key.split('-').map(Number)
+        const [rotB, courtB] = b.key.split('-').map(Number)
+        if (rotA !== rotB) return rotA - rotB
+        return courtA - courtB
+      }),
     }
-  }, [minGamesPerPlayer, mode, playerById, playerIds, playerNameById, schedule, variant])
+  }, [minGamesPerPlayer, mode, playerById, playerIds, playerNameById, schedule, variant, quality])
 
   if (schedule.length === 0 || players.length < 4) return null
 
@@ -323,18 +354,26 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
 
   return (
     <View style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.lg, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: hasWarnings ? '#F5DFA0' : '#D9E9DF' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <View>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900' }}>
-            BÁO CÁO ĐỘ PHỦ LỊCH
-          </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 2 }}>
-            Kiểm tra lịch vừa tạo trước khi bắt đầu đánh.
-          </Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ 
+            width: 48, height: 48, borderRadius: 12, 
+            backgroundColor: report.overallScore >= 80 ? '#E1F5EE' : report.overallScore >= 60 ? '#FFF4D6' : '#FEE2E2',
+            alignItems: 'center', justifyContent: 'center',
+            borderWidth: 2, borderColor: report.overallScore >= 80 ? '#0F6E56' : report.overallScore >= 60 ? '#D97706' : '#EF4444'
+          }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: report.overallScore >= 80 ? '#0F6E56' : report.overallScore >= 60 ? '#D97706' : '#B91C1C', fontWeight: '900' }}>
+              {report.overallScore}
+            </Text>
+          </View>
+          <View>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900' }}>ĐIỂM CHẤT LƯỢNG</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '700' }}>DỰA TRÊN TRÌNH ĐỘ, PREF & NGHỈ</Text>
+          </View>
         </View>
-        <View style={{ backgroundColor: hasWarnings ? '#FFF4D6' : '#E1F5EE', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 }}>
+        <View style={{ backgroundColor: hasWarnings ? '#FFF4D6' : '#E1F5EE', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: hasWarnings ? '#F5DFA0' : '#A7F3D0' }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: hasWarnings ? '#854F0B' : '#0F6E56', fontWeight: '900' }}>
-            {hasWarnings ? 'CẦN XEM' : 'ỔN'}
+            {hasWarnings ? 'CẦN TỐI ƯU THÊM' : 'LỊCH TUYỆT VỜI'}
           </Text>
         </View>
       </View>
@@ -347,6 +386,14 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
           { label: 'Full đối thủ', value: `${report.fullOpponentCount}/${players.length}` },
           { label: 'Pref partner', value: report.partnerPrefTotal ? `${report.partnerPrefHits}/${report.partnerPrefTotal}` : '-' },
           { label: 'Pref đối thủ', value: report.opponentPrefTotal ? `${report.opponentPrefHits}/${report.opponentPrefTotal}` : '-' },
+          { 
+            label: '% HL PARTNER', 
+            value: report.partnerPrefTotal > 0 ? `${Math.round((report.partnerPrefHits / report.partnerPrefTotal) * 100)}%` : '100%'
+          },
+          { 
+            label: '% HL ĐỐI THỦ', 
+            value: report.opponentPrefTotal > 0 ? `${Math.round((report.opponentPrefHits / report.opponentPrefTotal) * 100)}%` : '100%'
+          },
           { label: 'Lệch trình TB', value: report.avgSkillGap.toFixed(2) },
           { label: 'Lệch max', value: report.maxSkillGap.toFixed(2) },
         ].map(item => (
@@ -357,11 +404,6 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
         ))}
       </View>
 
-      {report.underTarget.length > 0 && (
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#854F0B', lineHeight: 15, marginBottom: 8 }}>
-          Chưa đủ mục tiêu {report.targetGames} trận: {report.underTarget.map(row => `${row.name} (${row.games})`).join(', ')}
-        </Text>
-      )}
 
       {quality?.timedOut && (
         <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#854F0B', lineHeight: 15, marginBottom: 8 }}>
@@ -374,7 +416,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900', marginBottom: 8 }}>
             CHẤT LƯỢNG TRẬN ĐẤU
           </Text>
-          {report.matchQualities.slice(0, expanded ? report.matchQualities.length : 4).map(match => {
+          {report.matchQualities.map(match => {
             const gapColor = match.skillGap <= 0.5 ? '#0F6E56' : match.skillGap <= 1.2 ? '#854F0B' : '#993C1D'
             return (
               <View key={match.key} style={{ borderTopWidth: 1, borderTopColor: '#F1EFE8', paddingTop: 8, marginTop: 8 }}>
@@ -434,11 +476,14 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
               </Text>
             </View>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 5 }}>
-              Partner {row.partners}/{report.partnerTarget} | Đối thủ {row.opponents}/{report.opponentTarget}
+              Partner {row.partners}/{report.partnerTarget} | Đối thủ {row.opponents}/{report.opponentTarget} | Nghỉ TB: {row.avgRest} {row.consecutive > 0 ? `(!${row.consecutive} liên tục)` : ''}
+            </Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#0F6E56', marginTop: 4, fontWeight: '700' }}>
+              VÒNG: {row.rotations.join(', ')}
             </Text>
             {(row.missingPartners.length > 0 || row.missingOpponents.length > 0) && (
               <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#9C968A', lineHeight: 14, marginTop: 4 }} numberOfLines={expanded ? undefined : 2}>
-                Thiếu partner: {row.missingPartners.length ? row.missingPartners.join(', ') : 'không'} | Thiếu đối thủ: {row.missingOpponents.length ? row.missingOpponents.join(', ') : 'không'}
+                Thiếu: {row.missingPartners.length ? `P(${row.missingPartners.length})` : ''} {row.missingOpponents.length ? `O(${row.missingOpponents.length})` : ''}
               </Text>
             )}
           </View>

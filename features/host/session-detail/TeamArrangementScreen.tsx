@@ -10,6 +10,7 @@ import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { arrangeFixedTeams } from '@/lib/scheduler/fixedTeamPairing'
 import { buildFixedTeamScheduleDraft, type FixedTeamScheduledMatch } from '@/lib/scheduler/fixedTeamSchedule'
 import { getTeamSkill, hasCompleteFixedPair, type FixedTeamOptimizationProfile } from '@/lib/scheduler/scoring'
+import { optimizeSocialPlan } from '@/lib/scheduler/socialOptimizer'
 import { ScheduleCoverageReport } from './ScheduleCoverageReport'
 
 type Props = {
@@ -24,6 +25,8 @@ type Props = {
     matches: FixedTeamScheduledMatch[]
     players: ArrangementPlayer[]
     quality: { runtimeMs: number, timedOut: boolean, fallbackUsed: boolean }
+    mode: 'full' | 'limited'
+    minGames: number
   }) => void
   isAfterEnd?: boolean
 }
@@ -38,7 +41,10 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null)
   const [hasOngoingMatches, setHasOngoingMatches] = useState(false)
   const [checkingMatches, setCheckingMatches] = useState(false)
-  const [optimizationProfile, setOptimizationProfile] = useState<FixedTeamOptimizationProfile>('balanced')
+  const [optimizationProfile, setOptimizationProfile] = useState<FixedTeamOptimizationProfile | 'social'>('balanced')
+  const [targetGamesPerTeam, setTargetGamesPerTeam] = useState(4)
+  const [tempCourtCount, setTempCourtCount] = useState(courtCount)
+  const [showDetailedSchedule, setShowDetailedSchedule] = useState(false)
 
   // Sync state when players change or mount
   React.useEffect(() => {
@@ -70,7 +76,27 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
 
   const hasFixedPairs = () => hasCompleteFixedPair(arrangedPlayers)
   const draftSchedule = React.useMemo(
-    () => buildFixedTeamScheduleDraft(arrangedPlayers, courtCount, optimizationProfile),
+    () => {
+      if (optimizationProfile === 'social') {
+        const result = optimizeSocialPlan(arrangedPlayers, {
+          targetGamesPerTeam,
+          courtCount: tempCourtCount,
+          iterations: 20000
+        })
+        return {
+          matches: result.matches,
+          players: result.players,
+          quality: {
+            runtimeMs: result.quality.runtimeMs,
+            timedOut: false,
+            fallbackUsed: false,
+            pairingScore: result.quality.score,
+            overallScore: result.quality.overallScore
+          }
+        }
+      }
+      return buildFixedTeamScheduleDraft(arrangedPlayers, courtCount, optimizationProfile as FixedTeamOptimizationProfile)
+    },
     [arrangedPlayers, courtCount, optimizationProfile]
   )
 
@@ -79,10 +105,15 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
     setArrangedPlayers(arrangeFixedTeams(arrangedPlayers, targetNumTeams, { profile: optimizationProfile, preserveExistingPairs: false }))
   }
 
-  const handleOptimizationProfileChange = (profile: FixedTeamOptimizationProfile) => {
+  const handleOptimizationProfileChange = (profile: FixedTeamOptimizationProfile | 'social') => {
     setOptimizationProfile(profile)
     if (isAfterEnd) return
-    setArrangedPlayers(current => arrangeFixedTeams(current, targetNumTeams, { profile, preserveExistingPairs: false }))
+    if (profile !== 'social') {
+      setArrangedPlayers(current => arrangeFixedTeams(current, targetNumTeams, { profile: profile as FixedTeamOptimizationProfile, preserveExistingPairs: false }))
+    } else {
+      // Social mode will auto-optimize in useMemo, but we can trigger a re-pairing here if needed
+      setArrangedPlayers(current => arrangeFixedTeams(current, targetNumTeams, { profile: 'balanced', preserveExistingPairs: false }))
+    }
   }
 
   const handleTeamCountChange = (teamCount: number) => {
@@ -92,6 +123,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
   }
 
   const totalPlayers = arrangedPlayers.length
+  const displayPlayers = optimizationProfile === 'social' ? draftSchedule.players : arrangedPlayers
 
   const handleSave = async () => {
     if (isAfterEnd) return
@@ -122,8 +154,8 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
 
     setSubmitting(true)
     try {
-      // Only send players who are assigned to a team (team > 0)
-      const assignments = arrangedPlayers
+      const playersToSave = optimizationProfile === 'social' ? draftSchedule.players : arrangedPlayers
+      const assignments = playersToSave
         .filter(p => p.team > 0)
         .map(p => ({
           player_id: p.id,
@@ -173,7 +205,8 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
 
     setSubmitting(true)
     try {
-      const assignments = arrangedPlayers
+      const playersToSave = optimizationProfile === 'social' ? draftSchedule.players : arrangedPlayers
+      const assignments = playersToSave
         .filter(p => p.team > 0)
         .map(p => ({
           player_id: p.id,
@@ -195,6 +228,8 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
           timedOut: draftSchedule.quality.timedOut,
           fallbackUsed: draftSchedule.quality.fallbackUsed,
         },
+        mode: optimizationProfile === 'social' ? 'limited' : 'full',
+        minGames: optimizationProfile === 'social' ? targetGamesPerTeam : 1,
       })
       onUpdated()
       onClose()
@@ -210,7 +245,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
     }
   }
 
-  const getTeamPlayers = (t: number) => arrangedPlayers.filter(p => p.team === t)
+  const getTeamPlayers = (t: number) => displayPlayers.filter(p => p.team === t)
   
   const AVATAR_COLORS = [
     { bg: '#EDE4FE', text: '#5B2D9E' },
@@ -231,7 +266,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
   }
 
   const isWeb = Platform.OS === 'web'
-  const totalSkill = arrangedPlayers.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
+  const totalSkill = displayPlayers.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
   const targetBalance = targetNumTeams > 0 ? totalSkill / targetNumTeams : 0
   const maxSkill = 12.0
 
@@ -307,14 +342,14 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
             <View style={{ flexDirection: 'row', gap: 8 }}>
               {[
                 { key: 'balanced', label: 'Cân bằng', hint: 'Pref + trình' },
-                { key: 'preference', label: 'Preference', hint: 'Ưu tiên mong muốn' },
                 { key: 'skill', label: 'Cân trình', hint: 'Ít lệch điểm' },
+                { key: 'social', label: 'Tối ưu Social', hint: 'Ghép & Xếp linh hoạt' },
               ].map(option => {
                 const selected = optimizationProfile === option.key
                 return (
                   <TouchableOpacity
                     key={option.key}
-                    onPress={() => handleOptimizationProfileChange(option.key as FixedTeamOptimizationProfile)}
+                    onPress={() => handleOptimizationProfileChange(option.key as any)}
                     activeOpacity={0.85}
                     style={{
                       flex: 1,
@@ -337,6 +372,95 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
               })}
             </View>
           </View>
+
+          {optimizationProfile === 'social' && (
+            <View style={{ marginBottom: 24, backgroundColor: '#F0FDF4', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#DCFCE7' }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#166534', marginBottom: 8 }}>
+                MỤC TIÊU SỐ TRẬN MỖI ĐỘI
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+                {[3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+                  <TouchableOpacity
+                    key={n}
+                    onPress={() => setTargetGamesPerTeam(n)}
+                    style={{
+                      width: 40, height: 40, borderRadius: 20,
+                      backgroundColor: targetGamesPerTeam === n ? '#166534' : 'white',
+                      alignItems: 'center', justifyContent: 'center',
+                      borderWidth: 1, borderColor: '#166534'
+                    }}
+                  >
+                    <Text style={{ color: targetGamesPerTeam === n ? 'white' : '#166534', fontWeight: '700' }}>{n}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#166534', marginTop: 8, fontStyle: 'italic' }}>
+                * Hệ thống sẽ tự động ghép cặp và tạo lịch để mỗi người đánh khoảng {targetGamesPerTeam} trận với đối thủ cân sức nhất.
+              </Text>
+
+                <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#DCFCE7' }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#166534', marginBottom: 8 }}>
+                    SỐ SÂN SỬ DỤNG ĐỂ TEST LỊCH
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+                    {Array.from({ length: Math.max(4, Math.floor(players.length / 4)) }, (_, i) => i + 1).map(n => (
+                      <TouchableOpacity
+                        key={n}
+                        onPress={() => setTempCourtCount(n)}
+                        style={{
+                          width: 36, height: 36, borderRadius: 18,
+                          marginBottom: 5,
+                          backgroundColor: tempCourtCount === n ? '#166534' : 'white',
+                          alignItems: 'center', justifyContent: 'center',
+                          borderWidth: 1, borderColor: '#166534'
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, color: tempCourtCount === n ? 'white' : '#166534', fontWeight: '700' }}>{n}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      const result = optimizeSocialPlan(arrangedPlayers, {
+                        targetGamesPerTeam,
+                        courtCount: tempCourtCount,
+                        iterations: 20000
+                      })
+                      setArrangedPlayers([...result.players])
+                    }}
+                    style={{
+                      backgroundColor: '#166534',
+                      paddingVertical: 12,
+                      borderRadius: 12,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexDirection: 'row',
+                      gap: 10,
+                      ...LAYOUT_SHADOW.sm
+                    }}
+                  >
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: 'white', fontWeight: '900' }}>
+                      CÂN BẰNG LẠI
+                    </Text>
+                    {draftSchedule && draftSchedule.quality && (
+                      <View style={{ 
+                        backgroundColor: 'rgba(255,255,255,0.25)', 
+                        paddingHorizontal: 8, 
+                        paddingVertical: 2, 
+                        borderRadius: 6,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.3)'
+                      }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: 'white', fontWeight: '900' }}>
+                          {draftSchedule.quality.overallScore || 0}
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
 
           {/* Action Buttons */}
           <View style={{ flexDirection: 'row', marginBottom: 24 }}>
@@ -505,7 +629,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
           {/* Distribution Detail */}
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#7A8884', marginBottom: 12, letterSpacing: 0.5 }}>PHÂN BỔ CHI TIẾT</Text>
           <View style={{ marginBottom: 30 }}>
-            {[...arrangedPlayers].sort((a, b) => a.team - b.team).map((player, pIdx) => {
+            {[...displayPlayers].sort((a, b) => a.team - b.team).map((player, pIdx) => {
               const avatar = getAvatarColor(player.name || '')
               const initials = getInitialsLocal(player.name || 'N')
               const isFemale = String(player.gender || '').toLowerCase() === 'female' || String(player.gender || '').toLowerCase() === 'nữ'
@@ -619,42 +743,62 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
           {/* Live schedule draft */}
           {draftSchedule.matches.length > 0 && (
             <View style={{ marginBottom: 24 }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#7A8884', marginBottom: 12, letterSpacing: 0.5 }}>
-                LỊCH NHÁP TỪ CÁC CẶP
-              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#7A8884', letterSpacing: 0.5 }}>
+                  LỊCH NHÁP TỪ CÁC CẶP
+                </Text>
+                <TouchableOpacity 
+                  onPress={() => setShowDetailedSchedule(!showDetailedSchedule)}
+                  style={{ backgroundColor: '#E1F5EE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}
+                >
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#0F6E56', fontWeight: '800' }}>
+                    {showDetailedSchedule ? 'THU GỌN' : 'XEM CHI TIẾT SÂN'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               <ScheduleCoverageReport
                 players={draftSchedule.players}
                 schedule={draftSchedule.matches}
-                mode="full"
-                minGamesPerPlayer={1}
+                mode={optimizationProfile === 'social' ? 'limited' : 'full'}
+                minGamesPerPlayer={optimizationProfile === 'social' ? targetGamesPerTeam : 1}
                 variant="fixed"
                 quality={draftSchedule.quality}
               />
-              <View style={{ backgroundColor: '#F9F8F4', borderRadius: 12, borderWidth: 1, borderColor: '#E5E3DC', overflow: 'hidden' }}>
-                {draftSchedule.matches.slice(0, 8).map((match, idx) => {
-                  const teamAName = match.teamA.map(id => arrangedPlayers.find(p => String(p.id) === id)?.name || 'N/A').join(' / ')
-                  const teamBName = match.teamB.map(id => arrangedPlayers.find(p => String(p.id) === id)?.name || 'N/A').join(' / ')
-                  return (
-                    <View key={`${match.rotation}-${match.court}-${idx}`} style={{ padding: 10, borderTopWidth: idx === 0 ? 0 : 1, borderTopColor: '#E5E3DC' }}>
-                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800', marginBottom: 4 }}>
-                        Vòng {match.rotation} · Sân {match.court}
-                      </Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '800' }} numberOfLines={2}>
-                        Đội {match.teamANo}: {teamAName}
-                      </Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', marginVertical: 2 }}>vs</Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '800' }} numberOfLines={2}>
-                        Đội {match.teamBNo}: {teamBName}
-                      </Text>
-                    </View>
-                  )
-                })}
-                {draftSchedule.matches.length > 8 && (
-                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', padding: 10, textAlign: 'center' }}>
-                    Còn {draftSchedule.matches.length - 8} trận sẽ hiển thị ở màn quản lý trận sau khi áp dụng.
-                  </Text>
-                )}
-              </View>
+
+              {showDetailedSchedule && (
+                <View style={{ backgroundColor: '#F9F8F4', borderRadius: 12, borderWidth: 1, borderColor: '#E5E3DC', overflow: 'hidden', marginTop: 12 }}>
+                  {(() => {
+                    const rotations = Array.from(new Set(draftSchedule.matches.map(m => m.rotation))).sort((a, b) => a - b)
+                    return rotations.map(r => {
+                      const matchesInR = draftSchedule.matches.filter(m => m.rotation === r).sort((a, b) => a.court - b.court)
+                      return (
+                        <View key={`rot-${r}`} style={{ borderBottomWidth: 1, borderBottomColor: '#E5E3DC', padding: 12 }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900', marginBottom: 8 }}>
+                            VÒNG {r}
+                          </Text>
+                          <View style={{ gap: 8 }}>
+                            {matchesInR.map((match, mIdx) => {
+                              const teamAName = match.teamA.map(id => displayPlayers.find(p => String(p.id) === id)?.name || 'N/A').join(' / ')
+                              const teamBName = match.teamB.map(id => displayPlayers.find(p => String(p.id) === id)?.name || 'N/A').join(' / ')
+                              return (
+                                <View key={`match-${r}-${match.court}-${mIdx}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                  <View style={{ width: 45, backgroundColor: '#E1F5EE', borderRadius: 4, paddingVertical: 4, alignItems: 'center' }}>
+                                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#0F6E56', fontWeight: '800' }}>SÂN {match.court}</Text>
+                                  </View>
+                                  <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#1A2E2A', fontWeight: '700' }} numberOfLines={1}>
+                                    Đ{match.teamANo}: {teamAName} vs Đ{match.teamBNo}: {teamBName}
+                                  </Text>
+                                </View>
+                              )
+                            })}
+                          </View>
+                        </View>
+                      )
+                    })
+                  })()}
+                </View>
+              )}
             </View>
           )}
 

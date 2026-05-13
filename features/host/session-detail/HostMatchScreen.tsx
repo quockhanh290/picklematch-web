@@ -1,4 +1,4 @@
-﻿import { BrandedFooter } from '@/components/design/BrandedFooter'
+import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { SHADOW as LAYOUT_SHADOW, RADIUS } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import type { SessionMatch } from '@/hooks/useSessionDetail'
@@ -57,6 +57,8 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   const [editingPendingIndex, setEditingPendingIndex] = useState<number | null>(null)
   const [showAllProgress, setShowAllProgress] = useState(false)
   const [showRotationTable, setShowRotationTable] = useState(false)
+  const [appliedScheduleMode, setAppliedScheduleMode] = useState<'full' | 'limited'>('full')
+  const [appliedMinGames, setAppliedMinGames] = useState(1)
   const [showScheduleDiagnostics, setShowScheduleDiagnostics] = useState(false)
   const [showScheduleSetupPage, setShowScheduleSetupPage] = useState(false)
   const [showInlineTeamArrangement, setShowInlineTeamArrangement] = useState(false)
@@ -541,9 +543,10 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   const getPlayerNames = (teamNo: number) => teamGroups[String(teamNo)]?.map(p => p.name).join(' - ') || `Đội ${teamNo}`
 
   const handleApplyFixedDraftSchedule = (payload: {
-    matches: FixedTeamScheduledMatch[]
     players: ArrangementPlayer[]
     quality: { runtimeMs: number, timedOut: boolean, fallbackUsed: boolean }
+    mode: 'full' | 'limited'
+    minGames: number
   }) => {
     const schedule: PendingMatch[] = payload.matches.map(match => ({
       teamA: match.teamA,
@@ -559,6 +562,8 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     setFullRotationSchedule(schedule)
     setSittingOutPlayers([])
     setScheduleQuality(payload.quality)
+    setAppliedScheduleMode(payload.mode)
+    setAppliedMinGames(payload.minGames)
     setShowRotationTable(true)
     setShowInlineTeamArrangement(false)
   }
@@ -837,8 +842,8 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
         <ScheduleCoverageReport
           players={scheduledPlayers.length > 0 ? scheduledPlayers : activePlayers}
           schedule={pendingMixInMatches.length > 0 ? pendingMixInMatches : fullRotationSchedule}
-          mode={scheduleMode}
-          minGamesPerPlayer={minGamesPerPlayer}
+          mode={appliedScheduleMode}
+          minGamesPerPlayer={appliedMinGames}
           quality={scheduleQuality}
           variant={isMixInMode ? 'mix-in' : 'fixed'}
         />
