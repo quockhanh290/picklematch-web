@@ -49,6 +49,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
   const [socialSubMode, setSocialSubMode] = useState<'fixed' | 'rotation'>('fixed')
   const [previewExpanded, setPreviewExpanded] = useState(true)
   const [distributionExpanded, setDistributionExpanded] = useState(true)
+  const [rebalanceTick, setRebalanceTick] = useState(0)
 
   // Sync state when players change or mount
   React.useEffect(() => {
@@ -114,7 +115,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
       }
       return buildFixedTeamScheduleDraft(arrangedPlayers, courtCount, optimizationProfile as FixedTeamOptimizationProfile)
     },
-    [arrangedPlayers, courtCount, optimizationProfile, socialSubMode, targetGamesPerTeam, tempCourtCount]
+    [arrangedPlayers, courtCount, optimizationProfile, rebalanceTick, socialSubMode, targetGamesPerTeam, tempCourtCount]
   )
 
   const autoBalanceTeams = () => {
@@ -519,23 +520,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                   </View>
 
                   <TouchableOpacity
-                    onPress={() => {
-                      if (socialSubMode === 'rotation') {
-                        const result = optimizeRotationPlan(arrangedPlayers, {
-                          targetGamesPerPlayer: targetGamesPerTeam,
-                          courtCount: tempCourtCount,
-                          iterations: 20000
-                        })
-                        setArrangedPlayers([...result.players])
-                      } else {
-                        const result = optimizeSocialPlan(arrangedPlayers, {
-                          targetGamesPerTeam,
-                          courtCount: tempCourtCount,
-                          iterations: 20000
-                        })
-                        setArrangedPlayers([...result.players])
-                      }
-                    }}
+                    onPress={() => setRebalanceTick(prev => prev + 1)}
                     style={{
                       backgroundColor: '#166534',
                       paddingVertical: 12,

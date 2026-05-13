@@ -29,16 +29,23 @@ type PlayerCoverage = {
   minRest?: number | null
   consecutive?: number
   rotations?: number[]
+  preferenceHits: number
+  preferenceTotal: number
+  preferenceSatisfaction: string
+  preferenceMisses: PreferenceMiss[]
   missingPartners: string[]
   missingOpponents: string[]
 }
 
 type PreferenceMiss = {
   key: string
+  playerId: string
   playerName: string
   type: 'partner' | 'opponent'
   preferred: string
   actual: string
+  rotation: number
+  court?: number
 }
 
 type MatchQuality = {
@@ -103,8 +110,16 @@ function formatPlayerList(players: (ArrangementPlayer | undefined)[]) {
   return players.map(player => player?.name || 'N/A').join(' / ')
 }
 
+function formatPlayerListWithGender(players: (ArrangementPlayer | undefined)[]) {
+  return players.map(player => {
+    if (!player) return 'N/A'
+    return `${player.name} - ${formatPrefLabel(normalizeGender(player.gender))}`
+  }).join(' / ')
+}
+
 export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPlayer, variant = 'mix-in', quality }: Props) {
   const [expanded, setExpanded] = useState(false)
+  const [expandedPreferenceRows, setExpandedPreferenceRows] = useState<Set<string>>(() => new Set())
   const playerIds = useMemo(() => players.map(p => String(p.id)), [players])
   const playerNameById = useMemo(() => {
     const map = new Map<string, string>()
@@ -124,6 +139,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
     const playerRotations = new Map<string, number[]>(playerIds.map(id => [id, []]))
     const partnerByPlayer = new Map<string, Set<string>>(playerIds.map(id => [id, new Set<string>()]))
     const opponentByPlayer = new Map<string, Set<string>>(playerIds.map(id => [id, new Set<string>()]))
+    const playerPreferenceStats = new Map<string, { hits: number; total: number }>(playerIds.map(id => [id, { hits: 0, total: 0 }]))
 
     let partnerPrefHits = 0
     let partnerPrefTotal = 0
@@ -185,34 +201,48 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
         if (player?.metadata?.partner_gender_pref && player.metadata.partner_gender_pref !== 'any') {
           partnerPrefTotal++
           matchPartnerPrefTotal++
+          const stats = playerPreferenceStats.get(id) || { hits: 0, total: 0 }
+          stats.total++
           if (partners.some(partner => matchesGenderPref(partner, player.metadata.partner_gender_pref))) {
             partnerPrefHits++
             matchPartnerPrefHits++
+            stats.hits++
           } else {
             preferenceMisses.push({
               key: `${matchIndex}-${id}-${playerIndex}-partner`,
+              playerId: id,
               playerName: player.name,
               type: 'partner',
               preferred: formatPrefLabel(player.metadata.partner_gender_pref),
-              actual: formatPlayerList(partners),
+              actual: formatPlayerListWithGender(partners),
+              rotation: match.rotation || matchIndex + 1,
+              court: match.court,
             })
           }
+          playerPreferenceStats.set(id, stats)
         }
         if (player?.metadata?.opponent_gender_pref && player.metadata.opponent_gender_pref !== 'any') {
           opponentPrefTotal++
           matchOpponentPrefTotal++
+          const stats = playerPreferenceStats.get(id) || { hits: 0, total: 0 }
+          stats.total++
           if (opponents.some(opponent => matchesGenderPref(opponent, player.metadata.opponent_gender_pref))) {
             opponentPrefHits++
             matchOpponentPrefHits++
+            stats.hits++
           } else {
             preferenceMisses.push({
               key: `${matchIndex}-${id}-${playerIndex}-opponent`,
+              playerId: id,
               playerName: player.name,
               type: 'opponent',
               preferred: formatPrefLabel(player.metadata.opponent_gender_pref),
-              actual: formatPlayerList(opponents),
+              actual: formatPlayerListWithGender(opponents),
+              rotation: match.rotation || matchIndex + 1,
+              court: match.court,
             })
           }
+          playerPreferenceStats.set(id, stats)
         }
       })
 
@@ -246,6 +276,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
       const otherIds = playerIds.filter(otherId => otherId !== id)
       const partnerSet = partnerByPlayer.get(id) || new Set<string>()
       const opponentSet = opponentByPlayer.get(id) || new Set<string>()
+      const preferenceStats = playerPreferenceStats.get(id) || { hits: 0, total: 0 }
 
       const opponentPool = variant === 'fixed'
         ? otherIds.filter(otherId => !partnerSet.has(otherId))
@@ -278,6 +309,10 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
           return count
         })(),
         rotations: (playerRotations.get(id) || []).sort((a, b) => a - b),
+        preferenceHits: preferenceStats.hits,
+        preferenceTotal: preferenceStats.total,
+        preferenceSatisfaction: preferenceStats.total > 0 ? `${Math.round((preferenceStats.hits / preferenceStats.total) * 100)}%` : '-',
+        preferenceMisses: preferenceMisses.filter(item => item.playerId === id),
         missingPartners: variant === 'fixed'
           ? (partnerSet.size > 0 ? [] : ['Chưa có partner'])
           : otherIds.filter(otherId => !partnerSet.has(otherId)).map(otherId => playerNameById.get(otherId) || 'Player'),
@@ -319,6 +354,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
         ? Math.min(minGamesPerPlayer, Math.max(1, playerIds.length - 1))
         : Math.max(1, playerIds.length - 1)
     const uniqueTargetGames = Math.max(1, minGamesPerPlayer)
+    const uniqueOpponentTargetGames = uniqueTargetGames * 2
     const partnerTarget = variant === 'fixed' ? 1 : Math.max(1, playerIds.length - 1)
     const opponentTarget = variant === 'fixed' ? Math.max(1, playerIds.length - 2) : Math.max(1, playerIds.length - 1)
     const underTarget = rows.filter(row => row.games < targetGames)
@@ -338,6 +374,11 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
     const minRestAcrossPlayers = minRestValues.length ? Math.min(...minRestValues).toString() : '-'
 
     const avgSkillGap = schedule.length > 0 ? totalSkillGap / schedule.length : 0
+    const playersWithPreference = rows.filter(row => row.preferenceTotal > 0)
+    const preferencePlayerTargetPercent = playersWithPreference.length
+      ? `${Math.round((playersWithPreference.filter(row => row.preferenceHits / row.preferenceTotal >= 0.75).length / playersWithPreference.length) * 100)}%`
+      : '-'
+    const heavySkillGapCount = matchQualities.filter(match => match.skillGap > 0.5).length
     
     // Sử dụng trực tiếp điểm số từ thuật toán để đảm bảo đồng bộ 100%
     const overallScore = quality?.overallScore || 0
@@ -346,6 +387,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
       rows,
       targetGames,
       uniqueTargetGames,
+      uniqueOpponentTargetGames,
       underTarget,
       repeatedPartners: repeatedPartners.sort((a, b) => b.count - a.count || a.names.localeCompare(b.names)),
       repeatedOpponents: repeatedOpponents.sort((a, b) => b.count - a.count || a.names.localeCompare(b.names)),
@@ -367,6 +409,8 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
       opponentPrefTotal,
       avgSkillGap,
       maxSkillGap,
+      preferencePlayerTargetPercent,
+      heavySkillGapCount,
       preferenceMisses,
       overallScore,
       matchQualities: matchQualities.sort((a, b) => {
@@ -425,7 +469,7 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
           { label: 'Trận', value: `${schedule.length}` },
           { label: 'Game/ng', value: `${report.minGames}-${report.maxGames}` },
           { label: 'Unique partner/min', value: `${report.minUniquePartners}-${report.maxUniquePartners}/${report.uniqueTargetGames}` },
-          { label: 'Unique đối thủ/min', value: `${report.minUniqueOpponents}-${report.maxUniqueOpponents}/${report.uniqueTargetGames}` },
+          { label: 'Unique đối thủ/min', value: `${report.minUniqueOpponents}-${report.maxUniqueOpponents}/${report.uniqueOpponentTargetGames}` },
           { label: 'Pref partner', value: report.partnerPrefTotal ? `${report.partnerPrefHits}/${report.partnerPrefTotal}` : '-' },
           { label: 'Pref đối thủ', value: report.opponentPrefTotal ? `${report.opponentPrefHits}/${report.opponentPrefTotal}` : '-' },
           { label: 'Nghỉ TB', value: report.avgRestAcrossPlayers },
@@ -440,6 +484,8 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
           },
           { label: 'Lệch trình TB', value: report.avgSkillGap.toFixed(2) },
           { label: 'Lệch max', value: report.maxSkillGap.toFixed(2) },
+          { label: 'Player pref >=75%', value: report.preferencePlayerTargetPercent },
+          { label: 'Trận lệch nặng', value: report.heavySkillGapCount },
         ].map(item => (
           <View key={item.label} style={{ backgroundColor: 'white', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: '#E5E3DC', width: '48.5%', minHeight: 64, marginBottom: 8 }}>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800' }}>{item.label}</Text>
@@ -482,19 +528,6 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
         </View>
       )}
 
-      {report.preferenceMisses.length > 0 && (
-        <View style={{ backgroundColor: 'white', borderRadius: RADIUS.md, padding: 10, borderWidth: 1, borderColor: '#F5DFA0', marginBottom: 10 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#854F0B', fontWeight: '900', marginBottom: 6 }}>
-            PREFERENCE CHƯA ĐÁP ỨNG
-          </Text>
-          {report.preferenceMisses.slice(0, expanded ? report.preferenceMisses.length : 5).map(item => (
-            <Text key={item.key} style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#854F0B', lineHeight: 15 }}>
-              {item.playerName}: muốn {item.type === 'partner' ? 'partner' : 'đối thủ'} {item.preferred}, hiện là {item.actual || 'không có'}
-            </Text>
-          ))}
-        </View>
-      )}
-
       {(report.repeatedPartners.length > 0 || report.repeatedOpponents.length > 0) && (
         <View style={{ backgroundColor: 'white', borderRadius: RADIUS.md, padding: 10, borderWidth: 1, borderColor: '#F5DFA0', marginBottom: 10 }}>
           {report.repeatedPartners.length > 0 && (
@@ -510,28 +543,138 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
         </View>
       )}
 
-      <View style={{ gap: 8 }}>
-        {visibleRows.map(row => (
-          <View key={row.id} style={{ backgroundColor: 'white', borderRadius: RADIUS.md, padding: 10, borderWidth: 1, borderColor: '#E8E2D6' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '900' }}>{row.name}</Text>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: row.games >= report.targetGames ? '#0F6E56' : '#854F0B', fontWeight: '900' }}>
-                {row.games}/{report.targetGames} trận
-              </Text>
+      <View style={{ gap: 10 }}>
+        {visibleRows.map(row => {
+          const playerGameTarget = report.uniqueTargetGames
+          const hasEnoughGames = row.games >= playerGameTarget
+          const initials = row.name.split(' ').filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase() || '?'
+          const preferenceExpanded = expandedPreferenceRows.has(row.id)
+          const player = playerById.get(row.id)
+          const partnerPref = player?.metadata?.partner_gender_pref
+          const opponentPref = player?.metadata?.opponent_gender_pref
+          const playerMetrics = [
+            { label: 'Trận', value: `${row.games}/${playerGameTarget}`, color: hasEnoughGames ? '#0F6E56' : '#D69A2D' },
+            { label: 'Unique partner/min', value: `${row.partners}/${report.uniqueTargetGames}`, color: '#2563EB' },
+            { label: 'Unique đối thủ/min', value: `${row.opponents}/${report.uniqueOpponentTargetGames}`, color: '#7C3AED' },
+            { label: '% hài lòng pref', value: row.preferenceSatisfaction, color: row.preferenceTotal === 0 || row.preferenceHits / row.preferenceTotal >= 0.75 ? '#0F6E56' : '#D69A2D' },
+            { label: 'Nghỉ TB', value: row.avgRest ?? '-', color: '#596864' },
+            { label: 'Min nghỉ', value: row.minRest == null ? '-' : String(row.minRest), color: '#596864' },
+          ]
+
+          return (
+            <View key={row.id} style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.lg, padding: 12, borderWidth: 1, borderColor: hasEnoughGames ? '#BFE3D6' : '#F5DFA0', overflow: 'hidden' }}>
+            <View style={{ position: 'absolute', width: 72, height: 72, borderRadius: 36, backgroundColor: '#F8E8C8', opacity: 0.55, right: -26, top: -30 }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 }}>
+                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: '#12352F', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#FFF5DE', fontWeight: '900' }}>{initials}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900' }}>{row.name}</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 5, maxWidth: 150 }}>
+                {partnerPref && partnerPref !== 'any' && (
+                  <View style={{ backgroundColor: '#E9F0FF', borderRadius: 999, paddingVertical: 5, paddingHorizontal: 8, borderWidth: 1, borderColor: '#BFD0FF' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#243B88', fontWeight: '900' }}>
+                      Partner {formatPrefLabel(partnerPref)}
+                    </Text>
+                  </View>
+                )}
+                {opponentPref && opponentPref !== 'any' && (
+                  <View style={{ backgroundColor: '#F4E9FF', borderRadius: 999, paddingVertical: 5, paddingHorizontal: 8, borderWidth: 1, borderColor: '#D8B4FE' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#6D28D9', fontWeight: '900' }}>
+                      Đối thủ {formatPrefLabel(opponentPref)}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 5 }}>
-              Partner {row.partners}/{report.partnerTarget} | Đối thủ {row.opponents}/{report.opponentTarget} | Nghỉ TB: {row.avgRest} {row.consecutive > 0 ? `(!${row.consecutive} liên tục)` : ''}
-            </Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#0F6E56', marginTop: 4, fontWeight: '700' }}>
-              VÒNG: {row.rotations.join(', ')}
-            </Text>
-            {(row.missingPartners.length > 0 || row.missingOpponents.length > 0) && (
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#9C968A', lineHeight: 14, marginTop: 4 }} numberOfLines={expanded ? undefined : 2}>
-                Thiếu: {row.missingPartners.length ? `P(${row.missingPartners.length})` : ''} {row.missingOpponents.length ? `O(${row.missingOpponents.length})` : ''}
-              </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+              {playerMetrics.map(metric => (
+                <View key={metric.label} style={{ width: '31.5%', minWidth: 92, backgroundColor: '#F8F3E8', borderRadius: RADIUS.md, padding: 9, borderWidth: 1, borderColor: '#EFE3CC' }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#8A8174', fontWeight: '800', textTransform: 'uppercase' }}>
+                    {metric.label}
+                  </Text>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: metric.color, fontWeight: '900', marginTop: 3 }}>
+                    {metric.value}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {row.consecutive > 0 && (
+              <View style={{ marginTop: 9, backgroundColor: '#FFF2D6', borderRadius: RADIUS.md, paddingVertical: 6, paddingHorizontal: 8, borderWidth: 1, borderColor: '#F2D28A' }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#854F0B', fontWeight: '800' }}>
+                  Nghỉ 0 vòng: {row.consecutive}
+                </Text>
+              </View>
             )}
+
+            <View style={{ marginTop: 9, backgroundColor: '#F4F7FF', borderRadius: RADIUS.md, paddingVertical: 8, paddingHorizontal: 9, borderWidth: 1, borderColor: '#D8E2FF' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#3150A8', fontWeight: '900', textTransform: 'uppercase' }}>
+                  Vòng chơi
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, flex: 1, justifyContent: 'flex-end' }}>
+                {row.rotations.slice(0, 8).map(rotation => (
+                  <View key={rotation} style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#E9F0FF', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#BFD0FF' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#243B88', fontWeight: '900' }}>
+                      {rotation}
+                    </Text>
+                  </View>
+                ))}
+                {row.rotations.length > 8 && (
+                  <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#F3EEE3', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E6D8BE' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 9, color: '#7A746A', fontWeight: '900' }}>
+                      +{row.rotations.length - 8}
+                    </Text>
+                  </View>
+                )}
+                </View>
+              </View>
+            </View>
+
+            {row.preferenceMisses.length > 0 && (
+              <View style={{ marginTop: 9, backgroundColor: '#FFF2D6', borderRadius: RADIUS.md, borderWidth: 1, borderColor: '#F2D28A', overflow: 'hidden' }}>
+                <TouchableOpacity
+                  onPress={() => setExpandedPreferenceRows(prev => {
+                    const next = new Set(prev)
+                    if (next.has(row.id)) next.delete(row.id)
+                    else next.add(row.id)
+                    return next
+                  })}
+                  style={{ paddingVertical: 8, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#854F0B', fontWeight: '900' }}>
+                      Preference chưa đáp ứng
+                    </Text>
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#9A6A19', marginTop: 2 }}>
+                      {row.preferenceMisses.length} mục cần xem chi tiết
+                    </Text>
+                  </View>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#854F0B', fontWeight: '900' }}>
+                    {preferenceExpanded ? 'Thu' : 'Mở'}
+                  </Text>
+                </TouchableOpacity>
+                {preferenceExpanded && (
+                  <View style={{ borderTopWidth: 1, borderTopColor: '#F2D28A', paddingVertical: 7, paddingHorizontal: 9, gap: 6 }}>
+                    {row.preferenceMisses.map(item => (
+                      <View key={item.key} style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.sm, paddingVertical: 6, paddingHorizontal: 7, borderWidth: 1, borderColor: '#F5DFA0' }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#854F0B', lineHeight: 14 }} numberOfLines={1}>
+                          V{item.rotation}{item.court ? ` S${item.court}` : ''}: muốn {item.type === 'partner' ? 'partner' : 'đối thủ'} {item.preferred} · Thực tế: {item.actual || 'không có'}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+
           </View>
-        ))}
+          )
+        })}
       </View>
 
       {report.rows.length > 5 && (

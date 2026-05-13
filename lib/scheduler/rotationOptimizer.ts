@@ -57,7 +57,12 @@ const ROTATION_SCORE_WEIGHTS = {
   planLongRest: 7,
   planSkillGapSquared: 200,
   planLargeSkillGapSquared: 2000,
+  planSkillGapOverLimit: 1_000_000,
+  planPlayerPreferenceUnderTarget: 25000,
 }
+
+const MIN_PLAYER_PREFERENCE_RATIO = 0.75
+const MAX_ROTATION_SKILL_GAP = 0.5
 
 function shuffleCopy<T>(items: T[]) {
   return [...items].sort(() => Math.random() - 0.5)
@@ -93,6 +98,33 @@ function getMatchPlayers(match: RotationScheduledMatch) {
   return [...match.teamA, ...match.teamB]
 }
 
+function scorePlayerPreferenceAttempt(
+  id: string,
+  partnerId: string,
+  opponentIds: string[],
+  playerById: Map<string, ArrangementPlayer>,
+  playerPreferenceStats: Map<string, { hits: number; total: number }>
+) {
+  const player = playerById.get(id)
+  if (!player) return
+
+  const stats = playerPreferenceStats.get(id) || { hits: 0, total: 0 }
+  const partner = playerById.get(partnerId)
+  const opponents = opponentIds.map(oppId => playerById.get(oppId)).filter(Boolean) as ArrangementPlayer[]
+
+  if (player.metadata?.partner_gender_pref && player.metadata.partner_gender_pref !== 'any') {
+    stats.total++
+    if (partner && matchesGenderPref(partner, player.metadata.partner_gender_pref)) stats.hits++
+  }
+
+  if (player.metadata?.opponent_gender_pref && player.metadata.opponent_gender_pref !== 'any') {
+    stats.total++
+    if (opponents.some(opponent => matchesGenderPref(opponent, player.metadata.opponent_gender_pref))) stats.hits++
+  }
+
+  playerPreferenceStats.set(id, stats)
+}
+
 function hasDuplicateInRotation(matches: RotationScheduledMatch[]) {
   const seenByRotation = new Map<number, Set<string>>()
   for (const match of matches) {
@@ -125,7 +157,8 @@ function chooseBestTeamSplit(
     const skillGap = Math.abs(teamASkill - teamBSkill)
 
     let score = 100
-    score -= Math.pow(skillGap, 2) * (skillGap > 0.5
+    if (skillGap > MAX_ROTATION_SKILL_GAP) score -= ROTATION_SCORE_WEIGHTS.planSkillGapOverLimit
+    score -= Math.pow(skillGap, 2) * (skillGap > MAX_ROTATION_SKILL_GAP
       ? ROTATION_SCORE_WEIGHTS.largeSkillGapSquared
       : ROTATION_SCORE_WEIGHTS.skillGapSquared)
     score -= getPairCount(partnerPairs, teamA[0], teamA[1]) * ROTATION_SCORE_WEIGHTS.partnerRepeat
@@ -256,6 +289,7 @@ function calculatePlanScore(
   const playerRotations = new Map<string, number[]>(playerIds.map(id => [id, []]))
   const partnerPairs = new Map<string, number>()
   const opponentPairs = new Map<string, number>()
+  const playerPreferenceStats = new Map<string, { hits: number; total: number }>()
   const rotationCourtCount = new Map<number, number>()
   let hardPenalty = 0
   let skillPenalty = 0
@@ -273,11 +307,16 @@ function calculatePlanScore(
     incrementPair(partnerPairs, match.teamA[0], match.teamA[1])
     incrementPair(partnerPairs, match.teamB[0], match.teamB[1])
     match.teamA.forEach(a => match.teamB.forEach(b => incrementPair(opponentPairs, a, b)))
+    scorePlayerPreferenceAttempt(match.teamA[0], match.teamA[1], match.teamB, playerById, playerPreferenceStats)
+    scorePlayerPreferenceAttempt(match.teamA[1], match.teamA[0], match.teamB, playerById, playerPreferenceStats)
+    scorePlayerPreferenceAttempt(match.teamB[0], match.teamB[1], match.teamA, playerById, playerPreferenceStats)
+    scorePlayerPreferenceAttempt(match.teamB[1], match.teamB[0], match.teamA, playerById, playerPreferenceStats)
 
     const teamASkill = match.teamA.reduce((sum, id) => sum + getPlayerSkill(playerById.get(id)!), 0)
     const teamBSkill = match.teamB.reduce((sum, id) => sum + getPlayerSkill(playerById.get(id)!), 0)
     const skillGap = Math.abs(teamASkill - teamBSkill)
-    skillPenalty += Math.pow(skillGap, 2) * (skillGap > 0.5
+    if (skillGap > MAX_ROTATION_SKILL_GAP) hardPenalty += ROTATION_SCORE_WEIGHTS.planSkillGapOverLimit
+    skillPenalty += Math.pow(skillGap, 2) * (skillGap > MAX_ROTATION_SKILL_GAP
       ? ROTATION_SCORE_WEIGHTS.planLargeSkillGapSquared
       : ROTATION_SCORE_WEIGHTS.planSkillGapSquared)
   })
@@ -314,7 +353,16 @@ function calculatePlanScore(
     }
   })
 
-  return 1000 - hardPenalty - gamePenalty - partnerPenalty - opponentPenalty - restPenalty - skillPenalty
+  let playerPreferencePenalty = 0
+  playerPreferenceStats.forEach(stats => {
+    if (stats.total === 0) return
+    const ratio = stats.hits / stats.total
+    if (ratio < MIN_PLAYER_PREFERENCE_RATIO) {
+      playerPreferencePenalty += Math.ceil((MIN_PLAYER_PREFERENCE_RATIO - ratio) * 100) * ROTATION_SCORE_WEIGHTS.planPlayerPreferenceUnderTarget
+    }
+  })
+
+  return 1000 - hardPenalty - gamePenalty - partnerPenalty - opponentPenalty - restPenalty - skillPenalty - playerPreferencePenalty
 }
 
 function calculateOverallScore(
