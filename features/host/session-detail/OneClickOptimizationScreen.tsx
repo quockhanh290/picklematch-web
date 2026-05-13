@@ -237,16 +237,16 @@ const STAT_EXPLANATIONS: Record<string, { title: string, meaning: string, calcul
   },
   'Phủ trận': {
     title: 'Điểm Phủ Số trận',
-    meaning: 'Đảm bảo mọi người chơi đều đạt được số trận mục tiêu (ví dụ: 5 trận/buổi).',
-    calculation: 'Thang điểm 100 dựa trên số lượng người đạt đủ trận.',
-    advice: 'Nếu điểm này thấp, bạn nên tăng thời lượng session hoặc giảm số người chơi.',
+    meaning: 'Đảm bảo người chơi đạt số trận mục tiêu (ví dụ: 5 trận/buổi).',
+    calculation: '100 điểm - (số người thiếu trận × 5 điểm).',
+    advice: 'Nếu thấp, hãy tăng thời lượng hoặc giảm số người chơi.',
     unit: 'điểm'
   },
   'Phủ giờ': {
     title: 'Điểm Phủ Thời gian',
-    meaning: 'Đo lường mức độ khớp giữa lịch đấu và khung giờ đã đăng ký.',
-    calculation: 'Thang điểm 100. Quy tắc: Trừ 7 điểm cho mỗi vòng lố giờ và trừ 14 điểm cho mỗi vòng thiếu giờ.',
-    advice: 'Mức phạt 7 điểm/vòng được thiết kế để linh hoạt cho phép lố nhẹ 1-2 vòng mà không làm điểm số bị giảm quá sâu.',
+    meaning: 'Đo lường mức độ khớp lịch đấu với khung giờ đăng ký.',
+    calculation: '100 điểm - (số vòng lố × 7 điểm) hoặc (số vòng thiếu × 14 điểm).',
+    advice: 'Mức phạt 7 điểm/vòng cho phép lố nhẹ 1-2 vòng để đạt đủ trận.',
     unit: 'điểm'
   },
   'Fit sân': {
@@ -257,34 +257,70 @@ const STAT_EXPLANATIONS: Record<string, { title: string, meaning: string, calcul
     unit: 'điểm'
   },
   'Nhịp nghỉ': {
-    title: 'Nhịp nghỉ Cân bằng',
-    meaning: 'Đảm bảo mọi người có thời gian nghỉ ngơi đều đặn, không ai phải đánh quá dồn dập hoặc nghỉ quá lâu.',
-    calculation: 'Thang điểm 100. Phân tích độ lệch chuẩn của số vòng nghỉ giữa các trận đấu.',
-    advice: 'Điểm cao (> 85) giúp session bền bỉ, tránh chấn thương và mệt mỏi cho thành viên.',
+    title: 'Điểm Nhịp nghỉ',
+    meaning: 'Đo lường sự công bằng trong thời gian nghỉ ngơi giữa các trận đấu.',
+    calculation: '100 điểm - (độ lệch chuẩn của thời gian nghỉ × 10).',
+    advice: 'Điểm cao đảm bảo không ai bị nghỉ quá lâu hoặc đánh quá dồn dập.',
+    unit: 'điểm'
+  },
+  'Đa dạng Bạn chơi': {
+    title: 'Độ đa dạng Bạn chơi',
+    meaning: 'Đo lường khả năng một người chơi được ghép cặp với nhiều người khác nhau trong buổi.',
+    calculation: 'Tỉ lệ giữa số bạn chơi khác nhau và tổng số trận đánh.',
+    advice: 'Lịch social nên có độ đa dạng cao để mọi người được giao lưu với nhau nhiều nhất.',
+    unit: 'điểm'
+  },
+  'Đa dạng Đối thủ': {
+    title: 'Độ đa dạng Đối thủ',
+    meaning: 'Đo lường khả năng một người chơi được gặp nhiều đối thủ khác nhau.',
+    calculation: 'Tỉ lệ giữa số đối thủ khác nhau và tổng số trận đánh.',
+    advice: 'Gặp nhiều đối thủ khác nhau giúp buổi chơi bớt nhàm chán và tăng tính giao lưu.',
+    unit: 'điểm'
+  },
+  'Hài lòng Partner': {
+    title: 'Mức độ Hài lòng Bạn chơi',
+    meaning: 'Tỉ lệ đáp ứng các yêu cầu ghép cặp (ví dụ: muốn đánh cặp với Nam/Nữ).',
+    calculation: 'Số lượt đáp ứng được sở thích / Tổng số lượt có yêu cầu.',
+    advice: 'Nếu điểm này thấp, hãy kiểm tra lại cấu trúc giới tính của session.',
+    unit: '%'
+  },
+  'Hài lòng Đối thủ': {
+    title: 'Mức độ Hài lòng Đối thủ',
+    meaning: 'Tỉ lệ đáp ứng các yêu cầu về đối thủ (ví dụ: muốn đối đầu với Nam/Nữ).',
+    calculation: 'Số lượt đáp ứng được sở thích / Tổng số lượt có yêu cầu.',
+    advice: 'Hài lòng về đối thủ giúp các trận đấu diễn ra theo đúng mong đợi của người chơi.',
+    unit: '%'
+  },
+  'Cân bằng Skill': {
+    title: 'Cân bằng Trình độ',
+    meaning: 'Đo lường độ chênh lệch trình độ (Skill Gap) giữa hai đội trong mỗi trận đấu.',
+    calculation: 'Trung bình cộng của tất cả Skill Gap trong toàn bộ lịch. Điểm 100 nếu Gap = 0.',
+    advice: 'Nên giữ chênh lệch trung bình < 0.5 để các trận đấu kịch tính và công bằng.',
     unit: 'điểm'
   },
   'B2B': {
-    title: 'Trận đấu liên tiếp (Back-to-back)',
-    meaning: 'Số lượng trường hợp một người phải đánh ngay trận sau mà không có vòng nghỉ.',
-    calculation: 'Đếm tổng số lượt thi đấu liên tiếp trong toàn bộ lịch.',
-    advice: 'App đang cố gắng tối ưu để chỉ số này thấp nhất có thể. Nếu > 0, hãy nhắc người chơi chuẩn bị thể lực tốt.',
+    title: 'Số trận đánh liên tục (Back-to-Back)',
+    meaning: 'Số lần người chơi phải đánh ngay trận sau không nghỉ.',
+    calculation: 'Đếm tổng số lượt đánh liên tiếp trong toàn bộ lịch.',
+    advice: 'Nên giữ chỉ số này thấp để tránh kiệt sức.',
     unit: 'lượt'
   },
   'Chuỗi max': {
-    title: 'Chuỗi đánh liên tục tối đa',
-    meaning: 'Số trận nhiều nhất mà một người phải đánh liên tiếp không nghỉ.',
+    title: 'Chuỗi đánh liên tục dài nhất',
+    meaning: 'Số trận tối đa mà một người phải đánh liên tiếp không nghỉ.',
     calculation: 'Tìm chuỗi trận liên tiếp dài nhất của một người chơi bất kỳ.',
-    advice: 'Lý tưởng nhất là bằng 1 hoặc 2. Nếu con số này lớn, bạn nên tăng thêm số người chơi dự bị.',
+    advice: 'Lý tưởng là 1 hoặc 2. Nếu > 3, hãy tăng người chơi dự bị.',
     unit: 'trận'
   },
   'Min nghỉ': {
-    title: 'Thời gian nghỉ tối thiểu',
-    meaning: 'Số vòng nghỉ ít nhất mà mọi người chắc chắn có được giữa 2 trận đấu.',
-    calculation: 'Tìm khoảng nghỉ ngắn nhất trong toàn bộ lịch đấu.',
-    advice: 'Lý tưởng là mọi người đều có ít nhất 1 vòng nghỉ giữa các trận để hồi phục.',
+    title: 'Khoảng nghỉ ngắn nhất',
+    meaning: 'Số vòng nghỉ ít nhất mà mọi người chắc chắn có được.',
+    calculation: 'Tìm khoảng nghỉ nhỏ nhất của tất cả người chơi.',
+    advice: 'Lý tưởng là mọi người có nhất 1 vòng nghỉ giữa các trận.',
     unit: 'vòng'
   }
 }
+
 
 export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Props) {
   const activePlayers = useMemo(
@@ -299,6 +335,7 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
   const [results, setResults] = useState<OptimizationResult[]>([])
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0)
   const [activeModal, setActiveModal] = useState<{ result: OptimizationResult, type: OptimizationModalType, statKey?: string, statValue?: string | number } | null>(null)
+  const [explanationStat, setExplanationStat] = useState<{ key: string, value: string | number, result: OptimizationResult } | null>(null)
 
   const candidateSet = useMemo(
     () => buildCandidateSet(activePlayers.length, courtLimit, durationMinutes, minutesPerRound),
@@ -521,12 +558,24 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
                         const unit = explanation?.unit || ''
                         const space = (unit && unit !== '%') ? ' ' : ''
                         const displayValue = item.value === '-' ? '-' : `${item.value}${space}${unit}`
-                        const modalType = item.label === 'Chất lượng' ? 'quality' : 'explanation'
+                        
+                        if (item.label === 'Chất lượng') {
+                          return (
+                            <TouchableOpacity
+                              key={item.label}
+                              onPress={() => setActiveModal({ result, type: 'quality', statKey: item.label, statValue: displayValue })}
+                              style={{ backgroundColor: '#F8F3E8', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 6, borderWidth: 1, borderColor: '#EFE3CC', width: '23.5%', alignItems: 'center' }}
+                            >
+                              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#7A8884', fontWeight: '900', textAlign: 'center' }} numberOfLines={1}>{item.label}</Text>
+                              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900', marginTop: 1 }}>{displayValue}</Text>
+                            </TouchableOpacity>
+                          )
+                        }
 
                         return (
                           <TouchableOpacity
                             key={item.label}
-                            onPress={() => setActiveModal({ result, type: modalType as any, statKey: item.label, statValue: displayValue })}
+                            onPress={() => setExplanationStat({ key: item.label, value: displayValue, result })}
                             style={{ backgroundColor: '#F8F3E8', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 6, borderWidth: 1, borderColor: '#EFE3CC', width: '23.5%', alignItems: 'center' }}
                           >
                             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#7A8884', fontWeight: '900', textAlign: 'center' }} numberOfLines={1}>{item.label}</Text>
@@ -595,6 +644,18 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
           result={activeModal.result}
           type={activeModal.type}
           onClose={() => setActiveModal(null)}
+          onOpenStatExplanation={(key, value) => setExplanationStat({ key, value, result: activeModal.result })}
+        />
+      )}
+
+      {explanationStat && (
+        <ExplanationModal
+          statKey={explanationStat.key}
+          statValue={explanationStat.value}
+          result={explanationStat.result}
+          durationMinutes={durationMinutes}
+          minutesPerRound={minutesPerRound}
+          onClose={() => setExplanationStat(null)}
         />
       )}
 
@@ -647,36 +708,43 @@ function ExplanationModal({
           return games >= targetGames
         }).length
         const missingTarget = totalPlayers - playersWithTarget
-        const gamesPenalty = missingTarget * 5 // Example logic
-        return `Mục tiêu: Mọi người đánh ít nhất ${targetGames} trận.\nThực tế: ${playersWithTarget}/${totalPlayers} người đạt được.\n\nLogic trừ điểm: 100 điểm - (${missingTarget} người thiếu × 5 điểm) = ${result.gamesCoverageScore} điểm.`
+        return `Mục tiêu: Đủ ${targetGames} trận/người.\nThực tế: ${playersWithTarget}/${totalPlayers} người đạt được.\n\nLogic: 100 - (${missingTarget} người thiếu × 5) = ${result.gamesCoverageScore} điểm.`
       case 'Phủ giờ':
         const extraRounds = actualRounds - targetRounds
         const overtime = extraRounds * minutesPerRound
         const totalPlaysNeeded = totalPlayers * targetGames
         const playsPerRound = result.setup.courts * 4
         
-        let explanation = `Mục tiêu ban đầu: ${durationMinutes} phút / ${minutesPerRound} phút ≈ ${targetRounds} vòng.`
-        explanation += `\n\nCông thức tính thực tế:\n(${totalPlayers} người × ${targetGames} trận) / (${result.setup.courts} sân × 4 người)\n= ${totalPlaysNeeded} / ${playsPerRound} ≈ ${actualRounds} vòng.`
+        let explanation = `Mục tiêu: ${durationMinutes} phút / ${minutesPerRound} phút ≈ ${targetRounds} vòng.`
+        explanation += `\n\nThực tế cần: (${totalPlayers} × ${targetGames} trận) / (${result.setup.courts} sân × 4) ≈ ${actualRounds} vòng.`
         
         if (extraRounds > 0) {
-          explanation += `\n\nVì cần ${actualRounds} vòng để đảm bảo mọi người đủ trận, session sẽ bị lố khoảng ${overtime} phút.`
-          explanation += `\n\nLogic trừ điểm: 100 điểm - (${extraRounds} vòng lố × 7 điểm) = 79 điểm.`
-          explanation += `\n\n* Mức trừ 7 điểm/vòng được thiết kế để hệ thống linh hoạt, cho phép lố nhẹ 1-2 vòng mà không làm điểm số bị giảm quá sâu.`
+          explanation += `\n\nLố ${extraRounds} vòng (≈ ${overtime} phút).\nLogic: 100 - (${extraRounds} × 7) = ${result.durationCoverageScore} điểm.`
         } else if (extraRounds < 0) {
-          explanation += `\n\nLịch kết thúc sớm hơn dự kiến khoảng ${Math.abs(overtime)} phút.`
-          explanation += `\n\nLogic trừ điểm: 100 điểm - (${Math.abs(extraRounds)} vòng thiếu × 14 điểm) = ${result.durationCoverageScore} điểm.`
+          explanation += `\n\nThiếu ${Math.abs(extraRounds)} vòng.\nLogic: 100 - (${Math.abs(extraRounds)} × 14) = ${result.durationCoverageScore} điểm.`
         }
         return explanation
       case 'Fit sân':
         const ratio = (totalPlayers / result.setup.courts).toFixed(1)
         const diff = Math.abs(Number(ratio) - 9.5).toFixed(1)
-        return `Tỉ lệ hiện tại: ${totalPlayers} người / ${result.setup.courts} sân = ${ratio} người/sân.\n(Lý tưởng là 9.5 người/sân).\n\nLogic trừ điểm: 100 điểm - (${diff} độ lệch × 10 điểm) = ${result.courtFitScore} điểm.`
+        return `Tỉ lệ: ${totalPlayers} người / ${result.setup.courts} sân = ${ratio} người/sân.\n(Lý tưởng: 9.5).\n\nLogic: 100 - (${diff} độ lệch × 10) = ${result.courtFitScore} điểm.`
       case 'Nhịp nghỉ':
-        return `Độ lệch chuẩn của khoảng cách nghỉ giữa các trận là ${(100 - result.restPatternScore) / 10} điểm.\n\nĐiểm Nhịp nghỉ được tính bằng 100 trừ đi độ lệch này. Điểm càng cao nghĩa là thời gian nghỉ của mọi người càng đều nhau.`
+        return `Độ lệch chuẩn khoảng nghỉ: ${(100 - result.restPatternScore) / 10}.\n\nLogic: 100 - (độ lệch × 10) = ${result.restPatternScore} điểm.`
+      case 'Cân bằng Skill':
+        const avgGap = (result as any).quality?.avgSkillGap || 0
+        return `Chênh lệch trình độ TB: ${avgGap.toFixed(2)} điểm/trận.\n(Lý tưởng: 0.0).\n\nLogic: 100 - (chênh lệch TB × 15) = ${result.quality.score} điểm.`
+      case 'Đa dạng Bạn chơi':
+        return `Đây là mức độ "xoay vòng" bạn chơi. Thuật toán cố gắng để mọi người đều được đánh cặp với nhau ít nhất 1 lần.`
+      case 'Đa dạng Đối thủ':
+        return `Đây là mức độ "xoay vòng" đối thủ. Thuật toán cố gắng để bạn không phải gặp lại cùng 1 đối thủ quá nhiều lần.`
+      case 'Hài lòng Partner':
+        return `Tỉ lệ đáp ứng yêu cầu giới tính của bạn chơi đã được cài đặt trong Metadata.`
+      case 'Hài lòng Đối thủ':
+        return `Tỉ lệ đáp ứng yêu cầu giới tính của đối thủ đã được cài đặt trong Metadata.`
       case 'B2B':
-        return `Hiện có ${result.backToBackCount} lượt người chơi phải đánh liên tiếp không nghỉ.\n\nThuật toán đã cố gắng giảm con số này xuống mức tối thiểu có thể để bảo vệ thể lực của mọi người.`
+        return `Tổng lượt đánh liên tiếp: ${result.backToBackCount}.\n\nĐây là số lần người chơi không có vòng nghỉ giữa 2 trận.`
       case 'Chuỗi max':
-        return `Người vất vả nhất trong lịch này phải đánh liên tục ${result.maxConsecutivePlays} trận.\n\nNếu con số này > 2, bạn nên nhắc người chơi này chuẩn bị nước uống và khởi động kỹ để tránh chuột rút.`
+        return `Người chơi đánh liên tục nhiều nhất: ${result.maxConsecutivePlays} trận.`
       case 'Min nghỉ':
         return `Trong phương án này, mọi người chắc chắn được nghỉ ít nhất ${result.minRestAcrossPlayers || 0} vòng giữa các trận đấu.\n\nLý tưởng nhất là chỉ số này ≥ 1 để đảm bảo nhịp hồi phục cơ bắp.`
       default:
@@ -736,7 +804,7 @@ function ExplanationModal({
   )
 }
 
-function PlayerDetailsModal({ result, type, onClose }: { result: OptimizationResult, type: OptimizationModalType, onClose: () => void }) {
+function PlayerDetailsModal({ result, type, onClose, onOpenStatExplanation }: { result: OptimizationResult, type: OptimizationModalType, onClose: () => void, onOpenStatExplanation?: (key: string, value: string | number) => void }) {
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const [showDropdown, setShowDropdown] = useState(false)
 
@@ -833,6 +901,7 @@ function PlayerDetailsModal({ result, type, onClose }: { result: OptimizationRes
             hideSummary={!isQualityMode}
             hidePlayerStats={isQualityMode}
             focusedPlayerId={focusedId}
+            onOpenStatExplanation={onOpenStatExplanation}
           />
         </ScrollView>
       </View>

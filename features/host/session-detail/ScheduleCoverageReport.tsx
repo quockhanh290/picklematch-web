@@ -78,6 +78,7 @@ type Props = {
   hideSummary?: boolean
   hidePlayerStats?: boolean
   focusedPlayerId?: string | null
+  onOpenStatExplanation?: (key: string, value: string | number) => void
 }
 
 const pairKey = (a: string, b: string) => a < b ? `${a}_${b}` : `${b}_${a}`
@@ -121,7 +122,7 @@ function formatPlayerListWithGender(players: (ArrangementPlayer | undefined)[]) 
   }).join(' / ')
 }
 
-export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPlayer, variant = 'mix-in', quality, playerStatsInitiallyExpanded = true, hideSummary = false, hidePlayerStats = false, focusedPlayerId = null }: Props) {
+export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPlayer, variant = 'mix-in', quality, playerStatsInitiallyExpanded = true, hideSummary = false, hidePlayerStats = false, focusedPlayerId = null, onOpenStatExplanation }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [playerStatsExpanded, setPlayerStatsExpanded] = useState(playerStatsInitiallyExpanded)
   const [expandedPreferenceRows, setExpandedPreferenceRows] = useState<Set<string>>(() => new Set())
@@ -485,32 +486,36 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
 
           <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
             {[
-              { label: 'Trận', value: `${schedule.length}` },
-              { label: 'Game/ng', value: `${report.minGames}-${report.maxGames}` },
-              { label: 'Unique partner/min', value: `${report.minUniquePartners}-${report.maxUniquePartners}/${report.uniqueTargetGames}` },
-              { label: 'Unique đối thủ/min', value: `${report.minUniqueOpponents}-${report.maxUniqueOpponents}/${report.uniqueOpponentTargetGames}` },
-              { label: 'Pref partner', value: report.partnerPrefTotal ? `${report.partnerPrefHits}/${report.partnerPrefTotal}` : '-' },
-              { label: 'Pref đối thủ', value: report.opponentPrefTotal ? `${report.opponentPrefHits}/${report.opponentPrefTotal}` : '-' },
-              { label: 'Nghỉ TB', value: report.avgRestAcrossPlayers },
-              { label: 'Min nghỉ', value: report.minRestAcrossPlayers },
-              { 
-                label: '% HL PARTNER', 
-                value: report.partnerPrefTotal > 0 ? `${Math.round((report.partnerPrefHits / report.partnerPrefTotal) * 100)}%` : '100%'
-              },
-              { 
-                label: '% HL ĐỐI THỦ', 
-                value: report.opponentPrefTotal > 0 ? `${Math.round((report.opponentPrefHits / report.opponentPrefTotal) * 100)}%` : '100%'
-              },
-              { label: 'Lệch trình TB', value: report.avgSkillGap.toFixed(2) },
-              { label: 'Lệch max', value: report.maxSkillGap.toFixed(2) },
-              { label: 'Player pref >=75%', value: report.preferencePlayerTargetPercent },
-              { label: 'Trận lệch nặng', value: report.heavySkillGapCount },
-            ].map(item => (
-              <View key={item.label} style={{ backgroundColor: 'white', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: '#E5E3DC', width: '48.5%', minHeight: 64, marginBottom: 8 }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800' }}>{item.label}</Text>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: '#1A2E2A', fontWeight: '900', marginTop: 4 }}>{item.value}</Text>
-              </View>
-            ))}
+              { label: 'Trận', value: `${schedule.length}`, key: 'Phủ giờ' },
+              { label: 'Game/ng', value: `${report.minGames}-${report.maxGames}`, key: 'Phủ trận' },
+              { label: 'Unique partner/min', value: `${report.minUniquePartners}-${report.maxUniquePartners}/${report.uniqueTargetGames}`, key: 'Đa dạng Bạn chơi' },
+              { label: 'Unique đối thủ/min', value: `${report.minUniqueOpponents}-${report.maxUniqueOpponents}/${report.uniqueOpponentTargetGames}`, key: 'Đa dạng Đối thủ' },
+              { label: 'Hài lòng Partner', value: report.partnerPrefTotal > 0 ? `${Math.round((report.partnerPrefHits / report.partnerPrefTotal) * 100)}%` : '100%', key: 'Hài lòng Partner' },
+              { label: 'Hài lòng Đối thủ', value: report.opponentPrefTotal > 0 ? `${Math.round((report.opponentPrefHits / report.opponentPrefTotal) * 100)}%` : '100%', key: 'Hài lòng Đối thủ' },
+              { label: 'Nghỉ TB', value: report.avgRestAcrossPlayers, key: 'Nhịp nghỉ' },
+              { label: 'Min nghỉ', value: report.minRestAcrossPlayers, key: 'Min nghỉ' },
+              { label: 'Lệch trình TB', value: report.avgSkillGap.toFixed(2), key: 'Cân bằng Skill' },
+              { label: 'Lệch max', value: report.maxSkillGap.toFixed(2), key: 'Cân bằng Skill' },
+            ].map(item => {
+              // Map labels to STAT_EXPLANATIONS keys
+              let statKey = item.key
+              
+              return (
+                <TouchableOpacity 
+                  key={item.label} 
+                  onPress={() => onOpenStatExplanation?.(statKey, item.value)}
+                  disabled={!onOpenStatExplanation}
+                  activeOpacity={0.7}
+                  style={{ backgroundColor: 'white', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: '#E5E3DC', width: '48.5%', minHeight: 64, marginBottom: 8 }}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '800' }}>{item.label}</Text>
+                    {onOpenStatExplanation && <Text style={{ fontSize: 10, color: '#0F6E56', fontWeight: '900' }}>ⓘ</Text>}
+                  </View>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: '#1A2E2A', fontWeight: '900', marginTop: 4 }}>{item.value}</Text>
+                </TouchableOpacity>
+              )
+            })}
           </View>
         </>
       )}
