@@ -127,7 +127,8 @@ const ROTATION_SCORE_WEIGHTS = {
     consecutiveRestPenalty: 38,
     idealRestBonus: 18,
     okRestBonus: 10,
-    longRestPenalty: 5,
+    longRestUrgencyBonus: 36,
+    severeLongRestUrgencyBonus: 90,
     skillGapSquared: 200,
     largeSkillGapSquared: 2000,
     partnerRepeat: 110,
@@ -139,7 +140,7 @@ const ROTATION_SCORE_WEIGHTS = {
     planPartnerRepeat: 110,
     planOpponentRepeat: 30,
     planConsecutiveRest: 30,
-    planLongRest: 7,
+    planLongRest: 70,
     planSkillGapSquared: 200,
     planLargeSkillGapSquared: 2000,
     planSkillGapOverLimit: 1000000,
@@ -279,8 +280,10 @@ function scoreCandidateGroup(group, rotation, states, playerById, partnerPairs, 
                 score += ROTATION_SCORE_WEIGHTS.idealRestBonus;
             else if (gap === 3)
                 score += ROTATION_SCORE_WEIGHTS.okRestBonus;
-            else if (gap > 5)
-                score -= Math.min(30, (gap - 5) * ROTATION_SCORE_WEIGHTS.longRestPenalty);
+            else if (gap === 4)
+                score += ROTATION_SCORE_WEIGHTS.longRestUrgencyBonus;
+            else if (gap >= 5)
+                score += ROTATION_SCORE_WEIGHTS.severeLongRestUrgencyBonus + (gap - 5) * 30;
         }
     }
     return { group, split, score: score + Math.random() * 0.001 };
@@ -298,6 +301,13 @@ function getCombinationsOfFour(items) {
     }
     return combos;
 }
+function getRestUrgencyScore(restGap) {
+    if (restGap >= 999)
+        return 80;
+    if (restGap <= 3)
+        return restGap * 18;
+    return 54 + (restGap - 3) * 70;
+}
 function getCandidatePool(eligible, rotation, states, playerById) {
     const priorityPool = [...eligible]
         .sort((a, b) => {
@@ -305,12 +315,12 @@ function getCandidatePool(eligible, rotation, states, playerById) {
         const stateB = states.get(b);
         const remainingA = stateA.quota - stateA.games;
         const remainingB = stateB.quota - stateB.games;
-        if (remainingA !== remainingB)
-            return remainingB - remainingA;
         const restA = stateA.lastRotation == null ? 999 : rotation - stateA.lastRotation;
         const restB = stateB.lastRotation == null ? 999 : rotation - stateB.lastRotation;
-        if (restA !== restB)
-            return restB - restA;
+        const priorityA = remainingA * 100 + getRestUrgencyScore(restA) - stateA.games * 3;
+        const priorityB = remainingB * 100 + getRestUrgencyScore(restB) - stateB.games * 3;
+        if (priorityA !== priorityB)
+            return priorityB - priorityA;
         if (stateA.games !== stateB.games)
             return stateA.games - stateB.games;
         return a.localeCompare(b);
@@ -389,8 +399,10 @@ function calculatePlanScore(matches, playerIds, playerById, quotas, courtCount) 
             const gap = sorted[i + 1] - sorted[i];
             if (gap === 1)
                 hardPenalty += 1000000;
-            if (gap > 5)
-                restPenalty += Math.min(35, (gap - 5) * ROTATION_SCORE_WEIGHTS.planLongRest);
+            if (gap === 4)
+                restPenalty += 45;
+            if (gap >= 5)
+                restPenalty += Math.min(900, 180 + (gap - 5) * ROTATION_SCORE_WEIGHTS.planLongRest);
         }
     });
     let playerPreferencePenalty = 0;
@@ -455,11 +467,11 @@ function calculateOverallScore(matches, playerIds, playerById, quotas) {
             const gap = sorted[i + 1] - sorted[i];
             if (gap === 1)
                 consecutiveCount++;
-            if (gap > 5)
+            if (gap >= 5)
                 longRestCount++;
         }
     });
-    const restScore = Math.max(0, 100 - consecutiveCount * 8 - longRestCount * 4);
+    const restScore = Math.max(0, 100 - consecutiveCount * 8 - longRestCount * 12);
     let partnerRepeats = 0;
     partnerPairs.forEach(count => {
         if (count > 1)
@@ -780,22 +792,37 @@ function calculateSetupScores(options) {
     const maxEfficientCourts = Math.max(1, Math.floor(playerCount / idealPlayersPerCourt));
     const overCourtPenalty = Math.max(0, options.courts - Math.min(options.maxUsableCourts, maxEfficientCourts)) * 8;
     courtFitScore = clampScore(courtFitScore - overCourtPenalty);
-    const capacityGamesForCourtFit = Math.max(1, (options.targetRounds * options.courts * 4) / playerCount);
-    const meaningfulGamesTarget = Math.max(options.desiredGamesPerPlayer, Math.min(options.targetRounds, capacityGamesForCourtFit));
-    const gamesCoverageScore = clampScore((options.targetGames / meaningfulGamesTarget) * 100);
     const roundsDiff = options.actualRounds - options.targetRounds;
     const durationPenalty = roundsDiff > 0 ? roundsDiff * 7 : Math.abs(roundsDiff) * 14;
     const durationCoverageScore = clampScore(100 - durationPenalty);
     const setupScore = clampScore(options.qualityScore * 0.20 +
-        gamesCoverageScore * 0.40 +
+        options.gamesCoverageScore * 0.40 +
         durationCoverageScore * 0.20 +
         courtFitScore * 0.20);
     return {
         setupScore,
         durationCoverageScore,
-        gamesCoverageScore,
+        gamesCoverageScore: options.gamesCoverageScore,
         courtFitScore,
     };
+}
+function getPlayerGameCounts(players, matches) {
+    return players.map(player => {
+        const id = String(player.id);
+        return matches.filter(match => match.teamA.includes(id) || match.teamB.includes(id)).length;
+    });
+}
+function calculateActualGamesCoverageScore(players, matches, targetGames) {
+    const counts = getPlayerGameCounts(players, matches);
+    if (counts.length === 0)
+        return 0;
+    const safeTarget = Math.max(1, targetGames);
+    const averageGames = counts.reduce((sum, count) => sum + count, 0) / counts.length;
+    const minGames = Math.min(...counts);
+    const targetHitRatio = counts.filter(count => count >= safeTarget).length / counts.length;
+    return clampScore(Math.min(1, averageGames / safeTarget) * 65 +
+        Math.min(1, minGames / safeTarget) * 25 +
+        targetHitRatio * 10);
 }
 function compareResultsBySetupScore(a, b) {
     const scoreDiff = b.setupScore - a.setupScore;
@@ -835,12 +862,14 @@ function runOneClickOptimization(input, onProgress) {
         };
         const actualRoundCount = getActualRoundCount(baseResult);
         const restStats = getRestPatternStats(players, result.matches);
+        const actualGamesCoverageScore = calculateActualGamesCoverageScore(players, result.matches, setup.targetGames);
         const scores = calculateSetupScores({
             qualityScore: result.quality.overallScore,
             targetGames: setup.targetGames,
             targetRounds: setup.targetRounds,
             actualRounds: actualRoundCount,
             desiredGamesPerPlayer,
+            gamesCoverageScore: actualGamesCoverageScore,
             courts: setup.courts,
             maxUsableCourts,
             playerCount: players.length,

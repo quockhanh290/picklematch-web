@@ -124,6 +124,7 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
   const [running, setRunning] = useState(false)
   const [optimizationProgress, setOptimizationProgress] = useState<{ current: number, total: number } | null>(null)
   const [results, setResults] = useState<OptimizationResult[]>([])
+  const [showSetup, setShowSetup] = useState(true)
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0)
   const [activeModal, setActiveModal] = useState<{ result: OptimizationResult, type: OptimizationModalType, statKey?: string, statValue?: string | number } | null>(null)
   const [explanationStat, setExplanationStat] = useState<{ key: string, value: string | number, result: OptimizationResult } | null>(null)
@@ -155,6 +156,8 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
         setOptimizationProgress
       )
       setResults(nextResults)
+      setShowSetup(false)
+      setExpandedIndex(0)
     } finally {
       const remainingLoadingMs = Math.max(0, 800 - (Date.now() - loadingStartedAt))
       setTimeout(() => {
@@ -176,6 +179,26 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: '#F8F3E8' }} contentContainerStyle={{ padding: 8, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+      {results.length > 0 && !showSetup ? (
+        <View style={{ backgroundColor: '#FFFCF5', borderRadius: 14, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E5E3DC' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900', textTransform: 'uppercase' }}>
+                Thiết lập hiện tại
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: '#1A2E2A', fontWeight: '900', marginTop: 3 }}>
+                {durationMinutes / 60}h · {minutesPerRound}p/vòng · tối đa {courtLimit} sân
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setShowSetup(true)} style={{ backgroundColor: '#F8F3E8', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: '#E5E3DC' }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
+                Sửa thiết lập
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <>
       <View style={{ backgroundColor: '#FFFCF5', borderRadius: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E5E3DC', overflow: 'hidden' }}>
         <View style={{ backgroundColor: '#0F6E56', paddingHorizontal: 14, paddingVertical: 7 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: 'white', fontWeight: '900' }}>
@@ -272,6 +295,8 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
           </View>
         </TouchableOpacity>
       </View>
+        </>
+      )}
 
       {running && (
         <View style={{ backgroundColor: '#FFFCF5', borderRadius: 14, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#E5E3DC', alignItems: 'center' }}>
@@ -286,6 +311,141 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
       )}
 
       {results.length > 0 && (
+        <View style={{ gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: '#9E998D', fontWeight: '900', textTransform: 'uppercase' }}>
+              Kết quả tối ưu
+            </Text>
+            <View style={{ backgroundColor: '#DFF7EE', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
+                {visibleResults.length} phương án
+              </Text>
+            </View>
+          </View>
+
+          {visibleResults.map((result, index) => {
+            const isExpanded = expandedIndex === index
+            const theme = getResultTheme(index)
+            const gameSummary = getPlayerGameSummary(result)
+            return (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                key={result.setup.key}
+                onPress={() => setExpandedIndex(isExpanded ? null : index)}
+                style={{ backgroundColor: '#FFFCF5', borderRadius: 16, borderWidth: 1, borderColor: '#E5E3DC', overflow: 'hidden' }}
+              >
+                <View style={{ backgroundColor: theme.header, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: 'white', fontWeight: '900' }}>
+                    #{index + 1} · {index === 0 ? 'LỰA CHỌN VÀNG' : 'PHƯƠNG ÁN ĐỀ XUẤT'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: 'rgba(255,255,255,0.86)', fontWeight: '900' }}>ĐIỂM</Text>
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 22, color: 'white', fontWeight: '900' }}>{result.setupScore}</Text>
+                  </View>
+                </View>
+
+                {!isExpanded ? (
+                  <View style={{ paddingHorizontal: 14, paddingVertical: 13 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: '#1A2E2A', fontWeight: '900' }}>
+                          {gameSummary.label} · {result.setup.courts} sân · {result.matches.length} trận
+                        </Text>
+                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', lineHeight: 16, marginTop: 4 }} numberOfLines={2}>
+                          {getResultInterpretation(result, index, visibleResults)}
+                        </Text>
+                      </View>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: '#BDB6A8', fontWeight: '900' }}>›</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ padding: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+                      {[
+                        { value: gameSummary.shortLabel, label: 'TRẬN/NGƯỜI' },
+                        { value: result.setup.courts, label: 'SÂN DÙNG' },
+                        { value: result.matches.length, label: 'TỔNG TRẬN' },
+                      ].map((item, metricIndex) => (
+                        <View key={item.label} style={{ flex: 1, alignItems: 'center', borderLeftWidth: metricIndex === 0 ? 0 : 1, borderLeftColor: '#E5E3DC' }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 24, color: '#082A27', fontWeight: '900' }}>{item.value}</Text>
+                          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900', marginTop: 2 }}>{item.label}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <View style={{ backgroundColor: theme.soft, borderRadius: 10, padding: 12, marginBottom: 12, flexDirection: 'row', gap: 8 }}>
+                      <Text style={{ fontSize: 15, color: '#0F6E56' }}>•</Text>
+                      <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#0F6E56', fontWeight: '700', lineHeight: 18 }}>
+                        {getResultInterpretation(result, index, visibleResults)}
+                      </Text>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                      {[
+                        { label: 'Chất lượng', subLabel: 'Chất lượng trận', value: result.quality.overallScore },
+                        { label: 'Phủ trận', subLabel: 'Phủ trận', value: result.gamesCoverageScore },
+                        { label: 'Phủ giờ', subLabel: 'Phủ giờ', value: result.durationCoverageScore },
+                        { label: 'Fit sân', subLabel: 'Fit sân', value: result.courtFitScore },
+                      ].map(item => {
+                        const displayValue = `${item.value}đ · ${item.value >= 85 ? 'Tốt' : item.value >= 75 ? 'Ổn' : 'Cần xem'}`
+                        return (
+                          <TouchableOpacity
+                            key={item.label}
+                            onPress={() => item.label === 'Chất lượng'
+                              ? setActiveModal({ result, type: 'quality', statKey: item.label, statValue: displayValue })
+                              : setExplanationStat({ key: item.label, value: displayValue, result })}
+                            style={{ width: '48.7%', backgroundColor: '#F4EFE5', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 }}
+                          >
+                            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900' }}>{displayValue}</Text>
+                            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '800', marginTop: 2 }}>{item.subLabel}</Text>
+                          </TouchableOpacity>
+                        )
+                      })}
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity
+                        onPress={() => setActiveModal({ result, type: 'players' })}
+                        style={{ flex: 1, borderRadius: 999, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#CFE8DE', backgroundColor: '#FFFCF5' }}
+                      >
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
+                          Xem người chơi
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => setActiveModal({ result, type: 'rounds' })}
+                        style={{ flex: 1, borderRadius: 999, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#CFE8DE', backgroundColor: '#FFFCF5' }}
+                      >
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
+                          Xem lịch đề xuất
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        const plan = buildFinalPlan(result)
+                        onSelect?.(plan)
+                      }}
+                      style={{ backgroundColor: '#0F6E56', borderRadius: 999, paddingVertical: 14, alignItems: 'center', marginTop: 10 }}
+                    >
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: 'white', fontWeight: '900' }}>
+                        Dùng lịch này
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )
+          })}
+
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B4B2A9', textAlign: 'center', lineHeight: 16, paddingHorizontal: 14, marginTop: 4 }}>
+            * Các chỉ số đã được cân bằng trọng số để đảm bảo tính ổn định và thực tế cho mỗi phương án.
+          </Text>
+        </View>
+      )}
+
+      {false && results.length > 0 && (
         <View style={{ gap: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: '#1A2E2A', fontWeight: '800' }}>{activePlayers.length} NGƯỜI CHƠI CHÍNH THỨC</Text>
@@ -444,7 +604,15 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
         />
       )}
 
-      {activeModal && activeModal.type !== 'rounds' && activeModal.type !== 'explanation' && (
+      {activeModal && activeModal.type === 'quality' && (
+        <QualityDetailsModal
+          result={activeModal.result}
+          onClose={() => setActiveModal(null)}
+          onOpenStatExplanation={(key, value) => setExplanationStat({ key, value, result: activeModal.result })}
+        />
+      )}
+
+      {activeModal && activeModal.type === 'players' && (
         <PlayerDetailsModal
           result={activeModal.result}
           type={activeModal.type}
@@ -483,6 +651,42 @@ function buildFinalPlan(result: OptimizationResult) {
   }
 }
 
+function getPlayerGameSummary(result: OptimizationResult) {
+  const counts = getPlayerGameCounts(result)
+  if (counts.length === 0) {
+    return { label: `Mục tiêu ${result.setup.targetGames} trận/người`, shortLabel: result.setup.targetGames }
+  }
+
+  const min = Math.min(...counts)
+  const max = Math.max(...counts)
+  const avg = counts.reduce((sum, count) => sum + count, 0) / counts.length
+
+  if (min === max) {
+    return { label: `${min} trận/người`, shortLabel: min }
+  }
+
+  return { label: `${min}-${max} trận/người`, shortLabel: avg.toFixed(1) }
+}
+
+function getPlayerGameCounts(result: OptimizationResult) {
+  return result.players.map(player => {
+    const id = String(player.id)
+    return result.matches.filter(match => match.teamA.includes(id) || match.teamB.includes(id)).length
+  })
+}
+
+function getResultTheme(index: number) {
+  if (index === 0) {
+    return { header: '#0B5E49', soft: '#DFF7EE' }
+  }
+
+  if (index === 1) {
+    return { header: '#7F9088', soft: '#EEF3EF' }
+  }
+
+  return { header: '#B4AA99', soft: '#F3EEE5' }
+}
+
 function ExplanationModal({ 
   statKey, 
   statValue, 
@@ -508,12 +712,12 @@ function ExplanationModal({
 
     switch (statKey) {
       case 'Phủ trận':
-        const playersWithTarget = result.players.filter(p => {
-          const games = result.matches.filter(m => m.teamA.includes(String(p.id)) || m.teamB.includes(String(p.id))).length
-          return games >= targetGames
-        }).length
-        const missingTarget = totalPlayers - playersWithTarget
-        return `Mục tiêu: Đủ ${targetGames} trận/người.\nThực tế: ${playersWithTarget}/${totalPlayers} người đạt được.\n\nLogic: 100 - (${missingTarget} người thiếu × 5) = ${result.gamesCoverageScore} điểm.`
+        const gameCounts = getPlayerGameCounts(result)
+        const playersWithTarget = gameCounts.filter(count => count >= targetGames).length
+        const minGames = gameCounts.length ? Math.min(...gameCounts) : 0
+        const maxGames = gameCounts.length ? Math.max(...gameCounts) : 0
+        const avgGames = gameCounts.length ? gameCounts.reduce((sum, count) => sum + count, 0) / gameCounts.length : 0
+        return `Mục tiêu setup: ${targetGames} trận/người.\nThực tế: ${playersWithTarget}/${totalPlayers} người đạt mục tiêu, dao động ${minGames}-${maxGames} trận/người, trung bình ${avgGames.toFixed(1)} trận.\n\nĐiểm này được tính từ số trận thực tế sau khi thuật toán sinh lịch, không lấy thẳng target setup. Kết quả hiện tại: ${result.gamesCoverageScore} điểm.`
       case 'Phủ giờ':
         const extraRounds = actualRounds - targetRounds
         const overtime = extraRounds * minutesPerRound
@@ -609,7 +813,7 @@ function ExplanationModal({
   )
 }
 
-function PlayerDetailsModal({ result, type, onClose, onOpenStatExplanation }: { result: OptimizationResult, type: OptimizationModalType, onClose: () => void, onOpenStatExplanation?: (key: string, value: string | number) => void }) {
+function LegacyPlayerDetailsModal({ result, type, onClose, onOpenStatExplanation }: { result: OptimizationResult, type: OptimizationModalType, onClose: () => void, onOpenStatExplanation?: (key: string, value: string | number) => void }) {
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const [showDropdown, setShowDropdown] = useState(false)
 
@@ -714,6 +918,391 @@ function PlayerDetailsModal({ result, type, onClose, onOpenStatExplanation }: { 
   )
 }
 
+function PlayerDetailsModal({ result, type, onClose }: { result: OptimizationResult, type: OptimizationModalType, onClose: () => void, onOpenStatExplanation?: (key: string, value: string | number) => void }) {
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [expandedIssueRows, setExpandedIssueRows] = useState<Set<string>>(new Set())
+  const isQualityMode = type === 'quality'
+  const rows = useMemo(() => buildPlayerDetailRows(result), [result])
+  const visibleRows = useMemo(() => rows.filter(row => !focusedId || row.id === focusedId), [rows, focusedId])
+  const selectedRow = focusedId ? rows.find(row => row.id === focusedId) : null
+  const maxRound = Math.max(1, ...result.matches.map(match => match.rotation || 0))
+
+  const toggleIssues = (id: string) => {
+    setExpandedIssueRows(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  return (
+    <Modal visible={true} animationType="slide" transparent={true} onRequestClose={onClose}>
+      <Pressable onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(26,46,42,0.42)', justifyContent: 'flex-end' }}>
+        <Pressable style={{ maxHeight: '92%', backgroundColor: '#F8F3E8', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' }}>
+          <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
+            <View style={{ width: 42, height: 5, borderRadius: 999, backgroundColor: '#D8D3C8' }} />
+          </View>
+
+          <View style={{ backgroundColor: '#FFFCF5', paddingHorizontal: 16, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#E5E3DC' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: '#1A2E2A', fontWeight: '900' }}>
+                  {isQualityMode ? 'PHÂN TÍCH CHẤT LƯỢNG' : 'CHI TIẾT NGƯỜI CHƠI'}
+                </Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', marginTop: 2 }}>
+                  Báo cáo độ phủ và cân bằng trình độ · Setup #{result.setup.key}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F4EFE5', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 18, color: '#7A8884', lineHeight: 20 }}>×</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ marginTop: 18, backgroundColor: '#F4EFE5', borderRadius: 8, borderWidth: 1, borderColor: '#E5E3DC', paddingHorizontal: 12, paddingVertical: 11 }}>
+              <TouchableOpacity onPress={() => setShowDropdown(!showDropdown)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: selectedRow ? '#1A2E2A' : '#A6A096', fontWeight: '700' }}>
+                  {selectedRow ? selectedRow.name : 'Tìm nhanh người chơi...'}
+                </Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#B4B2A9', fontWeight: '900' }}>{showDropdown ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+
+              {showDropdown && (
+                <View style={{ marginTop: 10, maxHeight: 230, borderTopWidth: 1, borderTopColor: '#E5E3DC' }}>
+                  <ScrollView nestedScrollEnabled={true}>
+                    <TouchableOpacity onPress={() => { setFocusedId(null); setShowDropdown(false) }} style={{ paddingVertical: 10 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: focusedId === null ? '#0F6E56' : '#1A2E2A', fontWeight: focusedId === null ? '900' : '600' }}>
+                        Tất cả người chơi
+                      </Text>
+                    </TouchableOpacity>
+                    {rows.map(row => (
+                      <TouchableOpacity key={row.id} onPress={() => { setFocusedId(row.id); setShowDropdown(false) }} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#E5E3DC' }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: focusedId === row.id ? '#0F6E56' : '#1A2E2A', fontWeight: focusedId === row.id ? '900' : '600' }}>
+                          {row.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
+            {visibleRows.map(row => {
+              const issuesExpanded = expandedIssueRows.has(row.id)
+              const primaryMetrics = [
+                { value: `${row.games}/${result.setup.targetGames}`, label: 'TRẬN ĐẤU', tone: getMetricTone(row.games / Math.max(1, result.setup.targetGames)) },
+                { value: `${row.partners}/${Math.max(1, row.games)}`, label: 'PARTNER ĐA DẠNG', tone: getMetricTone(row.partners / Math.max(1, row.games)) },
+                { value: `${row.opponents}/${Math.max(1, row.games * 2)}`, label: 'ĐỐI THỦ ĐA DẠNG', tone: getMetricTone(row.opponents / Math.max(1, row.games * 2)) },
+              ]
+
+              return (
+                <View key={row.id} style={{ backgroundColor: '#FFFCF5', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#E5E3DC' }}>
+                  <View style={{ padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                      <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: row.avatarColor, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: 'white', fontWeight: '900' }}>{row.initial}</Text>
+                      </View>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#07312B', fontWeight: '900' }} numberOfLines={1}>{row.name}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 5, maxWidth: 180 }}>
+                      {row.preferenceTags.map(tag => (
+                        <View key={tag.label} style={{ backgroundColor: tag.bg, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: tag.fg, fontWeight: '900' }}>{tag.label}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+
+                  <View style={{ borderTopWidth: 1, borderTopColor: '#E5E3DC', paddingHorizontal: 16, paddingTop: 12 }}>
+                    <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+                      {primaryMetrics.map((metric, metricIndex) => (
+                        <View key={metric.label} style={{ flex: 1, alignItems: 'center', borderLeftWidth: metricIndex === 0 ? 0 : 1, borderLeftColor: '#E5E3DC' }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: metric.tone, fontWeight: '900' }}>{metric.value}</Text>
+                          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '900', marginTop: 2 }}>{metric.label}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                      <View style={{ flex: 1, backgroundColor: '#F4EFE5', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '800' }}>Hài lòng pref</Text>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: getPreferenceTone(row.preferenceRatio), fontWeight: '900' }}>{row.preferenceLabel}</Text>
+                      </View>
+                      <View style={{ flex: 1, backgroundColor: '#F4EFE5', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '800' }}>Nghỉ TB</Text>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#082A27', fontWeight: '900' }}>{row.avgRestLabel}</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={{ paddingHorizontal: 16, paddingBottom: 14 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#9E998D', fontWeight: '900' }}>VÒNG CHƠI</Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '800' }}>
+                        {row.games}/{result.setup.targetGames} trận · {maxRound} vòng
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                        {Array.from({ length: maxRound }, (_, index) => index + 1).map((round) => {
+                          const gameCount = row.gamesByRound.get(round) || 0
+                          const active = gameCount > 0
+                          return (
+                            <View key={round} style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: active ? '#0F6E56' : '#F4EFE5', borderWidth: 1, borderColor: active ? '#0F6E56' : '#D8D3C8', alignItems: 'center', justifyContent: 'center' }}>
+                              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: gameCount > 1 ? 8 : 10, color: active ? 'white' : '#B4B2A9', fontWeight: '900' }}>{gameCount > 1 ? `${round}x${gameCount}` : round}</Text>
+                            </View>
+                          )
+                        })}
+                    </View>
+                  </View>
+
+                  {row.preferenceMisses.length > 0 && (
+                    <View style={{ backgroundColor: '#FFF1D8', borderTopWidth: 1, borderTopColor: '#F3D49A' }}>
+                      <TouchableOpacity onPress={() => toggleIssues(row.id)} style={{ paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#A05A16', fontWeight: '800' }}>
+                          • Preference chưa đáp ứng · {row.preferenceMisses.length} mục
+                        </Text>
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#A05A16', fontWeight: '900' }}>{issuesExpanded ? 'Thu' : 'Xem ›'}</Text>
+                      </TouchableOpacity>
+                      {issuesExpanded && (
+                        <View style={{ paddingHorizontal: 16, paddingBottom: 12, gap: 6 }}>
+                          {row.preferenceMisses.map(issue => (
+                            <Text key={issue.key} style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A4B12', lineHeight: 16 }}>
+                              V{issue.rotation}{issue.court ? ` S${issue.court}` : ''}: muốn {issue.type === 'partner' ? 'partner' : 'đối thủ'} {issue.preferred} · Thực tế: {issue.actual || 'không có'}
+                            </Text>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+              )
+            })}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  )
+}
+
+type PlayerDetailRow = {
+  id: string
+  name: string
+  initial: string
+  avatarColor: string
+  games: number
+  partners: number
+  opponents: number
+  rotations: number[]
+  gameTimeline: { key: string, label: string }[]
+  gamesByRound: Map<number, number>
+  rotationSet: Set<number>
+  preferenceTags: { label: string, bg: string, fg: string }[]
+  preferenceRatio: number | null
+  preferenceLabel: string
+  preferenceMisses: { key: string, type: 'partner' | 'opponent', preferred: string, actual: string, rotation: number, court?: number }[]
+  avgRestLabel: string
+  duplicateRotationCount: number
+}
+
+function buildPlayerDetailRows(result: OptimizationResult): PlayerDetailRow[] {
+  const playerById = new Map<string, ArrangementPlayer>()
+  result.players.forEach(player => playerById.set(String(player.id), player))
+
+  return result.players.map(player => {
+    const id = String(player.id)
+    const partnerSet = new Set<string>()
+    const opponentSet = new Set<string>()
+    const rotations: number[] = []
+    const gameTimeline: PlayerDetailRow['gameTimeline'] = []
+    const gamesByRound = new Map<number, number>()
+    const preferenceMisses: PlayerDetailRow['preferenceMisses'] = []
+    let preferenceHits = 0
+    let preferenceTotal = 0
+
+    result.matches.forEach((match, matchIndex) => {
+      const teamA = match.teamA.map(String)
+      const teamB = match.teamB.map(String)
+      const inA = teamA.includes(id)
+      const inB = teamB.includes(id)
+      if (!inA && !inB) return
+
+      const ownTeam = inA ? teamA : teamB
+      const otherTeam = inA ? teamB : teamA
+      const partners = ownTeam.filter(otherId => otherId !== id).map(otherId => playerById.get(otherId)).filter(Boolean) as ArrangementPlayer[]
+      const opponents = otherTeam.map(otherId => playerById.get(otherId)).filter(Boolean) as ArrangementPlayer[]
+
+      const rotation = match.rotation || matchIndex + 1
+      rotations.push(rotation)
+      gameTimeline.push({
+        key: `${matchIndex}-${rotation}-${match.court || 0}`,
+        label: `${rotation}`,
+      })
+      gamesByRound.set(rotation, (gamesByRound.get(rotation) || 0) + 1)
+      partners.forEach(partner => partnerSet.add(String(partner.id)))
+      opponents.forEach(opponent => opponentSet.add(String(opponent.id)))
+
+      if (player.metadata?.partner_gender_pref && player.metadata.partner_gender_pref !== 'any') {
+        preferenceTotal++
+        if (partners.some(partner => matchesPlayerGenderPref(partner, player.metadata?.partner_gender_pref))) {
+          preferenceHits++
+        } else {
+          preferenceMisses.push({ key: `${matchIndex}-${id}-partner`, type: 'partner', preferred: formatDetailPrefLabel(player.metadata.partner_gender_pref), actual: formatPlayersWithGender(partners), rotation: match.rotation || matchIndex + 1, court: match.court })
+        }
+      }
+
+      if (player.metadata?.opponent_gender_pref && player.metadata.opponent_gender_pref !== 'any') {
+        preferenceTotal++
+        if (opponents.some(opponent => matchesPlayerGenderPref(opponent, player.metadata?.opponent_gender_pref))) {
+          preferenceHits++
+        } else {
+          preferenceMisses.push({ key: `${matchIndex}-${id}-opponent`, type: 'opponent', preferred: formatDetailPrefLabel(player.metadata.opponent_gender_pref), actual: formatPlayersWithGender(opponents), rotation: match.rotation || matchIndex + 1, court: match.court })
+        }
+      }
+    })
+
+    const sortedRotations = [...new Set(rotations)].sort((a, b) => a - b)
+    const duplicateRotationCount = Math.max(0, rotations.length - sortedRotations.length)
+    const restGaps = sortedRotations.slice(1).map((rotation, index) => Math.max(0, rotation - sortedRotations[index] - 1))
+    const avgRest = restGaps.length ? restGaps.reduce((sum, gap) => sum + gap, 0) / restGaps.length : 0
+    const preferenceRatio = preferenceTotal > 0 ? preferenceHits / preferenceTotal : null
+
+    return {
+      id,
+      name: player.name,
+      initial: getPlayerInitial(player.name),
+      avatarColor: getAvatarColor(id),
+      games: rotations.length,
+      partners: partnerSet.size,
+      opponents: opponentSet.size,
+      rotations: sortedRotations,
+      gameTimeline,
+      gamesByRound,
+      rotationSet: new Set(sortedRotations),
+      preferenceTags: buildPreferenceTags(player),
+      preferenceRatio,
+      preferenceLabel: preferenceTotal > 0 ? `${Math.round((preferenceHits / preferenceTotal) * 100)}%` : '100%',
+      preferenceMisses,
+      avgRestLabel: `${avgRest.toFixed(1)} vòng`,
+      duplicateRotationCount,
+    }
+  }).sort((a, b) => {
+    if (b.preferenceMisses.length !== a.preferenceMisses.length) return b.preferenceMisses.length - a.preferenceMisses.length
+    if (a.games !== b.games) return a.games - b.games
+    return a.name.localeCompare(b.name)
+  })
+}
+
+function buildPreferenceTags(player: ArrangementPlayer) {
+  const tags: { label: string, bg: string, fg: string }[] = []
+  const partnerPref = player.metadata?.partner_gender_pref
+  const opponentPref = player.metadata?.opponent_gender_pref
+  if (partnerPref && partnerPref !== 'any') tags.push(getPreferenceTag('Partner', partnerPref))
+  if (opponentPref && opponentPref !== 'any') tags.push(getPreferenceTag('Đối', opponentPref))
+  return tags
+}
+
+function getPreferenceTag(prefix: 'Partner' | 'Đối', pref: string) {
+  const label = `${prefix} ${formatDetailPrefLabel(pref)}`
+  if (prefix === 'Partner' && pref === 'female') return { label, bg: '#FFE4DD', fg: '#B64A2F' }
+  if (prefix === 'Partner' && pref === 'male') return { label, bg: '#DFF7EE', fg: '#0F6E56' }
+  if (prefix === 'Đối' && pref === 'female') return { label, bg: '#FFF1D8', fg: '#A05A16' }
+  return { label, bg: '#EEF0EC', fg: '#596864' }
+}
+
+function formatDetailPrefLabel(pref?: string | null) {
+  if (pref === 'female') return 'Nữ'
+  if (pref === 'male') return 'Nam'
+  return 'Bất kỳ'
+}
+
+function matchesPlayerGenderPref(player: ArrangementPlayer | undefined, pref?: string | null) {
+  if (!player || !pref || pref === 'any') return true
+  const gender = String(player.gender || '').toLowerCase()
+  if (pref === 'female') return gender === 'female' || gender === 'f' || gender === 'nữ' || gender === 'nu'
+  if (pref === 'male') return gender === 'male' || gender === 'm' || gender === 'nam'
+  return true
+}
+
+function formatPlayersWithGender(players: ArrangementPlayer[]) {
+  return players.map(player => `${player.name} (${formatDetailPrefLabel(normalizePlayerGender(player.gender))})`).join(', ')
+}
+
+function normalizePlayerGender(value?: string | null) {
+  const gender = String(value || '').toLowerCase()
+  if (gender === 'female' || gender === 'f' || gender === 'nữ' || gender === 'nu') return 'female'
+  if (gender === 'male' || gender === 'm' || gender === 'nam') return 'male'
+  return null
+}
+
+function getMetricTone(ratio: number) {
+  if (ratio >= 0.9) return '#0F6E56'
+  if (ratio >= 0.7) return '#F2A51A'
+  return '#D86A4A'
+}
+
+function getPreferenceTone(ratio: number | null) {
+  if (ratio == null || ratio >= 0.75) return '#0F6E56'
+  if (ratio >= 0.5) return '#F2A51A'
+  return '#D86A4A'
+}
+
+function getPlayerInitial(name: string) {
+  return (name || 'P').trim().charAt(0).toUpperCase() || 'P'
+}
+
+function getAvatarColor(id: string) {
+  const colors = ['#0F6E56', '#9B5F08', '#B04726', '#5B6B64']
+  const value = id.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)
+  return colors[value % colors.length]
+}
+
+function QualityDetailsModal({ result, onClose, onOpenStatExplanation }: { result: OptimizationResult, onClose: () => void, onOpenStatExplanation?: (key: string, value: string | number) => void }) {
+  return (
+    <Modal visible={true} animationType="slide" transparent={true} onRequestClose={onClose}>
+      <Pressable onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(26,46,42,0.42)', justifyContent: 'flex-end' }}>
+        <Pressable style={{ maxHeight: '88%', backgroundColor: '#F8F3E8', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' }}>
+          <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
+            <View style={{ width: 42, height: 5, borderRadius: 999, backgroundColor: '#D8D3C8' }} />
+          </View>
+
+          <View style={{ backgroundColor: '#FFFCF5', paddingHorizontal: 16, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#E5E3DC' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: '#1A2E2A', fontWeight: '900' }}>
+                  CHẤT LƯỢNG LỊCH
+                </Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', marginTop: 2 }}>
+                  Tổng hợp các chỉ số cân bằng · Setup #{result.setup.key}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F4EFE5', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 18, color: '#7A8884', lineHeight: 20 }}>×</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
+            <ScheduleCoverageReport
+              players={result.players}
+              schedule={result.matches}
+              mode="limited"
+              minGamesPerPlayer={result.setup.targetGames}
+              variant="rotation"
+              quality={{ ...result.quality, timedOut: false, fallbackUsed: false, overallScore: result.quality.overallScore }}
+              playerStatsInitiallyExpanded={false}
+              hideSummary={false}
+              hidePlayerStats={true}
+              onOpenStatExplanation={onOpenStatExplanation}
+            />
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  )
+}
+
 function RoundsDetailsModal({ result, onClose }: { result: OptimizationResult, onClose: () => void }) {
   return (
     <Modal visible={true} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -800,6 +1389,9 @@ function DetailedRoundsPreview({ matches, players }: { matches: RotationSchedule
                 ({matchesInR.length} trận)
               </Text>
             </View>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', marginBottom: 10, lineHeight: 16 }}>
+              Nghỉ: {sitters.length > 0 ? sitters.join(', ') : 'Không có'}
+            </Text>
 
             {/* Matches List - Super Compact */}
             <View style={{ borderTopWidth: 1, borderTopColor: '#F1EFE8' }}>

@@ -175,6 +175,7 @@ function calculateSetupScores(options: {
   targetRounds: number
   actualRounds: number
   desiredGamesPerPlayer: number
+  gamesCoverageScore: number
   courts: number
   maxUsableCourts: number
   playerCount: number
@@ -196,15 +197,12 @@ function calculateSetupScores(options: {
   const maxEfficientCourts = Math.max(1, Math.floor(playerCount / idealPlayersPerCourt))
   const overCourtPenalty = Math.max(0, options.courts - Math.min(options.maxUsableCourts, maxEfficientCourts)) * 8
   courtFitScore = clampScore(courtFitScore - overCourtPenalty)
-  const capacityGamesForCourtFit = Math.max(1, (options.targetRounds * options.courts * 4) / playerCount)
-  const meaningfulGamesTarget = Math.max(options.desiredGamesPerPlayer, Math.min(options.targetRounds, capacityGamesForCourtFit))
-  const gamesCoverageScore = clampScore((options.targetGames / meaningfulGamesTarget) * 100)
   const roundsDiff = options.actualRounds - options.targetRounds
   const durationPenalty = roundsDiff > 0 ? roundsDiff * 7 : Math.abs(roundsDiff) * 14
   const durationCoverageScore = clampScore(100 - durationPenalty)
   const setupScore = clampScore(
     options.qualityScore * 0.20 +
-    gamesCoverageScore * 0.40 +
+    options.gamesCoverageScore * 0.40 +
     durationCoverageScore * 0.20 +
     courtFitScore * 0.20
   )
@@ -212,9 +210,32 @@ function calculateSetupScores(options: {
   return {
     setupScore,
     durationCoverageScore,
-    gamesCoverageScore,
+    gamesCoverageScore: options.gamesCoverageScore,
     courtFitScore,
   }
+}
+
+function getPlayerGameCounts(players: ArrangementPlayer[], matches: RotationScheduledMatch[]) {
+  return players.map(player => {
+    const id = String(player.id)
+    return matches.filter(match => match.teamA.includes(id) || match.teamB.includes(id)).length
+  })
+}
+
+function calculateActualGamesCoverageScore(players: ArrangementPlayer[], matches: RotationScheduledMatch[], targetGames: number) {
+  const counts = getPlayerGameCounts(players, matches)
+  if (counts.length === 0) return 0
+
+  const safeTarget = Math.max(1, targetGames)
+  const averageGames = counts.reduce((sum, count) => sum + count, 0) / counts.length
+  const minGames = Math.min(...counts)
+  const targetHitRatio = counts.filter(count => count >= safeTarget).length / counts.length
+
+  return clampScore(
+    Math.min(1, averageGames / safeTarget) * 65 +
+    Math.min(1, minGames / safeTarget) * 25 +
+    targetHitRatio * 10
+  )
 }
 
 function compareResultsBySetupScore(a: OptimizationResult, b: OptimizationResult) {
@@ -256,12 +277,14 @@ export function runOneClickOptimization(
     }
     const actualRoundCount = getActualRoundCount(baseResult)
     const restStats = getRestPatternStats(players, result.matches)
+    const actualGamesCoverageScore = calculateActualGamesCoverageScore(players, result.matches, setup.targetGames)
     const scores = calculateSetupScores({
       qualityScore: result.quality.overallScore,
       targetGames: setup.targetGames,
       targetRounds: setup.targetRounds,
       actualRounds: actualRoundCount,
       desiredGamesPerPlayer,
+      gamesCoverageScore: actualGamesCoverageScore,
       courts: setup.courts,
       maxUsableCourts,
       playerCount: players.length,

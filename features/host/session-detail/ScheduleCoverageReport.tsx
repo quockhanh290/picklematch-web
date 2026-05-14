@@ -651,10 +651,10 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
               ))}
             </View>
 
-            {row.consecutive > 0 && (
+            {(row.consecutive || 0) > 0 && (
               <View style={{ marginTop: 9, backgroundColor: '#FFF2D6', borderRadius: RADIUS.md, paddingVertical: 6, paddingHorizontal: 8, borderWidth: 1, borderColor: '#F2D28A' }}>
                 <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#854F0B', fontWeight: '800' }}>
-                  Nghỉ 0 vòng: {row.consecutive}
+                  Nghỉ 0 vòng: {row.consecutive || 0}
                 </Text>
               </View>
             )}
@@ -665,17 +665,17 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
                   Vòng chơi
                 </Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, flex: 1, justifyContent: 'flex-end' }}>
-                {row.rotations.slice(0, 8).map(rotation => (
+                {(row.rotations || []).slice(0, 8).map(rotation => (
                   <View key={rotation} style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#E9F0FF', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#BFD0FF' }}>
                     <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#243B88', fontWeight: '900' }}>
                       {rotation}
                     </Text>
                   </View>
                 ))}
-                {row.rotations.length > 8 && (
+                {(row.rotations || []).length > 8 && (
                   <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#F3EEE3', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E6D8BE' }}>
                     <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 9, color: '#7A746A', fontWeight: '900' }}>
-                      +{row.rotations.length - 8}
+                      +{(row.rotations || []).length - 8}
                     </Text>
                   </View>
                 )}

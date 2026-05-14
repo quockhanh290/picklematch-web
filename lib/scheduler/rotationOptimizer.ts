@@ -42,7 +42,8 @@ const ROTATION_SCORE_WEIGHTS = {
   consecutiveRestPenalty: 38,
   idealRestBonus: 18,
   okRestBonus: 10,
-  longRestPenalty: 5,
+  longRestUrgencyBonus: 36,
+  severeLongRestUrgencyBonus: 90,
   skillGapSquared: 200,
   largeSkillGapSquared: 2000,
   partnerRepeat: 110,
@@ -54,7 +55,7 @@ const ROTATION_SCORE_WEIGHTS = {
   planPartnerRepeat: 110,
   planOpponentRepeat: 30,
   planConsecutiveRest: 30,
-  planLongRest: 7,
+  planLongRest: 70,
   planSkillGapSquared: 200,
   planLargeSkillGapSquared: 2000,
   planSkillGapOverLimit: 1_000_000,
@@ -224,7 +225,8 @@ function scoreCandidateGroup(
       if (gap === 1) score -= ROTATION_SCORE_WEIGHTS.consecutiveRestPenalty
       else if (gap === 2) score += ROTATION_SCORE_WEIGHTS.idealRestBonus
       else if (gap === 3) score += ROTATION_SCORE_WEIGHTS.okRestBonus
-      else if (gap > 5) score -= Math.min(30, (gap - 5) * ROTATION_SCORE_WEIGHTS.longRestPenalty)
+      else if (gap === 4) score += ROTATION_SCORE_WEIGHTS.longRestUrgencyBonus
+      else if (gap >= 5) score += ROTATION_SCORE_WEIGHTS.severeLongRestUrgencyBonus + (gap - 5) * 30
     }
   }
 
@@ -245,6 +247,12 @@ function getCombinationsOfFour(items: string[]) {
   return combos
 }
 
+function getRestUrgencyScore(restGap: number) {
+  if (restGap >= 999) return 80
+  if (restGap <= 3) return restGap * 18
+  return 54 + (restGap - 3) * 70
+}
+
 function getCandidatePool(
   eligible: string[],
   rotation: number,
@@ -257,11 +265,12 @@ function getCandidatePool(
       const stateB = states.get(b)!
       const remainingA = stateA.quota - stateA.games
       const remainingB = stateB.quota - stateB.games
-      if (remainingA !== remainingB) return remainingB - remainingA
 
       const restA = stateA.lastRotation == null ? 999 : rotation - stateA.lastRotation
       const restB = stateB.lastRotation == null ? 999 : rotation - stateB.lastRotation
-      if (restA !== restB) return restB - restA
+      const priorityA = remainingA * 100 + getRestUrgencyScore(restA) - stateA.games * 3
+      const priorityB = remainingB * 100 + getRestUrgencyScore(restB) - stateB.games * 3
+      if (priorityA !== priorityB) return priorityB - priorityA
 
       if (stateA.games !== stateB.games) return stateA.games - stateB.games
       return a.localeCompare(b)
@@ -349,7 +358,8 @@ function calculatePlanScore(
     for (let i = 0; i < sorted.length - 1; i++) {
       const gap = sorted[i + 1] - sorted[i]
       if (gap === 1) hardPenalty += 1_000_000
-      if (gap > 5) restPenalty += Math.min(35, (gap - 5) * ROTATION_SCORE_WEIGHTS.planLongRest)
+      if (gap === 4) restPenalty += 45
+      if (gap >= 5) restPenalty += Math.min(900, 180 + (gap - 5) * ROTATION_SCORE_WEIGHTS.planLongRest)
     }
   })
 
@@ -423,10 +433,10 @@ function calculateOverallScore(
     for (let i = 0; i < sorted.length - 1; i++) {
       const gap = sorted[i + 1] - sorted[i]
       if (gap === 1) consecutiveCount++
-      if (gap > 5) longRestCount++
+      if (gap >= 5) longRestCount++
     }
   })
-  const restScore = Math.max(0, 100 - consecutiveCount * 8 - longRestCount * 4)
+  const restScore = Math.max(0, 100 - consecutiveCount * 8 - longRestCount * 12)
 
   let partnerRepeats = 0
   partnerPairs.forEach(count => {
