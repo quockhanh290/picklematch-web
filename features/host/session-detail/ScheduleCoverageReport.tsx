@@ -67,7 +67,7 @@ type Props = {
   schedule: ScheduledMatch[]
   mode: 'full' | 'limited'
   minGamesPerPlayer: number
-  variant?: 'mix-in' | 'fixed' | 'social' | 'rotation'
+  variant?: 'round-robin' | 'mix-in' | 'fixed' | 'social' | 'rotation'
   quality?: {
     runtimeMs: number
     timedOut: boolean

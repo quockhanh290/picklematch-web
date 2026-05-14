@@ -32,7 +32,7 @@ export default function OneClickOptimizationRoute() {
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <SecondaryNavbar
         title={'T\u1ed0I \u01afU T\u1ef0 \u0110\u1ed8NG'}
-        onBackPress={() => router.back()}
+        onBackPress={() => router.replace(`/host/session/${id}/matches?openScheduleSetup=1` as any)}
       />
       <OneClickOptimizationScreen
         players={processedPlayers}

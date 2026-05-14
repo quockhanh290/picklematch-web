@@ -352,8 +352,11 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
 
   const runOptimization = () => {
     setRunning(true)
-    try {
-      const nextResults = candidateSet
+    const loadingStartedAt = Date.now()
+    setTimeout(() => {
+      let nextResults: OptimizationResult[] = []
+      try {
+      nextResults = candidateSet
         .map(setup => {
           const result = optimizeRotationPlan(activePlayers, {
             targetGamesPerPlayer: setup.targetGames,
@@ -391,10 +394,12 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
           }
         })
         .sort(compareResultsBySetupScore)
-      setResults(nextResults)
-    } finally {
-      setRunning(false)
-    }
+      } finally {
+        setResults(nextResults)
+        const remainingLoadingMs = Math.max(0, 800 - (Date.now() - loadingStartedAt))
+        setTimeout(() => setRunning(false), remainingLoadingMs)
+      }
+    }, 220)
   }
 
   if (activePlayers.length < 4) {
@@ -408,77 +413,112 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#F8F3E8' }} contentContainerStyle={{ padding: 16, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
-      <View style={{ backgroundColor: '#12352F', borderRadius: 24, padding: 18, marginBottom: 14, overflow: 'hidden', ...LAYOUT_SHADOW.sm }}>
-        <View style={{ position: 'absolute', right: -40, top: -50, width: 150, height: 150, borderRadius: 75, backgroundColor: '#1F6B59', opacity: 0.45 }} />
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: '#FFF5DE', fontWeight: '900' }}>
-          One-click optimization
-        </Text>
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#D8F3E6', marginTop: 6, lineHeight: 17 }}>
-          Nhập bối cảnh buổi social, hệ thống thử nhiều setup và xếp hạng bằng điểm setup: chất lượng lịch + độ phủ thời lượng + số trận/người + fit sân hợp lý.
-        </Text>
+    <ScrollView style={{ flex: 1, backgroundColor: '#F8F3E8' }} contentContainerStyle={{ padding: 8, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+      <View style={{ backgroundColor: '#FFFCF5', borderRadius: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E5E3DC', overflow: 'hidden' }}>
+        <View style={{ backgroundColor: '#0F6E56', paddingHorizontal: 14, paddingVertical: 7 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: 'white', fontWeight: '900' }}>
+            • TỐI ƯU TỰ ĐỘNG
+          </Text>
+        </View>
+        <View style={{ padding: 14 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: '#1A2E2A', fontWeight: '900', lineHeight: 25 }}>
+            HỆ THỐNG TỰ XẾP LỊCH TỐI ƯU
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#7A8884', marginTop: 6, lineHeight: 18 }}>
+            Nhập thông số buổi chơi - hệ thống thử nhiều cấu hình và chọn phương án tốt nhất dựa trên:
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 7, flexWrap: 'wrap', marginTop: 12 }}>
+            {['Chất lượng lịch', 'Độ phủ thời lượng', 'Số trận/người', 'Fit sân'].map(label => (
+              <View key={label} style={{ backgroundColor: '#E1F5EE', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#0F6E56', fontWeight: '900' }}>{label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
       </View>
 
-      <View style={{ backgroundColor: '#FFFCF5', borderRadius: 20, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900', marginBottom: 10 }}>
-          Input tối ưu
-        </Text>
+      <View style={{ backgroundColor: '#FFFCF5', borderRadius: 14, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
 
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900', marginBottom: 8 }}>Thời lượng buổi chơi</Text>
-        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>Thời lượng buổi chơi</Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B4B2A9', fontWeight: '700' }}>Chọn 1</Text>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
           {[
             { value: 120, label: '2h' },
             { value: 150, label: '2.5h' },
             { value: 180, label: '3h' },
+            { value: 210, label: '3.5h' },
           ].map(option => {
             const active = durationMinutes === option.value
             return (
-              <TouchableOpacity key={option.value} onPress={() => setDurationMinutes(option.value)} style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, backgroundColor: active ? '#0F6E56' : 'white', borderWidth: 1, borderColor: '#0F6E56' }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: active ? 'white' : '#0F6E56', fontWeight: '900' }}>{option.label}</Text>
+              <TouchableOpacity key={option.value} onPress={() => setDurationMinutes(option.value)} style={{ minWidth: 49, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, backgroundColor: active ? '#0F6E56' : 'white', borderWidth: 1, borderColor: active ? '#0F6E56' : '#D8D3C8', alignItems: 'center' }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: active ? 'white' : '#7A8884', fontWeight: '900' }}>{option.label}</Text>
               </TouchableOpacity>
             )
           })}
         </View>
 
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900', marginBottom: 8 }}>Nhịp 1 vòng</Text>
-        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-          {[12, 15, 18].map(minutes => {
+        <View style={{ height: 1, backgroundColor: '#E5E3DC', marginBottom: 15 }} />
+
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>Nhịp 1 vòng</Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B4B2A9', fontWeight: '700' }}>Thời gian mỗi trận</Text>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+          {[12, 15, 18, 20].map(minutes => {
             const active = minutesPerRound === minutes
             return (
-              <TouchableOpacity key={minutes} onPress={() => setMinutesPerRound(minutes)} style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, backgroundColor: active ? '#0F6E56' : 'white', borderWidth: 1, borderColor: '#0F6E56' }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: active ? 'white' : '#0F6E56', fontWeight: '900' }}>{minutes}p</Text>
+              <TouchableOpacity key={minutes} onPress={() => setMinutesPerRound(minutes)} style={{ minWidth: 49, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, backgroundColor: active ? '#0F6E56' : 'white', borderWidth: 1, borderColor: active ? '#0F6E56' : '#D8D3C8', alignItems: 'center' }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: active ? 'white' : '#7A8884', fontWeight: '900' }}>{minutes}p</Text>
               </TouchableOpacity>
             )
           })}
         </View>
 
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900', marginBottom: 8 }}>Số sân tối đa có thể dùng</Text>
-        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-          {courtOptions.map(courts => {
+        <View style={{ height: 1, backgroundColor: '#E5E3DC', marginBottom: 15 }} />
+
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>Số sân tối đa có thể dùng</Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B4B2A9', fontWeight: '700' }}>Chọn 1</Text>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
+          {courtOptions.slice(0, 10).map(courts => {
             const active = courtLimit === courts
             return (
-              <TouchableOpacity key={courts} onPress={() => setCourtLimit(courts)} style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: active ? '#0F6E56' : 'white', borderWidth: 1, borderColor: '#0F6E56', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: active ? 'white' : '#0F6E56', fontWeight: '900' }}>{courts}</Text>
+              <TouchableOpacity key={courts} onPress={() => setCourtLimit(courts)} style={{ width: '18.3%', aspectRatio: 1, borderRadius: 9, backgroundColor: active ? '#0F6E56' : 'white', borderWidth: 1, borderColor: active ? '#0F6E56' : '#D8D3C8', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: active ? 'white' : '#7A8884', fontWeight: '900' }}>{courts}</Text>
               </TouchableOpacity>
             )
           })}
         </View>
 
-        <View style={{ backgroundColor: '#F8F3E8', borderRadius: 14, padding: 10, borderWidth: 1, borderColor: '#EFE3CC', marginBottom: 12 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', lineHeight: 15 }}>
-            Sẽ thử {candidateSet.length} setup quanh mục tiêu {targetRounds} vòng, tìm số sân hợp lý theo group size thay vì mặc định dùng full sân.
-            Sàn trận/người: {desiredGamesPerPlayer}.
+        <View style={{ backgroundColor: '#E1F5EE', borderRadius: 9, padding: 13, marginBottom: 12, flexDirection: 'row', gap: 10 }}>
+          <Text style={{ fontSize: 16 }}>💡</Text>
+          <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#0F6E56', lineHeight: 18 }}>
+            {candidateSet.length === 0
+              ? 'Chưa có phương án phù hợp với thiết lập hiện tại. Hãy tăng thời lượng, tăng số sân hoặc rút ngắn nhịp mỗi vòng.'
+              : 'Hệ thống sẽ tự so sánh nhiều phương án xếp lịch và chọn lịch cân bằng nhất theo chất lượng trận, thời lượng buổi chơi và mức dùng sân hợp lý.'}
           </Text>
         </View>
 
-        <TouchableOpacity onPress={runOptimization} disabled={running || candidateSet.length === 0} style={{ backgroundColor: candidateSet.length > 0 ? '#0F6E56' : '#9CA3AF', borderRadius: 14, paddingVertical: 13, alignItems: 'center', opacity: running ? 0.7 : 1 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: 'white', fontWeight: '900' }}>
-            {running ? 'Đang tối ưu...' : 'Tìm setup tối ưu'}
-          </Text>
+        <TouchableOpacity onPress={runOptimization} disabled={running || candidateSet.length === 0} style={{ backgroundColor: candidateSet.length > 0 ? '#0F6E56' : '#9CA3AF', borderRadius: 999, paddingVertical: 16, alignItems: 'center', opacity: running ? 0.82 : 1, marginTop: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: 'white', fontWeight: '900' }}>
+              {running ? 'ĐANG TỐI ƯU...' : '⚡ TÌM SETUP TỐI ƯU'}
+            </Text>
+          </View>
         </TouchableOpacity>
       </View>
 
-      {running && <AppLoading />}
+      {running && (
+        <View style={{ backgroundColor: '#FFFCF5', borderRadius: 14, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#E5E3DC', alignItems: 'center' }}>
+          <AppLoading label="ĐANG TỐI ƯU LỊCH" style={{ minHeight: 140, padding: 18 }} />
+          <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#596864', lineHeight: 17 }}>
+            Đang thử các phương án xếp lịch. Vui lòng chờ trong giây lát.
+          </Text>
+        </View>
+      )}
 
       {results.length > 0 && (
         <View style={{ gap: 14 }}>
