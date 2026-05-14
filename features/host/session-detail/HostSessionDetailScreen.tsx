@@ -3,7 +3,7 @@ import * as Linking from 'expo-linking'
 import { Platform, Pressable, RefreshControl, ScrollView, Share, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Trophy, CheckCircle2, Check, AlertTriangle } from 'lucide-react-native'
+import { Trophy, CheckCircle2, Check, AlertTriangle, Sparkles } from 'lucide-react-native'
 import { Alert } from 'react-native'
 import { supabase } from '@/lib/supabase'
 
@@ -386,11 +386,27 @@ export function HostSessionDetailScreen({
         )}
 
         {isCheckInCompleted && !isCancelled && !isAfterEnd && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}>
+          <View style={{ gap: 10, marginTop: 12 }}>
+            <TouchableOpacity 
+              onPress={() => router.push(`/host/session/${id}/next-round` as any)}
+              style={{ 
+                flexDirection: 'row', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                gap: 8, 
+                backgroundColor: '#0F6E56', 
+                paddingVertical: 12, 
+                borderRadius: RADIUS.lg,
+                borderWidth: 1,
+                borderColor: '#0F6E56'
+              }}
+            >
+              <Sparkles size={18} color="white" />
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: 'white' }}>TEST NEXT ROUND</Text>
+            </TouchableOpacity>
             <TouchableOpacity 
               onPress={() => router.push(`/host/session/${id}/matches` as any)}
               style={{ 
-                flex: 1,
                 flexDirection: 'row', 
                 alignItems: 'center', 
                 justifyContent: 'center',

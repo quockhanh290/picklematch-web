@@ -1,0 +1,114 @@
+/* eslint-disable import/no-unresolved */
+import { getSessionId, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
+import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
+import { suggestNextRound } from '../../../lib/next-round-suggester/suggest.ts'
+
+type ManualMatch = {
+  court_idx: number
+  team_a: [string, string]
+  team_b: [string, string]
+}
+
+function getPlayedIds(matches: ManualMatch[]) {
+  return new Set(matches.flatMap((match) => [...match.team_a, ...match.team_b]))
+}
+
+function isValidMatch(value: unknown): value is ManualMatch {
+  if (!value || typeof value !== 'object') return false
+  const match = value as ManualMatch
+  return (
+    typeof match.court_idx === 'number' &&
+    Array.isArray(match.team_a) &&
+    match.team_a.length === 2 &&
+    match.team_a.every((id) => typeof id === 'string') &&
+    Array.isArray(match.team_b) &&
+    match.team_b.length === 2 &&
+    match.team_b.every((id) => typeof id === 'string') &&
+    new Set([...match.team_a, ...match.team_b]).size === 4
+  )
+}
+
+Deno.serve(async (request) => {
+  if (request.method !== 'POST') {
+    return jsonResponse({ ok: false, error: 'Method not allowed' }, 405)
+  }
+
+  const sessionId = getSessionId(request)
+  if (!sessionId) {
+    return jsonResponse({ ok: false, error: 'Missing session id' }, 400)
+  }
+
+  const auth = await requireHost(request, sessionId)
+  if (auth.error) return auth.error
+
+  try {
+    const body = await readJson(request)
+    const state = await loadSessionState(auth.supabase, sessionId)
+
+    const manual = Array.isArray(body.manual) ? body.manual : null
+    let matches: ManualMatch[]
+    let resting: string[]
+
+    if (manual) {
+      if (!manual.every(isValidMatch)) {
+        return jsonResponse({ ok: false, error: 'Invalid manual matches' }, 400)
+      }
+
+      matches = manual
+      const playedIds = getPlayedIds(matches)
+      if (playedIds.size !== matches.length * 4) {
+        return jsonResponse({ ok: false, error: 'A player can only be assigned once per round' }, 400)
+      }
+
+      const presentIds = new Set(
+        [...state.players.values()]
+          .filter((player) => player.checked_out_at === null)
+          .map((player) => player.player_id),
+      )
+
+      if ([...playedIds].some((playerId) => !presentIds.has(playerId))) {
+        return jsonResponse({ ok: false, error: 'Manual matches must use checked-in players' }, 400)
+      }
+
+      resting = [...state.players.values()]
+        .filter((player) => player.checked_out_at === null && !playedIds.has(player.player_id))
+        .map((player) => player.player_id)
+        .sort()
+    } else {
+      const suggestionIdx = typeof body.suggestion_idx === 'number' ? body.suggestion_idx : 0
+      const suggestion = suggestNextRound(state)
+      const alternative = suggestion.alternatives[suggestionIdx]
+
+      if (!alternative) {
+        return jsonResponse({ ok: false, error: 'No suggestion available', suggestion }, 409)
+      }
+
+      matches = alternative.matches
+      resting = alternative.resting
+    }
+
+    const { data, error } = await auth.supabase
+      .from('session_rounds')
+      .insert({
+        session_id: sessionId,
+        round_no: state.current_round,
+        status: 'active',
+        matches,
+        resting,
+        started_at: new Date().toISOString(),
+      })
+      .select('*')
+      .single()
+
+    if (error) {
+      return jsonResponse({ ok: false, error: error.message }, 500)
+    }
+
+    return jsonResponse({ ok: true, round: data })
+  } catch (error) {
+    return jsonResponse(
+      { ok: false, error: error instanceof Error ? error.message : 'Unknown error' },
+      500,
+    )
+  }
+})
