@@ -141,15 +141,27 @@ const ROTATION_SCORE_WEIGHTS = {
     planOpponentRepeat: 30,
     planConsecutiveRest: 30,
     planLongRest: 70,
+    planOverMaxRest: 200000,
     planSkillGapSquared: 200,
     planLargeSkillGapSquared: 2000,
-    planSkillGapOverLimit: 1000000,
+    planSkillGapOverLimit: 1200,
     planPlayerPreferenceUnderTarget: 25000,
 };
 const MIN_PLAYER_PREFERENCE_RATIO = 0.75;
 const MAX_ROTATION_SKILL_GAP = 0.5;
-function shuffleCopy(items) {
-    return [...items].sort(() => Math.random() - 0.5);
+const ACCEPTABLE_ROTATION_SKILL_GAP = 0.8;
+function createSeededRandom(seed) {
+    let value = seed >>> 0;
+    return () => {
+        value += 0x6D2B79F5;
+        let next = value;
+        next = Math.imul(next ^ (next >>> 15), next | 1);
+        next ^= next + Math.imul(next ^ (next >>> 7), next | 61);
+        return ((next ^ (next >>> 14)) >>> 0) / 4294967296;
+    };
+}
+function shuffleCopy(items, random) {
+    return [...items].sort(() => random() - 0.5);
 }
 function incrementPair(map, a, b) {
     const key = pairKey(a, b);
@@ -158,14 +170,14 @@ function incrementPair(map, a, b) {
 function getPairCount(map, a, b) {
     return map.get(pairKey(a, b)) || 0;
 }
-function buildQuotas(playerIds, targetGamesPerPlayer) {
+function buildQuotas(playerIds, targetGamesPerPlayer, random) {
     const safeTarget = Math.max(0, Math.floor(targetGamesPerPlayer || 0));
     const totalDesiredSlots = playerIds.length * safeTarget;
     const feasibleSlots = Math.floor(totalDesiredSlots / 4) * 4;
     const quotas = new Map(playerIds.map(id => [id, safeTarget]));
     let reductionsNeeded = totalDesiredSlots - feasibleSlots;
     // If exact equality is mathematically impossible, keep everyone at target or target - 1.
-    for (const id of shuffleCopy(playerIds)) {
+    for (const id of shuffleCopy(playerIds, random)) {
         if (reductionsNeeded <= 0)
             break;
         quotas.set(id, Math.max(0, (quotas.get(id) || 0) - 1));
@@ -209,7 +221,7 @@ function hasDuplicateInRotation(matches) {
     }
     return false;
 }
-function chooseBestTeamSplit(group, playerById, partnerPairs, opponentPairs) {
+function chooseBestTeamSplit(group, playerById, partnerPairs, opponentPairs, random) {
     const splits = [
         [[group[0], group[1]], [group[2], group[3]]],
         [[group[0], group[2]], [group[1], group[3]]],
@@ -247,7 +259,7 @@ function chooseBestTeamSplit(group, playerById, partnerPairs, opponentPairs) {
         score += scorePreference(teamA[1], teamA[0], teamB);
         score += scorePreference(teamB[0], teamB[1], teamA);
         score += scorePreference(teamB[1], teamB[0], teamA);
-        score += Math.random() * 0.001;
+        score += random() * 0.001;
         if (!best || score > best.score) {
             best = { teamA: [...teamA], teamB: [...teamB], score, skillGap };
         }
@@ -261,8 +273,8 @@ function getTeamSplitVariants(group) {
         { teamA: [group[0], group[3]], teamB: [group[1], group[2]] },
     ];
 }
-function scoreCandidateGroup(group, rotation, states, playerById, partnerPairs, opponentPairs) {
-    const split = chooseBestTeamSplit(group, playerById, partnerPairs, opponentPairs);
+function scoreCandidateGroup(group, rotation, states, playerById, partnerPairs, opponentPairs, random) {
+    const split = chooseBestTeamSplit(group, playerById, partnerPairs, opponentPairs, random);
     let score = split.score;
     for (const id of group) {
         const state = states.get(id);
@@ -286,7 +298,7 @@ function scoreCandidateGroup(group, rotation, states, playerById, partnerPairs, 
                 score += ROTATION_SCORE_WEIGHTS.severeLongRestUrgencyBonus + (gap - 5) * 30;
         }
     }
-    return { group, split, score: score + Math.random() * 0.001 };
+    return { group, split, score: score + random() * 0.001 };
 }
 function getCombinationsOfFour(items) {
     const combos = [];
@@ -307,6 +319,30 @@ function getRestUrgencyScore(restGap) {
     if (restGap <= 3)
         return restGap * 18;
     return 54 + (restGap - 3) * 70;
+}
+function getRestGap(id, rotation, states) {
+    const state = states.get(id);
+    return state.lastRotation == null ? 999 : rotation - state.lastRotation;
+}
+function getForcedRestPlayers(eligible, rotation, states, limit) {
+    return [...eligible]
+        .filter(id => {
+        const gap = getRestGap(id, rotation, states);
+        return gap >= 3 && gap < 999;
+    })
+        .sort((a, b) => {
+        const gapDiff = getRestGap(b, rotation, states) - getRestGap(a, rotation, states);
+        if (gapDiff !== 0)
+            return gapDiff;
+        const stateA = states.get(a);
+        const stateB = states.get(b);
+        const remainingA = stateA.quota - stateA.games;
+        const remainingB = stateB.quota - stateB.games;
+        if (remainingA !== remainingB)
+            return remainingB - remainingA;
+        return stateA.games - stateB.games;
+    })
+        .slice(0, limit);
 }
 function getCandidatePool(eligible, rotation, states, playerById) {
     const priorityPool = [...eligible]
@@ -363,8 +399,9 @@ function calculatePlanScore(matches, playerIds, playerById, quotas, courtCount) 
         const teamASkill = match.teamA.reduce((sum, id) => sum + getPlayerSkill(playerById.get(id)), 0);
         const teamBSkill = match.teamB.reduce((sum, id) => sum + getPlayerSkill(playerById.get(id)), 0);
         const skillGap = Math.abs(teamASkill - teamBSkill);
-        if (skillGap > MAX_ROTATION_SKILL_GAP)
-            hardPenalty += ROTATION_SCORE_WEIGHTS.planSkillGapOverLimit;
+        if (skillGap > MAX_ROTATION_SKILL_GAP) {
+            skillPenalty += (skillGap - MAX_ROTATION_SKILL_GAP) * ROTATION_SCORE_WEIGHTS.planSkillGapOverLimit;
+        }
         skillPenalty += Math.pow(skillGap, 2) * (skillGap > MAX_ROTATION_SKILL_GAP
             ? ROTATION_SCORE_WEIGHTS.planLargeSkillGapSquared
             : ROTATION_SCORE_WEIGHTS.planSkillGapSquared);
@@ -399,6 +436,8 @@ function calculatePlanScore(matches, playerIds, playerById, quotas, courtCount) 
             const gap = sorted[i + 1] - sorted[i];
             if (gap === 1)
                 hardPenalty += 1000000;
+            if (gap >= 3)
+                hardPenalty += (gap - 2) * ROTATION_SCORE_WEIGHTS.planOverMaxRest;
             if (gap === 4)
                 restPenalty += 45;
             if (gap >= 5)
@@ -501,7 +540,8 @@ function calculateOverallScore(matches, playerIds, playerById, quotas) {
  * are not divisible by 4, some players receive target - 1 games.
  */
 function optimizeRotationPlan(players, options) {
-    const { targetGamesPerPlayer, courtCount, iterations = 20000 } = options;
+    const { targetGamesPerPlayer, courtCount, iterations = 20000, seed = 1 } = options;
+    const random = createSeededRandom(seed);
     const startedAt = Date.now();
     const effectiveCourtCount = Math.max(1, Math.floor(courtCount || 1));
     const playerIds = players.map(p => String(p.id));
@@ -518,7 +558,7 @@ function optimizeRotationPlan(players, options) {
             },
         };
     }
-    const quotas = buildQuotas(playerIds, targetGamesPerPlayer);
+    const quotas = buildQuotas(playerIds, targetGamesPerPlayer, random);
     const states = new Map();
     playerIds.forEach(id => {
         states.set(id, {
@@ -540,7 +580,7 @@ function optimizeRotationPlan(players, options) {
         });
         return total;
     };
-    while (remainingSlots() >= 4) {
+    scheduleLoop: while (remainingSlots() >= 4) {
         const usedThisRotation = new Set();
         let matchesInRotation = 0;
         while (matchesInRotation < effectiveCourtCount) {
@@ -550,11 +590,34 @@ function optimizeRotationPlan(players, options) {
             });
             if (eligible.length < 4)
                 break;
-            const candidatePool = getCandidatePool(eligible, rotation, states, playerById);
-            const candidates = getCombinationsOfFour(candidatePool)
-                .map(group => scoreCandidateGroup(group, rotation, states, playerById, partnerPairs, opponentPairs))
+            const forcedPlayers = getForcedRestPlayers(eligible, rotation, states, 4);
+            const candidatePool = [...new Set([
+                    ...forcedPlayers,
+                    ...getCandidatePool(eligible, rotation, states, playerById),
+                ])];
+            const allCandidates = getCombinationsOfFour(candidatePool);
+            const forcedCandidates = forcedPlayers.length > 0
+                ? allCandidates.filter(group => forcedPlayers.every(id => group.includes(id)))
+                : allCandidates;
+            const candidateGroups = forcedCandidates.length > 0 ? forcedCandidates : allCandidates;
+            let scoredCandidates = candidateGroups
+                .map(group => scoreCandidateGroup(group, rotation, states, playerById, partnerPairs, opponentPairs, random))
                 .sort((a, b) => b.score - a.score);
-            const best = candidates[0];
+            let skillSafeCandidates = scoredCandidates.filter(candidate => candidate.split.skillGap <= MAX_ROTATION_SKILL_GAP);
+            let skillAcceptableCandidates = scoredCandidates.filter(candidate => candidate.split.skillGap <= ACCEPTABLE_ROTATION_SKILL_GAP);
+            if (skillSafeCandidates.length === 0 && candidatePool.length < eligible.length) {
+                const broadCandidates = getCombinationsOfFour(eligible);
+                const broadForcedCandidates = forcedPlayers.length > 0
+                    ? broadCandidates.filter(group => forcedPlayers.every(id => group.includes(id)))
+                    : broadCandidates;
+                const broadCandidateGroups = broadForcedCandidates.length > 0 ? broadForcedCandidates : broadCandidates;
+                scoredCandidates = broadCandidateGroups
+                    .map(group => scoreCandidateGroup(group, rotation, states, playerById, partnerPairs, opponentPairs, random))
+                    .sort((a, b) => b.score - a.score);
+                skillSafeCandidates = scoredCandidates.filter(candidate => candidate.split.skillGap <= MAX_ROTATION_SKILL_GAP);
+                skillAcceptableCandidates = scoredCandidates.filter(candidate => candidate.split.skillGap <= ACCEPTABLE_ROTATION_SKILL_GAP);
+            }
+            const best = skillSafeCandidates[0] || skillAcceptableCandidates[0] || scoredCandidates[0];
             if (!best)
                 break;
             matches.push({
@@ -575,11 +638,13 @@ function optimizeRotationPlan(players, options) {
             best.split.teamA.forEach(a => best.split.teamB.forEach(b => incrementPair(opponentPairs, a, b)));
             matchesInRotation++;
         }
+        if (matchesInRotation === 0)
+            break scheduleLoop;
         rotation++;
     }
     let bestMatches = matches.map(match => ({ ...match, teamA: [...match.teamA], teamB: [...match.teamB] }));
     let bestScore = calculatePlanScore(bestMatches, playerIds, playerById, quotas, effectiveCourtCount);
-    const localSearchIterations = Math.min(Math.max(0, iterations), Math.max(200, Math.min(1200, bestMatches.length * 60)));
+    const localSearchIterations = Math.min(Math.max(0, iterations), Math.max(200, Math.min(1800, bestMatches.length * 60)));
     const optimizeMatchSplit = (schedule, matchIndex) => {
         const match = schedule[matchIndex];
         const group = getMatchPlayers(match);
@@ -602,24 +667,24 @@ function optimizeRotationPlan(players, options) {
         if (bestMatches.length === 0)
             break;
         const nextMatches = bestMatches.map(match => ({ ...match, teamA: [...match.teamA], teamB: [...match.teamB] }));
-        const changeType = Math.random();
+        const changeType = random();
         if (changeType < 0.25) {
-            const matchIndex = Math.floor(Math.random() * nextMatches.length);
+            const matchIndex = Math.floor(random() * nextMatches.length);
             optimizeMatchSplit(nextMatches, matchIndex);
         }
         else {
             if (nextMatches.length < 2)
                 continue;
-            const m1Idx = Math.floor(Math.random() * nextMatches.length);
-            const m2Idx = Math.floor(Math.random() * nextMatches.length);
+            const m1Idx = Math.floor(random() * nextMatches.length);
+            const m2Idx = Math.floor(random() * nextMatches.length);
             if (m1Idx === m2Idx)
                 continue;
             const m1 = nextMatches[m1Idx];
             const m2 = nextMatches[m2Idx];
             const m1Players = getMatchPlayers(m1);
             const m2Players = getMatchPlayers(m2);
-            const p1Idx = Math.floor(Math.random() * 4);
-            const p2Idx = Math.floor(Math.random() * 4);
+            const p1Idx = Math.floor(random() * 4);
+            const p2Idx = Math.floor(random() * 4);
             const p1 = m1Players[p1Idx];
             const p2 = m2Players[p2Idx];
             m1Players[p1Idx] = p2;
@@ -672,6 +737,14 @@ function optimizeRotationPlan(players, options) {
 const MAX_ROUND_PACE_DRIFT = 1.1;
 const IDEAL_PLAYERS_PER_COURT = 9.5;
 const CLOSE_SCORE_TOLERANCE = 2;
+const RESTART_COUNT = 3;
+const ITERATIONS_PER_RESTART = 600;
+const SETUP_SCORE_WEIGHTS = {
+    balanced: { quality: 0.20, games: 0.40, duration: 0.20, court: 0.20, rest: 0 },
+    games: { quality: 0.15, games: 0.55, duration: 0.15, court: 0.10, rest: 0.05 },
+    skill: { quality: 0.40, games: 0.35, duration: 0.10, court: 0.05, rest: 0.10 },
+    rest: { quality: 0.20, games: 0.30, duration: 0.10, court: 0.05, rest: 0.35 },
+};
 function clampScore(value) {
     return Math.max(0, Math.min(100, Math.round(value)));
 }
@@ -795,10 +868,13 @@ function calculateSetupScores(options) {
     const roundsDiff = options.actualRounds - options.targetRounds;
     const durationPenalty = roundsDiff > 0 ? roundsDiff * 7 : Math.abs(roundsDiff) * 14;
     const durationCoverageScore = clampScore(100 - durationPenalty);
-    const setupScore = clampScore(options.qualityScore * 0.20 +
-        options.gamesCoverageScore * 0.40 +
-        durationCoverageScore * 0.20 +
-        courtFitScore * 0.20);
+    const weights = SETUP_SCORE_WEIGHTS[options.priority] || SETUP_SCORE_WEIGHTS.balanced;
+    const qualitySignal = options.priority === 'skill' ? options.skillBalanceScore : options.qualityScore;
+    const setupScore = clampScore(qualitySignal * weights.quality +
+        options.gamesCoverageScore * weights.games +
+        durationCoverageScore * weights.duration +
+        courtFitScore * weights.court +
+        options.restPatternScore * weights.rest);
     return {
         setupScore,
         durationCoverageScore,
@@ -824,68 +900,155 @@ function calculateActualGamesCoverageScore(players, matches, targetGames) {
         Math.min(1, minGames / safeTarget) * 25 +
         targetHitRatio * 10);
 }
-function compareResultsBySetupScore(a, b) {
+function getSkillGapStats(players, matches) {
+    const playerById = new Map();
+    players.forEach(player => playerById.set(String(player.id), player));
+    let maxSkillGap = 0;
+    let overSkillGapCount = 0;
+    matches.forEach(match => {
+        const teamASkill = match.teamA.reduce((sum, id) => {
+            const player = playerById.get(String(id));
+            return player ? sum + getPlayerSkill(player) : sum;
+        }, 0);
+        const teamBSkill = match.teamB.reduce((sum, id) => {
+            const player = playerById.get(String(id));
+            return player ? sum + getPlayerSkill(player) : sum;
+        }, 0);
+        const skillGap = Math.abs(teamASkill - teamBSkill);
+        maxSkillGap = Math.max(maxSkillGap, skillGap);
+        if (skillGap > 0.5)
+            overSkillGapCount += 1;
+    });
+    const skillPenalty = Math.max(0, maxSkillGap - 0.5) * 35 + overSkillGapCount * 2;
+    const skillBalanceScore = clampScore(100 - skillPenalty);
+    return {
+        maxSkillGap,
+        overSkillGapCount,
+        skillBalanceScore,
+    };
+}
+function compareResultsBySetupScore(a, b, priority = 'balanced') {
     const scoreDiff = b.setupScore - a.setupScore;
     if (Math.abs(scoreDiff) > CLOSE_SCORE_TOLERANCE)
         return scoreDiff;
+    if (priority === 'games') {
+        if (b.gamesCoverageScore !== a.gamesCoverageScore)
+            return b.gamesCoverageScore - a.gamesCoverageScore;
+        if (a.setup.targetGames !== b.setup.targetGames)
+            return b.setup.targetGames - a.setup.targetGames;
+    }
+    if (priority === 'skill') {
+        if (b.gamesCoverageScore !== a.gamesCoverageScore)
+            return b.gamesCoverageScore - a.gamesCoverageScore;
+        if (b.skillBalanceScore !== a.skillBalanceScore)
+            return b.skillBalanceScore - a.skillBalanceScore;
+        if (b.quality.overallScore !== a.quality.overallScore)
+            return b.quality.overallScore - a.quality.overallScore;
+    }
     if (b.restPatternScore !== a.restPatternScore)
         return b.restPatternScore - a.restPatternScore;
     if (a.backToBackCount !== b.backToBackCount)
         return a.backToBackCount - b.backToBackCount;
     if (a.maxConsecutivePlays !== b.maxConsecutivePlays)
         return a.maxConsecutivePlays - b.maxConsecutivePlays;
+    if (priority === 'rest') {
+        if (b.gamesCoverageScore !== a.gamesCoverageScore)
+            return b.gamesCoverageScore - a.gamesCoverageScore;
+    }
     if (a.setup.targetGames !== b.setup.targetGames)
         return b.setup.targetGames - a.setup.targetGames;
     if (b.quality.overallScore !== a.quality.overallScore)
         return b.quality.overallScore - a.quality.overallScore;
     return a.setup.courts - b.setup.courts;
 }
+function hashString(value) {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index++) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+}
+function buildOptimizationSeed(players, setup, restartIndex, priority) {
+    const playerKey = players
+        .map(player => { var _a, _b, _c; return `${player.id}:${(_b = (_a = player.pvna) !== null && _a !== void 0 ? _a : player.elo) !== null && _b !== void 0 ? _b : ''}:${(_c = player.gender) !== null && _c !== void 0 ? _c : ''}`; })
+        .sort()
+        .join('|');
+    return hashString(`${priority}:${setup.key}:${setup.targetRounds}:${playerKey}:${restartIndex + 1}`);
+}
+function buildOptimizationResult(options) {
+    const { setup, result, players, desiredGamesPerPlayer, maxUsableCourts, priority } = options;
+    const baseResult = {
+        setup,
+        matches: result.matches,
+        players,
+        quality: result.quality,
+    };
+    const actualRoundCount = getActualRoundCount(baseResult);
+    const restStats = getRestPatternStats(players, result.matches);
+    const skillGapStats = getSkillGapStats(players, result.matches);
+    const actualGamesCoverageScore = calculateActualGamesCoverageScore(players, result.matches, setup.targetGames);
+    const scores = calculateSetupScores({
+        qualityScore: result.quality.overallScore,
+        skillBalanceScore: skillGapStats.skillBalanceScore,
+        targetGames: setup.targetGames,
+        targetRounds: setup.targetRounds,
+        actualRounds: actualRoundCount,
+        desiredGamesPerPlayer,
+        gamesCoverageScore: actualGamesCoverageScore,
+        courts: setup.courts,
+        maxUsableCourts,
+        playerCount: players.length,
+        minRestAcrossPlayers: restStats.minRest,
+        restPatternScore: restStats.restPatternScore,
+        priority,
+    });
+    return {
+        ...baseResult,
+        ...scores,
+        minRestAcrossPlayers: restStats.minRest,
+        backToBackCount: restStats.backToBackCount,
+        maxConsecutivePlays: restStats.maxConsecutivePlays,
+        restPatternScore: restStats.restPatternScore,
+        maxSkillGap: skillGapStats.maxSkillGap,
+        overSkillGapCount: skillGapStats.overSkillGapCount,
+        skillBalanceScore: skillGapStats.skillBalanceScore,
+    };
+}
 function runOneClickOptimization(input, onProgress) {
-    const { players, maxCourts, durationMinutes, minutesPerRound, iterations = 8000 } = input;
+    const { players, maxCourts, durationMinutes, minutesPerRound, iterations = 8000, priority = 'balanced' } = input;
     const candidateSet = buildCandidateSet(players.length, maxCourts, durationMinutes, minutesPerRound);
     const targetRounds = Math.max(1, Math.ceil(durationMinutes / Math.max(1, minutesPerRound)));
     const desiredGamesPerPlayer = Math.max(2, Math.ceil(targetRounds / 2));
     const maxUsableCourts = Math.max(1, Math.min(Math.floor(players.length / 4), Math.floor(maxCourts || 1)));
     const results = [];
-    onProgress === null || onProgress === void 0 ? void 0 : onProgress({ current: 0, total: candidateSet.length });
+    onProgress === null || onProgress === void 0 ? void 0 : onProgress({ current: 0, total: candidateSet.length * RESTART_COUNT });
     candidateSet.forEach((setup, index) => {
-        const result = optimizeRotationPlan(players, {
-            targetGamesPerPlayer: setup.targetGames,
-            courtCount: setup.courts,
-            iterations,
-        });
-        const baseResult = {
-            setup,
-            matches: result.matches,
-            players,
-            quality: result.quality,
-        };
-        const actualRoundCount = getActualRoundCount(baseResult);
-        const restStats = getRestPatternStats(players, result.matches);
-        const actualGamesCoverageScore = calculateActualGamesCoverageScore(players, result.matches, setup.targetGames);
-        const scores = calculateSetupScores({
-            qualityScore: result.quality.overallScore,
-            targetGames: setup.targetGames,
-            targetRounds: setup.targetRounds,
-            actualRounds: actualRoundCount,
-            desiredGamesPerPlayer,
-            gamesCoverageScore: actualGamesCoverageScore,
-            courts: setup.courts,
-            maxUsableCourts,
-            playerCount: players.length,
-            minRestAcrossPlayers: restStats.minRest,
-        });
-        results.push({
-            ...baseResult,
-            ...scores,
-            minRestAcrossPlayers: restStats.minRest,
-            backToBackCount: restStats.backToBackCount,
-            maxConsecutivePlays: restStats.maxConsecutivePlays,
-            restPatternScore: restStats.restPatternScore,
-        });
-        onProgress === null || onProgress === void 0 ? void 0 : onProgress({ current: index + 1, total: candidateSet.length });
+        let bestResult = null;
+        for (let restartIndex = 0; restartIndex < RESTART_COUNT; restartIndex++) {
+            const result = optimizeRotationPlan(players, {
+                targetGamesPerPlayer: setup.targetGames,
+                courtCount: setup.courts,
+                iterations: Math.min(iterations, ITERATIONS_PER_RESTART),
+                seed: buildOptimizationSeed(players, setup, restartIndex, priority),
+            });
+            const candidateResult = buildOptimizationResult({
+                setup,
+                result,
+                players,
+                desiredGamesPerPlayer,
+                maxUsableCourts,
+                priority,
+            });
+            if (!bestResult || compareResultsBySetupScore(candidateResult, bestResult, priority) < 0) {
+                bestResult = candidateResult;
+            }
+            onProgress === null || onProgress === void 0 ? void 0 : onProgress({ current: index * RESTART_COUNT + restartIndex + 1, total: candidateSet.length * RESTART_COUNT });
+        }
+        if (bestResult)
+            results.push(bestResult);
     });
-    return results.sort(compareResultsBySetupScore);
+    return results.sort((a, b) => compareResultsBySetupScore(a, b, priority));
 }
 self.onmessage = function (event) {
     const requestId = event.data.requestId;

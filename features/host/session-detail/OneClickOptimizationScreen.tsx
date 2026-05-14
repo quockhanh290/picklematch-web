@@ -1,7 +1,7 @@
 import { AppLoading } from '@/components/design'
 import { SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { buildCandidateSet, getActualRoundCount, type OptimizationResult } from '@/lib/scheduler/oneClickOptimization'
+import { buildCandidateSet, getActualRoundCount, type OptimizationPriority, type OptimizationResult } from '@/lib/scheduler/oneClickOptimization'
 import { runOneClickOptimizationAsync } from '@/lib/scheduler/oneClickOptimizationClient'
 import type { RotationScheduledMatch } from '@/lib/scheduler/rotationOptimizer'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
@@ -16,6 +16,13 @@ type Props = {
 }
 
 type OptimizationModalType = 'quality' | 'players' | 'rounds' | 'explanation'
+
+const OPTIMIZATION_PRIORITY_OPTIONS: { value: OptimizationPriority, label: string, hint: string }[] = [
+  { value: 'balanced', label: 'Cân bằng', hint: 'Chọn lịch hài hòa giữa đủ trận, chất lượng và thời lượng.' },
+  { value: 'games', label: 'Đủ trận', hint: 'Ưu tiên số trận/người và mức đạt target.' },
+  { value: 'skill', label: 'Cân trình', hint: 'Ưu tiên chất lượng trận và giảm lệch trình.' },
+  { value: 'rest', label: 'Nghỉ đều', hint: 'Ưu tiên nhịp nghỉ, hạn chế nghỉ quá dài hoặc đánh dồn.' },
+]
 
 const STAT_EXPLANATIONS: Record<string, { title: string, meaning: string, calculation: string, advice: string, unit: string }> = {
   'Chất lượng': {
@@ -121,6 +128,7 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
   const [durationMinutes, setDurationMinutes] = useState(150)
   const [minutesPerRound, setMinutesPerRound] = useState(15)
   const [courtLimit, setCourtLimit] = useState(Math.max(1, maxCourts))
+  const [priority, setPriority] = useState<OptimizationPriority>('balanced')
   const [running, setRunning] = useState(false)
   const [optimizationProgress, setOptimizationProgress] = useState<{ current: number, total: number } | null>(null)
   const [results, setResults] = useState<OptimizationResult[]>([])
@@ -152,6 +160,7 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
           durationMinutes,
           minutesPerRound,
           iterations: 8000,
+          priority,
         },
         setOptimizationProgress
       )
@@ -219,6 +228,30 @@ export function OneClickOptimizationScreen({ players, maxCourts, onSelect }: Pro
               </View>
             ))}
           </View>
+        </View>
+      </View>
+
+      <View style={{ backgroundColor: '#FFFCF5', borderRadius: 14, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>Ưu tiên tối ưu</Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B4B2A9', fontWeight: '700' }}>Chọn 1</Text>
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {OPTIMIZATION_PRIORITY_OPTIONS.map(option => {
+            const active = priority === option.value
+            return (
+              <TouchableOpacity
+                key={option.value}
+                onPress={() => setPriority(option.value)}
+                style={{ width: '48.5%', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: active ? '#0F6E56' : '#F8F3E8', borderWidth: 1, borderColor: active ? '#0F6E56' : '#E5E3DC' }}
+              >
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: active ? 'white' : '#1A2E2A', fontWeight: '900' }}>{option.label}</Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: active ? 'rgba(255,255,255,0.82)' : '#7A8884', lineHeight: 14, marginTop: 4 }} numberOfLines={2}>
+                  {option.hint}
+                </Text>
+              </TouchableOpacity>
+            )
+          })}
         </View>
       </View>
 

@@ -23,7 +23,7 @@ type WorkerResponse =
     }
 
 let requestCounter = 0
-const WORKER_URL = '/workers/one-click-optimization-worker.js?v=20260513-rest-urgency'
+const WORKER_URL = '/workers/one-click-optimization-worker.js?v=20260513-soft-skill-ranking'
 
 const waitForUiFrame = () => new Promise<void>(resolve => {
   setTimeout(resolve, 0)

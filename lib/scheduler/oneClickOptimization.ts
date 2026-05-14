@@ -1,4 +1,5 @@
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
+import { getPlayerSkill } from './scoring'
 import { optimizeRotationPlan, type RotationScheduledMatch } from './rotationOptimizer'
 
 export type CandidateSetup = {
@@ -8,6 +9,8 @@ export type CandidateSetup = {
   estimatedRounds: number
   targetRounds: number
 }
+
+export type OptimizationPriority = 'balanced' | 'games' | 'skill' | 'rest'
 
 export type OptimizationResult = {
   setup: CandidateSetup
@@ -21,6 +24,9 @@ export type OptimizationResult = {
   minRestAcrossPlayers: number | null
   backToBackCount: number
   maxConsecutivePlays: number
+  maxSkillGap: number
+  overSkillGapCount: number
+  skillBalanceScore: number
   quality: {
     runtimeMs: number
     score: number
@@ -34,6 +40,7 @@ export type OneClickOptimizationInput = {
   durationMinutes: number
   minutesPerRound: number
   iterations?: number
+  priority?: OptimizationPriority
 }
 
 export type OneClickOptimizationProgress = {
@@ -44,6 +51,21 @@ export type OneClickOptimizationProgress = {
 const MAX_ROUND_PACE_DRIFT = 1.1
 const IDEAL_PLAYERS_PER_COURT = 9.5
 const CLOSE_SCORE_TOLERANCE = 2
+const RESTART_COUNT = 3
+const ITERATIONS_PER_RESTART = 600
+
+const SETUP_SCORE_WEIGHTS: Record<OptimizationPriority, {
+  quality: number
+  games: number
+  duration: number
+  court: number
+  rest: number
+}> = {
+  balanced: { quality: 0.20, games: 0.40, duration: 0.20, court: 0.20, rest: 0 },
+  games: { quality: 0.15, games: 0.55, duration: 0.15, court: 0.10, rest: 0.05 },
+  skill: { quality: 0.40, games: 0.35, duration: 0.10, court: 0.05, rest: 0.10 },
+  rest: { quality: 0.20, games: 0.30, duration: 0.10, court: 0.05, rest: 0.35 },
+}
 
 type RestPatternStats = {
   minRest: number | null
@@ -171,6 +193,7 @@ function getRestPatternStats(players: ArrangementPlayer[], matches: RotationSche
 
 function calculateSetupScores(options: {
   qualityScore: number
+  skillBalanceScore: number
   targetGames: number
   targetRounds: number
   actualRounds: number
@@ -180,6 +203,8 @@ function calculateSetupScores(options: {
   maxUsableCourts: number
   playerCount: number
   minRestAcrossPlayers: number | null
+  restPatternScore: number
+  priority: OptimizationPriority
 }) {
   const playerCount = Math.max(1, options.playerCount)
   const idealPlayersPerCourt = 9.0
@@ -200,11 +225,14 @@ function calculateSetupScores(options: {
   const roundsDiff = options.actualRounds - options.targetRounds
   const durationPenalty = roundsDiff > 0 ? roundsDiff * 7 : Math.abs(roundsDiff) * 14
   const durationCoverageScore = clampScore(100 - durationPenalty)
+  const weights = SETUP_SCORE_WEIGHTS[options.priority] || SETUP_SCORE_WEIGHTS.balanced
+  const qualitySignal = options.priority === 'skill' ? options.skillBalanceScore : options.qualityScore
   const setupScore = clampScore(
-    options.qualityScore * 0.20 +
-    options.gamesCoverageScore * 0.40 +
-    durationCoverageScore * 0.20 +
-    courtFitScore * 0.20
+    qualitySignal * weights.quality +
+    options.gamesCoverageScore * weights.games +
+    durationCoverageScore * weights.duration +
+    courtFitScore * weights.court +
+    options.restPatternScore * weights.rest
   )
 
   return {
@@ -238,69 +266,171 @@ function calculateActualGamesCoverageScore(players: ArrangementPlayer[], matches
   )
 }
 
-function compareResultsBySetupScore(a: OptimizationResult, b: OptimizationResult) {
+function getSkillGapStats(players: ArrangementPlayer[], matches: RotationScheduledMatch[]) {
+  const playerById = new Map<string, ArrangementPlayer>()
+  players.forEach(player => playerById.set(String(player.id), player))
+
+  let maxSkillGap = 0
+  let overSkillGapCount = 0
+
+  matches.forEach(match => {
+    const teamASkill = match.teamA.reduce((sum, id) => {
+      const player = playerById.get(String(id))
+      return player ? sum + getPlayerSkill(player) : sum
+    }, 0)
+    const teamBSkill = match.teamB.reduce((sum, id) => {
+      const player = playerById.get(String(id))
+      return player ? sum + getPlayerSkill(player) : sum
+    }, 0)
+    const skillGap = Math.abs(teamASkill - teamBSkill)
+    maxSkillGap = Math.max(maxSkillGap, skillGap)
+    if (skillGap > 0.5) overSkillGapCount += 1
+  })
+
+  const skillPenalty = Math.max(0, maxSkillGap - 0.5) * 35 + overSkillGapCount * 2
+  const skillBalanceScore = clampScore(100 - skillPenalty)
+
+  return {
+    maxSkillGap,
+    overSkillGapCount,
+    skillBalanceScore,
+  }
+}
+
+function compareResultsBySetupScore(a: OptimizationResult, b: OptimizationResult, priority: OptimizationPriority = 'balanced') {
   const scoreDiff = b.setupScore - a.setupScore
   if (Math.abs(scoreDiff) > CLOSE_SCORE_TOLERANCE) return scoreDiff
+
+  if (priority === 'games') {
+    if (b.gamesCoverageScore !== a.gamesCoverageScore) return b.gamesCoverageScore - a.gamesCoverageScore
+    if (a.setup.targetGames !== b.setup.targetGames) return b.setup.targetGames - a.setup.targetGames
+  }
+
+  if (priority === 'skill') {
+    if (b.gamesCoverageScore !== a.gamesCoverageScore) return b.gamesCoverageScore - a.gamesCoverageScore
+    if (b.skillBalanceScore !== a.skillBalanceScore) return b.skillBalanceScore - a.skillBalanceScore
+    if (b.quality.overallScore !== a.quality.overallScore) return b.quality.overallScore - a.quality.overallScore
+  }
+
   if (b.restPatternScore !== a.restPatternScore) return b.restPatternScore - a.restPatternScore
   if (a.backToBackCount !== b.backToBackCount) return a.backToBackCount - b.backToBackCount
   if (a.maxConsecutivePlays !== b.maxConsecutivePlays) return a.maxConsecutivePlays - b.maxConsecutivePlays
+
+  if (priority === 'rest') {
+    if (b.gamesCoverageScore !== a.gamesCoverageScore) return b.gamesCoverageScore - a.gamesCoverageScore
+  }
+
   if (a.setup.targetGames !== b.setup.targetGames) return b.setup.targetGames - a.setup.targetGames
   if (b.quality.overallScore !== a.quality.overallScore) return b.quality.overallScore - a.quality.overallScore
   return a.setup.courts - b.setup.courts
+}
+
+function hashString(value: string) {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function buildOptimizationSeed(players: ArrangementPlayer[], setup: CandidateSetup, restartIndex: number, priority: OptimizationPriority) {
+  const playerKey = players
+    .map(player => `${player.id}:${player.pvna ?? player.elo ?? ''}:${player.gender ?? ''}`)
+    .sort()
+    .join('|')
+  return hashString(`${priority}:${setup.key}:${setup.targetRounds}:${playerKey}:${restartIndex + 1}`)
+}
+
+function buildOptimizationResult(options: {
+  setup: CandidateSetup
+  result: ReturnType<typeof optimizeRotationPlan>
+  players: ArrangementPlayer[]
+  desiredGamesPerPlayer: number
+  maxUsableCourts: number
+  priority: OptimizationPriority
+}) {
+  const { setup, result, players, desiredGamesPerPlayer, maxUsableCourts, priority } = options
+  const baseResult = {
+    setup,
+    matches: result.matches,
+    players,
+    quality: result.quality,
+  }
+  const actualRoundCount = getActualRoundCount(baseResult)
+  const restStats = getRestPatternStats(players, result.matches)
+  const skillGapStats = getSkillGapStats(players, result.matches)
+  const actualGamesCoverageScore = calculateActualGamesCoverageScore(players, result.matches, setup.targetGames)
+  const scores = calculateSetupScores({
+    qualityScore: result.quality.overallScore,
+    skillBalanceScore: skillGapStats.skillBalanceScore,
+    targetGames: setup.targetGames,
+    targetRounds: setup.targetRounds,
+    actualRounds: actualRoundCount,
+    desiredGamesPerPlayer,
+    gamesCoverageScore: actualGamesCoverageScore,
+    courts: setup.courts,
+    maxUsableCourts,
+    playerCount: players.length,
+    minRestAcrossPlayers: restStats.minRest,
+    restPatternScore: restStats.restPatternScore,
+    priority,
+  })
+
+  return {
+    ...baseResult,
+    ...scores,
+    minRestAcrossPlayers: restStats.minRest,
+    backToBackCount: restStats.backToBackCount,
+    maxConsecutivePlays: restStats.maxConsecutivePlays,
+    restPatternScore: restStats.restPatternScore,
+    maxSkillGap: skillGapStats.maxSkillGap,
+    overSkillGapCount: skillGapStats.overSkillGapCount,
+    skillBalanceScore: skillGapStats.skillBalanceScore,
+  }
 }
 
 export function runOneClickOptimization(
   input: OneClickOptimizationInput,
   onProgress?: (progress: OneClickOptimizationProgress) => void
 ) {
-  const { players, maxCourts, durationMinutes, minutesPerRound, iterations = 8000 } = input
+  const { players, maxCourts, durationMinutes, minutesPerRound, iterations = 8000, priority = 'balanced' } = input
   const candidateSet = buildCandidateSet(players.length, maxCourts, durationMinutes, minutesPerRound)
   const targetRounds = Math.max(1, Math.ceil(durationMinutes / Math.max(1, minutesPerRound)))
   const desiredGamesPerPlayer = Math.max(2, Math.ceil(targetRounds / 2))
   const maxUsableCourts = Math.max(1, Math.min(Math.floor(players.length / 4), Math.floor(maxCourts || 1)))
   const results: OptimizationResult[] = []
 
-  onProgress?.({ current: 0, total: candidateSet.length })
+  onProgress?.({ current: 0, total: candidateSet.length * RESTART_COUNT })
 
   candidateSet.forEach((setup, index) => {
-    const result = optimizeRotationPlan(players, {
-      targetGamesPerPlayer: setup.targetGames,
-      courtCount: setup.courts,
-      iterations,
-    })
+    let bestResult: OptimizationResult | null = null
 
-    const baseResult = {
-      setup,
-      matches: result.matches,
-      players,
-      quality: result.quality,
+    for (let restartIndex = 0; restartIndex < RESTART_COUNT; restartIndex++) {
+      const result = optimizeRotationPlan(players, {
+        targetGamesPerPlayer: setup.targetGames,
+        courtCount: setup.courts,
+        iterations: Math.min(iterations, ITERATIONS_PER_RESTART),
+        seed: buildOptimizationSeed(players, setup, restartIndex, priority),
+      })
+      const candidateResult = buildOptimizationResult({
+        setup,
+        result,
+        players,
+        desiredGamesPerPlayer,
+        maxUsableCourts,
+        priority,
+      })
+
+      if (!bestResult || compareResultsBySetupScore(candidateResult, bestResult, priority) < 0) {
+        bestResult = candidateResult
+      }
+
+      onProgress?.({ current: index * RESTART_COUNT + restartIndex + 1, total: candidateSet.length * RESTART_COUNT })
     }
-    const actualRoundCount = getActualRoundCount(baseResult)
-    const restStats = getRestPatternStats(players, result.matches)
-    const actualGamesCoverageScore = calculateActualGamesCoverageScore(players, result.matches, setup.targetGames)
-    const scores = calculateSetupScores({
-      qualityScore: result.quality.overallScore,
-      targetGames: setup.targetGames,
-      targetRounds: setup.targetRounds,
-      actualRounds: actualRoundCount,
-      desiredGamesPerPlayer,
-      gamesCoverageScore: actualGamesCoverageScore,
-      courts: setup.courts,
-      maxUsableCourts,
-      playerCount: players.length,
-      minRestAcrossPlayers: restStats.minRest,
-    })
 
-    results.push({
-      ...baseResult,
-      ...scores,
-      minRestAcrossPlayers: restStats.minRest,
-      backToBackCount: restStats.backToBackCount,
-      maxConsecutivePlays: restStats.maxConsecutivePlays,
-      restPatternScore: restStats.restPatternScore,
-    })
-    onProgress?.({ current: index + 1, total: candidateSet.length })
+    if (bestResult) results.push(bestResult)
   })
 
-  return results.sort(compareResultsBySetupScore)
+  return results.sort((a, b) => compareResultsBySetupScore(a, b, priority))
 }

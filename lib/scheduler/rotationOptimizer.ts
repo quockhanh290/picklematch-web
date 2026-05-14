@@ -56,17 +56,32 @@ const ROTATION_SCORE_WEIGHTS = {
   planOpponentRepeat: 30,
   planConsecutiveRest: 30,
   planLongRest: 70,
+  planOverMaxRest: 200000,
   planSkillGapSquared: 200,
   planLargeSkillGapSquared: 2000,
-  planSkillGapOverLimit: 1_000_000,
+  planSkillGapOverLimit: 1200,
   planPlayerPreferenceUnderTarget: 25000,
 }
 
 const MIN_PLAYER_PREFERENCE_RATIO = 0.75
 const MAX_ROTATION_SKILL_GAP = 0.5
+const ACCEPTABLE_ROTATION_SKILL_GAP = 0.8
 
-function shuffleCopy<T>(items: T[]) {
-  return [...items].sort(() => Math.random() - 0.5)
+type RandomSource = () => number
+
+function createSeededRandom(seed: number): RandomSource {
+  let value = seed >>> 0
+  return () => {
+    value += 0x6D2B79F5
+    let next = value
+    next = Math.imul(next ^ (next >>> 15), next | 1)
+    next ^= next + Math.imul(next ^ (next >>> 7), next | 61)
+    return ((next ^ (next >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function shuffleCopy<T>(items: T[], random: RandomSource) {
+  return [...items].sort(() => random() - 0.5)
 }
 
 function incrementPair(map: Map<string, number>, a: string, b: string) {
@@ -78,7 +93,7 @@ function getPairCount(map: Map<string, number>, a: string, b: string) {
   return map.get(pairKey(a, b)) || 0
 }
 
-function buildQuotas(playerIds: string[], targetGamesPerPlayer: number) {
+function buildQuotas(playerIds: string[], targetGamesPerPlayer: number, random: RandomSource) {
   const safeTarget = Math.max(0, Math.floor(targetGamesPerPlayer || 0))
   const totalDesiredSlots = playerIds.length * safeTarget
   const feasibleSlots = Math.floor(totalDesiredSlots / 4) * 4
@@ -86,7 +101,7 @@ function buildQuotas(playerIds: string[], targetGamesPerPlayer: number) {
   let reductionsNeeded = totalDesiredSlots - feasibleSlots
 
   // If exact equality is mathematically impossible, keep everyone at target or target - 1.
-  for (const id of shuffleCopy(playerIds)) {
+  for (const id of shuffleCopy(playerIds, random)) {
     if (reductionsNeeded <= 0) break
     quotas.set(id, Math.max(0, (quotas.get(id) || 0) - 1))
     reductionsNeeded--
@@ -143,7 +158,8 @@ function chooseBestTeamSplit(
   group: string[],
   playerById: Map<string, ArrangementPlayer>,
   partnerPairs: Map<string, number>,
-  opponentPairs: Map<string, number>
+  opponentPairs: Map<string, number>,
+  random: RandomSource
 ): TeamSplit {
   const splits = [
     [[group[0], group[1]], [group[2], group[3]]],
@@ -183,7 +199,7 @@ function chooseBestTeamSplit(
     score += scorePreference(teamA[1], teamA[0], teamB)
     score += scorePreference(teamB[0], teamB[1], teamA)
     score += scorePreference(teamB[1], teamB[0], teamA)
-    score += Math.random() * 0.001
+    score += random() * 0.001
 
     if (!best || score > best.score) {
       best = { teamA: [...teamA], teamB: [...teamB], score, skillGap }
@@ -207,9 +223,10 @@ function scoreCandidateGroup(
   states: Map<string, PlayerState>,
   playerById: Map<string, ArrangementPlayer>,
   partnerPairs: Map<string, number>,
-  opponentPairs: Map<string, number>
+  opponentPairs: Map<string, number>,
+  random: RandomSource
 ) {
-  const split = chooseBestTeamSplit(group, playerById, partnerPairs, opponentPairs)
+  const split = chooseBestTeamSplit(group, playerById, partnerPairs, opponentPairs, random)
   let score = split.score
 
   for (const id of group) {
@@ -230,7 +247,7 @@ function scoreCandidateGroup(
     }
   }
 
-  return { group, split, score: score + Math.random() * 0.001 }
+  return { group, split, score: score + random() * 0.001 }
 }
 
 function getCombinationsOfFour(items: string[]) {
@@ -251,6 +268,35 @@ function getRestUrgencyScore(restGap: number) {
   if (restGap >= 999) return 80
   if (restGap <= 3) return restGap * 18
   return 54 + (restGap - 3) * 70
+}
+
+function getRestGap(id: string, rotation: number, states: Map<string, PlayerState>) {
+  const state = states.get(id)!
+  return state.lastRotation == null ? 999 : rotation - state.lastRotation
+}
+
+function getForcedRestPlayers(
+  eligible: string[],
+  rotation: number,
+  states: Map<string, PlayerState>,
+  limit: number
+) {
+  return [...eligible]
+    .filter(id => {
+      const gap = getRestGap(id, rotation, states)
+      return gap >= 3 && gap < 999
+    })
+    .sort((a, b) => {
+      const gapDiff = getRestGap(b, rotation, states) - getRestGap(a, rotation, states)
+      if (gapDiff !== 0) return gapDiff
+      const stateA = states.get(a)!
+      const stateB = states.get(b)!
+      const remainingA = stateA.quota - stateA.games
+      const remainingB = stateB.quota - stateB.games
+      if (remainingA !== remainingB) return remainingB - remainingA
+      return stateA.games - stateB.games
+    })
+    .slice(0, limit)
 }
 
 function getCandidatePool(
@@ -324,7 +370,9 @@ function calculatePlanScore(
     const teamASkill = match.teamA.reduce((sum, id) => sum + getPlayerSkill(playerById.get(id)!), 0)
     const teamBSkill = match.teamB.reduce((sum, id) => sum + getPlayerSkill(playerById.get(id)!), 0)
     const skillGap = Math.abs(teamASkill - teamBSkill)
-    if (skillGap > MAX_ROTATION_SKILL_GAP) hardPenalty += ROTATION_SCORE_WEIGHTS.planSkillGapOverLimit
+    if (skillGap > MAX_ROTATION_SKILL_GAP) {
+      skillPenalty += (skillGap - MAX_ROTATION_SKILL_GAP) * ROTATION_SCORE_WEIGHTS.planSkillGapOverLimit
+    }
     skillPenalty += Math.pow(skillGap, 2) * (skillGap > MAX_ROTATION_SKILL_GAP
       ? ROTATION_SCORE_WEIGHTS.planLargeSkillGapSquared
       : ROTATION_SCORE_WEIGHTS.planSkillGapSquared)
@@ -358,6 +406,7 @@ function calculatePlanScore(
     for (let i = 0; i < sorted.length - 1; i++) {
       const gap = sorted[i + 1] - sorted[i]
       if (gap === 1) hardPenalty += 1_000_000
+      if (gap >= 3) hardPenalty += (gap - 2) * ROTATION_SCORE_WEIGHTS.planOverMaxRest
       if (gap === 4) restPenalty += 45
       if (gap >= 5) restPenalty += Math.min(900, 180 + (gap - 5) * ROTATION_SCORE_WEIGHTS.planLongRest)
     }
@@ -476,9 +525,11 @@ export function optimizeRotationPlan(
     targetGamesPerPlayer: number
     courtCount: number
     iterations?: number
+    seed?: number
   }
 ): RotationOptimizationResult {
-  const { targetGamesPerPlayer, courtCount, iterations = 20000 } = options
+  const { targetGamesPerPlayer, courtCount, iterations = 20000, seed = 1 } = options
+  const random = createSeededRandom(seed)
   const startedAt = Date.now()
 
   const effectiveCourtCount = Math.max(1, Math.floor(courtCount || 1))
@@ -498,7 +549,7 @@ export function optimizeRotationPlan(
     }
   }
 
-  const quotas = buildQuotas(playerIds, targetGamesPerPlayer)
+  const quotas = buildQuotas(playerIds, targetGamesPerPlayer, random)
   const states = new Map<string, PlayerState>()
   playerIds.forEach(id => {
     states.set(id, {
@@ -523,6 +574,7 @@ export function optimizeRotationPlan(
     return total
   }
 
+  scheduleLoop:
   while (remainingSlots() >= 4) {
     const usedThisRotation = new Set<string>()
     let matchesInRotation = 0
@@ -535,12 +587,36 @@ export function optimizeRotationPlan(
 
       if (eligible.length < 4) break
 
-      const candidatePool = getCandidatePool(eligible, rotation, states, playerById)
-      const candidates = getCombinationsOfFour(candidatePool)
-        .map(group => scoreCandidateGroup(group, rotation, states, playerById, partnerPairs, opponentPairs))
+      const forcedPlayers = getForcedRestPlayers(eligible, rotation, states, 4)
+      const candidatePool = [...new Set([
+        ...forcedPlayers,
+        ...getCandidatePool(eligible, rotation, states, playerById),
+      ])]
+      const allCandidates = getCombinationsOfFour(candidatePool)
+      const forcedCandidates = forcedPlayers.length > 0
+        ? allCandidates.filter(group => forcedPlayers.every(id => group.includes(id)))
+        : allCandidates
+      const candidateGroups = forcedCandidates.length > 0 ? forcedCandidates : allCandidates
+      let scoredCandidates = candidateGroups
+        .map(group => scoreCandidateGroup(group, rotation, states, playerById, partnerPairs, opponentPairs, random))
         .sort((a, b) => b.score - a.score)
+      let skillSafeCandidates = scoredCandidates.filter(candidate => candidate.split.skillGap <= MAX_ROTATION_SKILL_GAP)
+      let skillAcceptableCandidates = scoredCandidates.filter(candidate => candidate.split.skillGap <= ACCEPTABLE_ROTATION_SKILL_GAP)
 
-      const best = candidates[0]
+      if (skillSafeCandidates.length === 0 && candidatePool.length < eligible.length) {
+        const broadCandidates = getCombinationsOfFour(eligible)
+        const broadForcedCandidates = forcedPlayers.length > 0
+          ? broadCandidates.filter(group => forcedPlayers.every(id => group.includes(id)))
+          : broadCandidates
+        const broadCandidateGroups = broadForcedCandidates.length > 0 ? broadForcedCandidates : broadCandidates
+        scoredCandidates = broadCandidateGroups
+          .map(group => scoreCandidateGroup(group, rotation, states, playerById, partnerPairs, opponentPairs, random))
+          .sort((a, b) => b.score - a.score)
+        skillSafeCandidates = scoredCandidates.filter(candidate => candidate.split.skillGap <= MAX_ROTATION_SKILL_GAP)
+        skillAcceptableCandidates = scoredCandidates.filter(candidate => candidate.split.skillGap <= ACCEPTABLE_ROTATION_SKILL_GAP)
+      }
+
+      const best = skillSafeCandidates[0] || skillAcceptableCandidates[0] || scoredCandidates[0]
       if (!best) break
 
       matches.push({
@@ -563,6 +639,7 @@ export function optimizeRotationPlan(
       matchesInRotation++
     }
 
+    if (matchesInRotation === 0) break scheduleLoop
     rotation++
   }
 
@@ -570,7 +647,7 @@ export function optimizeRotationPlan(
   let bestScore = calculatePlanScore(bestMatches, playerIds, playerById, quotas, effectiveCourtCount)
   const localSearchIterations = Math.min(
     Math.max(0, iterations),
-    Math.max(200, Math.min(1200, bestMatches.length * 60))
+    Math.max(200, Math.min(1800, bestMatches.length * 60))
   )
 
   const optimizeMatchSplit = (schedule: RotationScheduledMatch[], matchIndex: number) => {
@@ -598,24 +675,24 @@ export function optimizeRotationPlan(
     if (bestMatches.length === 0) break
 
     const nextMatches = bestMatches.map(match => ({ ...match, teamA: [...match.teamA], teamB: [...match.teamB] }))
-    const changeType = Math.random()
+    const changeType = random()
 
     if (changeType < 0.25) {
-      const matchIndex = Math.floor(Math.random() * nextMatches.length)
+      const matchIndex = Math.floor(random() * nextMatches.length)
       optimizeMatchSplit(nextMatches, matchIndex)
     } else {
       if (nextMatches.length < 2) continue
 
-      const m1Idx = Math.floor(Math.random() * nextMatches.length)
-      const m2Idx = Math.floor(Math.random() * nextMatches.length)
+      const m1Idx = Math.floor(random() * nextMatches.length)
+      const m2Idx = Math.floor(random() * nextMatches.length)
       if (m1Idx === m2Idx) continue
 
       const m1 = nextMatches[m1Idx]
       const m2 = nextMatches[m2Idx]
       const m1Players = getMatchPlayers(m1)
       const m2Players = getMatchPlayers(m2)
-      const p1Idx = Math.floor(Math.random() * 4)
-      const p2Idx = Math.floor(Math.random() * 4)
+      const p1Idx = Math.floor(random() * 4)
+      const p2Idx = Math.floor(random() * 4)
       const p1 = m1Players[p1Idx]
       const p2 = m2Players[p2Idx]
 
