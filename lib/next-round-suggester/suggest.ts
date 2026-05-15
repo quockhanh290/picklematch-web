@@ -12,7 +12,7 @@ import type {
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { Tier } from './classify.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { computeProjectedOpponentRepeatBurden } from './fairness/metrics.ts'
+import { computeProjectedOpponentRepeatBurden, computeProjectedPartnerRepeatBurden } from './fairness/metrics.ts'
 
 export type SuggestNextRoundOptions = {
   tier_overrides?: Record<string, Tier>
@@ -280,6 +280,11 @@ export function suggestNextRound(
   }
 
   alternatives.sort((a, b) => {
+    const matchCountA = getProjectedMatchCountExcess(a, state)
+    const matchCountB = getProjectedMatchCountExcess(b, state)
+    if (matchCountA.excess !== matchCountB.excess) return matchCountA.excess - matchCountB.excess
+    if (matchCountA.range !== matchCountB.range) return matchCountA.range - matchCountB.range
+
     const scoreDiff = a.score - b.score
     if (Math.abs(scoreDiff) > BURDEN_TIE_BREAK_SCORE_WINDOW) return scoreDiff
 
@@ -287,6 +292,10 @@ export function suggestNextRound(
     const burdenB = getProjectedOpponentBurden(b, state)
     if (burdenA.max !== burdenB.max) return burdenA.max - burdenB.max
     if (burdenA.avg !== burdenB.avg) return burdenA.avg - burdenB.avg
+    const partnerBurdenA = getProjectedPartnerBurden(a, state)
+    const partnerBurdenB = getProjectedPartnerBurden(b, state)
+    if (partnerBurdenA.max !== partnerBurdenB.max) return partnerBurdenA.max - partnerBurdenB.max
+    if (partnerBurdenA.avg !== partnerBurdenB.avg) return partnerBurdenA.avg - partnerBurdenB.avg
     if (a.stats.opponent_repeats !== b.stats.opponent_repeats) {
       return a.stats.opponent_repeats - b.stats.opponent_repeats
     }
@@ -309,6 +318,40 @@ export function suggestNextRound(
     alternatives: alternatives.slice(0, 3),
     warnings,
     should_end: false,
+  }
+}
+
+function getProjectedMatchCountExcess(
+  alternative: SuggestionAlternative,
+  state: SessionState,
+): { range: number; excess: number } {
+  const playedIds = new Set(alternative.matches.flatMap((match) => [...match.team_a, ...match.team_b]))
+  const counts = [...state.players.values()]
+    .filter((player) => player.checked_out_at === null)
+    .map((player) => player.matches_played + (playedIds.has(player.player_id) ? 1 : 0))
+
+  if (counts.length === 0) return { range: 0, excess: 0 }
+
+  const min = Math.min(...counts)
+  const max = Math.max(...counts)
+  const avg = counts.reduce((sum, count) => sum + count, 0) / counts.length
+  const allowedRange = Number.isInteger(avg) ? 0 : 1
+  const range = max - min
+
+  return {
+    range,
+    excess: Math.max(0, range - allowedRange),
+  }
+}
+
+function getProjectedPartnerBurden(
+  alternative: SuggestionAlternative,
+  state: SessionState,
+): { max: number; avg: number } {
+  const burden = computeProjectedPartnerRepeatBurden(state, alternative.matches)
+  return {
+    max: burden.max_repeated_partners,
+    avg: burden.avg_repeated_partners,
   }
 }
 

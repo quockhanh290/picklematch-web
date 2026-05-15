@@ -19,6 +19,22 @@ Deno.serve(async (request) => {
 
   const body = await readJson(request)
   const clearPlayerId = typeof body.clear_player_id === 'string' ? body.clear_player_id : null
+  const clearGroupId = typeof body.clear_group_id === 'string' ? body.clear_group_id : null
+
+  if (clearGroupId) {
+    const { data, error } = await auth.supabase
+      .from('session_player_state')
+      .update({ group_id: null })
+      .eq('session_id', sessionId)
+      .eq('group_id', clearGroupId)
+      .select('*')
+
+    if (error) {
+      return jsonResponse({ ok: false, error: error.message }, 500)
+    }
+
+    return jsonResponse({ ok: true, players: data ?? [] })
+  }
 
   if (clearPlayerId) {
     const { data, error } = await auth.supabase

@@ -22,9 +22,13 @@ Deno.serve(async (request) => {
     ? [...new Set(body.player_ids.filter((value): value is string => typeof value === 'string'))]
     : []
 
+  if (playerIds.length === 0) {
+    return jsonResponse({ ok: false, error: 'No player_ids provided for roster sync' }, 400)
+  }
+
   const { data: existingRows, error: loadError } = await auth.supabase
     .from('session_player_state')
-    .select('player_id')
+    .select('player_id, checked_out_at')
     .eq('session_id', sessionId)
 
   if (loadError) {
@@ -32,21 +36,10 @@ Deno.serve(async (request) => {
   }
 
   const existingIds = new Set((existingRows ?? []).map((row) => row.player_id as string))
-  const checkedInIds = new Set(playerIds)
-  const staleIds = [...existingIds].filter((playerId) => !checkedInIds.has(playerId))
   const newIds = playerIds.filter((playerId) => !existingIds.has(playerId))
-
-  if (staleIds.length > 0) {
-    const { error } = await auth.supabase
-      .from('session_player_state')
-      .delete()
-      .eq('session_id', sessionId)
-      .in('player_id', staleIds)
-
-    if (error) {
-      return jsonResponse({ ok: false, error: error.message }, 500)
-    }
-  }
+  const reviveIds = (existingRows ?? [])
+    .filter((row) => playerIds.includes(row.player_id as string) && row.checked_out_at !== null)
+    .map((row) => row.player_id as string)
 
   if (newIds.length > 0) {
     const now = new Date().toISOString()
@@ -68,10 +61,26 @@ Deno.serve(async (request) => {
     }
   }
 
+  if (reviveIds.length > 0) {
+    const { error } = await auth.supabase
+      .from('session_player_state')
+      .update({
+        checked_out_at: null,
+        opted_rest: false,
+      })
+      .eq('session_id', sessionId)
+      .in('player_id', reviveIds)
+
+    if (error) {
+      return jsonResponse({ ok: false, error: error.message }, 500)
+    }
+  }
+
   return jsonResponse({
     ok: true,
     inserted: newIds.length,
-    removed: staleIds.length,
+    revived: reviveIds.length,
+    removed: 0,
     total: playerIds.length,
   })
 })

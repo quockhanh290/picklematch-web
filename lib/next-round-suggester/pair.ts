@@ -53,7 +53,7 @@ export function bestTeamSplit(players: PlayerSessionState[], state: SessionState
 }
 
 const EXHAUSTIVE_MAX_ITER = 20000
-const SAMPLED_MAX_ITER = 200
+const SAMPLED_MAX_ITER = 600
 
 function addStats(a: MatchScore['stats'], b: MatchScore['stats']): MatchScore['stats'] {
   return {

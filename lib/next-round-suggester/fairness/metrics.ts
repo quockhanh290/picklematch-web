@@ -35,6 +35,16 @@ export type OpponentRepeatBurdenMetrics = {
   }[]
 }
 
+export type PartnerRepeatBurdenMetrics = {
+  max_repeated_partners: number
+  avg_repeated_partners: number
+  per_player: {
+    player_id: string
+    repeated_partners: number
+    repeated_partner_ids: string[]
+  }[]
+}
+
 export type RestFairnessMetrics = {
   per_player: {
     player_id: string
@@ -93,13 +103,16 @@ export function computePartnerDiversity(state: SessionState): DiversityMetrics {
     const counts = [...player.partner_counts.values()].filter((count) => count > 0)
     const uniqueCount = counts.length
     const totalPartnerships = counts.reduce((sum, count) => sum + count, 0)
+    const effectivePartnerships = getEffectiveDiversityCredits(player, state, 'partner_counts')
 
     return {
       player_id: player.player_id,
       unique_count: uniqueCount,
       unique_partners: uniqueCount,
       total_partnerships: totalPartnerships,
-      diversity_ratio: player.matches_played === 0 ? 1 : uniqueCount / player.matches_played,
+      diversity_ratio: player.matches_played === 0
+        ? 1
+        : Math.min(1, effectivePartnerships / player.matches_played),
     }
   })
 
@@ -117,13 +130,16 @@ export function computeOpponentDiversity(state: SessionState): DiversityMetrics 
     const uniqueCount = counts.length
     const totalOppositions = counts.reduce((sum, count) => sum + count, 0)
     const expectedOppositions = player.matches_played * 2
+    const effectiveOppositions = getEffectiveDiversityCredits(player, state, 'opponent_counts')
 
     return {
       player_id: player.player_id,
       unique_count: uniqueCount,
       unique_opponents: uniqueCount,
       total_oppositions: totalOppositions,
-      diversity_ratio: expectedOppositions === 0 ? 1 : uniqueCount / expectedOppositions,
+      diversity_ratio: expectedOppositions === 0
+        ? 1
+        : Math.min(1, effectiveOppositions / expectedOppositions),
     }
   })
   const avgUnique = average(perPlayer.map((player) => player.unique_count))
@@ -140,8 +156,8 @@ export function computeOpponentDiversity(state: SessionState): DiversityMetrics 
 export function computeOpponentRepeatBurden(state: SessionState): OpponentRepeatBurdenMetrics {
   const perPlayer = sortedPlayers(state).map((player) => {
     const repeatedOpponentIds = [...player.opponent_counts.entries()]
-      .filter(([, count]) => count > 1)
-      .map(([playerId]) => playerId)
+      .filter(([opponentId, count]) => isBurdenRepeat(player, state.players.get(opponentId), count))
+      .map(([opponentId]) => opponentId)
       .sort()
 
     return {
@@ -154,6 +170,27 @@ export function computeOpponentRepeatBurden(state: SessionState): OpponentRepeat
   return {
     max_repeated_opponents: Math.max(0, ...perPlayer.map((player) => player.repeated_opponents)),
     avg_repeated_opponents: average(perPlayer.map((player) => player.repeated_opponents)),
+    per_player: perPlayer,
+  }
+}
+
+export function computePartnerRepeatBurden(state: SessionState): PartnerRepeatBurdenMetrics {
+  const perPlayer = sortedPlayers(state).map((player) => {
+    const repeatedPartnerIds = [...player.partner_counts.entries()]
+      .filter(([partnerId, count]) => isBurdenRepeat(player, state.players.get(partnerId), count))
+      .map(([partnerId]) => partnerId)
+      .sort()
+
+    return {
+      player_id: player.player_id,
+      repeated_partners: repeatedPartnerIds.length,
+      repeated_partner_ids: repeatedPartnerIds,
+    }
+  })
+
+  return {
+    max_repeated_partners: Math.max(0, ...perPlayer.map((player) => player.repeated_partners)),
+    avg_repeated_partners: average(perPlayer.map((player) => player.repeated_partners)),
     per_player: perPlayer,
   }
 }
@@ -183,7 +220,7 @@ export function computeProjectedOpponentRepeatBurden(
   const perPlayer = [...projected.entries()]
     .map(([playerId, counts]) => {
       const repeatedOpponentIds = [...counts.entries()]
-        .filter(([, count]) => count > 1)
+        .filter(([opponentId, count]) => isBurdenRepeat(state.players.get(playerId), state.players.get(opponentId), count))
         .map(([opponentId]) => opponentId)
         .sort()
 
@@ -200,6 +237,90 @@ export function computeProjectedOpponentRepeatBurden(
     avg_repeated_opponents: average(perPlayer.map((player) => player.repeated_opponents)),
     per_player: perPlayer,
   }
+}
+
+export function computeProjectedPartnerRepeatBurden(
+  state: SessionState,
+  matches: Match[],
+): PartnerRepeatBurdenMetrics {
+  const projected = new Map(
+    sortedPlayers(state).map((player) => [
+      player.player_id,
+      new Map(player.partner_counts),
+    ]),
+  )
+
+  for (const match of matches) {
+    for (const team of [match.team_a, match.team_b]) {
+      const playerA = team[0]
+      const playerB = team[1]
+      const countsA = projected.get(playerA)
+      const countsB = projected.get(playerB)
+      if (countsA) countsA.set(playerB, (countsA.get(playerB) ?? 0) + 1)
+      if (countsB) countsB.set(playerA, (countsB.get(playerA) ?? 0) + 1)
+    }
+  }
+
+  const perPlayer = [...projected.entries()]
+    .map(([playerId, counts]) => {
+      const repeatedPartnerIds = [...counts.entries()]
+        .filter(([partnerId, count]) => isBurdenRepeat(state.players.get(playerId), state.players.get(partnerId), count))
+        .map(([partnerId]) => partnerId)
+        .sort()
+
+      return {
+        player_id: playerId,
+        repeated_partners: repeatedPartnerIds.length,
+        repeated_partner_ids: repeatedPartnerIds,
+      }
+    })
+    .sort((a, b) => a.player_id.localeCompare(b.player_id))
+
+  return {
+    max_repeated_partners: Math.max(0, ...perPlayer.map((player) => player.repeated_partners)),
+    avg_repeated_partners: average(perPlayer.map((player) => player.repeated_partners)),
+    per_player: perPlayer,
+  }
+}
+
+function getEffectiveDiversityCredits(
+  player: PlayerSessionState,
+  state: SessionState,
+  field: 'partner_counts' | 'opponent_counts',
+): number {
+  let credits = 0
+
+  for (const [otherId, count] of player[field]) {
+    if (count <= 0) continue
+    const other = state.players.get(otherId)
+    credits += getDiversityCredit(player, other, count)
+  }
+
+  return credits
+}
+
+function getDiversityCredit(
+  player: PlayerSessionState,
+  other: PlayerSessionState | undefined,
+  count: number,
+): number {
+  if (count <= 0) return 0
+  if (player.group_id && player.group_id === other?.group_id) {
+    return Math.min(count, 2)
+  }
+  return 1
+}
+
+function isBurdenRepeat(
+  player: PlayerSessionState | undefined,
+  other: PlayerSessionState | undefined,
+  count: number,
+): boolean {
+  if (count <= 1) return false
+  if (player?.group_id && player.group_id === other?.group_id) {
+    return count > 2
+  }
+  return true
 }
 
 export function computeRestFairness(state: SessionState): RestFairnessMetrics {

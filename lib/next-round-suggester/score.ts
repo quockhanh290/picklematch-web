@@ -60,13 +60,17 @@ function getOpponentRepeats(teamA: Team, teamB: Team, state: SessionState): numb
   return total
 }
 
-function getGroupedPairCount(players: string[], state: SessionState): number {
+function getGroupedPartnerCount(teamA: Team, teamB: Team, state: SessionState): number {
+  return getGroupedTeamPairCount(teamA, state) + getGroupedTeamPairCount(teamB, state)
+}
+
+function getGroupedTeamPairCount(team: Team, state: SessionState): number {
   let count = 0
 
-  for (let i = 0; i < players.length; i += 1) {
-    for (let j = i + 1; j < players.length; j += 1) {
-      const groupA = state.players.get(players[i])?.group_id
-      const groupB = state.players.get(players[j])?.group_id
+  for (let i = 0; i < team.length; i += 1) {
+    for (let j = i + 1; j < team.length; j += 1) {
+      const groupA = state.players.get(team[i])?.group_id
+      const groupB = state.players.get(team[j])?.group_id
       if (groupA && groupA === groupB) count += 1
     }
   }
@@ -156,7 +160,7 @@ export function scoreMatch(
   const stats = emptyStats(pvnaDiff)
   stats.partner_repeats = getPartnerRepeats(teamA, state) + getPartnerRepeats(teamB, state)
   stats.opponent_repeats = getOpponentRepeats(teamA, teamB, state)
-  stats.group_bonus = getGroupedPairCount(allPlayers, state)
+  stats.group_bonus = getGroupedPartnerCount(teamA, teamB, state)
   stats.gender_pref_penalty = genderPenalty(teamA, teamB, state, weights)
 
   const score =

@@ -123,6 +123,78 @@ function shortGroupId(groupId: string | null | undefined) {
   return `Group ${parts.slice(-2).map(part => part.slice(0, 4)).join('-')}`
 }
 
+type GroupSummary = {
+  group_id: string
+  label: string
+  player_ids: string[]
+}
+
+type GroupAuditRow = GroupSummary & {
+  shared_matches: number
+  pair_counts: Array<{ player_a: string; player_b: string; count: number }>
+}
+
+function buildGroupSummaries(rows: SessionPlayerStateRow[]): GroupSummary[] {
+  const byGroup = new Map<string, string[]>()
+
+  for (const row of rows) {
+    if (!row.group_id) continue
+    const current = byGroup.get(row.group_id) ?? []
+    current.push(row.player_id)
+    byGroup.set(row.group_id, current)
+  }
+
+  return [...byGroup.entries()]
+    .sort(([groupA], [groupB]) => groupA.localeCompare(groupB))
+    .map(([groupId, playerIds], index) => ({
+      group_id: groupId,
+      label: `G${index + 1}`,
+      player_ids: playerIds.sort(),
+    }))
+}
+
+function buildGroupAliasMap(groups: GroupSummary[]): Map<string, string> {
+  const aliases = new Map<string, string>()
+  for (const group of groups) {
+    aliases.set(group.group_id, group.label)
+  }
+  return aliases
+}
+
+function buildGroupAuditRows(state: SessionState, groups: GroupSummary[]): GroupAuditRow[] {
+  return groups.map(group => {
+    const memberSet = new Set(group.player_ids)
+    let sharedMatches = 0
+
+    for (const round of state.rounds) {
+      if (round.status !== 'completed') continue
+      for (const match of round.matches) {
+        const groupPlayersInMatch = [...match.team_a, ...match.team_b].filter(playerId => memberSet.has(playerId))
+        if (groupPlayersInMatch.length >= 2) sharedMatches += 1
+      }
+    }
+
+    const pairCounts: Array<{ player_a: string; player_b: string; count: number }> = []
+    for (let i = 0; i < group.player_ids.length; i += 1) {
+      for (let j = i + 1; j < group.player_ids.length; j += 1) {
+        const playerA = group.player_ids[i]
+        const playerB = group.player_ids[j]
+        const count = state.players.get(playerA)?.partner_counts.get(playerB) ?? 0
+        pairCounts.push({ player_a: playerA, player_b: playerB, count })
+      }
+    }
+
+    return {
+      ...group,
+      shared_matches: sharedMatches,
+      pair_counts: pairCounts.sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count
+        return `${a.player_a}:${a.player_b}`.localeCompare(`${b.player_a}:${b.player_b}`)
+      }),
+    }
+  })
+}
+
 function normalizeRoundRow(row: any): SessionRoundRow {
   return {
     id: row.id,
@@ -316,6 +388,74 @@ type FairnessAudit = {
     delta: number
     detail: string
   }>
+}
+
+type FairnessPreview = Omit<FairnessAudit, 'round_no'>
+
+function buildFairnessPreview(
+  state: SessionState,
+  alternative: SuggestionAlternative | null | undefined,
+): FairnessPreview | null {
+  if (!alternative) return null
+
+  const afterState = previewStateAfterAlternative(state, alternative)
+  const beforeScore = computeSessionFairness(state)
+  const afterScore = computeSessionFairness(afterState)
+  const rows = ([
+    ['match_count', 'So tran', describeMatchCount(afterState)],
+    ['partner_diversity', 'Partner', describePartnerDiversity(afterState)],
+    ['opponent_diversity', 'Doi thu', describeOpponentDiversity(afterState)],
+    ['rest', 'Nghi', describeRestFairness(afterState)],
+    ['gender_prefs', 'Gender pref', describeGenderPrefs(afterState)],
+  ] as Array<[keyof SessionFairnessScore['breakdown'], string, string]>).map(([key, label, detail]) => {
+    const before = beforeScore.breakdown[key]
+    const after = afterScore.breakdown[key]
+    return {
+      key,
+      label,
+      before,
+      after,
+      delta: after - before,
+      detail,
+    }
+  })
+
+  return {
+    before_total: beforeScore.total,
+    after_total: afterScore.total,
+    delta_total: afterScore.total - beforeScore.total,
+    rows,
+  }
+}
+
+type MatchCountConsistencyRow = {
+  player_id: string
+  live: number
+  replay: number
+}
+
+function buildMatchCountConsistencyRows(
+  liveState: SessionState,
+  replayState: SessionState,
+): MatchCountConsistencyRow[] {
+  const playerIds = new Set([
+    ...liveState.players.keys(),
+    ...replayState.players.keys(),
+  ])
+
+  return [...playerIds]
+    .map((playerId) => ({
+      player_id: playerId,
+      live: liveState.players.get(playerId)?.matches_played ?? 0,
+      replay: replayState.players.get(playerId)?.matches_played ?? 0,
+    }))
+    .filter((row) => row.live !== row.replay)
+    .sort((a, b) => {
+      const diffA = Math.abs(a.live - a.replay)
+      const diffB = Math.abs(b.live - b.replay)
+      if (diffA !== diffB) return diffB - diffA
+      return a.player_id.localeCompare(b.player_id)
+    })
 }
 
 function buildLatestFairnessAudit(state: SessionState): FairnessAudit | null {
@@ -555,6 +695,10 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
   const selected = suggestion.alternatives[selectedAlternative] ?? suggestion.alternatives[0]
   const workingAlternative = manualAlternative ?? selected
   const fairnessScore = useMemo(() => computeSessionFairness(state), [state])
+  const fairnessPreview = useMemo(
+    () => buildFairnessPreview(state, workingAlternative),
+    [state, workingAlternative],
+  )
   const fairnessAudit = useMemo(() => buildLatestFairnessAudit(state), [state])
   const fairnessWarnings = useMemo(
     () => {
@@ -568,7 +712,6 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     },
     [state, workingAlternative],
   )
-  const sessionSummary = useMemo(() => sanitizeSummaryForHost(buildSessionSummary(state)), [state])
   const activeRound = useMemo(
     () => rows.roundRows.find(row => row.status === 'active') ?? null,
     [rows.roundRows],
@@ -586,6 +729,17 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
   const completedRounds = rows.roundRows.filter(row => row.status === 'completed').sort((a, b) => b.round_no - a.round_no)
   const completedRoundCount = completedRounds.length
   const targetReached = targetRounds > 0 && completedRoundCount >= targetRounds
+  const reportState = useMemo(
+    () => (completedRoundCount > 0 ? rebuildStateThroughRound(state, completedRounds[0].round_no) : state),
+    [completedRoundCount, completedRounds, state],
+  )
+  const sessionSummary = useMemo(() => sanitizeSummaryForHost(buildSessionSummary(reportState)), [reportState])
+  const matchCountConsistencyRows = useMemo(
+    () => buildMatchCountConsistencyRows(state, reportState),
+    [reportState, state],
+  )
+  const groupSummaries = useMemo(() => buildGroupSummaries(rows.playerRows), [rows.playerRows])
+  const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
 
   const runAction = async (key: string, action: () => Promise<void>) => {
     setBusy(key)
@@ -628,6 +782,14 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     await runAction(`group-clear-${playerId}`, async () => {
       await invokeLiveSessionFunction('session-set-group', sessionId, {
         clear_player_id: playerId,
+      })
+    })
+  }
+
+  const clearWholeGroup = async (groupId: string) => {
+    await runAction(`group-clear-${groupId}`, async () => {
+      await invokeLiveSessionFunction('session-set-group', sessionId, {
+        clear_group_id: groupId,
       })
     })
   }
@@ -1033,7 +1195,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                       {player?.name ?? row.player_id}
                     </Text>
                     <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 3, fontWeight: '800' }}>
-                      {shortGroupId(row.group_id)}
+                      {row.group_id ? `${groupAliases.get(row.group_id) ?? shortGroupId(row.group_id)} · ${shortGroupId(row.group_id)}` : shortGroupId(row.group_id)}
                     </Text>
                     <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 2 }}>
                       PVNA {getPlayerPvna(player).toFixed(2)} · Trận {row.matches_played} · Nghỉ {row.consecutive_rest} · Chơi liền {row.consecutive_play}
@@ -1041,7 +1203,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <MiniButton
-                      label={groupSelection.includes(row.player_id) ? 'Picked' : 'Group'}
+                      label={groupSelection.includes(row.player_id) ? 'Picked' : row.group_id ? 'Move group' : 'Group'}
                       loading={busy?.startsWith('group-')}
                       onPress={() => toggleGroupSelection(row.player_id)}
                       muted={groupSelection.includes(row.player_id)}
@@ -1074,6 +1236,28 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
         </View>
         {rows.playerRows.length > 0 && (
           <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
+            {groupSummaries.length > 0 && (
+              <View style={{ gap: 7 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
+                  Group hien tai
+                </Text>
+                {groupSummaries.map(group => (
+                  <View key={group.group_id} style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC', gap: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+                        {group.label}: {group.player_ids.map(id => playerName(id, playersById)).join(', ')}
+                      </Text>
+                      <MiniButton
+                        label="Clear group"
+                        loading={busy === `group-clear-${group.group_id}`}
+                        onPress={() => clearWholeGroup(group.group_id)}
+                        muted
+                      />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
               Group ban: chon 2+ nguoi roi tao group. Group chi la bonus, khong bat buoc cung team.
             </Text>
@@ -1147,6 +1331,9 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
             {workingAlternative && (
               <View style={{ gap: 10, marginTop: 12 }}>
                 <SuggestionStatsCard alternative={workingAlternative} />
+                {fairnessPreview && (
+                  <FairnessPreviewCard preview={fairnessPreview} />
+                )}
                 {workingAlternative.matches.map(match => (
                   <MatchCard key={`suggest-${match.court_idx}`} match={match} state={state} playersById={playersById} />
                 ))}
@@ -1179,9 +1366,11 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
       {completedRounds.length > 0 && showSessionReport && (
         <SessionFairnessSummaryCard
           summary={sessionSummary}
-          state={state}
+          state={reportState}
+          matchCountConsistencyRows={matchCountConsistencyRows}
           playersById={playersById}
           durationMinutes={courtDurationMin}
+          groupSummaries={groupSummaries}
         />
       )}
       {fairnessAudit && (
@@ -1281,13 +1470,17 @@ function FairnessBanner({
 function SessionFairnessSummaryCard({
   summary,
   state,
+  matchCountConsistencyRows,
   playersById,
   durationMinutes,
+  groupSummaries,
 }: {
   summary: SessionSummary
   state: SessionState
+  matchCountConsistencyRows: MatchCountConsistencyRow[]
   playersById: Map<string, ArrangementPlayer>
   durationMinutes?: number
+  groupSummaries: GroupSummary[]
 }) {
   const maxMatches = Math.max(1, ...summary.per_player.map(player => player.matches_played))
   const matchCounts = summary.per_player.map(player => player.matches_played)
@@ -1298,6 +1491,7 @@ function SessionFairnessSummaryCard({
   const rest = computeRestFairness(state)
   const gender = computeGenderPrefSatisfaction(state)
   const opponentBurden = computeOpponentRepeatBurden(state)
+  const groupAuditRows = buildGroupAuditRows(state, groupSummaries)
   const breakdown = summary.fairness_score.breakdown
   const partnerRepeats = partner.repeat_pairs.filter(pair => pair.count > 1)
   const opponentRepeats = opponent.repeat_pairs.filter(pair => pair.count > 1)
@@ -1388,6 +1582,29 @@ function SessionFairnessSummaryCard({
         ))}
       </View>
 
+      {matchCountConsistencyRows.length > 0 && (
+        <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#A05A16', fontWeight: '900' }}>
+            Canh bao dong bo so tran
+          </Text>
+          <View style={{ backgroundColor: '#FFF3CD', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E3C77A', gap: 4 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A4A00', lineHeight: 14 }}>
+              Live state khac replay tu lich su round. Audit report dang dung replay tu rounds.
+            </Text>
+            {matchCountConsistencyRows.slice(0, 12).map(row => (
+              <Text key={`match-count-mismatch-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A4A00', lineHeight: 14 }}>
+                {playerName(row.player_id, playersById)}: live {row.live}, replay {row.replay}
+              </Text>
+            ))}
+            {matchCountConsistencyRows.length > 12 && (
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A4A00', lineHeight: 14 }}>
+                +{matchCountConsistencyRows.length - 12} players khac
+              </Text>
+            )}
+          </View>
+        </View>
+      )}
+
       <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
         <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
           Cap lap nhieu nhat
@@ -1411,6 +1628,13 @@ function SessionFairnessSummaryCard({
           Nguoi bi lap doi thu nhieu
         </Text>
         <OpponentBurdenBlock burden={opponentBurden} playersById={playersById} />
+      </View>
+
+      <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
+          Group audit
+        </Text>
+        <GroupAuditBlock rows={groupAuditRows} playersById={playersById} />
       </View>
 
       {summary.fairness_evolution.length > 0 && (
@@ -1511,6 +1735,49 @@ function OpponentBurdenBlock({
   )
 }
 
+function GroupAuditBlock({
+  rows,
+  playersById,
+}: {
+  rows: GroupAuditRow[]
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  if (rows.length === 0) {
+    return (
+      <View style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884' }}>
+          Chua co group nao.
+        </Text>
+      </View>
+    )
+  }
+
+  return (
+    <View style={{ gap: 8 }}>
+      {rows.map(row => (
+        <View key={`group-audit-${row.group_id}`} style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+            {row.label}: {row.player_ids.map(id => playerName(id, playersById)).join(', ')}
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 4 }}>
+            Cung xuat hien trong {row.shared_matches} tran.
+          </Text>
+          <View style={{ gap: 3, marginTop: 6 }}>
+            {row.pair_counts.map(pair => (
+              <Text
+                key={`group-pair-${row.group_id}-${pair.player_a}-${pair.player_b}`}
+                style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: pair.count > 0 ? '#596864' : '#A05A16', lineHeight: 14 }}
+              >
+                {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} tran chung team
+              </Text>
+            ))}
+          </View>
+        </View>
+      ))}
+    </View>
+  )
+}
+
 function FairnessAuditCard({ audit }: { audit: FairnessAudit }) {
   return (
     <View style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
@@ -1543,6 +1810,49 @@ function FairnessAuditCard({ audit }: { audit: FairnessAudit }) {
               </Text>
             </View>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 4, lineHeight: 15 }}>
+              {row.detail}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  )
+}
+
+function FairnessPreviewCard({ preview }: { preview: FairnessPreview }) {
+  const tone = preview.delta_total >= 0 ? '#0F6E56' : '#B45309'
+
+  return (
+    <View style={{ backgroundColor: '#FFFCF5', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E3DC' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900' }}>
+            Preview fairness neu start
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 2 }}>
+            {preview.before_total}{' -> '}{preview.after_total}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: tone, fontWeight: '900' }}>
+          {preview.delta_total > 0 ? '+' : ''}{preview.delta_total}
+        </Text>
+      </View>
+
+      <View style={{ gap: 7, marginTop: 10 }}>
+        {preview.rows.map(row => (
+          <View key={`preview-${row.key}`} style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 9, borderWidth: 1, borderColor: '#E5E3DC' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+                {row.label}
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900' }}>
+                {row.before}{' -> '}{row.after}
+              </Text>
+              <Text style={{ width: 34, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: row.delta >= 0 ? '#0F6E56' : '#B45309', fontWeight: '900' }}>
+                {row.delta > 0 ? '+' : ''}{row.delta}
+              </Text>
+            </View>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', marginTop: 3, lineHeight: 13 }}>
               {row.detail}
             </Text>
           </View>

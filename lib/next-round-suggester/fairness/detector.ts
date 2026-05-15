@@ -66,16 +66,18 @@ function detectMatchCountIssues(state: SessionState): FairnessWarning[] {
 
   const metrics = computeMatchCountMetrics(state)
   const warnings: FairnessWarning[] = []
+  const allowedRange = getAllowedMatchCountRange(metrics)
+  const excessRange = Math.max(0, metrics.range - allowedRange)
   const underplayed = metrics.per_player
     .filter((player) => player.matches_played < metrics.avg - 1.5)
     .map((player) => player.player_id)
 
-  if (metrics.range > 2) {
+  if (excessRange > 0) {
     warnings.push({
       severity: 'warning',
       type: 'match_count_imbalance',
       affected_players: underplayed.length > 0 ? underplayed : getUnderplayedByMinimum(metrics),
-      message: `Chenh so tran dang la ${metrics.range}.`,
+      message: `Chenh so tran dang la ${metrics.range}, muc hop ly la ${allowedRange}.`,
       suggested_action: 'Engine se uu tien cac ban dang choi it tran hon o vong ke tiep.',
     })
   }
@@ -91,6 +93,11 @@ function detectMatchCountIssues(state: SessionState): FairnessWarning[] {
   }
 
   return warnings
+}
+
+function getAllowedMatchCountRange(metrics: ReturnType<typeof computeMatchCountMetrics>): number {
+  if (metrics.per_player.length === 0) return 0
+  return Number.isInteger(metrics.avg) ? 0 : 1
 }
 
 function detectPartnerIssues(state: SessionState): FairnessWarning[] {

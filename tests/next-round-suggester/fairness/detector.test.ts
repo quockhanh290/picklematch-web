@@ -30,6 +30,40 @@ describe('Detector', () => {
     )
   })
 
+  it('warns when match count range exceeds the expected one-match spread', () => {
+    const state = createState({
+      currentRound: 3,
+      players: [
+        createPlayer('p1', { matches_played: 3 }),
+        createPlayer('p2', { matches_played: 3 }),
+        createPlayer('p3', { matches_played: 2 }),
+        createPlayer('p4', { matches_played: 2 }),
+        createPlayer('p5', { matches_played: 1 }),
+      ],
+    })
+
+    const warning = detectFairnessIssues(state).find((item) => item.type === 'match_count_imbalance')
+
+    expect(warning?.message).toContain('muc hop ly la 1')
+  })
+
+  it('does not warn when range 1 is expected from fractional match distribution', () => {
+    const state = createState({
+      currentRound: 3,
+      players: [
+        createPlayer('p1', { matches_played: 3 }),
+        createPlayer('p2', { matches_played: 3 }),
+        createPlayer('p3', { matches_played: 2 }),
+        createPlayer('p4', { matches_played: 2 }),
+        createPlayer('p5', { matches_played: 2 }),
+      ],
+    })
+
+    expect(detectFairnessIssues(state).map((warning) => warning.type)).not.toContain(
+      'match_count_imbalance',
+    )
+  })
+
   it('detects underplayed players', () => {
     const state = createState({
       currentRound: 3,
