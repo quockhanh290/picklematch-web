@@ -16,6 +16,7 @@ import {
   computeGenderPrefSatisfaction,
   computeMatchCountMetrics,
   computeOpponentDiversity,
+  computeOpponentRepeatBurden,
   computePartnerDiversity,
   computeRestFairness,
   computeSessionFairness,
@@ -400,12 +401,13 @@ function describeMatchCount(state: SessionState): string {
 
 function describePartnerDiversity(state: SessionState): string {
   const metrics = computePartnerDiversity(state)
-  return `avg unique ${metrics.avg_unique_partners.toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, repeats ${metrics.repeat_pairs.length}`
+  return `avg unique ${metrics.avg_unique_partners.toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(20 * metrics.avg_diversity_ratio).toFixed(1)}/20, repeat pairs ${metrics.repeat_pairs.length}`
 }
 
 function describeOpponentDiversity(state: SessionState): string {
   const metrics = computeOpponentDiversity(state)
-  return `avg unique ${(metrics.avg_unique_opponents ?? metrics.avg_unique_partners).toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, repeats ${metrics.repeat_pairs.length}`
+  const burden = computeOpponentRepeatBurden(state)
+  return `avg unique ${(metrics.avg_unique_opponents ?? metrics.avg_unique_partners).toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(15 * metrics.avg_diversity_ratio).toFixed(1)}/15, repeat pairs ${metrics.repeat_pairs.length}, max burden ${burden.max_repeated_opponents}`
 }
 
 function describeRestFairness(state: SessionState): string {
@@ -677,7 +679,13 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     await runAction('end', async () => {
       if (!activeRound) throw new Error('Không có vòng active.')
 
-      await invokeLiveSessionFunction('session-rounds-end', sessionId, {}, { round_no: activeRound.round_no })
+      const payload = await invokeLiveSessionFunction('session-rounds-end', sessionId, {}, { round_no: activeRound.round_no })
+      const invalidDeltas = payload?.commit_audit?.deltas?.filter((row: any) =>
+        row?.played ? row?.delta !== 1 : row?.delta !== 0
+      ) ?? []
+      if (invalidDeltas.length > 0) {
+        throw new Error(`Commit audit mismatch: ${invalidDeltas.length} player counts changed unexpectedly.`)
+      }
     })
   }
 
@@ -1169,7 +1177,12 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
         )}
       </View>
       {completedRounds.length > 0 && showSessionReport && (
-        <SessionFairnessSummaryCard summary={sessionSummary} playersById={playersById} />
+        <SessionFairnessSummaryCard
+          summary={sessionSummary}
+          state={state}
+          playersById={playersById}
+          durationMinutes={courtDurationMin}
+        />
       )}
       {fairnessAudit && (
         <FairnessAuditCard audit={fairnessAudit} />
@@ -1267,14 +1280,34 @@ function FairnessBanner({
 
 function SessionFairnessSummaryCard({
   summary,
+  state,
   playersById,
+  durationMinutes,
 }: {
   summary: SessionSummary
+  state: SessionState
   playersById: Map<string, ArrangementPlayer>
+  durationMinutes?: number
 }) {
   const maxMatches = Math.max(1, ...summary.per_player.map(player => player.matches_played))
   const matchCounts = summary.per_player.map(player => player.matches_played)
   const matchRange = matchCounts.length === 0 ? 0 : Math.max(...matchCounts) - Math.min(...matchCounts)
+  const displayedDuration = durationMinutes ?? summary.duration_minutes
+  const partner = computePartnerDiversity(state)
+  const opponent = computeOpponentDiversity(state)
+  const rest = computeRestFairness(state)
+  const gender = computeGenderPrefSatisfaction(state)
+  const opponentBurden = computeOpponentRepeatBurden(state)
+  const breakdown = summary.fairness_score.breakdown
+  const partnerRepeats = partner.repeat_pairs.filter(pair => pair.count > 1)
+  const opponentRepeats = opponent.repeat_pairs.filter(pair => pair.count > 1)
+  const breakdownRows = [
+    ['So tran', breakdown.match_count, 25, `range ${matchRange}, avg ${averageNumber(matchCounts).toFixed(1)}`],
+    ['Partner', breakdown.partner_diversity, 20, `ratio ${(partner.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(20 * partner.avg_diversity_ratio).toFixed(1)}/20, repeat pairs ${partnerRepeats.length}`],
+    ['Doi thu', breakdown.opponent_diversity, 15, `ratio ${(opponent.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(15 * opponent.avg_diversity_ratio).toFixed(1)}/15, repeat pairs ${opponentRepeats.length}, max burden ${opponentBurden.max_repeated_opponents}`],
+    ['Nghi', breakdown.rest, 20, `violations ${rest.violations.length}`],
+    ['Gender pref', breakdown.gender_prefs, 20, `${gender.satisfied_count}/${gender.total_pref_opportunities} satisfied (${Math.round(gender.satisfaction_rate * 100)}%)`],
+  ] as const
   const lines = [
     `Chênh tối đa ${matchRange} trận`,
     `Trung bình ${averageNumber(summary.per_player.map(player => player.unique_partners)).toFixed(1)} partners khác/người`,
@@ -1289,7 +1322,7 @@ function SessionFairnessSummaryCard({
             Tổng kết fairness
           </Text>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', marginTop: 3 }}>
-            {summary.total_rounds} vòng · {summary.total_players} người · {summary.duration_minutes} phút
+            {summary.total_rounds} vòng · {summary.total_players} người · {displayedDuration} phút
           </Text>
         </View>
         <View style={{ backgroundColor: '#E1F5EE', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center' }}>
@@ -1331,6 +1364,55 @@ function SessionFairnessSummaryCard({
         )}
       </View>
 
+      <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
+          Chi tiet diem
+        </Text>
+        {breakdownRows.map(([label, value, max, detail]) => (
+          <View key={`breakdown-${label}`} style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ width: 82, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+                {label}
+              </Text>
+              <View style={{ flex: 1, height: 7, borderRadius: 999, backgroundColor: '#F3E7D4', overflow: 'hidden' }}>
+                <View style={{ width: `${Math.max(4, (value / max) * 100)}%`, height: '100%', backgroundColor: value === max ? '#0F6E56' : '#A05A16' }} />
+              </View>
+              <Text style={{ width: 42, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#1A2E2A', fontWeight: '900' }}>
+                {value}/{max}
+              </Text>
+            </View>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 4, lineHeight: 14 }}>
+              {detail}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
+          Cap lap nhieu nhat
+        </Text>
+        <RepeatPairsBlock
+          title="Partner lap"
+          pairs={partnerRepeats}
+          playersById={playersById}
+          emptyText="Khong co cap partner lap 2+ lan."
+        />
+        <RepeatPairsBlock
+          title="Doi thu lap"
+          pairs={opponentRepeats}
+          playersById={playersById}
+          emptyText="Khong co cap doi thu lap 2+ lan."
+        />
+      </View>
+
+      <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
+          Nguoi bi lap doi thu nhieu
+        </Text>
+        <OpponentBurdenBlock burden={opponentBurden} playersById={playersById} />
+      </View>
+
       {summary.fairness_evolution.length > 0 && (
         <View style={{ marginTop: 12, gap: 6 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
@@ -1348,6 +1430,80 @@ function SessionFairnessSummaryCard({
                 {point.score}
               </Text>
             </View>
+          ))}
+        </View>
+      )}
+    </View>
+  )
+}
+
+function RepeatPairsBlock({
+  title,
+  pairs,
+  playersById,
+  emptyText,
+}: {
+  title: string
+  pairs: Array<{ player_a: string; player_b: string; count: number }>
+  playersById: Map<string, ArrangementPlayer>
+  emptyText: string
+}) {
+  return (
+    <View style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+        {title}
+      </Text>
+      {pairs.length === 0 ? (
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 5 }}>
+          {emptyText}
+        </Text>
+      ) : (
+        <View style={{ gap: 4, marginTop: 6 }}>
+          {pairs.map(pair => (
+            <Text
+              key={`${title}-${pair.player_a}-${pair.player_b}`}
+              style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: pair.count >= 3 ? '#A05A16' : '#596864', lineHeight: 14 }}
+            >
+              {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} lan
+            </Text>
+          ))}
+        </View>
+      )}
+    </View>
+  )
+}
+
+function OpponentBurdenBlock({
+  burden,
+  playersById,
+}: {
+  burden: ReturnType<typeof computeOpponentRepeatBurden>
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const rows = burden.per_player
+    .filter(player => player.repeated_opponents > 0)
+    .sort((a, b) => {
+      if (b.repeated_opponents !== a.repeated_opponents) {
+        return b.repeated_opponents - a.repeated_opponents
+      }
+      return playerName(a.player_id, playersById).localeCompare(playerName(b.player_id, playersById))
+    })
+
+  return (
+    <View style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
+      {rows.length === 0 ? (
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884' }}>
+          Khong co ai bi lap doi thu.
+        </Text>
+      ) : (
+        <View style={{ gap: 4 }}>
+          {rows.map(row => (
+            <Text
+              key={`opponent-burden-${row.player_id}`}
+              style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: row.repeated_opponents >= 4 ? '#A05A16' : '#596864', lineHeight: 14 }}
+            >
+              {playerName(row.player_id, playersById)}: {row.repeated_opponents} doi thu lap
+            </Text>
           ))}
         </View>
       )}

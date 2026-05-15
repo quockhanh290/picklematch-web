@@ -25,6 +25,16 @@ export type DiversityMetrics = {
   repeat_pairs: { player_a: string; player_b: string; count: number }[]
 }
 
+export type OpponentRepeatBurdenMetrics = {
+  max_repeated_opponents: number
+  avg_repeated_opponents: number
+  per_player: {
+    player_id: string
+    repeated_opponents: number
+    repeated_opponent_ids: string[]
+  }[]
+}
+
 export type RestFairnessMetrics = {
   per_player: {
     player_id: string
@@ -124,6 +134,71 @@ export function computeOpponentDiversity(state: SessionState): DiversityMetrics 
     avg_diversity_ratio: average(perPlayer.map((player) => player.diversity_ratio)),
     per_player: perPlayer,
     repeat_pairs: collectRepeatPairs(state, 'opponent_counts'),
+  }
+}
+
+export function computeOpponentRepeatBurden(state: SessionState): OpponentRepeatBurdenMetrics {
+  const perPlayer = sortedPlayers(state).map((player) => {
+    const repeatedOpponentIds = [...player.opponent_counts.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([playerId]) => playerId)
+      .sort()
+
+    return {
+      player_id: player.player_id,
+      repeated_opponents: repeatedOpponentIds.length,
+      repeated_opponent_ids: repeatedOpponentIds,
+    }
+  })
+
+  return {
+    max_repeated_opponents: Math.max(0, ...perPlayer.map((player) => player.repeated_opponents)),
+    avg_repeated_opponents: average(perPlayer.map((player) => player.repeated_opponents)),
+    per_player: perPlayer,
+  }
+}
+
+export function computeProjectedOpponentRepeatBurden(
+  state: SessionState,
+  matches: Match[],
+): OpponentRepeatBurdenMetrics {
+  const projected = new Map(
+    sortedPlayers(state).map((player) => [
+      player.player_id,
+      new Map(player.opponent_counts),
+    ]),
+  )
+
+  for (const match of matches) {
+    for (const playerA of match.team_a) {
+      for (const playerB of match.team_b) {
+        const countsA = projected.get(playerA)
+        const countsB = projected.get(playerB)
+        if (countsA) countsA.set(playerB, (countsA.get(playerB) ?? 0) + 1)
+        if (countsB) countsB.set(playerA, (countsB.get(playerA) ?? 0) + 1)
+      }
+    }
+  }
+
+  const perPlayer = [...projected.entries()]
+    .map(([playerId, counts]) => {
+      const repeatedOpponentIds = [...counts.entries()]
+        .filter(([, count]) => count > 1)
+        .map(([opponentId]) => opponentId)
+        .sort()
+
+      return {
+        player_id: playerId,
+        repeated_opponents: repeatedOpponentIds.length,
+        repeated_opponent_ids: repeatedOpponentIds,
+      }
+    })
+    .sort((a, b) => a.player_id.localeCompare(b.player_id))
+
+  return {
+    max_repeated_opponents: Math.max(0, ...perPlayer.map((player) => player.repeated_opponents)),
+    avg_repeated_opponents: average(perPlayer.map((player) => player.repeated_opponents)),
+    per_player: perPlayer,
   }
 }
 

@@ -50,6 +50,7 @@ export function correctForFairness(state: SessionState): AdjustmentResult {
         break
 
       case 'opponent_repeat':
+      case 'opponent_repeat_burden':
         setAdjustedWeights(adjustment, state, {
           opponent_repeat: getCurrentWeights(adjustment, state).opponent_repeat * 1.5,
         })

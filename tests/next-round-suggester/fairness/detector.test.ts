@@ -113,6 +113,24 @@ describe('Detector', () => {
     expect(detectFairnessIssues(state).map((warning) => warning.type)).toContain('opponent_repeat')
   })
 
+  it('detects opponent repeat burden on a player', () => {
+    const p1 = createPlayer('p1', { matches_played: 4 })
+    const p2 = createPlayer('p2', { matches_played: 4 })
+    const p3 = createPlayer('p3', { matches_played: 4 })
+    const p4 = createPlayer('p4', { matches_played: 4 })
+    const p5 = createPlayer('p5', { matches_played: 4 })
+    setOpponentRepeats(p1, p2, 2)
+    setOpponentRepeats(p1, p3, 2)
+    setOpponentRepeats(p1, p4, 2)
+    setOpponentRepeats(p1, p5, 2)
+    const state = createState({ currentRound: 4, players: [p1, p2, p3, p4, p5] })
+
+    const warning = detectFairnessIssues(state).find((item) => item.type === 'opponent_repeat_burden')
+
+    expect(warning?.severity).toBe('info')
+    expect(warning?.affected_players).toEqual(['p1'])
+  })
+
   it('does not warn about repeated partners when the repeated partner checked out', () => {
     const p1 = createPlayer('p1', { matches_played: 3 })
     const p2 = createPlayer('p2', {

@@ -11,6 +11,8 @@ import type {
 } from './types'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { Tier } from './classify.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import { computeProjectedOpponentRepeatBurden } from './fairness/metrics.ts'
 
 export type SuggestNextRoundOptions = {
   tier_overrides?: Record<string, Tier>
@@ -158,6 +160,8 @@ function emptyStats(): MatchStats {
 }
 
 const MAX_CANDIDATES_PER_STRATEGY = 60
+const MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY = 8
+const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
 
 export function detectGenderConflicts(players: PlayerSessionState[]): string[] {
   const counts = {
@@ -251,8 +255,10 @@ export function suggestNextRound(
   for (const strategy of strategies) {
     const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides)
     const candidates = getPriorityCandidates(sorted, slots, MAX_CANDIDATES_PER_STRATEGY)
+    let acceptedForStrategy = 0
 
     for (const candidate of candidates) {
+      if (acceptedForStrategy >= MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY) break
       const key = combinationKey(candidate.players)
       if (seen.has(key)) continue
       if (
@@ -269,12 +275,25 @@ export function suggestNextRound(
 
       alternatives.push(alternative)
       seen.add(key)
-      break
+      acceptedForStrategy += 1
     }
   }
 
   alternatives.sort((a, b) => {
-    if (a.score !== b.score) return a.score - b.score
+    const scoreDiff = a.score - b.score
+    if (Math.abs(scoreDiff) > BURDEN_TIE_BREAK_SCORE_WINDOW) return scoreDiff
+
+    const burdenA = getProjectedOpponentBurden(a, state)
+    const burdenB = getProjectedOpponentBurden(b, state)
+    if (burdenA.max !== burdenB.max) return burdenA.max - burdenB.max
+    if (burdenA.avg !== burdenB.avg) return burdenA.avg - burdenB.avg
+    if (a.stats.opponent_repeats !== b.stats.opponent_repeats) {
+      return a.stats.opponent_repeats - b.stats.opponent_repeats
+    }
+    if (a.stats.partner_repeats !== b.stats.partner_repeats) {
+      return a.stats.partner_repeats - b.stats.partner_repeats
+    }
+    if (scoreDiff !== 0) return scoreDiff
     return a.matches[0].team_a.join(':').localeCompare(b.matches[0].team_a.join(':'))
   })
 
@@ -290,6 +309,17 @@ export function suggestNextRound(
     alternatives: alternatives.slice(0, 3),
     warnings,
     should_end: false,
+  }
+}
+
+function getProjectedOpponentBurden(
+  alternative: SuggestionAlternative,
+  state: SessionState,
+): { max: number; avg: number } {
+  const burden = computeProjectedOpponentRepeatBurden(state, alternative.matches)
+  return {
+    max: burden.max_repeated_opponents,
+    avg: burden.avg_repeated_opponents,
   }
 }
 

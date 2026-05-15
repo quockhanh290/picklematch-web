@@ -15,6 +15,10 @@ function getRoundNo(request: Request): number | null {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
 }
 
+function getPlayedIds(matches: Array<{ team_a: string[]; team_b: string[] }>): Set<string> {
+  return new Set(matches.flatMap((match) => [...match.team_a, ...match.team_b]))
+}
+
 Deno.serve(async (request) => {
   const corsResponse = handleCorsPreflight(request)
   if (corsResponse) return corsResponse
@@ -51,6 +55,16 @@ Deno.serve(async (request) => {
     }
 
     const state = await loadSessionState(auth.supabase, sessionId)
+    const playedIds = getPlayedIds(round.matches ?? [])
+    const missingIds = [...playedIds].filter((playerId) => !state.players.has(playerId))
+    if (missingIds.length > 0) {
+      return jsonResponse({
+        ok: false,
+        error: 'Round matches contain players missing from session_player_state',
+        missing_player_ids: missingIds,
+      }, 409)
+    }
+
     const { data: existingPairs, error: pairError } = await auth.supabase
       .from('session_pair_history')
       .select('*')
@@ -68,23 +82,45 @@ Deno.serve(async (request) => {
       },
       (existingPairs ?? []) as SessionPairHistoryRow[],
     )
+    const commitAudit = [...committed.players.values()]
+      .map((player) => {
+        const before = state.players.get(player.player_id)?.matches_played ?? 0
+        return {
+          player_id: player.player_id,
+          played: playedIds.has(player.player_id),
+          before,
+          after: player.matches_played,
+          delta: player.matches_played - before,
+        }
+      })
+      .sort((a, b) => a.player_id.localeCompare(b.player_id))
+    const invalidDeltas = commitAudit.filter((row) =>
+      row.played ? row.delta !== 1 : row.delta !== 0
+    )
 
-    for (const player of committed.players.values()) {
-      const { error } = await auth.supabase
-        .from('session_player_state')
-        .update({
-          matches_played: player.matches_played,
-          last_played_round: player.last_played_round,
-          consecutive_rest: player.consecutive_rest,
-          consecutive_play: player.consecutive_play,
-          opted_rest: player.opted_rest,
-        })
-        .eq('session_id', sessionId)
-        .eq('player_id', player.player_id)
+    if (invalidDeltas.length > 0) {
+      return jsonResponse({
+        ok: false,
+        error: 'Commit audit failed before database update',
+        invalid_deltas: invalidDeltas,
+      }, 500)
+    }
 
-      if (error) {
-        return jsonResponse({ ok: false, error: error.message }, 500)
-      }
+    const playerStatePayload = [...committed.players.values()].map((player) => ({
+      session_id: sessionId,
+      player_id: player.player_id,
+      matches_played: player.matches_played,
+      last_played_round: player.last_played_round,
+      consecutive_rest: player.consecutive_rest,
+      consecutive_play: player.consecutive_play,
+      opted_rest: player.opted_rest,
+    }))
+    const { error: playerStateError } = await auth.supabase
+      .from('session_player_state')
+      .upsert(playerStatePayload, { onConflict: 'session_id,player_id' })
+
+    if (playerStateError) {
+      return jsonResponse({ ok: false, error: playerStateError.message }, 500)
     }
 
     if (committed.pairHistory.length > 0) {
@@ -144,7 +180,14 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: adjustmentError.message }, 500)
     }
 
-    return jsonResponse({ ok: true, round: completedRound })
+    return jsonResponse({
+      ok: true,
+      round: completedRound,
+      commit_audit: {
+        played_ids: [...playedIds].sort(),
+        deltas: commitAudit,
+      },
+    })
   } catch (error) {
     return jsonResponse(
       { ok: false, error: error instanceof Error ? error.message : 'Unknown error' },

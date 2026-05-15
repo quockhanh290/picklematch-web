@@ -2,6 +2,7 @@ import { createMatch, createPlayer, createState, setOpponentRepeats, setPartnerR
 import {
   computeMatchCountMetrics,
   computeOpponentDiversity,
+  computeOpponentRepeatBurden,
   computePartnerDiversity,
   computeRestFairness,
   computeSessionFairness,
@@ -91,6 +92,22 @@ describe('Opponent Diversity', () => {
 
     expect(metrics.per_player.find((player) => player.player_id === 'p1')?.unique_opponents).toBe(2)
     expect(metrics.repeat_pairs).toEqual([{ player_a: 'p1', player_b: 'p2', count: 2 }])
+  })
+
+  it('tracks opponent repeat burden per player', () => {
+    const p1 = createPlayer('p1')
+    const p2 = createPlayer('p2')
+    const p3 = createPlayer('p3')
+    const p4 = createPlayer('p4')
+    setOpponentRepeats(p1, p2, 2)
+    setOpponentRepeats(p1, p3, 2)
+    setOpponentRepeats(p2, p4, 1)
+
+    const metrics = computeOpponentRepeatBurden(createState({ players: [p1, p2, p3, p4] }))
+
+    expect(metrics.max_repeated_opponents).toBe(2)
+    expect(metrics.per_player.find((player) => player.player_id === 'p1')?.repeated_opponents).toBe(2)
+    expect(metrics.per_player.find((player) => player.player_id === 'p2')?.repeated_opponents).toBe(1)
   })
 })
 
