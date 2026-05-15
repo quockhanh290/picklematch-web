@@ -58,7 +58,7 @@ export function initState(
     status: 'active',
     config: {
       courts: options.courts,
-      pvna_tolerance: options.pvna_tolerance ?? 0.35,
+      pvna_tolerance: options.pvna_tolerance ?? 0.5,
       weights: options.weights ?? DEFAULT_SCORING_WEIGHTS,
     },
     players: new Map(players.map((player) => [player.player_id, clonePlayer(player)])),

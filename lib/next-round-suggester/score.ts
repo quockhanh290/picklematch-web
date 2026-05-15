@@ -84,6 +84,17 @@ function prefMatchesGender(pref: GenderPreference, player: PlayerSessionState | 
   return player.gender === pref
 }
 
+function getPartnerGenderPenalty(
+  player: PlayerSessionState,
+  partner: PlayerSessionState | undefined,
+  weights: ScoringWeights,
+): number {
+  if (prefMatchesGender(player.partner_gender_pref, partner)) return 0
+
+  const sameGroup = Boolean(player.group_id && player.group_id === partner?.group_id)
+  return sameGroup ? weights.partner_gender_pref * 0.5 : weights.partner_gender_pref
+}
+
 export function genderPenalty(
   teamA: Team,
   teamB: Team,
@@ -103,9 +114,7 @@ export function genderPenalty(
     if (!player) continue
 
     const partner = state.players.get(relations.partnerId)
-    if (!prefMatchesGender(player.partner_gender_pref, partner)) {
-      penalty += weights.partner_gender_pref
-    }
+    penalty += getPartnerGenderPenalty(player, partner, weights)
 
     if (player.opponent_gender_pref !== 'any') {
       for (const opponentId of relations.opponentIds) {

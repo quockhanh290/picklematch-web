@@ -98,7 +98,7 @@ describe('scoreMatch', () => {
     expect(result.score).toBe(0.5 + 3 + 1.5 + 4)
   })
 
-  it('prioritizes same-team group bonus over a partner gender preference mismatch', () => {
+  it('discounts partner gender preference mismatch by 50% for same-group partners', () => {
     const state = createState({
       players: [
         createPlayer('p1', { group_id: 'g1', gender: 'F', partner_gender_pref: 'M' }),
@@ -111,8 +111,8 @@ describe('scoreMatch', () => {
     const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], state)
 
     expect(result.stats.group_bonus).toBe(1)
-    expect(result.stats.gender_pref_penalty).toBe(4)
-    expect(result.score).toBe(-1)
+    expect(result.stats.gender_pref_penalty).toBe(2)
+    expect(result.score).toBe(-3)
   })
 
   it('returns Infinity when inter-team PVNA diff violates hard guard', () => {

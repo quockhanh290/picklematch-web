@@ -66,7 +66,7 @@ export function createRealSessionPlayers(options: { includePending?: boolean } =
   return rows.map((item) => ({
     player_id: item.name,
     pvna: item.pvna,
-    group_id: null,
+    group_id: getGroupId(item.name),
     checked_in_at: checkedInAt,
     checked_out_at: null,
     matches_played: 0,
@@ -96,6 +96,13 @@ function row(
   opponent: RawRealPlayer['opponent'],
 ): RawRealPlayer {
   return { id, name, checkIn, pvna, gender, partner, opponent }
+}
+
+function getGroupId(name: string): string | null {
+  if (['P5', 'P6', 'P7', 'P8'].includes(name)) return 'G1'
+  if (['P34', 'P35'].includes(name)) return 'G2'
+  if (['P26', 'P27'].includes(name)) return 'G3'
+  return null
 }
 
 function normalizeGender(value: RawRealPlayer['gender']): Gender {

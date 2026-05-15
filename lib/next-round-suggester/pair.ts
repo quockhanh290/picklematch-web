@@ -54,6 +54,8 @@ export function bestTeamSplit(players: PlayerSessionState[], state: SessionState
 
 const EXHAUSTIVE_MAX_ITER = 20000
 const SAMPLED_MAX_ITER = 600
+const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
+const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
 
 function addStats(a: MatchScore['stats'], b: MatchScore['stats']): MatchScore['stats'] {
   return {
@@ -106,6 +108,105 @@ function evaluatePartition(
     iterations: iteration,
     relaxed_tolerance: options.relaxedTolerance,
   }
+}
+
+function shouldReplaceBestPartition(
+  candidate: PartitioningResult,
+  best: PartitioningResult | null,
+  state: SessionState,
+): boolean {
+  if (!best) return true
+
+  const scoreDiff = candidate.score - best.score
+  if (scoreDiff < -BURDEN_TIE_BREAK_SCORE_WINDOW) return true
+  if (scoreDiff > BURDEN_TIE_BREAK_SCORE_WINDOW) return false
+
+  const candidateOpponentBurden = getProjectedBurden(candidate.matches, state, 'opponent')
+  const bestOpponentBurden = getProjectedBurden(best.matches, state, 'opponent')
+  if (candidateOpponentBurden.overThreshold !== bestOpponentBurden.overThreshold) {
+    return candidateOpponentBurden.overThreshold < bestOpponentBurden.overThreshold
+  }
+  if (candidateOpponentBurden.max !== bestOpponentBurden.max) {
+    return candidateOpponentBurden.max < bestOpponentBurden.max
+  }
+  if (candidateOpponentBurden.avg !== bestOpponentBurden.avg) {
+    return candidateOpponentBurden.avg < bestOpponentBurden.avg
+  }
+
+  const candidatePartnerBurden = getProjectedBurden(candidate.matches, state, 'partner')
+  const bestPartnerBurden = getProjectedBurden(best.matches, state, 'partner')
+  if (candidatePartnerBurden.overThreshold !== bestPartnerBurden.overThreshold) {
+    return candidatePartnerBurden.overThreshold < bestPartnerBurden.overThreshold
+  }
+  if (candidatePartnerBurden.max !== bestPartnerBurden.max) {
+    return candidatePartnerBurden.max < bestPartnerBurden.max
+  }
+  if (candidatePartnerBurden.avg !== bestPartnerBurden.avg) {
+    return candidatePartnerBurden.avg < bestPartnerBurden.avg
+  }
+
+  return scoreDiff < 0
+}
+
+function getProjectedBurden(
+  matches: Match[],
+  state: SessionState,
+  kind: 'partner' | 'opponent',
+): { max: number; avg: number; overThreshold: number } {
+  const repeatedCounts = new Map<string, Set<string>>(
+    [...state.players.keys()].map((playerId) => [playerId, new Set<string>()]),
+  )
+
+  for (const match of matches) {
+    const pairs =
+      kind === 'partner'
+        ? [
+            [match.team_a[0], match.team_a[1]],
+            [match.team_b[0], match.team_b[1]],
+          ]
+        : [
+            [match.team_a[0], match.team_b[0]],
+            [match.team_a[0], match.team_b[1]],
+            [match.team_a[1], match.team_b[0]],
+            [match.team_a[1], match.team_b[1]],
+          ]
+
+    for (const [playerA, playerB] of pairs) {
+      if (isProjectedBurdenRepeat(playerA, playerB, state, kind)) {
+        repeatedCounts.get(playerA)?.add(playerB)
+        repeatedCounts.get(playerB)?.add(playerA)
+      }
+    }
+  }
+
+  const counts = [...repeatedCounts.values()].map((players) => players.size)
+  if (counts.length === 0) return { max: 0, avg: 0, overThreshold: 0 }
+
+  return {
+    max: Math.max(...counts),
+    avg: counts.reduce((sum, count) => sum + count, 0) / counts.length,
+    overThreshold: counts.filter((count) => count >= PROJECTED_REPEAT_BURDEN_THRESHOLD).length,
+  }
+}
+
+function isProjectedBurdenRepeat(
+  playerA: string,
+  playerB: string,
+  state: SessionState,
+  kind: 'partner' | 'opponent',
+): boolean {
+  const stateA = state.players.get(playerA)
+  const stateB = state.players.get(playerB)
+  if (!stateA || !stateB) return false
+
+  const currentCount =
+    kind === 'partner'
+      ? stateA.partner_counts.get(playerB) ?? 0
+      : stateA.opponent_counts.get(playerB) ?? 0
+  const projectedCount = currentCount + 1
+  const sameGroup = Boolean(stateA.group_id && stateA.group_id === stateB.group_id)
+
+  return sameGroup ? projectedCount > 2 : projectedCount > 1
 }
 
 function bestTeamSplitWithTolerance(
@@ -236,7 +337,7 @@ export function bestPartitioning(
     iterations += 1
     const result = evaluatePartition(groups, state, iterations, searchOptions)
     if (!result) return
-    if (!best || result.score < best.score) {
+    if (shouldReplaceBestPartition(result, best, state)) {
       best = result
     }
   }

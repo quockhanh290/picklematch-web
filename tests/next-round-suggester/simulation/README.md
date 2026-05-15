@@ -27,7 +27,7 @@ npm run sim:report
 This runs the real 40-player fixture from the provided session JSON, using PVNA
 as the engine score. Synthetic scenarios also generate PVNA-scale values
 (`tight`, `wide`, `extreme`, `bimodal`) and use a PVNA team-diff tolerance of
-`0.35`.
+`0.5`, matching the host screen default.
 
 You can also pass a baseline scenario and seed:
 

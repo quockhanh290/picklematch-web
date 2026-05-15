@@ -91,7 +91,7 @@ export function pickPlayers(
 
 export function sortPlayersForStrategy(
   players: PlayerSessionState[],
-  strategy: 'fairness' | 'rest' | 'diversity',
+  strategy: 'fairness' | 'rest' | 'diversity' | 'group',
   tierOverrides: TierOverrides = {},
 ): PlayerSessionState[] {
   if (strategy === 'rest') {
@@ -117,6 +117,17 @@ export function sortPlayersForStrategy(
     })
   }
 
+  if (strategy === 'group') {
+    return [...players].sort((a, b) => {
+      const groupNeedA = getUnservedGroupPartnerCount(a, players)
+      const groupNeedB = getUnservedGroupPartnerCount(b, players)
+      if (groupNeedA !== groupNeedB) return groupNeedB - groupNeedA
+      if (a.matches_played !== b.matches_played) return a.matches_played - b.matches_played
+      if (b.consecutive_rest !== a.consecutive_rest) return b.consecutive_rest - a.consecutive_rest
+      return a.player_id.localeCompare(b.player_id)
+    })
+  }
+
   const avgMatches = getAverageMatches(players)
   const tiers = new Map(
     players.map((player) => [
@@ -125,4 +136,14 @@ export function sortPlayersForStrategy(
     ]),
   )
   return [...players].sort((a, b) => comparePlayersByPriority(a, b, tiers))
+}
+
+function getUnservedGroupPartnerCount(player: PlayerSessionState, players: PlayerSessionState[]): number {
+  if (!player.group_id) return 0
+
+  return players.filter((other) =>
+    other.player_id !== player.player_id &&
+    other.group_id === player.group_id &&
+    (player.partner_counts.get(other.player_id) ?? 0) === 0
+  ).length
 }

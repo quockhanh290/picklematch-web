@@ -152,12 +152,10 @@ describe('Detector', () => {
     const p2 = createPlayer('p2', { matches_played: 4 })
     const p3 = createPlayer('p3', { matches_played: 4 })
     const p4 = createPlayer('p4', { matches_played: 4 })
-    const p5 = createPlayer('p5', { matches_played: 4 })
     setOpponentRepeats(p1, p2, 2)
     setOpponentRepeats(p1, p3, 2)
     setOpponentRepeats(p1, p4, 2)
-    setOpponentRepeats(p1, p5, 2)
-    const state = createState({ currentRound: 4, players: [p1, p2, p3, p4, p5] })
+    const state = createState({ currentRound: 4, players: [p1, p2, p3, p4] })
 
     const warning = detectFairnessIssues(state).find((item) => item.type === 'opponent_repeat_burden')
 

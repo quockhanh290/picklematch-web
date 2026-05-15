@@ -162,6 +162,7 @@ function emptyStats(): MatchStats {
 const MAX_CANDIDATES_PER_STRATEGY = 60
 const MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY = 8
 const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
+const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
 
 export function detectGenderConflicts(players: PlayerSessionState[]): string[] {
   const counts = {
@@ -250,7 +251,12 @@ export function suggestNextRound(
 
   const alternatives: SuggestionAlternative[] = []
   const seen = new Set<string>()
-  const strategies: Array<'fairness' | 'rest' | 'diversity'> = ['fairness', 'rest', 'diversity']
+  const strategies: Array<'fairness' | 'rest' | 'diversity' | 'group'> = [
+    'fairness',
+    'rest',
+    'diversity',
+    'group',
+  ]
 
   for (const strategy of strategies) {
     const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides)
@@ -285,16 +291,33 @@ export function suggestNextRound(
     if (matchCountA.excess !== matchCountB.excess) return matchCountA.excess - matchCountB.excess
     if (matchCountA.range !== matchCountB.range) return matchCountA.range - matchCountB.range
 
+    const burdenA = getProjectedOpponentBurden(a, state)
+    const burdenB = getProjectedOpponentBurden(b, state)
+    if (burdenA.overThreshold !== burdenB.overThreshold) {
+      return burdenA.overThreshold - burdenB.overThreshold
+    }
+    if (burdenA.max !== burdenB.max) return burdenA.max - burdenB.max
+
+    const partnerBurdenA = getProjectedPartnerBurden(a, state)
+    const partnerBurdenB = getProjectedPartnerBurden(b, state)
+    if (partnerBurdenA.overThreshold !== partnerBurdenB.overThreshold) {
+      return partnerBurdenA.overThreshold - partnerBurdenB.overThreshold
+    }
+    if (partnerBurdenA.max !== partnerBurdenB.max) return partnerBurdenA.max - partnerBurdenB.max
+
+    const groupCoverageA = getProjectedGroupCoverage(a, state)
+    const groupCoverageB = getProjectedGroupCoverage(b, state)
+    if (groupCoverageA.newPairs !== groupCoverageB.newPairs) {
+      return groupCoverageB.newPairs - groupCoverageA.newPairs
+    }
+    if (groupCoverageA.underTwoPairs !== groupCoverageB.underTwoPairs) {
+      return groupCoverageB.underTwoPairs - groupCoverageA.underTwoPairs
+    }
+
     const scoreDiff = a.score - b.score
     if (Math.abs(scoreDiff) > BURDEN_TIE_BREAK_SCORE_WINDOW) return scoreDiff
 
-    const burdenA = getProjectedOpponentBurden(a, state)
-    const burdenB = getProjectedOpponentBurden(b, state)
-    if (burdenA.max !== burdenB.max) return burdenA.max - burdenB.max
     if (burdenA.avg !== burdenB.avg) return burdenA.avg - burdenB.avg
-    const partnerBurdenA = getProjectedPartnerBurden(a, state)
-    const partnerBurdenB = getProjectedPartnerBurden(b, state)
-    if (partnerBurdenA.max !== partnerBurdenB.max) return partnerBurdenA.max - partnerBurdenB.max
     if (partnerBurdenA.avg !== partnerBurdenB.avg) return partnerBurdenA.avg - partnerBurdenB.avg
     if (a.stats.opponent_repeats !== b.stats.opponent_repeats) {
       return a.stats.opponent_repeats - b.stats.opponent_repeats
@@ -319,6 +342,30 @@ export function suggestNextRound(
     warnings,
     should_end: false,
   }
+}
+
+function getProjectedGroupCoverage(
+  alternative: SuggestionAlternative,
+  state: SessionState,
+): { newPairs: number; underTwoPairs: number } {
+  let newPairs = 0
+  let underTwoPairs = 0
+
+  for (const match of alternative.matches) {
+    for (const team of [match.team_a, match.team_b]) {
+      const [playerA, playerB] = team
+      const stateA = state.players.get(playerA)
+      const stateB = state.players.get(playerB)
+
+      if (!stateA?.group_id || stateA.group_id !== stateB?.group_id) continue
+
+      const currentCount = stateA.partner_counts.get(playerB) ?? 0
+      if (currentCount === 0) newPairs += 1
+      if (currentCount < 2) underTwoPairs += 1
+    }
+  }
+
+  return { newPairs, underTwoPairs }
 }
 
 function getProjectedMatchCountExcess(
@@ -347,22 +394,28 @@ function getProjectedMatchCountExcess(
 function getProjectedPartnerBurden(
   alternative: SuggestionAlternative,
   state: SessionState,
-): { max: number; avg: number } {
+): { max: number; avg: number; overThreshold: number } {
   const burden = computeProjectedPartnerRepeatBurden(state, alternative.matches)
   return {
     max: burden.max_repeated_partners,
     avg: burden.avg_repeated_partners,
+    overThreshold: burden.per_player.filter(
+      (player) => player.repeated_partners >= PROJECTED_REPEAT_BURDEN_THRESHOLD,
+    ).length,
   }
 }
 
 function getProjectedOpponentBurden(
   alternative: SuggestionAlternative,
   state: SessionState,
-): { max: number; avg: number } {
+): { max: number; avg: number; overThreshold: number } {
   const burden = computeProjectedOpponentRepeatBurden(state, alternative.matches)
   return {
     max: burden.max_repeated_opponents,
     avg: burden.avg_repeated_opponents,
+    overThreshold: burden.per_player.filter(
+      (player) => player.repeated_opponents >= PROJECTED_REPEAT_BURDEN_THRESHOLD,
+    ).length,
   }
 }
 

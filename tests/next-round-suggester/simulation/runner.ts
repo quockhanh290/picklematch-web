@@ -89,7 +89,7 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
   const players = config.initial_players ?? generatePlayers(config, rng)
   let state = initState(players, {
     courts: config.courts,
-    pvna_tolerance: 0.35,
+    pvna_tolerance: 0.5,
   })
 
   const fairnessEvolution: { round: number; score: number }[] = []

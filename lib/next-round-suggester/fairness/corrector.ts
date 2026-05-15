@@ -4,6 +4,9 @@ import type { ScoringWeights, SessionState } from '../types'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { detectFairnessIssues, type WarningType } from './detector.ts'
 
+const REPEAT_TOLERANCE_STEP = 0.05
+const REPEAT_TOLERANCE_MAX = 0.6
+
 export type AdjustmentType = 'none' | 'fairness_correction'
 
 export type AdjustmentResult = {
@@ -46,6 +49,7 @@ export function correctForFairness(state: SessionState): AdjustmentResult {
         setAdjustedWeights(adjustment, state, {
           partner_repeat: getCurrentWeights(adjustment, state).partner_repeat * 1.5,
         })
+        relaxPvnaToleranceForRepeat(adjustment, state)
         adjustment.applied_for_warnings.push(warning.type)
         break
 
@@ -54,6 +58,7 @@ export function correctForFairness(state: SessionState): AdjustmentResult {
         setAdjustedWeights(adjustment, state, {
           opponent_repeat: getCurrentWeights(adjustment, state).opponent_repeat * 1.5,
         })
+        relaxPvnaToleranceForRepeat(adjustment, state)
         adjustment.applied_for_warnings.push(warning.type)
         break
 
@@ -130,6 +135,31 @@ export function applyFairnessAdjustment(
       },
     },
   }
+}
+
+function relaxPvnaToleranceForRepeat(
+  adjustment: AdjustmentResult,
+  state: SessionState,
+) {
+  if (!canRelaxPvnaToleranceForRepeat(state)) return
+  if (adjustment.config_changes.pvna_tolerance !== undefined) return
+
+  const current = state.config.pvna_tolerance ?? 0.5
+  adjustment.config_changes.pvna_tolerance = round(
+    Math.min(REPEAT_TOLERANCE_MAX, current + REPEAT_TOLERANCE_STEP),
+  )
+}
+
+function canRelaxPvnaToleranceForRepeat(state: SessionState): boolean {
+  if (state.current_round < 4) return false
+
+  const activePlayers = [...state.players.values()].filter(
+    (player) => player.checked_out_at === null,
+  ).length
+  const slots = Math.max(1, state.config.courts) * 4
+  const hasRotationRoom = activePlayers >= slots + 4
+
+  return hasRotationRoom
 }
 
 function setAdjustedWeights(

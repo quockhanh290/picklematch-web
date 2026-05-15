@@ -39,7 +39,7 @@ function detectOpponentBurdenIssues(state: SessionState): FairnessWarning[] {
 
   const metrics = computeOpponentRepeatBurden(state)
   const overloaded = metrics.per_player
-    .filter((player) => player.repeated_opponents >= 4)
+    .filter((player) => player.repeated_opponents >= 3)
     .sort((a, b) => {
       if (b.repeated_opponents !== a.repeated_opponents) {
         return b.repeated_opponents - a.repeated_opponents

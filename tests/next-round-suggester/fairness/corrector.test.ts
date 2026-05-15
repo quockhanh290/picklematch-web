@@ -1,6 +1,6 @@
 import { Tier } from '../../../lib/next-round-suggester/classify'
 import { correctForFairness } from '../../../lib/next-round-suggester/fairness/corrector'
-import { createPlayer, createState, setOpponentRepeats, setPartnerRepeats } from '../helpers/factories'
+import { createPlayer, createPlayers, createState, setOpponentRepeats, setPartnerRepeats } from '../helpers/factories'
 
 describe('Corrector (naive)', () => {
   it('returns empty adjustments when no warnings exist', () => {
@@ -41,6 +41,52 @@ describe('Corrector (naive)', () => {
     expect(adjustment.config_changes.weights?.opponent_repeat).toBe(
       state.config.weights.opponent_repeat * 1.5,
     )
+    expect(adjustment.config_changes.pvna_tolerance).toBeUndefined()
+  })
+
+  it('relaxes PVNA tolerance by 0.05 for repeat trends when there is rotation room', () => {
+    const players = createPlayers(16, { matches_played: 4 })
+    setOpponentRepeats(players[0], players[1], 3)
+
+    const state = createState({
+      currentRound: 4,
+      players,
+      courts: 3,
+      pvnaTolerance: 0.35,
+    })
+    const adjustment = correctForFairness(state)
+
+    expect(adjustment.config_changes.pvna_tolerance).toBe(0.4)
+  })
+
+  it('does not relax PVNA tolerance for all-play sessions without rotation room', () => {
+    const players = createPlayers(24, { matches_played: 4 })
+    setOpponentRepeats(players[0], players[1], 3)
+
+    const state = createState({
+      currentRound: 4,
+      players,
+      courts: 6,
+      pvnaTolerance: 0.35,
+    })
+    const adjustment = correctForFairness(state)
+
+    expect(adjustment.config_changes.pvna_tolerance).toBeUndefined()
+  })
+
+  it('caps repeat-driven PVNA tolerance relaxation at 0.60', () => {
+    const players = createPlayers(16, { matches_played: 4 })
+    setOpponentRepeats(players[0], players[1], 3)
+
+    const state = createState({
+      currentRound: 4,
+      players,
+      courts: 3,
+      pvnaTolerance: 0.58,
+    })
+    const adjustment = correctForFairness(state)
+
+    expect(adjustment.config_changes.pvna_tolerance).toBe(0.6)
   })
 
   it('applies multiple adjustments simultaneously', () => {
