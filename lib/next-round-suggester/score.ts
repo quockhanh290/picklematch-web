@@ -1,28 +1,47 @@
-import type { MatchScore, MatchStats, ScoringWeights, SessionState, Team } from './types'
+import type {
+  GenderPreference,
+  MatchScore,
+  MatchStats,
+  PlayerSessionState,
+  ScoringWeights,
+  SessionState,
+  Team,
+} from './types'
 
 const INFINITY_SCORE: MatchScore = {
   score: Infinity,
   stats: {
-    elo_diff: Infinity,
+    pvna_diff: Infinity,
     partner_repeats: 0,
     opponent_repeats: 0,
     group_bonus: 0,
+    gender_pref_penalty: 0,
   },
 }
 
-function emptyStats(eloDiff = 0): MatchStats {
+const INTRA_TEAM_PVNA_GAP_LIMIT = 1.5
+
+function emptyStats(pvnaDiff = 0): MatchStats {
   return {
-    elo_diff: eloDiff,
+    pvna_diff: pvnaDiff,
     partner_repeats: 0,
     opponent_repeats: 0,
     group_bonus: 0,
+    gender_pref_penalty: 0,
   }
 }
 
-function getElo(team: Team, state: SessionState): number | null {
+function getPvna(team: Team, state: SessionState): number | null {
   const players = team.map((playerId) => state.players.get(playerId))
   if (players.some((player) => !player)) return null
-  return players.reduce((sum, player) => sum + (player?.elo ?? 1000), 0) / 2
+  return players.reduce((sum, player) => sum + (player?.pvna ?? 3.0), 0) / 2
+}
+
+function getTeamGap(team: Team, state: SessionState): number | null {
+  const first = state.players.get(team[0])
+  const second = state.players.get(team[1])
+  if (!first || !second) return null
+  return Math.abs(first.pvna - second.pvna)
 }
 
 function getPartnerRepeats(team: Team, state: SessionState): number {
@@ -55,6 +74,48 @@ function getGroupedPairCount(players: string[], state: SessionState): number {
   return count
 }
 
+function prefMatchesGender(pref: GenderPreference, player: PlayerSessionState | undefined): boolean {
+  if (pref === 'any') return true
+  if (!player?.gender) return true
+  return player.gender === pref
+}
+
+export function genderPenalty(
+  teamA: Team,
+  teamB: Team,
+  state: SessionState,
+  weights: ScoringWeights = state.config.weights,
+): number {
+  const players = new Map<string, { partnerId: string; opponentIds: string[] }>([
+    [teamA[0], { partnerId: teamA[1], opponentIds: teamB }],
+    [teamA[1], { partnerId: teamA[0], opponentIds: teamB }],
+    [teamB[0], { partnerId: teamB[1], opponentIds: teamA }],
+    [teamB[1], { partnerId: teamB[0], opponentIds: teamA }],
+  ])
+  let penalty = 0
+
+  for (const [playerId, relations] of players) {
+    const player = state.players.get(playerId)
+    if (!player) continue
+
+    const partner = state.players.get(relations.partnerId)
+    if (!prefMatchesGender(player.partner_gender_pref, partner)) {
+      penalty += weights.partner_gender_pref
+    }
+
+    if (player.opponent_gender_pref !== 'any') {
+      for (const opponentId of relations.opponentIds) {
+        const opponent = state.players.get(opponentId)
+        if (!prefMatchesGender(player.opponent_gender_pref, opponent)) {
+          penalty += weights.opponent_gender_pref
+        }
+      }
+    }
+  }
+
+  return penalty
+}
+
 export function scoreMatch(
   teamA: Team,
   teamB: Team,
@@ -72,25 +133,38 @@ export function scoreMatch(
     return INFINITY_SCORE
   }
 
-  const teamAElo = getElo(teamA, state)
-  const teamBElo = getElo(teamB, state)
-  if (teamAElo === null || teamBElo === null) return INFINITY_SCORE
+  const teamAPvna = getPvna(teamA, state)
+  const teamBPvna = getPvna(teamB, state)
+  if (teamAPvna === null || teamBPvna === null) return INFINITY_SCORE
 
-  const eloDiff = Math.abs(teamAElo - teamBElo)
-  const tolerance = options.tolerance ?? state.config.elo_tolerance
-  if (eloDiff > tolerance) return INFINITY_SCORE
+  const teamAGap = getTeamGap(teamA, state)
+  const teamBGap = getTeamGap(teamB, state)
+  if (
+    teamAGap === null ||
+    teamBGap === null ||
+    teamAGap > INTRA_TEAM_PVNA_GAP_LIMIT ||
+    teamBGap > INTRA_TEAM_PVNA_GAP_LIMIT
+  ) {
+    return INFINITY_SCORE
+  }
+
+  const pvnaDiff = Math.abs(teamAPvna - teamBPvna)
+  const tolerance = options.tolerance ?? state.config.pvna_tolerance
+  if (pvnaDiff > tolerance) return INFINITY_SCORE
 
   const weights = options.weights ?? state.config.weights
-  const stats = emptyStats(eloDiff)
+  const stats = emptyStats(pvnaDiff)
   stats.partner_repeats = getPartnerRepeats(teamA, state) + getPartnerRepeats(teamB, state)
   stats.opponent_repeats = getOpponentRepeats(teamA, teamB, state)
   stats.group_bonus = getGroupedPairCount(allPlayers, state)
+  stats.gender_pref_penalty = genderPenalty(teamA, teamB, state, weights)
 
   const score =
-    (eloDiff / 50) * weights.elo +
+    (pvnaDiff / 0.5) * weights.pvna +
     stats.partner_repeats * weights.partner_repeat +
     stats.opponent_repeats * weights.opponent_repeat -
-    stats.group_bonus * weights.group_bonus
+    stats.group_bonus * weights.group_bonus +
+    stats.gender_pref_penalty
 
   return {
     score,

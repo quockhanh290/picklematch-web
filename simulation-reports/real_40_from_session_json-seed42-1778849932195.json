@@ -1,0 +1,7839 @@
+{
+  "config": {
+    "scenario_name": "real_40_from_session_json",
+    "n_players": 40,
+    "courts": 10,
+    "rounds": 15,
+    "elo_distribution": "wide",
+    "gender_ratio": 0.5,
+    "gender_pref_rate": 0.3,
+    "group_count": 0,
+    "group_size_range": [
+      2,
+      3
+    ],
+    "use_corrector": true,
+    "seed": 42,
+    "initial_players": [
+      {
+        "player_id": "P12",
+        "elo": 3.12,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P8",
+        "elo": 2.92,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P30",
+        "elo": 4.06,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P40",
+        "elo": 2.58,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P26",
+        "elo": 3.85,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P7",
+        "elo": 2.86,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P32",
+        "elo": 4.16,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P13",
+        "elo": 3.18,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P3",
+        "elo": 2.66,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P31",
+        "elo": 4.11,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P15",
+        "elo": 3.28,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P36",
+        "elo": 4.37,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P24",
+        "elo": 3.75,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P16",
+        "elo": 3.33,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P34",
+        "elo": 4.27,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P2",
+        "elo": 2.6,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P27",
+        "elo": 3.9,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P39",
+        "elo": 2.53,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P9",
+        "elo": 2.97,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P28",
+        "elo": 3.96,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P14",
+        "elo": 3.23,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P29",
+        "elo": 4.01,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P19",
+        "elo": 3.49,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P22",
+        "elo": 3.64,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P10",
+        "elo": 3.02,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P18",
+        "elo": 3.44,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P1",
+        "elo": 2.55,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P33",
+        "elo": 4.22,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P11",
+        "elo": 3.07,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P4",
+        "elo": 2.71,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P37",
+        "elo": 4.42,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P35",
+        "elo": 4.32,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P5",
+        "elo": 2.76,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P23",
+        "elo": 3.7,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P6",
+        "elo": 2.81,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P25",
+        "elo": 3.8,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P38",
+        "elo": 4.48,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      {
+        "player_id": "P20",
+        "elo": 3.54,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P21",
+        "elo": 3.59,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      {
+        "player_id": "P17",
+        "elo": 3.38,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 0,
+        "last_played_round": -1,
+        "consecutive_rest": 0,
+        "consecutive_play": 0,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      }
+    ]
+  },
+  "rounds_completed": [
+    {
+      "round_no": 1,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 39.56120000000004
+    },
+    {
+      "round_no": 2,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 25.727800000000002
+    },
+    {
+      "round_no": 3,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 23.803499999999985
+    },
+    {
+      "round_no": 4,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 14.325399999999945
+    },
+    {
+      "round_no": 5,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 13.000800000000027
+    },
+    {
+      "round_no": 6,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 13.009900000000016
+    },
+    {
+      "round_no": 7,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 13.02819999999997
+    },
+    {
+      "round_no": 8,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 13.840299999999957
+    },
+    {
+      "round_no": 9,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 16.990599999999972
+    },
+    {
+      "round_no": 10,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 24.02710000000002
+    },
+    {
+      "round_no": 11,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 24.575199999999995
+    },
+    {
+      "round_no": 12,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 25.389599999999973
+    },
+    {
+      "round_no": 13,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 24.495000000000005
+    },
+    {
+      "round_no": 14,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 15.925700000000006
+    },
+    {
+      "round_no": 15,
+      "matches": [
+        {
+          "court_idx": 0,
+          "team_a": [
+            "P12",
+            "P30"
+          ],
+          "team_b": [
+            "P40",
+            "P36"
+          ],
+          "score": 4.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999977,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 1,
+          "team_a": [
+            "P26",
+            "P21"
+          ],
+          "team_b": [
+            "P4",
+            "P31"
+          ],
+          "score": 8.0062,
+          "stats": {
+            "elo_diff": 0.3099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 8
+          }
+        },
+        {
+          "court_idx": 2,
+          "team_a": [
+            "P18",
+            "P24"
+          ],
+          "team_b": [
+            "P10",
+            "P1"
+          ],
+          "score": 2.0162,
+          "stats": {
+            "elo_diff": 0.8099999999999996,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 3,
+          "team_a": [
+            "P33",
+            "P35"
+          ],
+          "team_b": [
+            "P2",
+            "P20"
+          ],
+          "score": 4.024,
+          "stats": {
+            "elo_diff": 1.1999999999999993,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 4,
+          "team_a": [
+            "P8",
+            "P6"
+          ],
+          "team_b": [
+            "P32",
+            "P5"
+          ],
+          "score": 2.0119,
+          "stats": {
+            "elo_diff": 0.5949999999999998,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 5,
+          "team_a": [
+            "P3",
+            "P15"
+          ],
+          "team_b": [
+            "P13",
+            "P34"
+          ],
+          "score": 4.0151,
+          "stats": {
+            "elo_diff": 0.7549999999999999,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 4
+          }
+        },
+        {
+          "court_idx": 6,
+          "team_a": [
+            "P37",
+            "P39"
+          ],
+          "team_b": [
+            "P19",
+            "P14"
+          ],
+          "score": 6.0023,
+          "stats": {
+            "elo_diff": 0.11499999999999932,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 7,
+          "team_a": [
+            "P27",
+            "P9"
+          ],
+          "team_b": [
+            "P7",
+            "P22"
+          ],
+          "score": 2.0037,
+          "stats": {
+            "elo_diff": 0.18500000000000005,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 2
+          }
+        },
+        {
+          "court_idx": 8,
+          "team_a": [
+            "P23",
+            "P28"
+          ],
+          "team_b": [
+            "P29",
+            "P16"
+          ],
+          "score": 6.0032,
+          "stats": {
+            "elo_diff": 0.16000000000000014,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        },
+        {
+          "court_idx": 9,
+          "team_a": [
+            "P11",
+            "P17"
+          ],
+          "team_b": [
+            "P38",
+            "P25"
+          ],
+          "score": 6.0183,
+          "stats": {
+            "elo_diff": 0.9150000000000009,
+            "partner_repeats": 0,
+            "opponent_repeats": 0,
+            "group_bonus": 0,
+            "gender_pref_penalty": 6
+          }
+        }
+      ],
+      "resting": [],
+      "elapsed_ms": 14.285799999999995
+    }
+  ],
+  "final_state": {
+    "session_id": "simulation-session",
+    "current_round": 16,
+    "status": "active",
+    "config": {
+      "courts": 10,
+      "elo_tolerance": 150,
+      "weights": {
+        "elo": 1,
+        "partner_repeat": 3,
+        "opponent_repeat": 1.5,
+        "group_bonus": 0.5,
+        "partner_gender_pref": 4,
+        "opponent_gender_pref": 2
+      }
+    },
+    "players": {
+      "P12": {
+        "player_id": "P12",
+        "elo": 3.12,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      "P8": {
+        "player_id": "P8",
+        "elo": 2.92,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      },
+      "P30": {
+        "player_id": "P30",
+        "elo": 4.06,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      "P40": {
+        "player_id": "P40",
+        "elo": 2.58,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      "P26": {
+        "player_id": "P26",
+        "elo": 3.85,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      "P7": {
+        "player_id": "P7",
+        "elo": 2.86,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      "P32": {
+        "player_id": "P32",
+        "elo": 4.16,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      },
+      "P13": {
+        "player_id": "P13",
+        "elo": 3.18,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      "P3": {
+        "player_id": "P3",
+        "elo": 2.66,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      "P31": {
+        "player_id": "P31",
+        "elo": 4.11,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      "P15": {
+        "player_id": "P15",
+        "elo": 3.28,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      "P36": {
+        "player_id": "P36",
+        "elo": 4.37,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      "P24": {
+        "player_id": "P24",
+        "elo": 3.75,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      "P16": {
+        "player_id": "P16",
+        "elo": 3.33,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      "P34": {
+        "player_id": "P34",
+        "elo": 4.27,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      "P2": {
+        "player_id": "P2",
+        "elo": 2.6,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      "P27": {
+        "player_id": "P27",
+        "elo": 3.9,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      "P39": {
+        "player_id": "P39",
+        "elo": 2.53,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      "P9": {
+        "player_id": "P9",
+        "elo": 2.97,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      "P28": {
+        "player_id": "P28",
+        "elo": 3.96,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      "P14": {
+        "player_id": "P14",
+        "elo": 3.23,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      "P29": {
+        "player_id": "P29",
+        "elo": 4.01,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      },
+      "P19": {
+        "player_id": "P19",
+        "elo": 3.49,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      "P22": {
+        "player_id": "P22",
+        "elo": 3.64,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      "P10": {
+        "player_id": "P10",
+        "elo": 3.02,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "any"
+      },
+      "P18": {
+        "player_id": "P18",
+        "elo": 3.44,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      "P1": {
+        "player_id": "P1",
+        "elo": 2.55,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      "P33": {
+        "player_id": "P33",
+        "elo": 4.22,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      "P11": {
+        "player_id": "P11",
+        "elo": 3.07,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      "P4": {
+        "player_id": "P4",
+        "elo": 2.71,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      "P37": {
+        "player_id": "P37",
+        "elo": 4.42,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      "P35": {
+        "player_id": "P35",
+        "elo": 4.32,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      "P5": {
+        "player_id": "P5",
+        "elo": 2.76,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      },
+      "P23": {
+        "player_id": "P23",
+        "elo": 3.7,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      "P6": {
+        "player_id": "P6",
+        "elo": 2.81,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "any"
+      },
+      "P25": {
+        "player_id": "P25",
+        "elo": 3.8,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "F",
+        "opponent_gender_pref": "F"
+      },
+      "P38": {
+        "player_id": "P38",
+        "elo": 4.48,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "any"
+      },
+      "P20": {
+        "player_id": "P20",
+        "elo": 3.54,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "F",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      },
+      "P21": {
+        "player_id": "P21",
+        "elo": 3.59,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "M",
+        "opponent_gender_pref": "F"
+      },
+      "P17": {
+        "player_id": "P17",
+        "elo": 3.38,
+        "group_id": null,
+        "checked_in_at": "2026-05-15T12:00:00.000Z",
+        "checked_out_at": null,
+        "matches_played": 15,
+        "last_played_round": 15,
+        "consecutive_rest": 0,
+        "consecutive_play": 15,
+        "partner_counts": {},
+        "opponent_counts": {},
+        "opted_rest": false,
+        "gender": "M",
+        "partner_gender_pref": "any",
+        "opponent_gender_pref": "F"
+      }
+    },
+    "rounds": [
+      {
+        "session_id": "simulation-session",
+        "round_no": 1,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:01:00.000Z",
+        "ended_at": "2026-05-15T12:01:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 2,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:02:00.000Z",
+        "ended_at": "2026-05-15T12:02:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 3,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:03:00.000Z",
+        "ended_at": "2026-05-15T12:03:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 4,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:04:00.000Z",
+        "ended_at": "2026-05-15T12:04:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 5,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:05:00.000Z",
+        "ended_at": "2026-05-15T12:05:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 6,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:06:00.000Z",
+        "ended_at": "2026-05-15T12:06:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 7,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:07:00.000Z",
+        "ended_at": "2026-05-15T12:07:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 8,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:08:00.000Z",
+        "ended_at": "2026-05-15T12:08:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 9,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:09:00.000Z",
+        "ended_at": "2026-05-15T12:09:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 10,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:10:00.000Z",
+        "ended_at": "2026-05-15T12:10:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 11,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:11:00.000Z",
+        "ended_at": "2026-05-15T12:11:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 12,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:12:00.000Z",
+        "ended_at": "2026-05-15T12:12:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 13,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:13:00.000Z",
+        "ended_at": "2026-05-15T12:13:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 14,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:14:00.000Z",
+        "ended_at": "2026-05-15T12:14:30.000Z"
+      },
+      {
+        "session_id": "simulation-session",
+        "round_no": 15,
+        "status": "completed",
+        "matches": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "P12",
+              "P30"
+            ],
+            "team_b": [
+              "P40",
+              "P36"
+            ],
+            "score": 4.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999977,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "P26",
+              "P21"
+            ],
+            "team_b": [
+              "P4",
+              "P31"
+            ],
+            "score": 8.0062,
+            "stats": {
+              "elo_diff": 0.3099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 8
+            }
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "P18",
+              "P24"
+            ],
+            "team_b": [
+              "P10",
+              "P1"
+            ],
+            "score": 2.0162,
+            "stats": {
+              "elo_diff": 0.8099999999999996,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "P33",
+              "P35"
+            ],
+            "team_b": [
+              "P2",
+              "P20"
+            ],
+            "score": 4.024,
+            "stats": {
+              "elo_diff": 1.1999999999999993,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "P8",
+              "P6"
+            ],
+            "team_b": [
+              "P32",
+              "P5"
+            ],
+            "score": 2.0119,
+            "stats": {
+              "elo_diff": 0.5949999999999998,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "P3",
+              "P15"
+            ],
+            "team_b": [
+              "P13",
+              "P34"
+            ],
+            "score": 4.0151,
+            "stats": {
+              "elo_diff": 0.7549999999999999,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 4
+            }
+          },
+          {
+            "court_idx": 6,
+            "team_a": [
+              "P37",
+              "P39"
+            ],
+            "team_b": [
+              "P19",
+              "P14"
+            ],
+            "score": 6.0023,
+            "stats": {
+              "elo_diff": 0.11499999999999932,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 7,
+            "team_a": [
+              "P27",
+              "P9"
+            ],
+            "team_b": [
+              "P7",
+              "P22"
+            ],
+            "score": 2.0037,
+            "stats": {
+              "elo_diff": 0.18500000000000005,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 2
+            }
+          },
+          {
+            "court_idx": 8,
+            "team_a": [
+              "P23",
+              "P28"
+            ],
+            "team_b": [
+              "P29",
+              "P16"
+            ],
+            "score": 6.0032,
+            "stats": {
+              "elo_diff": 0.16000000000000014,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          },
+          {
+            "court_idx": 9,
+            "team_a": [
+              "P11",
+              "P17"
+            ],
+            "team_b": [
+              "P38",
+              "P25"
+            ],
+            "score": 6.0183,
+            "stats": {
+              "elo_diff": 0.9150000000000009,
+              "partner_repeats": 0,
+              "opponent_repeats": 0,
+              "group_bonus": 0,
+              "gender_pref_penalty": 6
+            }
+          }
+        ],
+        "resting": [],
+        "started_at": "2026-05-15T12:15:00.000Z",
+        "ended_at": "2026-05-15T12:15:30.000Z"
+      }
+    ]
+  },
+  "fairness_score": {
+    "total": 59,
+    "breakdown": {
+      "match_count": 25,
+      "partner_diversity": 0,
+      "opponent_diversity": 0,
+      "rest": 20,
+      "gender_prefs": 14
+    },
+    "grade": "poor"
+  },
+  "fairness_evolution": [
+    {
+      "round": 1,
+      "score": 59
+    },
+    {
+      "round": 2,
+      "score": 59
+    },
+    {
+      "round": 3,
+      "score": 59
+    },
+    {
+      "round": 4,
+      "score": 59
+    },
+    {
+      "round": 5,
+      "score": 59
+    },
+    {
+      "round": 6,
+      "score": 59
+    },
+    {
+      "round": 7,
+      "score": 59
+    },
+    {
+      "round": 8,
+      "score": 59
+    },
+    {
+      "round": 9,
+      "score": 59
+    },
+    {
+      "round": 10,
+      "score": 59
+    },
+    {
+      "round": 11,
+      "score": 59
+    },
+    {
+      "round": 12,
+      "score": 59
+    },
+    {
+      "round": 13,
+      "score": 59
+    },
+    {
+      "round": 14,
+      "score": 59
+    },
+    {
+      "round": 15,
+      "score": 59
+    }
+  ],
+  "per_player_stats": [
+    {
+      "player_id": "P1",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P10",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P11",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P12",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P13",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P14",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P15",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P16",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P17",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P18",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P19",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P2",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P20",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P21",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P22",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P23",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P24",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P25",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P26",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P27",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P28",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P29",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P3",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P30",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P31",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P32",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P33",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P34",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P35",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P36",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P37",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P38",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P39",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P4",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P40",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P5",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P6",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P7",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P8",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    },
+    {
+      "player_id": "P9",
+      "matches_played": 15,
+      "unique_partners": 0,
+      "unique_opponents": 0,
+      "max_consecutive_rest": 0,
+      "rest_total": 0,
+      "partner_repeats": 0,
+      "opponent_repeats": 0
+    }
+  ],
+  "adjustments_applied": [],
+  "warnings_raised": [],
+  "total_suggest_time_ms": 301.9860999999999,
+  "avg_suggest_time_ms": 20.13240666666666,
+  "max_suggest_time_ms": 39.56120000000004,
+  "invariant_violations": []
+}

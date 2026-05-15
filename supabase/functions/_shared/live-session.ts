@@ -3,10 +3,26 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 type JsonBody = Record<string, unknown>
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+}
+
+export function handleCorsPreflight(request: Request): Response | null {
+  if (request.method !== 'OPTIONS') return null
+
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders,
+  })
+}
+
 export function jsonResponse(body: JsonBody, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
+      ...corsHeaders,
       'Content-Type': 'application/json',
     },
   })

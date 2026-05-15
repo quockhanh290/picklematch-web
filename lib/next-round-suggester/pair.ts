@@ -13,6 +13,7 @@ export type PartitioningResult = {
   score: number
   stats: MatchScore['stats']
   iterations: number
+  relaxed_tolerance?: boolean
 }
 
 const SPLIT_INDEXES: Array<[number, number, number, number]> = [
@@ -52,23 +53,25 @@ export function bestTeamSplit(players: PlayerSessionState[], state: SessionState
 }
 
 const EXHAUSTIVE_MAX_ITER = 20000
-const SAMPLED_MAX_ITER = 5000
+const SAMPLED_MAX_ITER = 200
 
 function addStats(a: MatchScore['stats'], b: MatchScore['stats']): MatchScore['stats'] {
   return {
-    elo_diff: a.elo_diff + b.elo_diff,
+    pvna_diff: a.pvna_diff + b.pvna_diff,
     partner_repeats: a.partner_repeats + b.partner_repeats,
     opponent_repeats: a.opponent_repeats + b.opponent_repeats,
     group_bonus: a.group_bonus + b.group_bonus,
+    gender_pref_penalty: a.gender_pref_penalty + b.gender_pref_penalty,
   }
 }
 
 function zeroStats(): MatchScore['stats'] {
   return {
-    elo_diff: 0,
+    pvna_diff: 0,
     partner_repeats: 0,
     opponent_repeats: 0,
     group_bonus: 0,
+    gender_pref_penalty: 0,
   }
 }
 
@@ -76,18 +79,21 @@ function evaluatePartition(
   groups: PlayerSessionState[][],
   state: SessionState,
   iteration: number,
+  options: { tolerance?: number; relaxedTolerance?: boolean } = {},
 ): PartitioningResult | null {
   let score = 0
   let stats = zeroStats()
   const matches: Match[] = []
 
   for (let courtIdx = 0; courtIdx < groups.length; courtIdx += 1) {
-    const split = bestTeamSplit(groups[courtIdx], state)
+    const split = bestTeamSplitWithTolerance(groups[courtIdx], state, options.tolerance)
     if (!split) return null
 
     matches.push({
       ...split.match,
       court_idx: courtIdx,
+      score: split.score,
+      stats: split.stats,
     })
     score += split.score
     stats = addStats(stats, split.stats)
@@ -98,7 +104,42 @@ function evaluatePartition(
     score,
     stats,
     iterations: iteration,
+    relaxed_tolerance: options.relaxedTolerance,
   }
+}
+
+function bestTeamSplitWithTolerance(
+  players: PlayerSessionState[],
+  state: SessionState,
+  tolerance?: number,
+): TeamSplitResult | null {
+  if (players.length !== 4) return null
+
+  let best: TeamSplitResult | null = null
+
+  for (const [a1, a2, b1, b2] of SPLIT_INDEXES) {
+    const teamA: Team = [players[a1].player_id, players[a2].player_id]
+    const teamB: Team = [players[b1].player_id, players[b2].player_id]
+    const scored = scoreMatch(teamA, teamB, state, tolerance === undefined ? {} : { tolerance })
+
+    if (!Number.isFinite(scored.score)) continue
+
+    const result: TeamSplitResult = {
+      match: {
+        court_idx: 0,
+        team_a: teamA,
+        team_b: teamB,
+      },
+      score: scored.score,
+      stats: scored.stats,
+    }
+
+    if (!best || result.score < best.score) {
+      best = result
+    }
+  }
+
+  return best
 }
 
 function getCombinations<T>(items: T[], size: number): T[][] {
@@ -163,6 +204,16 @@ function chunkIntoCourts(players: PlayerSessionState[]): PlayerSessionState[][] 
   return groups
 }
 
+function historySignature(players: PlayerSessionState[]): string {
+  return players
+    .map((player) => {
+      const partnerTotal = [...player.partner_counts.values()].reduce((sum, count) => sum + count, 0)
+      const opponentTotal = [...player.opponent_counts.values()].reduce((sum, count) => sum + count, 0)
+      return `${player.player_id}:${player.matches_played}:${partnerTotal}:${opponentTotal}`
+    })
+    .join('|')
+}
+
 export function bestPartitioning(
   players: PlayerSessionState[],
   state: SessionState,
@@ -171,22 +222,26 @@ export function bestPartitioning(
   if (players.length < 4 || players.length % 4 !== 0) return null
 
   const normalizedPlayers = [...players].sort((a, b) => a.player_id.localeCompare(b.player_id))
-  let best: PartitioningResult | null = null
-  let iterations = 0
   const maxIterations =
-    options.maxIterations ?? (normalizedPlayers.length >= 13 ? SAMPLED_MAX_ITER : EXHAUSTIVE_MAX_ITER)
+    options.maxIterations ?? (normalizedPlayers.length > 8 ? SAMPLED_MAX_ITER : EXHAUSTIVE_MAX_ITER)
 
-  function consider(groups: PlayerSessionState[][]) {
+  function runSearch(
+    searchOptions: { tolerance?: number; relaxedTolerance?: boolean } = {},
+  ): PartitioningResult | null {
+    let best: PartitioningResult | null = null
+    let iterations = 0
+
+    function consider(groups: PlayerSessionState[][]) {
     if (iterations >= maxIterations) return
     iterations += 1
-    const result = evaluatePartition(groups, state, iterations)
+    const result = evaluatePartition(groups, state, iterations, searchOptions)
     if (!result) return
     if (!best || result.score < best.score) {
       best = result
     }
   }
 
-  if (normalizedPlayers.length <= 12) {
+  if (normalizedPlayers.length <= 8) {
     function walk(remaining: PlayerSessionState[], groups: PlayerSessionState[][]) {
       if (iterations >= maxIterations) return
       if (remaining.length === 0) {
@@ -203,15 +258,44 @@ export function bestPartitioning(
     }
 
     walk(normalizedPlayers, [])
-    return best
+    const finalBest = best as PartitioningResult | null
+    return finalBest
+      ? {
+          matches: finalBest.matches,
+          score: finalBest.score,
+          stats: finalBest.stats,
+          iterations,
+          relaxed_tolerance: finalBest.relaxed_tolerance,
+        }
+      : null
   }
 
   consider(chunkIntoCourts(normalizedPlayers))
 
-  const seedBase = hashString(normalizedPlayers.map((player) => player.player_id).join(':'))
+  const seedBase = hashString(
+    `${state.current_round}|${normalizedPlayers.map((player) => player.player_id).join(':')}|${historySignature(normalizedPlayers)}`,
+  )
   while (iterations < maxIterations) {
     consider(chunkIntoCourts(shuffled(normalizedPlayers, seedBase + iterations)))
   }
 
-  return best
+  const finalBest = best as PartitioningResult | null
+  return finalBest
+    ? {
+        matches: finalBest.matches,
+        score: finalBest.score,
+        stats: finalBest.stats,
+        iterations,
+        relaxed_tolerance: finalBest.relaxed_tolerance,
+      }
+    : null
+  }
+
+  const strict = runSearch()
+  if (strict) return strict
+
+  return runSearch({
+    tolerance: Number.POSITIVE_INFINITY,
+    relaxedTolerance: true,
+  })
 }

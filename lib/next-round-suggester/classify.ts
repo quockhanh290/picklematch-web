@@ -11,7 +11,12 @@ export const Tier = {
 
 export type Tier = (typeof Tier)[keyof typeof Tier]
 
-export function classifyPlayer(player: PlayerSessionState, avgMatches: number): Tier {
+export function classifyPlayer(
+  player: PlayerSessionState,
+  avgMatches: number,
+  override?: Tier,
+): Tier {
+  if (override !== undefined) return override
   if (player.opted_rest) return Tier.OPTED_REST
   if (player.consecutive_rest >= 1) return Tier.MUST_PLAY
   if (player.matches_played < avgMatches - 1.5) return Tier.SHOULD_PLAY

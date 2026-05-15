@@ -9,6 +9,8 @@ export const weights: ScoringWeights = {
   partner_repeat: 3,
   opponent_repeat: 1.5,
   group_bonus: 0.5,
+  partner_gender_pref: 4,
+  opponent_gender_pref: 2,
 }
 
 export function makePlayer(
@@ -28,6 +30,9 @@ export function makePlayer(
     partner_counts: new Map(),
     opponent_counts: new Map(),
     opted_rest: false,
+    gender: null,
+    partner_gender_pref: 'any',
+    opponent_gender_pref: 'any',
     ...overrides,
   }
 }

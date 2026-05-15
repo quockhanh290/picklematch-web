@@ -4,6 +4,8 @@ import { classifyPlayer, getAverageMatches, Tier } from './classify.ts'
 import { isPresent } from './state.ts'
 import type { PlayerSessionState, SessionState } from './types'
 
+export type TierOverrides = Record<string, Tier>
+
 export type PickPlayersResult = {
   selected: PlayerSessionState[]
   resting: PlayerSessionState[]
@@ -39,7 +41,11 @@ export function getPresentPlayers(state: SessionState): PlayerSessionState[] {
     .sort((a, b) => a.player_id.localeCompare(b.player_id))
 }
 
-export function pickPlayers(state: SessionState, slots = 4): PickPlayersResult {
+export function pickPlayers(
+  state: SessionState,
+  slots = 4,
+  tierOverrides: TierOverrides = {},
+): PickPlayersResult {
   const warnings: string[] = []
   const presentPlayers = getPresentPlayers(state)
   const eligiblePlayers = presentPlayers.filter((player) => !player.opted_rest)
@@ -55,7 +61,10 @@ export function pickPlayers(state: SessionState, slots = 4): PickPlayersResult {
 
   const avgMatches = getAverageMatches(eligiblePlayers)
   const tiers = new Map(
-    presentPlayers.map((player) => [player.player_id, classifyPlayer(player, avgMatches)]),
+    presentPlayers.map((player) => [
+      player.player_id,
+      classifyPlayer(player, avgMatches, tierOverrides[player.player_id]),
+    ]),
   )
   const mustPlayCount = eligiblePlayers.filter(
     (player) => tiers.get(player.player_id) === Tier.MUST_PLAY,
@@ -67,6 +76,9 @@ export function pickPlayers(state: SessionState, slots = 4): PickPlayersResult {
 
   const sortedEligible = [...eligiblePlayers].sort((a, b) => comparePlayersByPriority(a, b, tiers))
   const selected = sortedEligible.slice(0, slots)
+  if (selected.some((player) => tiers.get(player.player_id) === Tier.MUST_REST)) {
+    warnings.push('MUST_REST_FORCED_PLAY')
+  }
   const selectedIds = new Set(selected.map((player) => player.player_id))
   const resting = presentPlayers.filter((player) => !selectedIds.has(player.player_id))
 
@@ -80,6 +92,7 @@ export function pickPlayers(state: SessionState, slots = 4): PickPlayersResult {
 export function sortPlayersForStrategy(
   players: PlayerSessionState[],
   strategy: 'fairness' | 'rest' | 'diversity',
+  tierOverrides: TierOverrides = {},
 ): PlayerSessionState[] {
   if (strategy === 'rest') {
     return [...players].sort((a, b) => {
@@ -105,6 +118,11 @@ export function sortPlayersForStrategy(
   }
 
   const avgMatches = getAverageMatches(players)
-  const tiers = new Map(players.map((player) => [player.player_id, classifyPlayer(player, avgMatches)]))
+  const tiers = new Map(
+    players.map((player) => [
+      player.player_id,
+      classifyPlayer(player, avgMatches, tierOverrides[player.player_id]),
+    ]),
+  )
   return [...players].sort((a, b) => comparePlayersByPriority(a, b, tiers))
 }

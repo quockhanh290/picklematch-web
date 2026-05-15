@@ -128,3 +128,43 @@ run('next round state mapper attaches symmetric pair history', () => {
   assert.equal(isPresent(mappedA!), true)
   assert.equal(isPresent(mappedB!), false)
 })
+
+run('next round state mapper normalizes per-session gender preferences', () => {
+  const playerRows: SessionPlayerStateRow[] = [
+    {
+      session_id: sessionId,
+      player_id: playerA,
+      group_id: null,
+      checked_in_at: '2026-05-14T12:00:00.000Z',
+      checked_out_at: null,
+      matches_played: 0,
+      last_played_round: -1,
+      consecutive_rest: 0,
+      consecutive_play: 0,
+      opted_rest: false,
+      players: {
+        elo: 1200,
+        gender: 'female',
+        partner_gender_pref: 'male',
+        opponent_gender_pref: 'any',
+      },
+      session_players: {
+        metadata: {
+          partner_gender_pref: 'female',
+        },
+      },
+    },
+  ]
+
+  const state = mapRowsToSessionState({
+    sessionId,
+    playerRows,
+    pairRows: [],
+    roundRows: [],
+  })
+  const mappedA = state.players.get(playerA)
+
+  assert.equal(mappedA?.gender, 'F')
+  assert.equal(mappedA?.partner_gender_pref, 'F')
+  assert.equal(mappedA?.opponent_gender_pref, 'any')
+})

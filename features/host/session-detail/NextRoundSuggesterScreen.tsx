@@ -1,14 +1,32 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native'
-import { CheckCircle2, Play, RefreshCcw, UserMinus, UserPlus } from 'lucide-react-native'
+import { AlertTriangle, CheckCircle2, Play, RefreshCcw, Star, UserMinus, UserPlus } from 'lucide-react-native'
 
 import { AppLoading } from '@/components/design'
 import { RADIUS, SHADOW } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
+import { calculateOptimalCourts, PRESETS, type CourtPreset } from '@/lib/court-calculator'
 import { mapRowsToSessionState } from '@/lib/next-round-suggester/state'
 import { suggestNextRound } from '@/lib/next-round-suggester/suggest'
+import { scoreMatch } from '@/lib/next-round-suggester/score'
+import { commitCompletedRound } from '@/lib/next-round-suggester/commit'
+import { applyFairnessAdjustment, correctForFairness } from '@/lib/next-round-suggester/fairness/corrector'
+import { detectFairnessIssues, type FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
+import {
+  computeGenderPrefSatisfaction,
+  computeMatchCountMetrics,
+  computeOpponentDiversity,
+  computePartnerDiversity,
+  computeRestFairness,
+  computeSessionFairness,
+  type SessionFairnessScore,
+} from '@/lib/next-round-suggester/fairness/metrics'
+import { sanitizeSummaryForHost, sanitizeWarningsForHost } from '@/lib/next-round-suggester/fairness/sanitize'
+import { buildSessionSummary, type SessionSummary } from '@/lib/next-round-suggester/fairness/summary'
 import type {
   Match,
+  PlayerSessionState,
+  RoundRecord,
   SessionPairHistoryRow,
   SessionPlayerStateRow,
   SessionRoundRow,
@@ -46,13 +64,39 @@ function getPlayerPvna(player?: ArrangementPlayer | null) {
 }
 
 function getTeamPvna(team: [string, string], state: SessionState) {
-  return team.reduce((sum, id) => sum + (state.players.get(id)?.elo ?? 1000), 0) / 2
+  return team.reduce((sum, id) => sum + (state.players.get(id)?.pvna ?? 3.0), 0) / 2
 }
 
 function getMatchLabel(match: Match, playersById: Map<string, ArrangementPlayer>) {
   const teamA = match.team_a.map(id => playerName(id, playersById)).join(' / ')
   const teamB = match.team_b.map(id => playerName(id, playersById)).join(' / ')
   return `${teamA}  vs  ${teamB}`
+}
+
+function formatGender(value?: string | null) {
+  const gender = String(value || '').toLowerCase()
+  if (gender === 'm' || gender === 'male' || gender === 'nam') return 'M'
+  if (gender === 'f' || gender === 'female' || gender === 'nữ' || gender === 'nu') return 'F'
+  return '-'
+}
+
+function formatPref(value: unknown) {
+  const pref = String(value || 'any').toLowerCase()
+  if (pref === 'm' || pref === 'male' || pref === 'nam') return 'M'
+  if (pref === 'f' || pref === 'female' || pref === 'nữ' || pref === 'nu') return 'F'
+  return 'any'
+}
+
+function formatGroupLabel(groupId?: string | null) {
+  if (!groupId) return '-'
+  const parts = groupId.split(':').filter(Boolean)
+  return parts.slice(-2).map(part => part.slice(0, 4)).join('-') || 'group'
+}
+
+function formatPlayerPreference(playerId: string, playersById: Map<string, ArrangementPlayer>, state: SessionState) {
+  const player = playersById.get(playerId)
+  const livePlayer = state.players.get(playerId)
+  return `${playerName(playerId, playersById)} (${formatGender(player?.gender)} · P:${formatPref(player?.metadata?.partner_gender_pref)} · O:${formatPref(player?.metadata?.opponent_gender_pref)} · G:${formatGroupLabel(livePlayer?.group_id)})`
 }
 
 function formatWarning(code: string) {
@@ -91,6 +135,294 @@ function normalizeRoundRow(row: any): SessionRoundRow {
   }
 }
 
+function isRosterSyncEligible(player: ArrangementPlayer) {
+  if (player.status && player.status !== 'confirmed') return false
+  if (player.checkInStatus === 'no_show') return false
+
+  return player.checkInStatus === 'present' || player.checkInStatus === 'checked_in' || !player.checkInStatus
+}
+
+function isConfirmedNonNoShow(player: ArrangementPlayer) {
+  if (player.status && player.status !== 'confirmed') return false
+  return player.checkInStatus !== 'no_show'
+}
+
+function withWeights(state: SessionState, weights: SessionState['config']['weights']): SessionState {
+  return {
+    ...state,
+    config: {
+      ...state.config,
+      weights,
+    },
+  }
+}
+
+function fairnessLabel(score: SessionFairnessScore) {
+  if (score.grade === 'excellent') return 'Rất đều'
+  if (score.grade === 'good') return 'Đều'
+  if (score.grade === 'acceptable') return 'Tạm ổn'
+  return 'Cần chỉnh'
+}
+
+function warningTone(severity: FairnessWarning['severity']) {
+  if (severity === 'critical') return { bg: '#FEE2E2', border: '#FCA5A5', text: '#991B1B' }
+  if (severity === 'warning') return { bg: '#FFF7D6', border: '#E5B94E', text: '#92400E' }
+  return { bg: '#EAF4FF', border: '#9CC7F2', text: '#1D4E89' }
+}
+
+function previewStateAfterAlternative(
+  state: SessionState,
+  alternative: SuggestionAlternative,
+): SessionState {
+  const round: RoundRecord = {
+    session_id: state.session_id,
+    round_no: state.current_round,
+    status: 'completed',
+    matches: alternative.matches,
+    resting: alternative.resting,
+    started_at: null,
+    ended_at: null,
+  }
+  const committed = commitCompletedRound(state, round, pairRowsFromState(state))
+
+  return {
+    ...state,
+    current_round: state.current_round + 1,
+    players: applyPairHistoryToPlayers(committed.players, committed.pairHistory),
+    rounds: [...state.rounds, round],
+  }
+}
+
+function severityRank(severity: FairnessWarning['severity']) {
+  if (severity === 'critical') return 3
+  if (severity === 'warning') return 2
+  return 1
+}
+
+function buildFairnessWarningsForBanner(
+  currentWarnings: FairnessWarning[],
+  projectedWarnings: FairnessWarning[],
+): FairnessWarning[] {
+  const current = sanitizeWarningsForHost(currentWarnings)
+  const currentKeys = new Set(current.map(warningIdentity))
+  const projected = sanitizeWarningsForHost(projectedWarnings)
+    .filter(warning => !currentKeys.has(warningIdentity(warning)))
+    .map(toProjectedWarning)
+
+  return [...current, ...projected].sort((a, b) => {
+    const severityDiff = severityRank(b.severity) - severityRank(a.severity)
+    if (severityDiff !== 0) return severityDiff
+    return warningIdentity(a).localeCompare(warningIdentity(b))
+  })
+}
+
+function warningIdentity(warning: FairnessWarning): string {
+  return `${warning.type}:${[...warning.affected_players].sort().join(',')}`
+}
+
+function toProjectedWarning(warning: FairnessWarning): FairnessWarning {
+  return {
+    ...warning,
+    message: `Neu start phuong an nay: ${projectWarningMessage(warning.message)}`,
+    suggested_action: projectSuggestedAction(warning.suggested_action),
+  }
+}
+
+function projectWarningMessage(message: string): string {
+  return message
+    .replace(' da doi dau ', ' se doi dau ')
+    .replace(' da danh chung ', ' se danh chung ')
+    .replace(' da nghi ', ' se nghi ')
+}
+
+function projectSuggestedAction(action: string): string {
+  return action.replace('Engine se ', 'Engine dang ')
+}
+
+function pairRowsFromState(state: SessionState): SessionPairHistoryRow[] {
+  const rows = new Map<string, SessionPairHistoryRow>()
+
+  for (const player of state.players.values()) {
+    for (const [partnerId, partnerCount] of player.partner_counts) {
+      upsertPairRow(rows, state.session_id, player.player_id, partnerId, { partner_count: partnerCount })
+    }
+
+    for (const [opponentId, opponentCount] of player.opponent_counts) {
+      upsertPairRow(rows, state.session_id, player.player_id, opponentId, { opponent_count: opponentCount })
+    }
+  }
+
+  return [...rows.values()]
+}
+
+function upsertPairRow(
+  rows: Map<string, SessionPairHistoryRow>,
+  sessionId: string,
+  playerA: string,
+  playerB: string,
+  patch: Partial<Pick<SessionPairHistoryRow, 'partner_count' | 'opponent_count'>>,
+) {
+  const [a, b] = playerA < playerB ? [playerA, playerB] : [playerB, playerA]
+  const key = `${a}:${b}`
+  const existing = rows.get(key) ?? {
+    session_id: sessionId,
+    player_a: a,
+    player_b: b,
+    partner_count: 0,
+    opponent_count: 0,
+  }
+
+  rows.set(key, {
+    ...existing,
+    partner_count: Math.max(existing.partner_count, patch.partner_count ?? 0),
+    opponent_count: Math.max(existing.opponent_count, patch.opponent_count ?? 0),
+  })
+}
+
+function applyPairHistoryToPlayers(
+  players: Map<string, PlayerSessionState>,
+  rows: SessionPairHistoryRow[],
+) {
+  for (const player of players.values()) {
+    player.partner_counts = new Map()
+    player.opponent_counts = new Map()
+  }
+
+  for (const row of rows) {
+    const playerA = players.get(row.player_a)
+    const playerB = players.get(row.player_b)
+    if (!playerA || !playerB) continue
+
+    playerA.partner_counts.set(row.player_b, row.partner_count)
+    playerB.partner_counts.set(row.player_a, row.partner_count)
+    playerA.opponent_counts.set(row.player_b, row.opponent_count)
+    playerB.opponent_counts.set(row.player_a, row.opponent_count)
+  }
+
+  return players
+}
+
+type FairnessAudit = {
+  round_no: number
+  before_total: number
+  after_total: number
+  delta_total: number
+  rows: Array<{
+    key: keyof SessionFairnessScore['breakdown']
+    label: string
+    before: number
+    after: number
+    delta: number
+    detail: string
+  }>
+}
+
+function buildLatestFairnessAudit(state: SessionState): FairnessAudit | null {
+  const completedRounds = state.rounds
+    .filter((round) => round.status === 'completed')
+    .sort((a, b) => a.round_no - b.round_no)
+  const latestRound = completedRounds[completedRounds.length - 1]
+  if (!latestRound) return null
+
+  const beforeState = rebuildStateThroughRound(state, latestRound.round_no - 1)
+  const afterState = rebuildStateThroughRound(state, latestRound.round_no)
+  const beforeScore = computeSessionFairness(beforeState)
+  const afterScore = computeSessionFairness(afterState)
+  const rows = ([
+    ['match_count', 'So tran', describeMatchCount(afterState)],
+    ['partner_diversity', 'Partner', describePartnerDiversity(afterState)],
+    ['opponent_diversity', 'Doi thu', describeOpponentDiversity(afterState)],
+    ['rest', 'Nghi', describeRestFairness(afterState)],
+    ['gender_prefs', 'Gender pref', describeGenderPrefs(afterState)],
+  ] as Array<[keyof SessionFairnessScore['breakdown'], string, string]>).map(([key, label, detail]) => {
+    const before = beforeScore.breakdown[key]
+    const after = afterScore.breakdown[key]
+    return {
+      key,
+      label,
+      before,
+      after,
+      delta: after - before,
+      detail,
+    }
+  })
+
+  return {
+    round_no: latestRound.round_no,
+    before_total: beforeScore.total,
+    after_total: afterScore.total,
+    delta_total: afterScore.total - beforeScore.total,
+    rows,
+  }
+}
+
+function rebuildStateThroughRound(state: SessionState, maxRoundNo: number): SessionState {
+  const basePlayers = new Map<string, PlayerSessionState>(
+    [...state.players].map(([playerId, player]) => [
+      playerId,
+      {
+        ...player,
+        matches_played: 0,
+        last_played_round: -1,
+        consecutive_rest: 0,
+        consecutive_play: 0,
+        partner_counts: new Map(),
+        opponent_counts: new Map(),
+      },
+    ]),
+  )
+  let rebuilt: SessionState = {
+    ...state,
+    current_round: 0,
+    players: basePlayers,
+    rounds: [],
+  }
+
+  for (const round of state.rounds
+    .filter((item) => item.status === 'completed' && item.round_no <= maxRoundNo)
+    .sort((a, b) => a.round_no - b.round_no)) {
+    const committed = commitCompletedRound(rebuilt, round, pairRowsFromState(rebuilt))
+    rebuilt = {
+      ...rebuilt,
+      current_round: round.round_no + 1,
+      players: applyPairHistoryToPlayers(committed.players, committed.pairHistory),
+      rounds: [...rebuilt.rounds, round],
+    }
+  }
+
+  return rebuilt
+}
+
+function describeMatchCount(state: SessionState): string {
+  const metrics = computeMatchCountMetrics(state)
+  return `min ${metrics.min}, max ${metrics.max}, avg ${metrics.avg.toFixed(1)}, range ${metrics.range}`
+}
+
+function describePartnerDiversity(state: SessionState): string {
+  const metrics = computePartnerDiversity(state)
+  return `avg unique ${metrics.avg_unique_partners.toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, repeats ${metrics.repeat_pairs.length}`
+}
+
+function describeOpponentDiversity(state: SessionState): string {
+  const metrics = computeOpponentDiversity(state)
+  return `avg unique ${(metrics.avg_unique_opponents ?? metrics.avg_unique_partners).toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, repeats ${metrics.repeat_pairs.length}`
+}
+
+function describeRestFairness(state: SessionState): string {
+  const metrics = computeRestFairness(state)
+  const maxRest = Math.max(0, ...metrics.per_player.map((player) => player.max_consecutive_rest))
+  return `max lien tiep ${maxRest}, violations ${metrics.violations.length}`
+}
+
+function describeGenderPrefs(state: SessionState): string {
+  const metrics = computeGenderPrefSatisfaction(state)
+  if (metrics.total_pref_opportunities === 0) return 'khong co preference opportunity'
+  return `${metrics.satisfied_count}/${metrics.total_pref_opportunities} satisfied (${Math.round(metrics.satisfaction_rate * 100)}%)`
+}
+
+const COURT_PRESET_OPTIONS: CourtPreset[] = ['play_more', 'balanced', 'relaxed']
+const COURT_DURATION_OPTIONS = [90, 120, 150]
+
 export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) {
   const theme = useAppTheme()
   const [loading, setLoading] = useState(true)
@@ -100,6 +432,10 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
   const [error, setError] = useState<string | null>(null)
   const [pvnaTolerance, setPvnaTolerance] = useState(0.5)
   const [courtCount, setCourtCount] = useState(Math.max(1, Math.min(4, courts)))
+  const [courtPreset, setCourtPreset] = useState<CourtPreset>('balanced')
+  const [courtDurationMin, setCourtDurationMin] = useState(120)
+  const [targetRounds, setTargetRounds] = useState(8)
+  const [showSessionReport, setShowSessionReport] = useState(false)
   const [swapFromPlayerId, setSwapFromPlayerId] = useState<string | null>(null)
   const [manualAlternative, setManualAlternative] = useState<SuggestionAlternative | null>(null)
   const [groupSelection, setGroupSelection] = useState<string[]>([])
@@ -109,7 +445,10 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     [players],
   )
   const checkedInPlayers = useMemo(
-    () => confirmedPlayers.filter(player => player.checkInStatus === 'present' || !player.checkInStatus),
+    () => {
+      const explicitlyPresent = confirmedPlayers.filter(isRosterSyncEligible)
+      return explicitlyPresent.length > 0 ? explicitlyPresent : confirmedPlayers.filter(isConfirmedNonNoShow)
+    },
     [confirmedPlayers],
   )
   const playersById = useMemo(
@@ -146,7 +485,16 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     setRows({
       playerRows: ((playerRes.data ?? []) as any[]).map(row => ({
         ...row,
-        players: { elo: getPlayerPvna(playersById.get(row.player_id)) },
+        players: {
+          pvna: getPlayerPvna(playersById.get(row.player_id)),
+          elo: playersById.get(row.player_id)?.elo,
+          gender: playersById.get(row.player_id)?.gender,
+          partner_gender_pref: playersById.get(row.player_id)?.metadata?.partner_gender_pref,
+          opponent_gender_pref: playersById.get(row.player_id)?.metadata?.opponent_gender_pref,
+        },
+        session_players: {
+          metadata: playersById.get(row.player_id)?.metadata ?? null,
+        },
       })),
       pairRows: (pairRes.data ?? []) as SessionPairHistoryRow[],
       roundRows: ((roundRes.data ?? []) as any[]).map(normalizeRoundRow),
@@ -166,31 +514,76 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     }
   }, [loadLiveState])
 
-  const state = useMemo(() => mapRowsToSessionState({
+  const rawState = useMemo(() => mapRowsToSessionState({
     sessionId,
     playerRows: rows.playerRows.map(row => ({
       ...row,
-      players: { elo: getPlayerPvna(playersById.get(row.player_id)) || row.players?.elo || 0 },
+      players: {
+        pvna: getPlayerPvna(playersById.get(row.player_id)) || row.players?.pvna || 0,
+        elo: row.players?.elo,
+        gender: playersById.get(row.player_id)?.gender ?? row.players?.gender,
+        partner_gender_pref: playersById.get(row.player_id)?.metadata?.partner_gender_pref ?? row.players?.partner_gender_pref,
+        opponent_gender_pref: playersById.get(row.player_id)?.metadata?.opponent_gender_pref ?? row.players?.opponent_gender_pref,
+      },
+      session_players: {
+        metadata: playersById.get(row.player_id)?.metadata ?? row.session_players?.metadata ?? null,
+      },
     })),
     pairRows: rows.pairRows,
     roundRows: rows.roundRows,
     courts: courtCount,
-    eloTolerance: pvnaTolerance,
+    pvnaTolerance,
   }), [courtCount, playersById, pvnaTolerance, rows, sessionId])
 
-  state.config.weights = {
-    ...state.config.weights,
-    elo: 100,
-  }
+  const baseWeights = useMemo(() => ({
+    ...rawState.config.weights,
+    pvna: 1,
+  }), [rawState.config.weights])
+  const baseState = useMemo(() => withWeights(rawState, baseWeights), [baseWeights, rawState])
+  const fairnessAdjustment = useMemo(() => correctForFairness(baseState), [baseState])
+  const state = useMemo(
+    () => applyFairnessAdjustment(baseState, fairnessAdjustment),
+    [baseState, fairnessAdjustment],
+  )
 
-  const suggestion = useMemo(() => suggestNextRound(state), [state])
+  const suggestion = useMemo(
+    () => suggestNextRound(state, { tier_overrides: fairnessAdjustment.tier_overrides }),
+    [fairnessAdjustment.tier_overrides, state],
+  )
+  const selected = suggestion.alternatives[selectedAlternative] ?? suggestion.alternatives[0]
+  const workingAlternative = manualAlternative ?? selected
+  const fairnessScore = useMemo(() => computeSessionFairness(state), [state])
+  const fairnessAudit = useMemo(() => buildLatestFairnessAudit(state), [state])
+  const fairnessWarnings = useMemo(
+    () => {
+      const currentWarnings = detectFairnessIssues(state)
+      const projectedState = workingAlternative
+        ? previewStateAfterAlternative(state, workingAlternative)
+        : null
+      const projectedWarnings = projectedState ? detectFairnessIssues(projectedState) : []
+
+      return buildFairnessWarningsForBanner(currentWarnings, projectedWarnings)
+    },
+    [state, workingAlternative],
+  )
+  const sessionSummary = useMemo(() => sanitizeSummaryForHost(buildSessionSummary(state)), [state])
   const activeRound = useMemo(
     () => rows.roundRows.find(row => row.status === 'active') ?? null,
     [rows.roundRows],
   )
   const presentCount = rows.playerRows.filter(row => !row.checked_out_at).length
+  const calculatorPlayerCount = presentCount || checkedInPlayers.length || confirmedPlayers.length
+  const maxSelectableCourts = Math.max(1, Math.floor(Math.max(calculatorPlayerCount, presentCount) / 4), courts)
+  const courtCalculator = useMemo(() => calculateOptimalCourts({
+    n_players: calculatorPlayerCount,
+    session_duration_min: courtDurationMin,
+    match_duration_min: 15,
+    preset: courtPreset,
+  }), [calculatorPlayerCount, courtDurationMin, courtPreset])
   const optedRestCount = rows.playerRows.filter(row => !row.checked_out_at && row.opted_rest).length
   const completedRounds = rows.roundRows.filter(row => row.status === 'completed').sort((a, b) => b.round_no - a.round_no)
+  const completedRoundCount = completedRounds.length
+  const targetReached = targetRounds > 0 && completedRoundCount >= targetRounds
 
   const runAction = async (key: string, action: () => Promise<void>) => {
     setBusy(key)
@@ -208,8 +601,13 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
 
   const syncRoster = async () => {
     await runAction('sync', async () => {
+      const playerIds = checkedInPlayers.map(player => String(player.id))
+      if (playerIds.length === 0) {
+        throw new Error('No confirmed players to sync. Confirm at least one player before syncing roster.')
+      }
+
       await invokeLiveSessionFunction('session-sync-roster', sessionId, {
-        player_ids: checkedInPlayers.map(player => String(player.id)),
+        player_ids: playerIds,
       })
     })
   }
@@ -317,9 +715,6 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
 
   if (loading) return <AppLoading fullScreen />
 
-  const selected = suggestion.alternatives[selectedAlternative] ?? suggestion.alternatives[0]
-  const workingAlternative = manualAlternative ?? selected
-
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: theme.background }}
@@ -360,9 +755,9 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
             Số sân dùng vòng này
           </Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            {[1, 2, 3, 4].map(value => {
+            {Array.from({ length: maxSelectableCourts }, (_, index) => index + 1).map(value => {
               const active = courtCount === value
-              const disabled = value > Math.max(1, Math.floor(presentCount / 4))
+              const disabled = value > Math.max(1, Math.floor(calculatorPlayerCount / 4))
               return (
                 <TouchableOpacity
                   key={value}
@@ -385,6 +780,132 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                 </TouchableOpacity>
               )
             })}
+          </View>
+        </View>
+
+        <View style={{ marginTop: 14, backgroundColor: '#F8F3E8', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#E5E3DC' }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900', marginBottom: 8 }}>
+            Court calculator test
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+            {COURT_PRESET_OPTIONS.map(preset => {
+              const active = courtPreset === preset
+              return (
+                <TouchableOpacity
+                  key={preset}
+                  onPress={() => setCourtPreset(preset)}
+                  style={{
+                    flex: 1,
+                    borderRadius: 999,
+                    paddingVertical: 8,
+                    alignItems: 'center',
+                    backgroundColor: active ? '#0F6E56' : '#FFFCF5',
+                    borderWidth: 1,
+                    borderColor: active ? '#0F6E56' : '#E5E3DC',
+                  }}
+                >
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: active ? 'white' : '#596864', fontWeight: '900' }}>
+                    {PRESETS[preset].label}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+            {COURT_DURATION_OPTIONS.map(duration => {
+              const active = courtDurationMin === duration
+              return (
+                <TouchableOpacity
+                  key={duration}
+                  onPress={() => setCourtDurationMin(duration)}
+                  style={{
+                    flex: 1,
+                    borderRadius: 999,
+                    paddingVertical: 8,
+                    alignItems: 'center',
+                    backgroundColor: active ? '#1A2E2A' : '#FFFCF5',
+                    borderWidth: 1,
+                    borderColor: active ? '#1A2E2A' : '#E5E3DC',
+                  }}
+                >
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: active ? 'white' : '#596864', fontWeight: '900' }}>
+                    {duration}p
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#0F6E56', fontWeight: '900' }}>
+            Goi y: {courtCalculator.recommended.courts} san
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864', marginTop: 4, lineHeight: 16 }}>
+            {courtCalculator.reasoning}
+          </Text>
+          <View style={{ gap: 6, marginTop: 10 }}>
+            {courtCalculator.alternatives.map(option => {
+              const active = courtCount === option.courts
+              return (
+                <TouchableOpacity
+                  key={option.courts}
+                  disabled={option.feasibility === 'infeasible'}
+                  onPress={() => setCourtCount(option.courts)}
+                  style={{
+                    borderRadius: 10,
+                    padding: 9,
+                    backgroundColor: active ? '#E1F5EE' : '#FFFCF5',
+                    borderWidth: 1,
+                    borderColor: active ? '#88D4B5' : '#E5E3DC',
+                    opacity: option.feasibility === 'infeasible' ? 0.45 : 1,
+                  }}
+                >
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+                    {option.courts} san - {option.avg_matches_per_player.toFixed(1)} tran/nguoi - {option.feasibility}
+                  </Text>
+                  {option.warnings[0] && (
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#92400E', marginTop: 3 }}>
+                      {option.warnings[0]}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+          <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E5E3DC' }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900', marginBottom: 8 }}>
+              Muc tieu session
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+              {[Math.max(1, courtCalculator.recommended.total_rounds - 2), courtCalculator.recommended.total_rounds, courtCalculator.recommended.total_rounds + 2]
+                .filter((value, index, values) => value > 0 && values.indexOf(value) === index)
+                .map(value => {
+                  const active = targetRounds === value
+                  return (
+                    <TouchableOpacity
+                      key={`target-rounds-${value}`}
+                      onPress={() => {
+                        setTargetRounds(value)
+                        setShowSessionReport(false)
+                      }}
+                      style={{
+                        flex: 1,
+                        borderRadius: 999,
+                        paddingVertical: 8,
+                        alignItems: 'center',
+                        backgroundColor: active ? '#0F6E56' : '#FFFCF5',
+                        borderWidth: 1,
+                        borderColor: active ? '#0F6E56' : '#E5E3DC',
+                      }}
+                    >
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: active ? 'white' : '#596864', fontWeight: '900' }}>
+                        {value} vong
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                })}
+            </View>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: targetReached ? '#0F6E56' : '#596864', fontWeight: '900' }}>
+              Progress: {completedRoundCount}/{targetRounds} vong
+            </Text>
           </View>
         </View>
 
@@ -427,6 +948,40 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
           </View>
         </View>
       </View>
+
+        <FairnessBanner
+          score={fairnessScore}
+          warnings={fairnessWarnings}
+          playersById={playersById}
+          adjustmentReasons={fairnessAdjustment.applied_for_warnings}
+        />
+
+      {targetReached && !activeRound && (
+        <View style={{ backgroundColor: '#E1F5EE', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#88D4B5' }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: '#0F6E56', fontWeight: '900' }}>
+            Da du muc tieu {targetRounds} vong
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#0F6E56', marginTop: 5, lineHeight: 16 }}>
+            Nen ket thuc session va xem report fairness. Host van co the chay them vong neu con gio.
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+            <ActionButton
+              label={showSessionReport ? 'An report' : 'Xem report'}
+              icon={<Star size={16} color="white" />}
+              onPress={() => setShowSessionReport(current => !current)}
+            />
+            {workingAlternative && (
+              <ActionButton
+                label="Chay them vong"
+                icon={<Play size={16} color="white" />}
+                loading={busy === 'start'}
+                disabled={Boolean(activeRound)}
+                onPress={() => startRound(workingAlternative)}
+              />
+            )}
+          </View>
+        </View>
+      )}
 
       {activeRound && (
         <View style={{ backgroundColor: '#E1F5EE', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#88D4B5' }}>
@@ -602,7 +1157,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                   }}
                 />
                 <ActionButton
-                  label="Start selected round"
+                  label={targetReached ? 'Chay them vong' : 'Start selected round'}
                   icon={<Play size={16} color="white" />}
                   loading={busy === 'start'}
                   disabled={Boolean(activeRound)}
@@ -613,6 +1168,12 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
           </>
         )}
       </View>
+      {completedRounds.length > 0 && showSessionReport && (
+        <SessionFairnessSummaryCard summary={sessionSummary} playersById={playersById} />
+      )}
+      {fairnessAudit && (
+        <FairnessAuditCard audit={fairnessAudit} />
+      )}
       {completedRounds.length > 0 && (
         <CompletedRoundsRecap rounds={completedRounds} state={state} playersById={playersById} />
       )}
@@ -655,6 +1216,194 @@ async function invokeLiveSessionFunction(
   }
 
   return payload
+}
+
+function FairnessBanner({
+  score,
+  warnings,
+  playersById,
+  adjustmentReasons,
+}: {
+  score: SessionFairnessScore
+  warnings: FairnessWarning[]
+  playersById: Map<string, ArrangementPlayer>
+  adjustmentReasons: string[]
+}) {
+  const primaryWarning = warnings.find(warning => warning.severity === 'critical') ?? warnings[0]
+  const tone = primaryWarning ? warningTone(primaryWarning.severity) : { bg: '#E1F5EE', border: '#88D4B5', text: '#0F6E56' }
+
+  return (
+    <View style={{ backgroundColor: tone.bg, borderRadius: RADIUS.xl, padding: 14, marginTop: 14, borderWidth: 1, borderColor: tone.border }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        {primaryWarning ? <AlertTriangle size={18} color={tone.text} /> : <Star size={18} color={tone.text} />}
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: tone.text, fontWeight: '900' }}>
+            Fairness {score.total}/100 · {fairnessLabel(score)}
+          </Text>
+          {primaryWarning ? (
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, marginTop: 4, lineHeight: 16 }}>
+              {primaryWarning.message} {formatAffectedPlayers(primaryWarning.affected_players, playersById)}
+            </Text>
+          ) : (
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, marginTop: 4 }}>
+              Không có cảnh báo fairness ở thời điểm này.
+            </Text>
+          )}
+        </View>
+      </View>
+      {primaryWarning && (
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: tone.text, marginTop: 8, lineHeight: 15 }}>
+          Gợi ý: {primaryWarning.suggested_action}
+        </Text>
+      )}
+      {adjustmentReasons.length > 0 && (
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 8, lineHeight: 15 }}>
+          Engine tự hiệu chỉnh: {adjustmentReasons.join(', ').replace(/_/g, ' ')}
+        </Text>
+      )}
+    </View>
+  )
+}
+
+function SessionFairnessSummaryCard({
+  summary,
+  playersById,
+}: {
+  summary: SessionSummary
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const maxMatches = Math.max(1, ...summary.per_player.map(player => player.matches_played))
+  const matchCounts = summary.per_player.map(player => player.matches_played)
+  const matchRange = matchCounts.length === 0 ? 0 : Math.max(...matchCounts) - Math.min(...matchCounts)
+  const lines = [
+    `Chênh tối đa ${matchRange} trận`,
+    `Trung bình ${averageNumber(summary.per_player.map(player => player.unique_partners)).toFixed(1)} partners khác/người`,
+    `${Math.round(summary.overall_pref_satisfaction_rate * 100)}% preferences được đáp ứng`,
+  ]
+
+  return (
+    <View style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A', fontWeight: '900' }}>
+            Tổng kết fairness
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', marginTop: 3 }}>
+            {summary.total_rounds} vòng · {summary.total_players} người · {summary.duration_minutes} phút
+          </Text>
+        </View>
+        <View style={{ backgroundColor: '#E1F5EE', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center' }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: '#0F6E56', fontWeight: '900' }}>
+            {summary.fairness_score.total}
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#0F6E56', fontWeight: '900' }}>
+            {fairnessLabel(summary.fairness_score)}
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ gap: 7, marginTop: 12 }}>
+        {summary.per_player.map(player => (
+          <View key={`fairness-player-${player.player_id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ flex: 1, height: 8, backgroundColor: '#F3E7D4', borderRadius: 999, overflow: 'hidden' }}>
+              <View style={{ width: `${Math.max(8, (player.matches_played / maxMatches) * 100)}%`, height: '100%', backgroundColor: '#0F6E56' }} />
+            </View>
+            <Text style={{ width: 92, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900' }} numberOfLines={1}>
+              {playerName(player.player_id, playersById)}
+            </Text>
+            <Text style={{ width: 20, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900', textAlign: 'right' }}>
+              {player.matches_played}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={{ marginTop: 12, gap: 5 }}>
+        {lines.map(line => (
+          <Text key={line} style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864', lineHeight: 16 }}>
+            ✓ {line}
+          </Text>
+        ))}
+        {summary.highlights.flagged_issues.length > 0 && (
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#A05A16', lineHeight: 16 }}>
+            ℹ {summary.highlights.flagged_issues.length} cảnh báo fairness cần theo dõi
+          </Text>
+        )}
+      </View>
+
+      {summary.fairness_evolution.length > 0 && (
+        <View style={{ marginTop: 12, gap: 6 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
+            Diễn biến
+          </Text>
+          {summary.fairness_evolution.slice(-6).map(point => (
+            <View key={`fairness-evolution-${point.round}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ width: 48, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900' }}>
+                Vòng {point.round}
+              </Text>
+              <View style={{ flex: 1, height: 7, borderRadius: 999, backgroundColor: '#F3E7D4', overflow: 'hidden' }}>
+                <View style={{ width: `${Math.max(4, point.score)}%`, height: '100%', backgroundColor: '#0F6E56' }} />
+              </View>
+              <Text style={{ width: 28, fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#1A2E2A', fontWeight: '900', textAlign: 'right' }}>
+                {point.score}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  )
+}
+
+function FairnessAuditCard({ audit }: { audit: FairnessAudit }) {
+  return (
+    <View style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: '#1A2E2A', fontWeight: '900' }}>
+            Audit diem fairness
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 2 }}>
+            Sau vong {audit.round_no}: {audit.before_total}{' -> '}{audit.after_total}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: audit.delta_total >= 0 ? '#0F6E56' : '#B45309', fontWeight: '900' }}>
+          {audit.delta_total > 0 ? '+' : ''}{audit.delta_total}
+        </Text>
+      </View>
+
+      <View style={{ gap: 8, marginTop: 12 }}>
+        {audit.rows.map(row => (
+          <View key={row.key} style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '900' }}>
+                {row.label}
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864', fontWeight: '900' }}>
+                {row.before}{' -> '}{row.after}
+              </Text>
+              <Text style={{ width: 34, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: row.delta >= 0 ? '#0F6E56' : '#B45309', fontWeight: '900' }}>
+                {row.delta > 0 ? '+' : ''}{row.delta}
+              </Text>
+            </View>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 4, lineHeight: 15 }}>
+              {row.detail}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  )
+}
+
+function formatAffectedPlayers(playerIds: string[], playersById: Map<string, ArrangementPlayer>) {
+  if (playerIds.length === 0) return ''
+  return `(${playerIds.map(id => playerName(id, playersById)).join(', ')})`
+}
+
+function averageNumber(values: number[]) {
+  if (values.length === 0) return 0
+  return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
 function ManualSwapPanel({
@@ -777,10 +1526,12 @@ function CompletedRoundsRecap({
 
 function SuggestionStatsCard({ alternative }: { alternative: SuggestionAlternative }) {
   const metrics = [
-    { label: 'PVNA diff tổng', value: alternative.stats.elo_diff.toFixed(2), tone: '#0F6E56' },
+    { label: 'PVNA diff tổng', value: alternative.stats.pvna_diff.toFixed(2), tone: '#0F6E56' },
     { label: 'Partner lặp', value: String(alternative.stats.partner_repeats), tone: '#A05A16' },
     { label: 'Đối thủ lặp', value: String(alternative.stats.opponent_repeats), tone: '#7C3AED' },
     { label: 'Group bonus', value: String(alternative.stats.group_bonus), tone: '#2563EB' },
+    { label: 'Gender pref', value: alternative.stats.gender_pref_penalty.toFixed(1), tone: '#BE185D' },
+    { label: 'Score tổng', value: alternative.score.toFixed(1), tone: '#1A2E2A' },
   ]
 
   return (
@@ -805,6 +1556,16 @@ function SuggestionStatsCard({ alternative }: { alternative: SuggestionAlternati
 
 function MatchCard({ match, state, playersById }: { match: Match; state: SessionState; playersById: Map<string, ArrangementPlayer> }) {
   const diff = Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state))
+  const scored = match.stats && match.score != null ? { score: match.score, stats: match.stats } : scoreMatch(match.team_a, match.team_b, state)
+  const metrics = [
+    ['Score', Number.isFinite(scored.score) ? scored.score.toFixed(1) : '-'],
+    ['PVNA', scored.stats.pvna_diff.toFixed(2)],
+    ['Partner lặp', String(scored.stats.partner_repeats)],
+    ['Đối thủ lặp', String(scored.stats.opponent_repeats)],
+    ['Group', String(scored.stats.group_bonus)],
+    ['Gender pref', scored.stats.gender_pref_penalty.toFixed(1)],
+  ]
+
   return (
     <View style={{ backgroundColor: '#F8F3E8', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E3DC' }}>
       <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#0F6E56', fontWeight: '900' }}>
@@ -813,6 +1574,26 @@ function MatchCard({ match, state, playersById }: { match: Match; state: Session
       <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900', marginTop: 6, lineHeight: 18 }}>
         {getMatchLabel(match, playersById)}
       </Text>
+      <View style={{ marginTop: 8, gap: 4 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', lineHeight: 14 }}>
+          A: {match.team_a.map(id => formatPlayerPreference(id, playersById, state)).join(' / ')}
+        </Text>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', lineHeight: 14 }}>
+          B: {match.team_b.map(id => formatPlayerPreference(id, playersById, state)).join(' / ')}
+        </Text>
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+        {metrics.map(([label, value]) => (
+          <View key={`${match.court_idx}-${label}`} style={{ backgroundColor: '#FFFCF5', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, borderWidth: 1, borderColor: '#ECE3D3' }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#8A8174', fontWeight: '900' }}>
+              {label}
+            </Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900', marginTop: 2 }}>
+              {value}
+            </Text>
+          </View>
+        ))}
+      </View>
     </View>
   )
 }

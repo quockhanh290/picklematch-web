@@ -34,3 +34,17 @@ run('bestTeamSplit returns null when all splits violate tolerance', () => {
 
   assert.equal(bestTeamSplit(players, state), null)
 })
+
+run('bestTeamSplit prefers satisfying gender preferences over slightly better elo balance', () => {
+  const players = [
+    makePlayer('a', { elo: 1075, gender: 'M', partner_gender_pref: 'M' }),
+    makePlayer('b', { elo: 1075, gender: 'M' }),
+    makePlayer('c', { elo: 1000, gender: 'F' }),
+    makePlayer('d', { elo: 1000, gender: 'F' }),
+  ]
+  const state = makeState(players)
+  const split = bestTeamSplit(players, state)
+
+  assert.deepEqual(split?.match.team_a, ['a', 'b'])
+  assert.deepEqual(split?.match.team_b, ['c', 'd'])
+})

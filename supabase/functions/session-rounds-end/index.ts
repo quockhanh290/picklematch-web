@@ -1,8 +1,9 @@
 /* eslint-disable import/no-unresolved */
-import { getSessionId, jsonResponse, requireHost } from '../_shared/live-session.ts'
+import { getSessionId, handleCorsPreflight, jsonResponse, requireHost } from '../_shared/live-session.ts'
 import { commitCompletedRound } from '../../../lib/next-round-suggester/commit.ts'
 import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
 import type { SessionPairHistoryRow } from '../../../lib/next-round-suggester/types.ts'
+import { computeSessionFairness } from '../../../lib/next-round-suggester/fairness/metrics.ts'
 
 function getRoundNo(request: Request): number | null {
   const url = new URL(request.url)
@@ -15,6 +16,9 @@ function getRoundNo(request: Request): number | null {
 }
 
 Deno.serve(async (request) => {
+  const corsResponse = handleCorsPreflight(request)
+  if (corsResponse) return corsResponse
+
   if (request.method !== 'POST') {
     return jsonResponse({ ok: false, error: 'Method not allowed' }, 405)
   }
@@ -113,6 +117,31 @@ Deno.serve(async (request) => {
 
     if (updateError) {
       return jsonResponse({ ok: false, error: updateError.message }, 500)
+    }
+
+    const scoreAfter = computeSessionFairness({
+      ...state,
+      current_round: Math.max(state.current_round, roundNo + 1),
+      players: committed.players,
+      rounds: state.rounds.map((item) =>
+        item.round_no === roundNo
+          ? {
+              ...item,
+              status: 'completed',
+              ended_at: completedRound.ended_at ? new Date(completedRound.ended_at) : new Date(),
+            }
+          : item,
+      ),
+    }).total
+
+    const { error: adjustmentError } = await auth.supabase
+      .from('suggester_adjustments')
+      .update({ fairness_score_after: scoreAfter })
+      .eq('session_id', sessionId)
+      .eq('round_no', roundNo)
+
+    if (adjustmentError) {
+      return jsonResponse({ ok: false, error: adjustmentError.message }, 500)
     }
 
     return jsonResponse({ ok: true, round: completedRound })

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { suggestNextRound } from '../lib/next-round-suggester/suggest.ts'
+import { detectGenderConflicts, suggestNextRound } from '../lib/next-round-suggester/suggest.ts'
 import { makePlayer, makeState } from './next-round-helpers.mts'
 
 function run(name: string, fn: () => void) {
@@ -99,4 +99,54 @@ run('suggestNextRound warns when only some configured courts can be used', () =>
 
   assert.equal(result.alternatives[0].matches.length, 1)
   assert.ok(result.warnings.includes('PARTIAL_COURTS'))
+})
+
+run('detectGenderConflicts warns when partner preference cannot be satisfied', () => {
+  const warnings = detectGenderConflicts([
+    makePlayer('a', { gender: 'F', partner_gender_pref: 'F' }),
+    makePlayer('b', { gender: 'F', partner_gender_pref: 'F' }),
+    makePlayer('c', { gender: 'M', partner_gender_pref: 'F' }),
+    makePlayer('d', { gender: 'M', partner_gender_pref: 'F' }),
+    makePlayer('e', { gender: 'M', partner_gender_pref: 'F' }),
+  ])
+
+  assert.ok(warnings.includes('5 người muốn partner nữ nhưng chỉ có 2 nữ'))
+})
+
+run('detectGenderConflicts returns empty when preferences are satisfiable', () => {
+  const warnings = detectGenderConflicts([
+    makePlayer('a', { gender: 'F', partner_gender_pref: 'F' }),
+    makePlayer('b', { gender: 'F', partner_gender_pref: 'F' }),
+    makePlayer('c', { gender: 'M', partner_gender_pref: 'M' }),
+    makePlayer('d', { gender: 'M', partner_gender_pref: 'M' }),
+  ])
+
+  assert.deepEqual(warnings, [])
+})
+
+run('suggestNextRound includes gender conflict warnings', () => {
+  const state = makeState([
+    makePlayer('a', { gender: 'F', partner_gender_pref: 'F' }),
+    makePlayer('b', { gender: 'F', partner_gender_pref: 'F' }),
+    makePlayer('c', { gender: 'M', partner_gender_pref: 'F' }),
+    makePlayer('d', { gender: 'M', partner_gender_pref: 'F' }),
+    makePlayer('e', { gender: 'M', partner_gender_pref: 'F' }),
+  ])
+  const result = suggestNextRound(state)
+
+  assert.ok(result.warnings.includes('5 người muốn partner nữ nhưng chỉ có 2 nữ'))
+})
+
+run('suggestNextRound uses gender preferences in pairing decisions', () => {
+  const state = makeState([
+    makePlayer('a', { elo: 1075, gender: 'M', partner_gender_pref: 'M' }),
+    makePlayer('b', { elo: 1075, gender: 'M' }),
+    makePlayer('c', { elo: 1000, gender: 'F' }),
+    makePlayer('d', { elo: 1000, gender: 'F' }),
+  ])
+  const result = suggestNextRound(state)
+  const match = result.alternatives[0].matches[0]
+
+  assert.deepEqual(match.team_a, ['a', 'b'])
+  assert.deepEqual(match.team_b, ['c', 'd'])
 })

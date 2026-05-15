@@ -1,16 +1,20 @@
 export type SessionStatus = 'waiting' | 'active' | 'paused' | 'ended'
 export type RoundStatus = 'proposed' | 'active' | 'completed'
+export type Gender = 'M' | 'F' | null
+export type GenderPreference = 'any' | 'M' | 'F'
 
 export type ScoringWeights = {
-  elo: number
+  pvna: number
   partner_repeat: number
   opponent_repeat: number
   group_bonus: number
+  partner_gender_pref: number
+  opponent_gender_pref: number
 }
 
 export type PlayerSessionState = {
   player_id: string
-  elo: number
+  pvna: number
   group_id: string | null
   checked_in_at: Date
   checked_out_at: Date | null
@@ -21,6 +25,9 @@ export type PlayerSessionState = {
   partner_counts: Map<string, number>
   opponent_counts: Map<string, number>
   opted_rest: boolean
+  gender: Gender
+  partner_gender_pref: GenderPreference
+  opponent_gender_pref: GenderPreference
 }
 
 export type Team = [string, string]
@@ -29,13 +36,16 @@ export type Match = {
   court_idx: number
   team_a: Team
   team_b: Team
+  score?: number
+  stats?: MatchStats
 }
 
 export type MatchStats = {
-  elo_diff: number
+  pvna_diff: number
   partner_repeats: number
   opponent_repeats: number
   group_bonus: number
+  gender_pref_penalty: number
 }
 
 export type MatchScore = {
@@ -60,7 +70,7 @@ export type SessionState = {
   status: SessionStatus
   config: {
     courts: number
-    elo_tolerance: number
+    pvna_tolerance: number
     weights: ScoringWeights
   }
   players: Map<string, PlayerSessionState>
@@ -79,7 +89,28 @@ export type SessionPlayerStateRow = {
   consecutive_play: number
   opted_rest: boolean
   players?: {
+    pvna?: number | null
+    current_elo?: number | null
     elo?: number | null
+    gender?: string | null
+    partner_gender_pref?: string | null
+    opponent_gender_pref?: string | null
+  } | null
+  session_players?: {
+    metadata?: Record<string, unknown> | null
+  } | null
+}
+
+export type SessionPlayerPreferenceRow = {
+  player_id: string
+  metadata?: Record<string, unknown> | null
+  players?: {
+    pvna?: number | null
+    current_elo?: number | null
+    elo?: number | null
+    gender?: string | null
+    partner_gender_pref?: string | null
+    opponent_gender_pref?: string | null
   } | null
 }
 

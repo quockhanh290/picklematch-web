@@ -9,41 +9,175 @@ import type {
   SuggestionAlternative,
   SuggestionResult,
 } from './types'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import { Tier } from './classify.ts'
+
+export type SuggestNextRoundOptions = {
+  tier_overrides?: Record<string, Tier>
+}
 
 function combinationKey(players: PlayerSessionState[]): string {
   return players.map((player) => player.player_id).sort().join(':')
 }
 
-function getCombinations(players: PlayerSessionState[], size: number): PlayerSessionState[][] {
-  const result: PlayerSessionState[][] = []
+type Candidate = {
+  indexes: number[]
+  players: PlayerSessionState[]
+  priority: number
+  key: string
+}
 
-  function walk(start: number, selected: PlayerSessionState[]) {
-    if (selected.length === size) {
-      result.push([...selected])
-      return
+class CandidateHeap {
+  private items: Candidate[] = []
+
+  get length() {
+    return this.items.length
+  }
+
+  push(candidate: Candidate) {
+    this.items.push(candidate)
+    this.bubbleUp(this.items.length - 1)
+  }
+
+  pop(): Candidate | null {
+    if (this.items.length === 0) return null
+
+    const result = this.items[0]
+    const last = this.items.pop()
+    if (last && this.items.length > 0) {
+      this.items[0] = last
+      this.sinkDown(0)
     }
 
-    for (let i = start; i < players.length; i += 1) {
-      selected.push(players[i])
-      walk(i + 1, selected)
-      selected.pop()
+    return result
+  }
+
+  private compare(a: Candidate, b: Candidate) {
+    if (a.priority !== b.priority) return a.priority - b.priority
+    return a.key.localeCompare(b.key)
+  }
+
+  private bubbleUp(index: number) {
+    let current = index
+
+    while (current > 0) {
+      const parent = Math.floor((current - 1) / 2)
+      if (this.compare(this.items[current], this.items[parent]) >= 0) break
+
+      const temp = this.items[current]
+      this.items[current] = this.items[parent]
+      this.items[parent] = temp
+      current = parent
     }
   }
 
-  walk(0, [])
+  private sinkDown(index: number) {
+    let current = index
+
+    while (true) {
+      const left = current * 2 + 1
+      const right = left + 1
+      let smallest = current
+
+      if (left < this.items.length && this.compare(this.items[left], this.items[smallest]) < 0) {
+        smallest = left
+      }
+
+      if (right < this.items.length && this.compare(this.items[right], this.items[smallest]) < 0) {
+        smallest = right
+      }
+
+      if (smallest === current) break
+
+      const temp = this.items[current]
+      this.items[current] = this.items[smallest]
+      this.items[smallest] = temp
+      current = smallest
+    }
+  }
+}
+
+function makeCandidate(players: PlayerSessionState[], indexes: number[]): Candidate {
+  const selected = indexes.map((index) => players[index])
+
+  return {
+    indexes,
+    players: selected,
+    priority: indexes.reduce((sum, index) => sum + index, 0),
+    key: combinationKey(selected),
+  }
+}
+
+function getPriorityCandidates(
+  players: PlayerSessionState[],
+  size: number,
+  limit: number,
+): Candidate[] {
+  if (size > players.length || size <= 0 || limit <= 0) return []
+
+  const initialIndexes = Array.from({ length: size }, (_, index) => index)
+  const heap = new CandidateHeap()
+  const queued = new Set<string>()
+  const result: Candidate[] = []
+
+  heap.push(makeCandidate(players, initialIndexes))
+  queued.add(initialIndexes.join(':'))
+
+  while (heap.length > 0 && result.length < limit) {
+    const candidate = heap.pop()
+    if (!candidate) break
+
+    result.push(candidate)
+
+    for (let position = size - 1; position >= 0; position -= 1) {
+      const nextIndexes = [...candidate.indexes]
+      const nextValue = nextIndexes[position] + 1
+      const upperBound = position === size - 1 ? players.length : nextIndexes[position + 1]
+      if (nextValue >= upperBound) continue
+
+      nextIndexes[position] = nextValue
+      const key = nextIndexes.join(':')
+      if (queued.has(key)) continue
+
+      heap.push(makeCandidate(players, nextIndexes))
+      queued.add(key)
+    }
+  }
+
   return result
 }
 
 function emptyStats(): MatchStats {
   return {
-    elo_diff: 0,
+    pvna_diff: 0,
     partner_repeats: 0,
     opponent_repeats: 0,
     group_bonus: 0,
+    gender_pref_penalty: 0,
   }
 }
 
-const MAX_CANDIDATES_PER_STRATEGY = 250
+const MAX_CANDIDATES_PER_STRATEGY = 60
+
+export function detectGenderConflicts(players: PlayerSessionState[]): string[] {
+  const counts = {
+    M: players.filter((player) => player.gender === 'M').length,
+    F: players.filter((player) => player.gender === 'F').length,
+  }
+  const warnings: string[] = []
+  const wantFemalePartner = players.filter((player) => player.partner_gender_pref === 'F').length
+  const wantMalePartner = players.filter((player) => player.partner_gender_pref === 'M').length
+
+  if (wantFemalePartner > counts.F * 2) {
+    warnings.push(`${wantFemalePartner} người muốn partner nữ nhưng chỉ có ${counts.F} nữ`)
+  }
+
+  if (wantMalePartner > counts.M * 2) {
+    warnings.push(`${wantMalePartner} người muốn partner nam nhưng chỉ có ${counts.M} nam`)
+  }
+
+  return warnings
+}
 
 function makeAlternative(
   selected: PlayerSessionState[],
@@ -51,9 +185,11 @@ function makeAlternative(
   state: SessionState,
   warnings: string[],
 ): SuggestionAlternative | null {
-  const startedAt = Date.now()
   const partition = bestPartitioning(selected, state)
   if (!partition) return null
+  const alternativeWarnings = partition.relaxed_tolerance
+    ? [...warnings, 'PVNA_TOLERANCE_RELAXED']
+    : warnings
 
   const selectedIds = new Set(selected.map((player) => player.player_id))
   const resting = allPresent
@@ -65,20 +201,36 @@ function makeAlternative(
     matches: partition.matches,
     resting,
     score: partition.score,
-    warnings,
+    warnings: alternativeWarnings,
     stats: partition.stats,
-    runtime_ms: Date.now() - startedAt,
     iterations: partition.iterations,
   }
 }
 
-export function suggestNextRound(state: SessionState): SuggestionResult {
+export function suggestNextRound(
+  state: SessionState,
+  options: SuggestNextRoundOptions = {},
+): SuggestionResult {
   const presentPlayers = getPresentPlayers(state)
   const eligiblePlayers = presentPlayers.filter((player) => !player.opted_rest)
   const courtCapacity = Math.max(1, state.config.courts) * 4
   const slots = Math.min(courtCapacity, Math.floor(eligiblePlayers.length / 4) * 4)
-  const basePick = pickPlayers(state, Math.max(4, slots))
-  const warnings = [...basePick.warnings]
+  const tierOverrides = options.tier_overrides ?? {}
+  const basePick = pickPlayers(state, Math.max(4, slots), tierOverrides)
+  const warnings = [...basePick.warnings, ...detectGenderConflicts(eligiblePlayers)]
+  const requiredPlayerIds = warnings.includes('MUST_PLAY_OVER_CAPACITY')
+    ? new Set<string>()
+    : new Set(
+        eligiblePlayers
+          .filter((player) => player.consecutive_rest >= 1)
+          .map((player) => player.player_id),
+      )
+
+  for (const [playerId, tier] of Object.entries(tierOverrides)) {
+    if (tier === Tier.MUST_PLAY && eligiblePlayers.some((player) => player.player_id === playerId)) {
+      requiredPlayerIds.add(playerId)
+    }
+  }
 
   if (slots < 4) {
     return {
@@ -97,25 +249,20 @@ export function suggestNextRound(state: SessionState): SuggestionResult {
   const strategies: Array<'fairness' | 'rest' | 'diversity'> = ['fairness', 'rest', 'diversity']
 
   for (const strategy of strategies) {
-    const sorted = sortPlayersForStrategy(eligiblePlayers, strategy)
-    const candidates = getCombinations(sorted, slots)
-      .map((players) => {
-        const strategyIndexes = new Map(sorted.map((player, index) => [player.player_id, index]))
-        const priority = players.reduce(
-          (sum, player) => sum + (strategyIndexes.get(player.player_id) ?? 0),
-          0,
-        )
-        return { players, priority }
-      })
-      .sort((a, b) => {
-        if (a.priority !== b.priority) return a.priority - b.priority
-        return combinationKey(a.players).localeCompare(combinationKey(b.players))
-      })
-      .slice(0, MAX_CANDIDATES_PER_STRATEGY)
+    const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides)
+    const candidates = getPriorityCandidates(sorted, slots, MAX_CANDIDATES_PER_STRATEGY)
 
     for (const candidate of candidates) {
       const key = combinationKey(candidate.players)
       if (seen.has(key)) continue
+      if (
+        requiredPlayerIds.size > 0 &&
+        ![...requiredPlayerIds].every((playerId) =>
+          candidate.players.some((player) => player.player_id === playerId),
+        )
+      ) {
+        continue
+      }
 
       const alternative = makeAlternative(candidate.players, presentPlayers, state, warnings)
       if (!alternative) continue

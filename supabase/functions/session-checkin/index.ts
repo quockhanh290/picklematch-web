@@ -1,7 +1,10 @@
 /* eslint-disable import/no-unresolved */
-import { getSessionId, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
+import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
 
 Deno.serve(async (request) => {
+  const corsResponse = handleCorsPreflight(request)
+  if (corsResponse) return corsResponse
+
   if (request.method !== 'POST') {
     return jsonResponse({ ok: false, error: 'Method not allowed' }, 405)
   }

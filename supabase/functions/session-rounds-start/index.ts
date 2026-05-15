@@ -1,7 +1,12 @@
 /* eslint-disable import/no-unresolved */
-import { getSessionId, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
+import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
 import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
 import { suggestNextRound } from '../../../lib/next-round-suggester/suggest.ts'
+import {
+  applyFairnessAdjustment,
+  correctForFairness,
+} from '../../../lib/next-round-suggester/fairness/corrector.ts'
+import { computeSessionFairness } from '../../../lib/next-round-suggester/fairness/metrics.ts'
 
 type ManualMatch = {
   court_idx: number
@@ -29,6 +34,9 @@ function isValidMatch(value: unknown): value is ManualMatch {
 }
 
 Deno.serve(async (request) => {
+  const corsResponse = handleCorsPreflight(request)
+  if (corsResponse) return corsResponse
+
   if (request.method !== 'POST') {
     return jsonResponse({ ok: false, error: 'Method not allowed' }, 405)
   }
@@ -44,6 +52,8 @@ Deno.serve(async (request) => {
   try {
     const body = await readJson(request)
     const state = await loadSessionState(auth.supabase, sessionId)
+    const adjustment = correctForFairness(state)
+    const adjustedState = applyFairnessAdjustment(state, adjustment)
 
     const manual = Array.isArray(body.manual) ? body.manual : null
     let matches: ManualMatch[]
@@ -76,7 +86,9 @@ Deno.serve(async (request) => {
         .sort()
     } else {
       const suggestionIdx = typeof body.suggestion_idx === 'number' ? body.suggestion_idx : 0
-      const suggestion = suggestNextRound(state)
+      const suggestion = suggestNextRound(adjustedState, {
+        tier_overrides: adjustment.tier_overrides,
+      })
       const alternative = suggestion.alternatives[suggestionIdx]
 
       if (!alternative) {
@@ -104,7 +116,24 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: error.message }, 500)
     }
 
-    return jsonResponse({ ok: true, round: data })
+    if (adjustment.applied_for_warnings.length > 0) {
+      const { error: adjustmentError } = await auth.supabase
+        .from('suggester_adjustments')
+        .insert({
+          session_id: sessionId,
+          round_no: state.current_round,
+          triggered_by_warnings: adjustment.applied_for_warnings,
+          config_changes: adjustment.config_changes,
+          tier_overrides: adjustment.tier_overrides,
+          fairness_score_before: computeSessionFairness(state).total,
+        })
+
+      if (adjustmentError) {
+        return jsonResponse({ ok: false, error: adjustmentError.message }, 500)
+      }
+    }
+
+    return jsonResponse({ ok: true, round: data, adjustment })
   } catch (error) {
     return jsonResponse(
       { ok: false, error: error instanceof Error ? error.message : 'Unknown error' },

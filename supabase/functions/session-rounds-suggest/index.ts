@@ -1,9 +1,16 @@
 /* eslint-disable import/no-unresolved */
-import { getSessionId, jsonResponse, requireHost } from '../_shared/live-session.ts'
+import { getSessionId, handleCorsPreflight, jsonResponse, requireHost } from '../_shared/live-session.ts'
 import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
 import { suggestNextRound } from '../../../lib/next-round-suggester/suggest.ts'
+import {
+  applyFairnessAdjustment,
+  correctForFairness,
+} from '../../../lib/next-round-suggester/fairness/corrector.ts'
 
 Deno.serve(async (request) => {
+  const corsResponse = handleCorsPreflight(request)
+  if (corsResponse) return corsResponse
+
   if (request.method !== 'POST') {
     return jsonResponse({ ok: false, error: 'Method not allowed' }, 405)
   }
@@ -18,8 +25,12 @@ Deno.serve(async (request) => {
 
   try {
     const state = await loadSessionState(auth.supabase, sessionId)
-    const suggestion = suggestNextRound(state)
-    return jsonResponse({ ok: true, suggestion })
+    const adjustment = correctForFairness(state)
+    const adjustedState = applyFairnessAdjustment(state, adjustment)
+    const suggestion = suggestNextRound(adjustedState, {
+      tier_overrides: adjustment.tier_overrides,
+    })
+    return jsonResponse({ ok: true, suggestion, adjustment })
   } catch (error) {
     return jsonResponse(
       { ok: false, error: error instanceof Error ? error.message : 'Unknown error' },

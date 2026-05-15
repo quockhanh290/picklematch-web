@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { scoreMatch } from '../lib/next-round-suggester/score.ts'
+import { genderPenalty, scoreMatch } from '../lib/next-round-suggester/score.ts'
 import { makePlayer, makeState } from './next-round-helpers.mts'
 
 function run(name: string, fn: () => void) {
@@ -64,4 +64,81 @@ run('score group bonus lowers score', () => {
   ])
 
   assert.equal(scoreMatch(['a', 'b'], ['c', 'd'], grouped).score, scoreMatch(['a', 'b'], ['c', 'd'], base).score - 0.5)
+})
+
+run('genderPenalty returns 0 when all preferences are any', () => {
+  const state = makeState([
+    makePlayer('a', { gender: 'M' }),
+    makePlayer('b', { gender: 'F' }),
+    makePlayer('c', { gender: 'M' }),
+    makePlayer('d', { gender: 'F' }),
+  ])
+
+  assert.equal(genderPenalty(['a', 'b'], ['c', 'd'], state), 0)
+})
+
+run('genderPenalty returns 0 when partner gender is null', () => {
+  const state = makeState([
+    makePlayer('a', { partner_gender_pref: 'F' }),
+    makePlayer('b', { gender: null }),
+    makePlayer('c', { gender: 'M' }),
+    makePlayer('d', { gender: 'F' }),
+  ])
+
+  assert.equal(genderPenalty(['a', 'b'], ['c', 'd'], state), 0)
+})
+
+run('genderPenalty adds penalty when partner gender mismatches preference', () => {
+  const state = makeState([
+    makePlayer('a', { gender: 'M', partner_gender_pref: 'F' }),
+    makePlayer('b', { gender: 'M' }),
+    makePlayer('c', { gender: 'M' }),
+    makePlayer('d', { gender: 'F' }),
+  ])
+
+  assert.equal(genderPenalty(['a', 'b'], ['c', 'd'], state), 4)
+})
+
+run('genderPenalty adds penalty for each opponent mismatch', () => {
+  const state = makeState([
+    makePlayer('a', { gender: 'F', opponent_gender_pref: 'F' }),
+    makePlayer('b', { gender: 'F' }),
+    makePlayer('c', { gender: 'M' }),
+    makePlayer('d', { gender: 'M' }),
+  ])
+
+  assert.equal(genderPenalty(['a', 'b'], ['c', 'd'], state), 4)
+})
+
+run('genderPenalty accumulates penalty across all four players', () => {
+  const state = makeState([
+    makePlayer('a', { gender: 'M', partner_gender_pref: 'F', opponent_gender_pref: 'F' }),
+    makePlayer('b', { gender: 'M', partner_gender_pref: 'F' }),
+    makePlayer('c', { gender: 'M' }),
+    makePlayer('d', { gender: 'F' }),
+  ])
+
+  assert.equal(genderPenalty(['a', 'b'], ['c', 'd'], state), 10)
+})
+
+run('score preserves baseline when no gender preferences are set', () => {
+  const state = makeState([
+    makePlayer('a', { elo: 1100, gender: 'M' }),
+    makePlayer('b', { elo: 1000, gender: 'F' }),
+    makePlayer('c', { elo: 1050, gender: 'M' }),
+    makePlayer('d', { elo: 1000, gender: 'F' }),
+  ])
+
+  assert.equal(scoreMatch(['a', 'b'], ['c', 'd'], state).score, 0.5)
+})
+
+run('score does not hard reject due to gender mismatch', () => {
+  const state = makeState([
+    makePlayer('a', { gender: 'M', partner_gender_pref: 'F' }),
+    makePlayer('b', { gender: 'M', partner_gender_pref: 'F' }),
+    makePlayer('c', { gender: 'M', partner_gender_pref: 'F' }),
+    makePlayer('d', { gender: 'M', partner_gender_pref: 'F' }),
+  ])
+
+  assert.equal(Number.isFinite(scoreMatch(['a', 'b'], ['c', 'd'], state).score), true)
 })
