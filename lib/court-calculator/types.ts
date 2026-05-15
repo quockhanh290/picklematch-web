@@ -19,6 +19,9 @@ export type CourtOption = {
   estimated_rest_per_player: number
   feasibility: Feasibility
   warnings: string[]
+  play_ratio: number
+  quality_score: number
+  quality_notes: string[]
 }
 
 export type CourtCalculatorOutput = {
@@ -26,4 +29,3 @@ export type CourtCalculatorOutput = {
   alternatives: CourtOption[]
   reasoning: string
 }
-

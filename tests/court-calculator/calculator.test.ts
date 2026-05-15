@@ -61,6 +61,53 @@ describe('court calculator', () => {
     expect(result.recommended.total_rounds).toBe(3)
   })
 
+  it('prefers 3 courts for 16 players balanced because rotation is healthier', () => {
+    const result = calculateOptimalCourts({
+      n_players: 16,
+      session_duration_min: 120,
+      match_duration_min: 15,
+      preset: 'balanced',
+    })
+
+    expect(result.recommended.courts).toBe(3)
+    expect(result.recommended.play_ratio).toBe(0.75)
+    expect(result.recommended.quality_notes[0]).toContain('Rotation phu hop')
+  })
+
+  it('prefers 4 courts for 24 players balanced because rotation is healthier', () => {
+    const result = calculateOptimalCourts({
+      n_players: 24,
+      session_duration_min: 120,
+      match_duration_min: 15,
+      preset: 'balanced',
+    })
+
+    expect(result.recommended.courts).toBe(4)
+    expect(result.recommended.play_ratio).toBe(0.67)
+  })
+
+  it('keeps 5 courts for 33 players balanced', () => {
+    const result = calculateOptimalCourts({
+      n_players: 33,
+      session_duration_min: 120,
+      match_duration_min: 15,
+      preset: 'balanced',
+    })
+
+    expect(result.recommended.courts).toBe(5)
+  })
+
+  it('keeps 6 courts for 40 players balanced', () => {
+    const result = calculateOptimalCourts({
+      n_players: 40,
+      session_duration_min: 120,
+      match_duration_min: 15,
+      preset: 'balanced',
+    })
+
+    expect(result.recommended.courts).toBe(6)
+  })
+
   it('computes min max and rest estimates', () => {
     const option = buildCourtOption(2, 9, 8)
 
@@ -69,6 +116,7 @@ describe('court calculator', () => {
     expect(option.max_matches_per_player).toBe(8)
     expect(option.resting_per_round).toBe(1)
     expect(option.estimated_rest_per_player).toBe(0.9)
+    expect(option.play_ratio).toBe(0.89)
   })
 
   it('marks oversupply when time is too short for enough matches', () => {

@@ -3,6 +3,11 @@ import { PRESETS } from './presets'
 import type { CourtCalculatorInput, CourtCalculatorOutput, CourtOption } from './types'
 
 const DEFAULT_MATCH_DURATION_MIN = 15
+const ROTATION_TARGETS = {
+  relaxed: { ideal: 0.55, min: 0.4, max: 0.7 },
+  balanced: { ideal: 0.7, min: 0.55, max: 0.8 },
+  play_more: { ideal: 0.82, min: 0.65, max: 0.95 },
+} as const
 
 export function calculateOptimalCourts(
   input: CourtCalculatorInput,
@@ -16,16 +21,22 @@ export function calculateOptimalCourts(
   const maxUsefulCourts = Math.max(0, Math.floor(nPlayers / 4))
   const alternatives =
     maxUsefulCourts === 0
-      ? [buildCourtOption(1, nPlayers, totalRounds)]
+      ? [withQuality(buildCourtOption(1, nPlayers, totalRounds), preset, targetMatches)]
       : Array.from({ length: maxUsefulCourts }, (_, index) =>
-          withTargetWarning(buildCourtOption(index + 1, nPlayers, totalRounds), targetMatches),
+          withQuality(
+            withTargetWarning(buildCourtOption(index + 1, nPlayers, totalRounds), targetMatches),
+            preset,
+            targetMatches,
+          ),
         )
   const feasible = alternatives.filter((option) => option.feasibility === 'optimal')
   const pool = feasible.length > 0 ? feasible : alternatives.filter((option) => option.feasibility !== 'infeasible')
   const recommended = [...(pool.length > 0 ? pool : alternatives)].sort((a, b) => {
+    const quality = a.quality_score - b.quality_score
+    if (quality !== 0) return quality
     const distance = Math.abs(a.avg_matches_per_player - targetMatches) - Math.abs(b.avg_matches_per_player - targetMatches)
     if (distance !== 0) return distance
-    return feasibilityRank(a.feasibility) - feasibilityRank(b.feasibility) || a.courts - b.courts
+    return feasibilityRank(a.feasibility) - feasibilityRank(b.feasibility) || tieBreakCourts(a.courts, b.courts, preset)
   })[0]
 
   return {
@@ -46,6 +57,7 @@ export function buildCourtOption(
   const slotsPerRound = normalizedCourts * 4
   const totalSlots = normalizedRounds * slotsPerRound
   const avgMatches = normalizedPlayers === 0 ? 0 : totalSlots / normalizedPlayers
+  const playRatio = normalizedPlayers === 0 ? 0 : slotsPerRound / normalizedPlayers
   const cappedMaxMatches = Math.min(normalizedRounds, Math.ceil(avgMatches))
   const minMatches = Math.min(normalizedRounds, Math.floor(avgMatches))
   const restingPerRound = Math.max(0, normalizedPlayers - slotsPerRound)
@@ -61,6 +73,9 @@ export function buildCourtOption(
     estimated_rest_per_player: round1(Math.max(0, normalizedRounds - avgMatches)),
     feasibility: feasibility.feasibility,
     warnings: feasibility.warnings,
+    play_ratio: round2(playRatio),
+    quality_score: 0,
+    quality_notes: [],
   }
 }
 
@@ -74,6 +89,57 @@ function withTargetWarning(option: CourtOption, targetMatches: number): CourtOpt
       `Khong dat muc tieu ${targetMatches.toFixed(1)} tran/nguoi trong thoi luong nay.`,
     ],
   }
+}
+
+function withQuality(
+  option: CourtOption,
+  preset: CourtCalculatorInput['preset'] = 'balanced',
+  targetMatches: number,
+): CourtOption {
+  const selectedPreset = preset ?? 'balanced'
+  const target = ROTATION_TARGETS[selectedPreset]
+  const playRatio = option.play_ratio
+  const matchDistance = Math.abs(option.avg_matches_per_player - targetMatches)
+  const rotationDistance = Math.abs(playRatio - target.ideal)
+  const underRotationPenalty = playRatio < target.min ? (target.min - playRatio) * 8 : 0
+  const overRotationPenalty = playRatio > target.max ? (playRatio - target.max) * 8 : 0
+  const allPlayPenalty = playRatio >= 0.98 && option.courts > 1 ? 1.5 : 0
+  const qualityScore = round2(
+    matchDistance +
+    rotationDistance * 6 +
+    underRotationPenalty +
+    overRotationPenalty +
+    allPlayPenalty,
+  )
+  const qualityNotes = buildQualityNotes(playRatio, selectedPreset, target.min, target.max)
+
+  return {
+    ...option,
+    quality_score: qualityScore,
+    quality_notes: qualityNotes,
+  }
+}
+
+function buildQualityNotes(
+  playRatio: number,
+  preset: CourtCalculatorInput['preset'],
+  min: number,
+  max: number,
+): string[] {
+  const notes: string[] = []
+  if (playRatio < min) {
+    notes.push('Rotation hoi thap, co the lap cap vi it nguoi choi moi vong.')
+  } else if (playRatio > max) {
+    notes.push('Rotation hoi cao, co the lap cap vi qua nhieu nguoi choi moi vong.')
+  } else {
+    notes.push(`Rotation phu hop mode ${PRESETS[preset ?? 'balanced'].label.toLowerCase()}.`)
+  }
+
+  if (playRatio >= 0.98) {
+    notes.push('Gan nhu all-play moi vong, diversity co the giam neu session dai.')
+  }
+
+  return notes
 }
 
 function buildReasoning(
@@ -92,6 +158,11 @@ function feasibilityRank(value: CourtOption['feasibility']): number {
   return 3
 }
 
+function tieBreakCourts(a: number, b: number, preset: CourtCalculatorInput['preset']): number {
+  if (preset === 'play_more') return b - a
+  return a - b
+}
+
 function normalizeInteger(value: number): number {
   if (!Number.isFinite(value)) return 0
   return Math.max(0, Math.floor(value))
@@ -101,3 +172,6 @@ function round1(value: number): number {
   return Number(value.toFixed(1))
 }
 
+function round2(value: number): number {
+  return Number(value.toFixed(2))
+}

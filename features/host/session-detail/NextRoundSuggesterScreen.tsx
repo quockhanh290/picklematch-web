@@ -1031,6 +1031,14 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                   <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
                     {option.courts} san - {option.avg_matches_per_player.toFixed(1)} tran/nguoi - {option.feasibility}
                   </Text>
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 3 }}>
+                    Rotation {(option.play_ratio * 100).toFixed(0)}% - quality {option.quality_score.toFixed(2)}
+                  </Text>
+                  {option.quality_notes[0] && (
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 3 }}>
+                      {option.quality_notes[0]}
+                    </Text>
+                  )}
                   {option.warnings[0] && (
                     <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#92400E', marginTop: 3 }}>
                       {option.warnings[0]}
