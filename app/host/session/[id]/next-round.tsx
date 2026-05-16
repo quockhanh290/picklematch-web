@@ -2,8 +2,8 @@ import React from 'react'
 import { useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
 
-import { AppLoading, SecondaryNavbar } from '@/components/design'
-import { NextRoundSuggesterScreen } from '@/features/host/session-detail/NextRoundSuggesterScreen'
+import { AppLoading } from '@/components/design'
+import { NextRoundSuggesterScreenV2 } from '@/features/host/session-detail/NextRoundSuggesterScreenV2'
 import { useSessionDetail } from '@/hooks/useSessionDetail'
 import { buildArrangementPlayers } from '@/lib/sessionDetail'
 import { useAuth } from '@/lib/useAuth'
@@ -24,8 +24,7 @@ export default function NextRoundRoute() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      <SecondaryNavbar title="NEXT ROUND" />
-      <NextRoundSuggesterScreen sessionId={id!} players={players} courts={courts} />
+      <NextRoundSuggesterScreenV2 sessionId={id!} players={players} courts={courts} />
     </View>
   )
 }
