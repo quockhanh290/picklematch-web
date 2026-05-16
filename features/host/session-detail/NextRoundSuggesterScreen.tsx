@@ -427,6 +427,7 @@ type SuggestedRoundAction =
       detail: string
       pvna_tolerance: number
       before: AlternativeAudit
+      after?: AlternativeAudit
     }
   | {
       type: 'set_courts'
@@ -434,6 +435,7 @@ type SuggestedRoundAction =
       detail: string
       courts: number
       before: AlternativeAudit
+      after?: AlternativeAudit
     }
   | {
       type: 'accept_tradeoff'
@@ -602,6 +604,43 @@ function isMeaningfullyBetterAlternative(current: AlternativeAudit, candidate: A
   )
 }
 
+function previewSetupChange(input: {
+  state: SessionState
+  pvnaTolerance?: number
+  courtCount?: number
+}): AlternativeAudit | null {
+  const nextState: SessionState = {
+    ...input.state,
+    config: {
+      ...input.state.config,
+      pvna_tolerance: input.pvnaTolerance ?? input.state.config.pvna_tolerance,
+      courts: input.courtCount ?? input.state.config.courts,
+    },
+  }
+  const nextSuggestion = suggestNextRound(nextState)
+  const nextAlternative = nextSuggestion.alternatives[0]
+  return nextAlternative ? auditAlternative(nextState, nextAlternative, 0) : null
+}
+
+function formatSigned(value: number): string {
+  return value > 0 ? `+${value}` : String(value)
+}
+
+function describeSetupTradeoff(before: AlternativeAudit, after: AlternativeAudit | null, fallback: string): string {
+  if (!after) return fallback
+  const repeatDelta =
+    after.opponent_repeat_pairs +
+    after.partner_repeat_pairs -
+    before.opponent_repeat_pairs -
+    before.partner_repeat_pairs
+
+  return [
+    describeAlternativeDelta(before, after),
+    `repeat pairs ${formatSigned(repeatDelta)}`,
+    'host tu quyet tradeoff',
+  ].join(', ')
+}
+
 function buildSuggestedRoundActions(input: {
   state: SessionState
   alternatives: SuggestionAlternative[]
@@ -640,22 +679,40 @@ function buildSuggestedRoundActions(input: {
   }
 
   if ((repeatRisk || rangeRisk) && input.pvnaTolerance <= 0.5) {
+    const after = previewSetupChange({
+      state: input.state,
+      pvnaTolerance: 0.8,
+    })
     actions.push({
       type: 'set_pvna_tolerance',
-      label: 'Thu PVNA +/-0.8',
-      detail: 'Noi tolerance de engine co them split hop le. Tradeoff: tran co the lech trinh hon.',
+      label: 'Tradeoff: Thu PVNA +/-0.8',
+      detail: describeSetupTradeoff(
+        current,
+        after,
+        'Noi tolerance de engine co them split hop le. Tradeoff: tran co the lech trinh hon.',
+      ),
       pvna_tolerance: 0.8,
       before: current,
+      after: after ?? undefined,
     })
   }
 
   if (repeatRisk && input.courtCount > 1) {
+    const after = previewSetupChange({
+      state: input.state,
+      courtCount: input.courtCount - 1,
+    })
     actions.push({
       type: 'set_courts',
-      label: `Giam con ${input.courtCount - 1} san`,
-      detail: 'Giam slot vong nay de co them nguoi nghi va doi to hop. Tradeoff: it nguoi duoc choi vong nay.',
+      label: `Tradeoff: Giam con ${input.courtCount - 1} san`,
+      detail: describeSetupTradeoff(
+        current,
+        after,
+        'Giam slot vong nay de co them nguoi nghi va doi to hop. Tradeoff: it nguoi duoc choi vong nay.',
+      ),
       courts: input.courtCount - 1,
       before: current,
+      after: after ?? undefined,
     })
   }
 
@@ -1882,32 +1939,62 @@ function FairnessBanner({
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: tone.text, fontWeight: '900' }}>
             One-tap alternatives
           </Text>
-          {actions.map((action, index) => (
-            <TouchableOpacity
-              key={`${action.type}-${index}`}
-              disabled={action.type === 'accept_tradeoff'}
-              onPress={() => onAction(action)}
-              style={{
-                borderRadius: 10,
-                padding: 9,
-                backgroundColor: action.type === 'accept_tradeoff' ? '#FFFCF5' : '#FFFFFF',
-                borderWidth: 1,
-                borderColor: tone.border,
-                opacity: action.type === 'accept_tradeoff' ? 0.75 : 1,
-              }}
-            >
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#0F6E56', fontWeight: '900' }}>
-                {action.label}
-              </Text>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', marginTop: 3, lineHeight: 13 }}>
-                {action.detail}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {actions.map((action, index) => {
+            const actionTone = suggestedActionTone(action, tone.border)
+            return (
+              <TouchableOpacity
+                key={`${action.type}-${index}`}
+                disabled={action.type === 'accept_tradeoff'}
+                onPress={() => onAction(action)}
+                style={{
+                  borderRadius: 10,
+                  padding: 9,
+                  backgroundColor: actionTone.bg,
+                  borderWidth: 1,
+                  borderColor: actionTone.border,
+                  opacity: action.type === 'accept_tradeoff' ? 0.75 : 1,
+                }}
+              >
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: actionTone.text, fontWeight: '900' }}>
+                  {action.label}
+                </Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', marginTop: 3, lineHeight: 13 }}>
+                  {action.detail}
+                </Text>
+              </TouchableOpacity>
+            )
+          })}
         </View>
       )}
     </View>
   )
+}
+
+function suggestedActionTone(action: SuggestedRoundAction, defaultBorder: string) {
+  if (action.type === 'accept_tradeoff') {
+    return { bg: '#FFFCF5', border: defaultBorder, text: '#596864' }
+  }
+
+  const after = 'after' in action ? action.after : undefined
+  if (!after) return { bg: '#FFFFFF', border: defaultBorder, text: '#0F6E56' }
+
+  const fairnessDelta = after.fairness_total - action.before.fairness_total
+  const rangeDelta = after.match_range - action.before.match_range
+  const repeatDelta =
+    after.opponent_repeat_pairs +
+    after.partner_repeat_pairs -
+    action.before.opponent_repeat_pairs -
+    action.before.partner_repeat_pairs
+
+  if (rangeDelta > 0 || fairnessDelta < -2) {
+    return { bg: '#FFF7D6', border: '#E5B94E', text: '#92400E' }
+  }
+
+  if (fairnessDelta > 0 || repeatDelta < 0) {
+    return { bg: '#E1F5EE', border: '#88D4B5', text: '#0F6E56' }
+  }
+
+  return { bg: '#FFFFFF', border: defaultBorder, text: '#0F6E56' }
 }
 
 function SessionFairnessSummaryCard({
