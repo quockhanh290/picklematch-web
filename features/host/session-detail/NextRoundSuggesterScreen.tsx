@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Play, RefreshCcw, Star, UserMinus, UserPlu
 import { AppLoading } from '@/components/design'
 import { RADIUS, SHADOW } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { calculateOptimalCourts, PRESETS, type CourtPreset } from '@/lib/court-calculator'
+import { calculateOptimalCourts, PRESETS, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
 import { mapRowsToSessionState } from '@/lib/next-round-suggester/state'
 import { suggestNextRound } from '@/lib/next-round-suggester/suggest'
 import { scoreMatch } from '@/lib/next-round-suggester/score'
@@ -725,6 +725,26 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     match_duration_min: 15,
     preset: courtPreset,
   }), [calculatorPlayerCount, courtDurationMin, courtPreset])
+  const applyCourtWarningAlternative = (alternative: CourtWarningAlternative) => {
+    if (alternative.action === 'set_duration' && alternative.duration_min) {
+      setCourtDurationMin(alternative.duration_min)
+      setTargetRounds(alternative.preview.rounds)
+      setShowSessionReport(false)
+      return
+    }
+
+    if (alternative.action === 'set_preset' && alternative.preset) {
+      setCourtPreset(alternative.preset)
+      setShowSessionReport(false)
+      return
+    }
+
+    if (alternative.action === 'set_courts' && alternative.courts) {
+      setCourtCount(alternative.courts)
+      setShowSessionReport(false)
+      return
+    }
+  }
   const optedRestCount = rows.playerRows.filter(row => !row.checked_out_at && row.opted_rest).length
   const completedRounds = rows.roundRows.filter(row => row.status === 'completed').sort((a, b) => b.round_no - a.round_no)
   const completedRoundCount = completedRounds.length
@@ -1011,6 +1031,59 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864', marginTop: 4, lineHeight: 16 }}>
             {courtCalculator.reasoning}
           </Text>
+          {courtCalculator.setup_warnings.length > 0 && (
+            <View style={{ gap: 8, marginTop: 10 }}>
+              {courtCalculator.setup_warnings.map(warning => (
+                <View
+                  key={warning.type}
+                  style={{
+                    borderRadius: 12,
+                    padding: 10,
+                    backgroundColor: warning.severity === 'critical' ? '#FEF2F2' : '#FFF7E6',
+                    borderWidth: 1,
+                    borderColor: warning.severity === 'critical' ? '#FCA5A5' : '#F3C979',
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <AlertTriangle size={15} color={warning.severity === 'critical' ? '#B91C1C' : '#92400E'} />
+                    <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+                      {warning.message}
+                    </Text>
+                  </View>
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 5, lineHeight: 15 }}>
+                    {warning.why}
+                  </Text>
+                  <View style={{ gap: 6, marginTop: 8 }}>
+                    {warning.alternatives.map((alternative, index) => (
+                      <TouchableOpacity
+                        key={`${warning.type}-${alternative.action}-${index}`}
+                        disabled={alternative.action === 'accept_tradeoff'}
+                        onPress={() => applyCourtWarningAlternative(alternative)}
+                        style={{
+                          borderRadius: 10,
+                          padding: 8,
+                          backgroundColor: alternative.action === 'accept_tradeoff' ? '#FFFCF5' : '#FFFFFF',
+                          borderWidth: 1,
+                          borderColor: '#E5E3DC',
+                          opacity: alternative.action === 'accept_tradeoff' ? 0.75 : 1,
+                        }}
+                      >
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#0F6E56', fontWeight: '900' }}>
+                          {alternative.label}
+                        </Text>
+                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', marginTop: 3, lineHeight: 13 }}>
+                          {alternative.expected_effect}
+                        </Text>
+                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', marginTop: 2, lineHeight: 13 }}>
+                          {alternative.preview.rounds} vong - {alternative.preview.avg_matches_per_player.toFixed(1)} tran/nguoi - risk {alternative.preview.risk_level}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
           <View style={{ gap: 6, marginTop: 10 }}>
             {courtCalculator.alternatives.map(option => {
               const active = courtCount === option.courts

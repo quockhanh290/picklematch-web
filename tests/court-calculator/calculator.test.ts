@@ -108,6 +108,35 @@ describe('court calculator', () => {
     expect(result.recommended.courts).toBe(6)
   })
 
+  it('adds actionable warnings for small long sessions', () => {
+    const result = calculateOptimalCourts({
+      n_players: 8,
+      session_duration_min: 120,
+      match_duration_min: 15,
+      preset: 'balanced',
+    })
+
+    const warning = result.setup_warnings.find((item) => item.type === 'small_group_long_session')
+    expect(warning).toBeDefined()
+    expect(warning?.alternatives.map((item) => item.action)).toEqual(
+      expect.arrayContaining(['set_duration', 'set_preset', 'accept_tradeoff']),
+    )
+    expect(warning?.alternatives.find((item) => item.action === 'set_duration')?.duration_min).toBe(90)
+  })
+
+  it('adds a set-courts alternative when target matches are not reached', () => {
+    const result = calculateOptimalCourts({
+      n_players: 20,
+      session_duration_min: 90,
+      match_duration_min: 15,
+      preset: 'play_more',
+    })
+
+    const warning = result.setup_warnings.find((item) => item.type === 'target_unreachable')
+    expect(warning).toBeDefined()
+    expect(warning?.alternatives.some((item) => item.action === 'set_courts')).toBe(true)
+  })
+
   it('computes min max and rest estimates', () => {
     const option = buildCourtOption(2, 9, 8)
 

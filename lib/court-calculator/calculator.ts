@@ -1,5 +1,6 @@
 import { checkFeasibility } from './feasibility'
 import { PRESETS } from './presets'
+import { buildCourtWarnings } from './warnings'
 import type { CourtCalculatorInput, CourtCalculatorOutput, CourtOption } from './types'
 
 const DEFAULT_MATCH_DURATION_MIN = 15
@@ -43,6 +44,16 @@ export function calculateOptimalCourts(
     recommended,
     alternatives,
     reasoning: buildReasoning(recommended, targetMatches, totalRounds, PRESETS[preset].label),
+    setup_warnings: buildCourtWarnings(
+      {
+        n_players: nPlayers,
+        session_duration_min: sessionDuration,
+        match_duration_min: matchDuration,
+        preset,
+      },
+      recommended,
+      alternatives,
+    ),
   }
 }
 
