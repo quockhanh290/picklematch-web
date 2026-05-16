@@ -392,6 +392,190 @@ type FairnessAudit = {
 
 type FairnessPreview = Omit<FairnessAudit, 'round_no'>
 
+type AlternativeAudit = {
+  index: number
+  fairness_total: number
+  match_range: number
+  partner_repeat_pairs: number
+  opponent_repeat_pairs: number
+  max_partner_pair: number
+  max_opponent_pair: number
+  max_opponent_burden: number
+  gender_rate: number
+}
+
+type SuggestedRoundAction =
+  | {
+      type: 'select_alternative'
+      label: string
+      detail: string
+      alternative_index: number
+      before: AlternativeAudit
+      after: AlternativeAudit
+    }
+  | {
+      type: 'set_pvna_tolerance'
+      label: string
+      detail: string
+      pvna_tolerance: number
+      before: AlternativeAudit
+    }
+  | {
+      type: 'set_courts'
+      label: string
+      detail: string
+      courts: number
+      before: AlternativeAudit
+    }
+  | {
+      type: 'accept_tradeoff'
+      label: string
+      detail: string
+      before: AlternativeAudit
+    }
+
+function auditAlternative(
+  state: SessionState,
+  alternative: SuggestionAlternative,
+  index: number,
+): AlternativeAudit {
+  const projected = previewStateAfterAlternative(state, alternative)
+  const fairness = computeSessionFairness(projected)
+  const match = computeMatchCountMetrics(projected)
+  const partner = computePartnerDiversity(projected)
+  const opponent = computeOpponentDiversity(projected)
+  const burden = computeOpponentRepeatBurden(projected)
+  const gender = computeGenderPrefSatisfaction(projected)
+
+  return {
+    index,
+    fairness_total: fairness.total,
+    match_range: match.range,
+    partner_repeat_pairs: partner.repeat_pairs.length,
+    opponent_repeat_pairs: opponent.repeat_pairs.length,
+    max_partner_pair: Math.max(0, ...partner.repeat_pairs.map(pair => pair.count)),
+    max_opponent_pair: Math.max(0, ...opponent.repeat_pairs.map(pair => pair.count)),
+    max_opponent_burden: burden.max_repeated_opponents,
+    gender_rate: gender.total_pref_opportunities === 0 ? 1 : gender.satisfaction_rate,
+  }
+}
+
+function auditSortKey(audit: AlternativeAudit): number[] {
+  return [
+    audit.match_range,
+    audit.max_opponent_burden,
+    audit.max_opponent_pair,
+    audit.max_partner_pair,
+    audit.opponent_repeat_pairs,
+    audit.partner_repeat_pairs,
+    -audit.fairness_total,
+  ]
+}
+
+function compareAudit(a: AlternativeAudit, b: AlternativeAudit): number {
+  const left = auditSortKey(a)
+  const right = auditSortKey(b)
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index] - right[index]
+  }
+  return a.index - b.index
+}
+
+function isMeaningfullyBetterAlternative(current: AlternativeAudit, candidate: AlternativeAudit): boolean {
+  if (candidate.fairness_total < current.fairness_total - 3) return false
+  if (candidate.match_range > current.match_range) return false
+  return (
+    candidate.max_opponent_burden < current.max_opponent_burden ||
+    candidate.max_opponent_pair < current.max_opponent_pair ||
+    candidate.max_partner_pair < current.max_partner_pair ||
+    candidate.opponent_repeat_pairs < current.opponent_repeat_pairs ||
+    candidate.partner_repeat_pairs < current.partner_repeat_pairs ||
+    candidate.fairness_total > current.fairness_total + 2
+  )
+}
+
+function buildSuggestedRoundActions(input: {
+  state: SessionState
+  alternatives: SuggestionAlternative[]
+  selectedIndex: number
+  pvnaTolerance: number
+  courtCount: number
+}): SuggestedRoundAction[] {
+  const selected = input.alternatives[input.selectedIndex] ?? input.alternatives[0]
+  if (!selected) return []
+
+  const audits = input.alternatives.map((alternative, index) => auditAlternative(input.state, alternative, index))
+  const current = audits[input.selectedIndex] ?? audits[0]
+  const actions: SuggestedRoundAction[] = []
+  const repeatRisk =
+    current.max_opponent_burden >= 3 ||
+    current.max_opponent_pair > 2 ||
+    current.max_partner_pair > 2 ||
+    current.opponent_repeat_pairs >= 8 ||
+    current.partner_repeat_pairs >= 6
+  const rangeRisk = current.match_range > 1
+
+  const better = audits
+    .filter(audit => audit.index !== current.index)
+    .filter(audit => isMeaningfullyBetterAlternative(current, audit))
+    .sort(compareAudit)[0]
+
+  if (better) {
+    actions.push({
+      type: 'select_alternative',
+      label: `Chon phuong an ${better.index + 1}`,
+      detail: describeAlternativeDelta(current, better),
+      alternative_index: better.index,
+      before: current,
+      after: better,
+    })
+  }
+
+  if ((repeatRisk || rangeRisk) && input.pvnaTolerance <= 0.5) {
+    actions.push({
+      type: 'set_pvna_tolerance',
+      label: 'Thu PVNA +/-0.8',
+      detail: 'Noi tolerance de engine co them split hop le. Tradeoff: tran co the lech trinh hon.',
+      pvna_tolerance: 0.8,
+      before: current,
+    })
+  }
+
+  if (repeatRisk && input.courtCount > 1) {
+    actions.push({
+      type: 'set_courts',
+      label: `Giam con ${input.courtCount - 1} san`,
+      detail: 'Giam slot vong nay de co them nguoi nghi va doi to hop. Tradeoff: it nguoi duoc choi vong nay.',
+      courts: input.courtCount - 1,
+      before: current,
+    })
+  }
+
+  if (actions.length > 0) {
+    actions.push({
+      type: 'accept_tradeoff',
+      label: 'Chap nhan phuong an nay',
+      detail: 'Giu setup hien tai va start neu host uu tien tiep tuc nhanh.',
+      before: current,
+    })
+  }
+
+  return actions.slice(0, 4)
+}
+
+function describeAlternativeDelta(before: AlternativeAudit, after: AlternativeAudit): string {
+  const parts = [
+    `fairness ${before.fairness_total} -> ${after.fairness_total}`,
+    `burden ${before.max_opponent_burden} -> ${after.max_opponent_burden}`,
+    `opp max ${before.max_opponent_pair} -> ${after.max_opponent_pair}`,
+    `partner max ${before.max_partner_pair} -> ${after.max_partner_pair}`,
+  ]
+  if (before.match_range !== after.match_range) {
+    parts.push(`range ${before.match_range} -> ${after.match_range}`)
+  }
+  return parts.join(', ')
+}
+
 function buildFairnessPreview(
   state: SessionState,
   alternative: SuggestionAlternative | null | undefined,
@@ -712,6 +896,38 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     },
     [state, workingAlternative],
   )
+  const suggestedRoundActions = useMemo(
+    () => buildSuggestedRoundActions({
+      state,
+      alternatives: suggestion.alternatives,
+      selectedIndex: selectedAlternative,
+      pvnaTolerance,
+      courtCount,
+    }),
+    [courtCount, pvnaTolerance, selectedAlternative, state, suggestion.alternatives],
+  )
+  const applySuggestedRoundAction = (action: SuggestedRoundAction) => {
+    if (action.type === 'select_alternative') {
+      setSelectedAlternative(action.alternative_index)
+      setManualAlternative(null)
+      setSwapFromPlayerId(null)
+      return
+    }
+
+    if (action.type === 'set_pvna_tolerance') {
+      setPvnaTolerance(action.pvna_tolerance)
+      setManualAlternative(null)
+      setSwapFromPlayerId(null)
+      return
+    }
+
+    if (action.type === 'set_courts') {
+      setCourtCount(action.courts)
+      setSelectedAlternative(0)
+      setManualAlternative(null)
+      setSwapFromPlayerId(null)
+    }
+  }
   const activeRound = useMemo(
     () => rows.roundRows.find(row => row.status === 'active') ?? null,
     [rows.roundRows],
@@ -1205,6 +1421,8 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
           warnings={fairnessWarnings}
           playersById={playersById}
           adjustmentReasons={fairnessAdjustment.applied_for_warnings}
+          actions={suggestedRoundActions}
+          onAction={applySuggestedRoundAction}
         />
 
       {targetReached && !activeRound && (
@@ -1506,19 +1724,28 @@ function FairnessBanner({
   warnings,
   playersById,
   adjustmentReasons,
+  actions,
+  onAction,
 }: {
   score: SessionFairnessScore
   warnings: FairnessWarning[]
   playersById: Map<string, ArrangementPlayer>
   adjustmentReasons: string[]
+  actions: SuggestedRoundAction[]
+  onAction: (action: SuggestedRoundAction) => void
 }) {
   const primaryWarning = warnings.find(warning => warning.severity === 'critical') ?? warnings[0]
-  const tone = primaryWarning ? warningTone(primaryWarning.severity) : { bg: '#E1F5EE', border: '#88D4B5', text: '#0F6E56' }
+  const primaryAction = actions[0]
+  const tone = primaryWarning
+    ? warningTone(primaryWarning.severity)
+    : primaryAction
+      ? warningTone('info')
+      : { bg: '#E1F5EE', border: '#88D4B5', text: '#0F6E56' }
 
   return (
     <View style={{ backgroundColor: tone.bg, borderRadius: RADIUS.xl, padding: 14, marginTop: 14, borderWidth: 1, borderColor: tone.border }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        {primaryWarning ? <AlertTriangle size={18} color={tone.text} /> : <Star size={18} color={tone.text} />}
+        {primaryWarning || primaryAction ? <AlertTriangle size={18} color={tone.text} /> : <Star size={18} color={tone.text} />}
         <View style={{ flex: 1 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: tone.text, fontWeight: '900' }}>
             Fairness {score.total}/100 · {fairnessLabel(score)}
@@ -1526,6 +1753,10 @@ function FairnessBanner({
           {primaryWarning ? (
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, marginTop: 4, lineHeight: 16 }}>
               {primaryWarning.message} {formatAffectedPlayers(primaryWarning.affected_players, playersById)}
+            </Text>
+          ) : primaryAction ? (
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, marginTop: 4, lineHeight: 16 }}>
+              Co phuong an mot cham de giam repeat/range truoc khi start.
             </Text>
           ) : (
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, marginTop: 4 }}>
@@ -1543,6 +1774,35 @@ function FairnessBanner({
         <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 8, lineHeight: 15 }}>
           Engine tự hiệu chỉnh: {adjustmentReasons.join(', ').replace(/_/g, ' ')}
         </Text>
+      )}
+      {actions.length > 0 && (
+        <View style={{ gap: 7, marginTop: 10 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: tone.text, fontWeight: '900' }}>
+            One-tap alternatives
+          </Text>
+          {actions.map((action, index) => (
+            <TouchableOpacity
+              key={`${action.type}-${index}`}
+              disabled={action.type === 'accept_tradeoff'}
+              onPress={() => onAction(action)}
+              style={{
+                borderRadius: 10,
+                padding: 9,
+                backgroundColor: action.type === 'accept_tradeoff' ? '#FFFCF5' : '#FFFFFF',
+                borderWidth: 1,
+                borderColor: tone.border,
+                opacity: action.type === 'accept_tradeoff' ? 0.75 : 1,
+              }}
+            >
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#0F6E56', fontWeight: '900' }}>
+                {action.label}
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', marginTop: 3, lineHeight: 13 }}>
+                {action.detail}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       )}
     </View>
   )
