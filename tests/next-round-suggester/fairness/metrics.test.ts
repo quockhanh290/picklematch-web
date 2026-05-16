@@ -8,6 +8,7 @@ import {
   computeRestFairness,
   computeSessionFairness,
 } from '../../../lib/next-round-suggester/fairness/metrics'
+import { computeRepeatPressure } from '../../../lib/next-round-suggester/fairness/pressure'
 
 describe('Match Count Metrics', () => {
   it('returns range 0 when all players have equal matches', () => {
@@ -256,6 +257,22 @@ describe('Session Fairness Score', () => {
     setPartnerRepeats(p1, p2, 3)
 
     expect(computeSessionFairness(withCompletedRounds(createState({ players: [p1, p2] }), 3)).breakdown.partner_diversity).toBeLessThan(20)
+  })
+
+  it('reduces repeat penalty when small-roster repeat pressure is extreme', () => {
+    const players = Array.from({ length: 8 }, (_, index) =>
+      createPlayer(`p${index + 1}`, { matches_played: 6 }),
+    )
+    setPartnerRepeats(players[0], players[1], 6)
+    setPartnerRepeats(players[2], players[3], 6)
+    setPartnerRepeats(players[4], players[5], 6)
+    setPartnerRepeats(players[6], players[7], 6)
+
+    const state = withCompletedRounds(createState({ players, courts: 2 }), 6)
+    const pressure = computeRepeatPressure(state)
+
+    expect(pressure.repeat_risk).toBe('extreme')
+    expect(computeSessionFairness(state).breakdown.partner_diversity).toBeGreaterThan(10)
   })
 
   it('penalizes rest violations heavily', () => {

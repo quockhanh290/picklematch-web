@@ -30,8 +30,8 @@ import type {
 import { generatePlayers, initState } from './tests/next-round-suggester/simulation/generators'
 import { runSimulation, validateInvariants, type PerPlayerStat, type SimulationConfig, type SimulationResult } from './tests/next-round-suggester/simulation/runner'
 
-const N_MIN = 8
-const N_MAX = 40
+const N_MIN = Number(process.env.N_MIN ?? 8)
+const N_MAX = Number(process.env.N_MAX ?? 40)
 const DURATIONS = [90, 120, 150]
 const PRESETS: CourtPreset[] = ['play_more', 'balanced', 'relaxed']
 const MATCH_DURATION_MIN = 15
@@ -265,7 +265,7 @@ function applyRoundOneTap(
 
   if (action.type === 'select_alternative') {
     return {
-      stateForCommit: suggestionState,
+      stateForCommit: state,
       alternative: alternatives[action.alternative_index] ?? alternatives[0] ?? null,
       action,
       selectedIndex: action.alternative_index,
@@ -297,7 +297,7 @@ function applyRoundOneTap(
     if (rerunAction.type === 'select_alternative') {
       action = rerunAction
       return {
-        stateForCommit: patchedSuggestionState,
+        stateForCommit: patchedBaseState,
         alternative: rerun.alternatives[rerunAction.alternative_index] ?? rerun.alternatives[0] ?? null,
         action,
         selectedIndex: rerunAction.alternative_index,
@@ -305,7 +305,7 @@ function applyRoundOneTap(
     }
 
     return {
-      stateForCommit: patchedSuggestionState,
+      stateForCommit: patchedBaseState,
       alternative: rerun.alternatives[0] ?? null,
       action,
       selectedIndex: 0,
@@ -313,7 +313,7 @@ function applyRoundOneTap(
   }
 
   return {
-    stateForCommit: suggestionState,
+    stateForCommit: state,
     alternative: alternatives[0] ?? null,
     action,
     selectedIndex: 0,

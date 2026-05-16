@@ -1,6 +1,8 @@
 import type { PlayerSessionState, SessionState } from '../types'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { computeGenderPrefSatisfaction, computeMatchCountMetrics, computeOpponentDiversity, computeOpponentRepeatBurden, computePartnerDiversity } from './metrics.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { computeRepeatPressure } from './pressure.ts'
 
 export type WarningType =
   | 'match_count_imbalance'
@@ -38,6 +40,7 @@ function detectOpponentBurdenIssues(state: SessionState): FairnessWarning[] {
   if (state.current_round < 4) return []
 
   const metrics = computeOpponentRepeatBurden(state)
+  const pressure = computeRepeatPressure(state)
   const overloaded = metrics.per_player
     .filter((player) => player.repeated_opponents >= 3)
     .sort((a, b) => {
@@ -55,8 +58,12 @@ function detectOpponentBurdenIssues(state: SessionState): FairnessWarning[] {
       severity: maxBurden >= 6 ? 'warning' : 'info',
       type: 'opponent_repeat_burden',
       affected_players: overloaded.map((player) => player.player_id),
-      message: `${overloaded.length} nguoi dang gap lai nhieu doi thu (${maxBurden}+ cap lap).`,
-      suggested_action: 'Engine se uu tien rai deu doi thu lap o vong ke tiep.',
+      message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
+        ? `${overloaded.length} nguoi dang lap doi thu, nhung repeat risk ${pressure.repeat_risk} voi setup nay.`
+        : `${overloaded.length} nguoi dang gap lai nhieu doi thu (${maxBurden}+ cap lap).`,
+      suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
+        ? 'Repeat co the la gioi han to hop; engine van uu tien rai deu doi thu lap.'
+        : 'Engine se uu tien rai deu doi thu lap o vong ke tiep.',
     },
   ]
 }
@@ -105,14 +112,19 @@ function detectPartnerIssues(state: SessionState): FairnessWarning[] {
 
   const highRepeats = computePartnerDiversity(state).repeat_pairs.filter((pair) => pair.count >= 3)
   if (highRepeats.length === 0) return []
+  const pressure = computeRepeatPressure(state)
 
   return [
     {
       severity: 'info',
       type: 'partner_repeat',
       affected_players: uniquePlayers(highRepeats.flatMap((pair) => [pair.player_a, pair.player_b])),
-      message: `${highRepeats.length} cap da danh chung 3+ lan.`,
-      suggested_action: 'Engine se tang uu tien tranh lap partner.',
+      message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
+        ? `${highRepeats.length} cap da danh chung 3+ lan, repeat risk ${pressure.repeat_risk} voi setup nay.`
+        : `${highRepeats.length} cap da danh chung 3+ lan.`,
+      suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
+        ? 'Repeat co the la gioi han to hop; host co the chon tradeoff neu muon giam lap.'
+        : 'Engine se tang uu tien tranh lap partner.',
     },
   ]
 }
@@ -122,14 +134,19 @@ function detectOpponentIssues(state: SessionState): FairnessWarning[] {
 
   const highRepeats = computeOpponentDiversity(state).repeat_pairs.filter((pair) => pair.count >= 3)
   if (highRepeats.length === 0) return []
+  const pressure = computeRepeatPressure(state)
 
   return [
     {
       severity: 'info',
       type: 'opponent_repeat',
       affected_players: uniquePlayers(highRepeats.flatMap((pair) => [pair.player_a, pair.player_b])),
-      message: `${highRepeats.length} cap da doi dau 3+ lan.`,
-      suggested_action: 'Engine se tang uu tien tranh lap doi thu.',
+      message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
+        ? `${highRepeats.length} cap da doi dau 3+ lan, repeat risk ${pressure.repeat_risk} voi setup nay.`
+        : `${highRepeats.length} cap da doi dau 3+ lan.`,
+      suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
+        ? 'Repeat co the la gioi han to hop; host co the chon tradeoff neu muon giam lap.'
+        : 'Engine se tang uu tien tranh lap doi thu.',
     },
   ]
 }

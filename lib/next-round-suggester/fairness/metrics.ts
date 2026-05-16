@@ -1,4 +1,6 @@
 import type { Match, PlayerSessionState, SessionState, Team } from '../types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { computeRepeatPressure } from './pressure.ts'
 
 export type MatchCountMetrics = {
   min: number
@@ -443,12 +445,13 @@ export function computeSessionFairness(state: SessionState): SessionFairnessScor
   const opponent = computeOpponentDiversity(state)
   const rest = computeRestFairness(state)
   const gender = computeGenderPrefSatisfaction(state)
+  const repeatPressure = computeRepeatPressure(state)
   const completedRounds = countCompletedRounds(state)
   const isWarmup = completedRounds < 3
   const breakdown = {
     match_count: isWarmup ? 25 : computeMatchCountScore(matchCount),
-    partner_diversity: isWarmup ? 20 : computeDiversityScore(partner, 20),
-    opponent_diversity: isWarmup ? 15 : computeDiversityScore(opponent, 15),
+    partner_diversity: isWarmup ? 20 : computeContextAwareDiversityScore(partner, 20, repeatPressure.penalty_multiplier),
+    opponent_diversity: isWarmup ? 15 : computeContextAwareDiversityScore(opponent, 15, repeatPressure.penalty_multiplier),
     rest: computeRestScore(rest),
     gender_prefs: isWarmup ? 20 : computeGenderScore(gender),
   }
@@ -483,6 +486,16 @@ function hasFractionalMatchDistribution(metrics: MatchCountMetrics): boolean {
 
 function computeDiversityScore(metrics: DiversityMetrics, max: number): number {
   return Math.max(0, Math.min(max, Math.round(max * metrics.avg_diversity_ratio)))
+}
+
+function computeContextAwareDiversityScore(
+  metrics: DiversityMetrics,
+  max: number,
+  penaltyMultiplier: number,
+): number {
+  const rawScore = computeDiversityScore(metrics, max)
+  const rawPenalty = max - rawScore
+  return Math.max(0, Math.min(max, Math.round(max - rawPenalty * penaltyMultiplier)))
 }
 
 function computeRestScore(metrics: RestFairnessMetrics): number {

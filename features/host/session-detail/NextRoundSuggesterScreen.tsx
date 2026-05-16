@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native'
-import { AlertTriangle, CheckCircle2, Play, RefreshCcw, Star, UserMinus, UserPlus } from 'lucide-react-native'
+import { AlertTriangle, CheckCircle2, Play, RefreshCcw, Star, UserMinus, UserPlus, X } from 'lucide-react-native'
 
 import { AppLoading } from '@/components/design'
 import { RADIUS, SHADOW } from '@/constants/screenLayout'
@@ -39,6 +39,27 @@ import { eloToPvna } from '@/lib/skillAssessment'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
 
+const UI_THEME = {
+  primary: '#0F6E56',
+  secondary: '#1A2E2A',
+  accent: '#E1F5EE',
+  warning: '#FFF7D6',
+  danger: '#FAECE7',
+  success: '#E1F5EE',
+  background: '#F1F1F1',
+  cardBg: '#FFFFFF',
+  textMain: '#1A2E2A',
+  textSub: '#596864',
+  textMuted: '#A3ADAA',
+  border: '#E5E3DC',
+}
+
+const DASHBOARD_RADIUS = 24
+const DASHBOARD_SHADOW = {
+  sm: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  md: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
+}
+
 type Props = {
   sessionId: string
   players: ArrangementPlayer[]
@@ -49,6 +70,14 @@ type LiveRows = {
   playerRows: SessionPlayerStateRow[]
   pairRows: SessionPairHistoryRow[]
   roundRows: SessionRoundRow[]
+}
+
+type RoundSelectionSnapshot = {
+  selectedAlternative: number
+  manualAlternative: SuggestionAlternative | null
+  pvnaTolerance: number
+  courtCount: number
+  reason: string
 }
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
@@ -925,10 +954,11 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
   const [courtCount, setCourtCount] = useState(Math.max(1, Math.min(4, courts)))
   const [courtPreset, setCourtPreset] = useState<CourtPreset>('balanced')
   const [courtDurationMin, setCourtDurationMin] = useState(120)
-  const [targetRounds, setTargetRounds] = useState(8)
+  const [targetRounds, setTargetRounds] = useState<number | null>(null)
   const [showSessionReport, setShowSessionReport] = useState(false)
   const [swapFromPlayerId, setSwapFromPlayerId] = useState<string | null>(null)
   const [manualAlternative, setManualAlternative] = useState<SuggestionAlternative | null>(null)
+  const [selectionUndo, setSelectionUndo] = useState<RoundSelectionSnapshot | null>(null)
   const [groupSelection, setGroupSelection] = useState<string[]>([])
 
   const confirmedPlayers = useMemo(
@@ -1072,8 +1102,38 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     }),
     [courtCount, pvnaTolerance, selectedAlternative, state, suggestion.alternatives],
   )
+
+  const rememberRoundSelection = (reason: string) => {
+    setSelectionUndo({
+      selectedAlternative,
+      manualAlternative,
+      pvnaTolerance,
+      courtCount,
+      reason,
+    })
+  }
+
+  const undoRoundSelection = () => {
+    if (!selectionUndo) return
+    setSelectedAlternative(selectionUndo.selectedAlternative)
+    setManualAlternative(selectionUndo.manualAlternative)
+    setPvnaTolerance(selectionUndo.pvnaTolerance)
+    setCourtCount(selectionUndo.courtCount)
+    setSwapFromPlayerId(null)
+    setSelectionUndo(null)
+  }
+
+  const selectAlternativeForRound = (index: number, reason = `ALT ${index + 1}`) => {
+    if (selectedAlternative === index && manualAlternative === null) return
+    rememberRoundSelection(reason)
+    setSelectedAlternative(index)
+    setManualAlternative(null)
+    setSwapFromPlayerId(null)
+  }
+
   const applySuggestedRoundAction = (action: SuggestedRoundAction) => {
     if (action.type === 'select_alternative') {
+      rememberRoundSelection(action.label)
       setSelectedAlternative(action.alternative_index)
       setManualAlternative(null)
       setSwapFromPlayerId(null)
@@ -1081,6 +1141,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     }
 
     if (action.type === 'set_pvna_tolerance') {
+      rememberRoundSelection(action.label)
       setPvnaTolerance(action.pvna_tolerance)
       setManualAlternative(null)
       setSwapFromPlayerId(null)
@@ -1088,6 +1149,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     }
 
     if (action.type === 'set_courts') {
+      rememberRoundSelection(action.label)
       setCourtCount(action.courts)
       setSelectedAlternative(0)
       setManualAlternative(null)
@@ -1107,6 +1169,8 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     match_duration_min: 15,
     preset: courtPreset,
   }), [calculatorPlayerCount, courtDurationMin, courtPreset])
+
+  const effectiveTargetRounds = targetRounds ?? courtCalculator.recommended.total_rounds
   const applyCourtWarningAlternative = (alternative: CourtWarningAlternative) => {
     if (alternative.action === 'set_duration' && alternative.duration_min) {
       setCourtDurationMin(alternative.duration_min)
@@ -1130,7 +1194,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
   const optedRestCount = rows.playerRows.filter(row => !row.checked_out_at && row.opted_rest).length
   const completedRounds = rows.roundRows.filter(row => row.status === 'completed').sort((a, b) => b.round_no - a.round_no)
   const completedRoundCount = completedRounds.length
-  const targetReached = targetRounds > 0 && completedRoundCount >= targetRounds
+  const targetReached = effectiveTargetRounds > 0 && completedRoundCount >= effectiveTargetRounds
   const reportState = useMemo(
     () => (completedRoundCount > 0 ? rebuildStateThroughRound(state, completedRounds[0].round_no) : state),
     [completedRoundCount, completedRounds, state],
@@ -1268,51 +1332,75 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
       return
     }
 
+    rememberRoundSelection(`Swap ${fromId}`)
     setManualAlternative(result.alternative)
     setSwapFromPlayerId(null)
   }
 
   if (loading) return <AppLoading fullScreen />
 
-  return (
+    return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: theme.background }}
-      contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
+      style={{ flex: 1, backgroundColor: UI_THEME.background }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
       showsVerticalScrollIndicator={false}
     >
-      <View style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.xl, padding: 16, borderWidth: 1, borderColor: '#E5E3DC', ...SHADOW.sm }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: '#1A2E2A', fontWeight: '900' }}>
-          NEXT ROUND SUGGESTER
-        </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#596864', marginTop: 6, lineHeight: 18 }}>
-          Test realtime: sync theo trạng thái check-in hiện tại, host check-in/out, request rest, suggest vòng kế tiếp, start và end round.
-        </Text>
+      {/* 1. HEADER & SESSION STATUS */}
+      <View style={{ backgroundColor: UI_THEME.cardBg, borderRadius: DASHBOARD_RADIUS, padding: 20, marginBottom: 16, ...DASHBOARD_SHADOW.md }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: UI_THEME.primary, fontWeight: '900', letterSpacing: 1, marginBottom: 4 }}>
+              NEXT ROUND SUGGESTER
+            </Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 24, color: UI_THEME.textMain, fontWeight: '900' }}>
+              Dashboard
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TouchableOpacity 
+              onPress={loadLiveState}
+              disabled={busy === 'sync'}
+              style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: UI_THEME.background, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: UI_THEME.border }}
+            >
+              {busy === 'sync' ? <ActivityIndicator size="small" color={UI_THEME.primary} /> : <RefreshCcw size={18} color={UI_THEME.textMain} />}
+            </TouchableOpacity>
+            <View style={{ backgroundColor: UI_THEME.accent, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: UI_THEME.primary, fontWeight: '900' }}>
+                VÒNG {state.current_round}
+              </Text>
+            </View>
+          </View>
+        </View>
 
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+        <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
           {[
-            ['Round', String(state.current_round)],
-            ['Có mặt', `${presentCount}/${checkedInPlayers.length}`],
-            ['Xin nghỉ', String(optedRestCount)],
-            ['Sân', String(courtCount)],
-            ['PVNA diff', pvnaTolerance.toFixed(1)],
-          ].map(([label, value]) => (
-            <View key={label} style={{ minWidth: 74, flex: 1, backgroundColor: '#F8F3E8', borderRadius: 12, padding: 10 }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', fontWeight: '900' }}>{label}</Text>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: '#1A2E2A', fontWeight: '900', marginTop: 2 }}>{value}</Text>
+            { label: 'CÓ MẶT', value: `${presentCount}/${checkedInPlayers.length}`, color: UI_THEME.primary },
+            { label: 'XIN NGHỈ', value: optedRestCount, color: '#A05A16' },
+            { label: 'SÂN', value: courtCount, color: UI_THEME.secondary },
+          ].map((item, idx) => (
+            <View key={idx} style={{ flex: 1, backgroundColor: UI_THEME.background, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: UI_THEME.border }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: UI_THEME.textSub, fontWeight: '900', marginBottom: 4 }}>{item.label}</Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: item.color, fontWeight: '900' }}>{item.value}</Text>
             </View>
           ))}
         </View>
 
         {error && (
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#B91C1C', marginTop: 12 }}>
-            {error}
-          </Text>
+          <View style={{ backgroundColor: UI_THEME.danger, borderRadius: 12, padding: 12, marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <AlertTriangle size={16} color="#B91C1C" />
+            <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#B91C1C', fontWeight: '700' }}>{error}</Text>
+          </View>
         )}
+      </View>
 
-        <View style={{ marginTop: 14 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900', marginBottom: 8 }}>
-            Số sân dùng vòng này
-          </Text>
+      {/* 2. OPTIMIZATION SETTINGS */}
+      <View style={{ backgroundColor: UI_THEME.cardBg, borderRadius: DASHBOARD_RADIUS, padding: 20, marginBottom: 16, ...DASHBOARD_SHADOW.sm }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: UI_THEME.textMain, fontWeight: '900', marginBottom: 16 }}>
+          Cài đặt tối ưu
+        </Text>
+
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', marginBottom: 10 }}>SỐ SÂN VÒNG NÀY</Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {Array.from({ length: maxSelectableCourts }, (_, index) => index + 1).map(value => {
               const active = courtCount === value
@@ -1323,30 +1411,22 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                   onPress={() => setCourtCount(value)}
                   disabled={disabled}
                   style={{
-                    flex: 1,
-                    borderRadius: 999,
-                    paddingVertical: 9,
-                    alignItems: 'center',
-                    backgroundColor: active ? '#0F6E56' : '#F8F3E8',
-                    borderWidth: 1,
-                    borderColor: active ? '#0F6E56' : '#E5E3DC',
+                    flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: active ? UI_THEME.primary : '#F8F3E8',
+                    borderWidth: 1, borderColor: active ? UI_THEME.primary : UI_THEME.border,
                     opacity: disabled ? 0.35 : 1,
                   }}
                 >
-                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: active ? 'white' : '#596864', fontWeight: '900' }}>
-                    {value}
-                  </Text>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: active ? 'white' : UI_THEME.textMain, fontWeight: '900' }}>{value}</Text>
                 </TouchableOpacity>
               )
             })}
           </View>
         </View>
 
-        <View style={{ marginTop: 14, backgroundColor: '#F8F3E8', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#E5E3DC' }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900', marginBottom: 8 }}>
-            Court calculator test
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', marginBottom: 10 }}>CHẾ ĐỘ (PRESET)</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
             {COURT_PRESET_OPTIONS.map(preset => {
               const active = courtPreset === preset
               return (
@@ -1354,194 +1434,20 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                   key={preset}
                   onPress={() => setCourtPreset(preset)}
                   style={{
-                    flex: 1,
-                    borderRadius: 999,
-                    paddingVertical: 8,
-                    alignItems: 'center',
-                    backgroundColor: active ? '#0F6E56' : '#FFFCF5',
-                    borderWidth: 1,
-                    borderColor: active ? '#0F6E56' : '#E5E3DC',
+                    flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: active ? UI_THEME.secondary : '#F8F3E8',
+                    borderWidth: 1, borderColor: active ? UI_THEME.secondary : UI_THEME.border,
                   }}
                 >
-                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: active ? 'white' : '#596864', fontWeight: '900' }}>
-                    {PRESETS[preset].label}
-                  </Text>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: active ? 'white' : UI_THEME.textMain, fontWeight: '900' }}>{PRESETS[preset].label}</Text>
                 </TouchableOpacity>
               )
             })}
-          </View>
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-            {COURT_DURATION_OPTIONS.map(duration => {
-              const active = courtDurationMin === duration
-              return (
-                <TouchableOpacity
-                  key={duration}
-                  onPress={() => setCourtDurationMin(duration)}
-                  style={{
-                    flex: 1,
-                    borderRadius: 999,
-                    paddingVertical: 8,
-                    alignItems: 'center',
-                    backgroundColor: active ? '#1A2E2A' : '#FFFCF5',
-                    borderWidth: 1,
-                    borderColor: active ? '#1A2E2A' : '#E5E3DC',
-                  }}
-                >
-                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: active ? 'white' : '#596864', fontWeight: '900' }}>
-                    {duration}p
-                  </Text>
-                </TouchableOpacity>
-              )
-            })}
-          </View>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#0F6E56', fontWeight: '900' }}>
-            Goi y: {courtCalculator.recommended.courts} san
-          </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864', marginTop: 4, lineHeight: 16 }}>
-            {courtCalculator.reasoning}
-          </Text>
-          {courtCalculator.setup_warnings.length > 0 && (
-            <View style={{ gap: 8, marginTop: 10 }}>
-              {courtCalculator.setup_warnings.map(warning => (
-                <View
-                  key={warning.type}
-                  style={{
-                    borderRadius: 12,
-                    padding: 10,
-                    backgroundColor: warning.severity === 'critical' ? '#FEF2F2' : '#FFF7E6',
-                    borderWidth: 1,
-                    borderColor: warning.severity === 'critical' ? '#FCA5A5' : '#F3C979',
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <AlertTriangle size={15} color={warning.severity === 'critical' ? '#B91C1C' : '#92400E'} />
-                    <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
-                      {warning.message}
-                    </Text>
-                  </View>
-                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 5, lineHeight: 15 }}>
-                    {warning.why}
-                  </Text>
-                  <View style={{ gap: 6, marginTop: 8 }}>
-                    {warning.alternatives.map((alternative, index) => (
-                      <TouchableOpacity
-                        key={`${warning.type}-${alternative.action}-${index}`}
-                        disabled={alternative.action === 'accept_tradeoff'}
-                        onPress={() => applyCourtWarningAlternative(alternative)}
-                        style={{
-                          borderRadius: 10,
-                          padding: 8,
-                          backgroundColor: alternative.action === 'accept_tradeoff' ? '#FFFCF5' : '#FFFFFF',
-                          borderWidth: 1,
-                          borderColor: '#E5E3DC',
-                          opacity: alternative.action === 'accept_tradeoff' ? 0.75 : 1,
-                        }}
-                      >
-                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#0F6E56', fontWeight: '900' }}>
-                          {alternative.label}
-                        </Text>
-                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', marginTop: 3, lineHeight: 13 }}>
-                          {alternative.expected_effect}
-                        </Text>
-                        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', marginTop: 2, lineHeight: 13 }}>
-                          {alternative.preview.rounds} vong - {alternative.preview.avg_matches_per_player.toFixed(1)} tran/nguoi - risk {alternative.preview.risk_level}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-          <View style={{ gap: 6, marginTop: 10 }}>
-            {courtCalculator.alternatives.map(option => {
-              const active = courtCount === option.courts
-              return (
-                <TouchableOpacity
-                  key={option.courts}
-                  disabled={option.feasibility === 'infeasible'}
-                  onPress={() => setCourtCount(option.courts)}
-                  style={{
-                    borderRadius: 10,
-                    padding: 9,
-                    backgroundColor: active ? '#E1F5EE' : '#FFFCF5',
-                    borderWidth: 1,
-                    borderColor: active ? '#88D4B5' : '#E5E3DC',
-                    opacity: option.feasibility === 'infeasible' ? 0.45 : 1,
-                  }}
-                >
-                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
-                    {option.courts} san - {option.avg_matches_per_player.toFixed(1)} tran/nguoi - {option.feasibility}
-                  </Text>
-                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 3 }}>
-                    Rotation {(option.play_ratio * 100).toFixed(0)}% - quality {option.quality_score.toFixed(2)}
-                  </Text>
-                  {option.quality_notes[0] && (
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 3 }}>
-                      {option.quality_notes[0]}
-                    </Text>
-                  )}
-                  {option.warnings[0] && (
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#92400E', marginTop: 3 }}>
-                      {option.warnings[0]}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              )
-            })}
-          </View>
-          <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E5E3DC' }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900', marginBottom: 8 }}>
-              Muc tieu session
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-              {[Math.max(1, courtCalculator.recommended.total_rounds - 2), courtCalculator.recommended.total_rounds, courtCalculator.recommended.total_rounds + 2]
-                .filter((value, index, values) => value > 0 && values.indexOf(value) === index)
-                .map(value => {
-                  const active = targetRounds === value
-                  return (
-                    <TouchableOpacity
-                      key={`target-rounds-${value}`}
-                      onPress={() => {
-                        setTargetRounds(value)
-                        setShowSessionReport(false)
-                      }}
-                      style={{
-                        flex: 1,
-                        borderRadius: 999,
-                        paddingVertical: 8,
-                        alignItems: 'center',
-                        backgroundColor: active ? '#0F6E56' : '#FFFCF5',
-                        borderWidth: 1,
-                        borderColor: active ? '#0F6E56' : '#E5E3DC',
-                      }}
-                    >
-                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: active ? 'white' : '#596864', fontWeight: '900' }}>
-                        {value} vong
-                      </Text>
-                    </TouchableOpacity>
-                  )
-                })}
-            </View>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: targetReached ? '#0F6E56' : '#596864', fontWeight: '900' }}>
-              Progress: {completedRoundCount}/{targetRounds} vong
-            </Text>
           </View>
         </View>
 
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-          <ActionButton
-            label="Sync roster"
-            icon={<RefreshCcw size={16} color="white" />}
-            loading={busy === 'sync'}
-            onPress={syncRoster}
-          />
-        </View>
-
-        <View style={{ marginTop: 14 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900', marginBottom: 8 }}>
-            Tolerance cân trình theo PVNA
-          </Text>
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', marginBottom: 10 }}>DUNG SAI PVNA (TOLERANCE)</Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {[0.3, 0.5, 0.8, 1.0].map(value => {
               const active = pvnaTolerance === value
@@ -1550,23 +1456,143 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                   key={value}
                   onPress={() => setPvnaTolerance(value)}
                   style={{
-                    flex: 1,
-                    borderRadius: 999,
-                    paddingVertical: 9,
-                    alignItems: 'center',
-                    backgroundColor: active ? '#0F6E56' : '#F8F3E8',
-                    borderWidth: 1,
-                    borderColor: active ? '#0F6E56' : '#E5E3DC',
+                    flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: active ? UI_THEME.primary : '#F8F3E8',
+                    borderWidth: 1, borderColor: active ? UI_THEME.primary : UI_THEME.border,
                   }}
                 >
-                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: active ? 'white' : '#596864', fontWeight: '900' }}>
-                    ±{value.toFixed(1)}
-                  </Text>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: active ? 'white' : UI_THEME.textMain, fontWeight: '900' }}>±{value.toFixed(1)}</Text>
                 </TouchableOpacity>
               )
             })}
           </View>
         </View>
+
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', marginBottom: 10 }}>THỜI LƯỢNG SESSION (PHÚT)</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {COURT_DURATION_OPTIONS.map(value => {
+              const active = courtDurationMin === value
+              return (
+                <TouchableOpacity
+                  key={value}
+                  onPress={() => setCourtDurationMin(value)}
+                  style={{
+                    flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: active ? UI_THEME.primary : '#F8F3E8',
+                    borderWidth: 1, borderColor: active ? UI_THEME.primary : UI_THEME.border,
+                  }}
+                >
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: active ? 'white' : UI_THEME.textMain, fontWeight: '900' }}>{value}</Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+        </View>
+
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', marginBottom: 10 }}>MỤC TIÊU SỐ VÒNG (TARGET)</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {(() => {
+              const rec = courtCalculator.recommended.total_rounds
+              const options = [rec - 2, rec - 1, rec, rec + 1, rec + 2].filter(v => v > 0)
+              return options.map(value => {
+                const active = effectiveTargetRounds === value
+                return (
+                  <TouchableOpacity
+                    key={value}
+                    onPress={() => setTargetRounds(value)}
+                    style={{
+                      flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: active ? UI_THEME.primary : '#F8F3E8',
+                      borderWidth: 1, borderColor: active ? UI_THEME.primary : UI_THEME.border,
+                    }}
+                  >
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: active ? 'white' : UI_THEME.textMain, fontWeight: '900' }}>{value}</Text>
+                  </TouchableOpacity>
+                )
+              })
+            })()}
+          </View>
+        </View>
+
+        <View style={{ backgroundColor: UI_THEME.accent, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: UI_THEME.primary, fontWeight: '900', marginBottom: 4 }}>💡 GỢI Ý TỪ ENGINE</Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: UI_THEME.textSub, lineHeight: 16 }}>
+            Nên dùng {courtCalculator.recommended.courts} sân. {courtCalculator.reasoning}
+          </Text>
+        </View>
+
+        {courtCalculator.setup_warnings.length > 0 && (
+          <View style={{ gap: 10, marginBottom: 16 }}>
+            {courtCalculator.setup_warnings.map((warning, idx) => (
+              <View key={idx} style={{ backgroundColor: warning.severity === 'critical' ? UI_THEME.danger : UI_THEME.warning, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: warning.severity === 'critical' ? '#FCA5A5' : '#F3C979' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <AlertTriangle size={18} color={warning.severity === 'critical' ? '#B91C1C' : '#92400E'} />
+                  <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: UI_THEME.textMain, fontWeight: '900' }}>{warning.message}</Text>
+                </View>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, marginTop: 6, lineHeight: 15 }}>{warning.why}</Text>
+                
+                {/* Keep existing action buttons for setup warnings */}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                  {warning.alternatives.map((alt, aidx) => (
+                    <TouchableOpacity
+                      key={aidx}
+                      disabled={alt.action === 'accept_tradeoff'}
+                      onPress={() => applyCourtWarningAlternative(alt as any)}
+                      style={{
+                        backgroundColor: 'white', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+                        borderWidth: 1, borderColor: 'rgba(0,0,0,0.1)',
+                        opacity: alt.action === 'accept_tradeoff' ? 0.5 : 1
+                      }}
+                    >
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: UI_THEME.primary, fontWeight: '900' }}>{alt.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={{ flexDirection: 'row', gap: 12, borderTopWidth: 1, borderTopColor: UI_THEME.border, paddingTop: 16 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', marginBottom: 8 }}>MỤC TIÊU SESSION</Text>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {[Math.max(1, courtCalculator.recommended.total_rounds - 2), courtCalculator.recommended.total_rounds, courtCalculator.recommended.total_rounds + 2]
+                .filter((v, i, a) => v > 0 && a.indexOf(v) === i)
+                .map(v => {
+                  const active = targetRounds === v
+                  return (
+                    <TouchableOpacity
+                      key={v}
+                      onPress={() => { setTargetRounds(v); setShowSessionReport(false); }}
+                      style={{ flex: 1, height: 36, borderRadius: 8, backgroundColor: active ? UI_THEME.primary : '#FFFCF5', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: active ? UI_THEME.primary : UI_THEME.border }}
+                    >
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: active ? 'white' : UI_THEME.textSub, fontWeight: '900' }}>{v} VÒNG</Text>
+                    </TouchableOpacity>
+                  )
+                })}
+            </View>
+          </View>
+          <View style={{ width: 80, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: UI_THEME.textMuted, fontWeight: '900' }}>TIẾN ĐỘ</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: UI_THEME.textMain, fontWeight: '900' }}>{completedRoundCount}/{targetRounds}</Text>
+          </View>
+        </View>
+
+        <TouchableOpacity 
+          onPress={syncRoster} 
+          disabled={busy === 'sync'}
+          style={{ 
+            marginTop: 16, backgroundColor: UI_THEME.secondary, height: 48, borderRadius: 14, 
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+            opacity: busy === 'sync' ? 0.7 : 1
+          }}
+        >
+          {busy === 'sync' ? <ActivityIndicator color="white" /> : <RefreshCcw size={18} color="white" />}
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: 'white', fontWeight: '900' }}>ĐỒNG BỘ DANH SÁCH (SYNC)</Text>
+        </TouchableOpacity>
       </View>
 
         <FairnessBanner
@@ -1578,27 +1604,147 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
           onAction={applySuggestedRoundAction}
         />
 
+      <View style={{ backgroundColor: UI_THEME.cardBg, borderRadius: DASHBOARD_RADIUS, padding: 20, marginTop: 16, ...DASHBOARD_SHADOW.sm }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: UI_THEME.textMain, fontWeight: '900' }}>
+              Gợi ý vòng kế tiếp
+            </Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, marginTop: 4 }}>
+              {suggestion.should_end ? 'Kết thúc session' : `Tìm thấy ${suggestion.alternatives.length} phương án tối ưu`}
+            </Text>
+          </View>
+          {suggestion.warnings.length > 0 && (
+            <View style={{ backgroundColor: UI_THEME.warning, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 9, color: '#92400E', fontWeight: '900' }}>
+                {suggestion.warnings.map(formatWarning).join(' · ')}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {suggestion.alternatives.length === 0 ? (
+          <View style={{ backgroundColor: UI_THEME.background, borderRadius: 12, padding: 20, alignItems: 'center' }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: UI_THEME.textSub, textAlign: 'center', lineHeight: 18 }}>
+              {suggestion.should_end 
+                ? 'Không đủ người chơi hợp lệ. Cần ít nhất 4 người đang có mặt (In) và không nghỉ (Play).' 
+                : 'Không tìm thấy phương án phù hợp. Thử tăng Dung sai (Tolerance) hoặc giảm số sân.'}
+            </Text>
+          </View>
+        ) : (
+          <View style={{ gap: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {suggestion.alternatives.map((alt, idx) => {
+                const active = selectedAlternative === idx
+                return (
+                  <TouchableOpacity
+                    key={`alt-${idx}`}
+                    onPress={() => selectAlternativeForRound(idx)}
+                    style={{
+                      flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: active ? UI_THEME.primary : UI_THEME.background,
+                      borderWidth: 1, borderColor: active ? UI_THEME.primary : UI_THEME.border,
+                      ...DASHBOARD_SHADOW.sm,
+                    }}
+                  >
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: active ? 'white' : UI_THEME.textMain, fontWeight: '900' }}>
+                      ALT {idx + 1} · {alt.score.toFixed(1)}
+                    </Text>
+                  </TouchableOpacity>
+                )
+              })}
+            </View>
+
+            {selectionUndo && (
+              <View style={{ backgroundColor: UI_THEME.background, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: UI_THEME.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, lineHeight: 15 }}>
+                  Da doi lua chon vong: {selectionUndo.reason}
+                </Text>
+                <MiniButton
+                  label="Undo"
+                  icon={<RefreshCcw size={13} color={UI_THEME.textMain} />}
+                  muted
+                  onPress={undoRoundSelection}
+                />
+              </View>
+            )}
+
+            {workingAlternative && (
+              <View style={{ gap: 16 }}>
+                <SuggestionStatsCard alternative={workingAlternative} />
+                
+                {fairnessPreview && <FairnessPreviewCard preview={fairnessPreview} />}
+                
+                <View style={{ gap: 12 }}>
+                  {workingAlternative.matches.map(match => (
+                    <MatchCard key={`suggest-${match.court_idx}`} match={match} state={state} playersById={playersById} />
+                  ))}
+                </View>
+
+                <View style={{ backgroundColor: UI_THEME.background, borderRadius: 12, padding: 12 }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, lineHeight: 15 }}>
+                    <Text style={{ fontWeight: '900' }}>NGƯỜI NGHỈ: </Text>
+                    {workingAlternative.resting.map(id => playerName(id, playersById)).join(', ') || 'Không có'}
+                  </Text>
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: UI_THEME.textMuted, marginTop: 4 }}>
+                    Runtime: {workingAlternative.runtime_ms ?? 0}ms · Iter: {workingAlternative.iterations ?? '-'}
+                  </Text>
+                </View>
+
+                {hasManualSwapHardGuard && (
+                  <View style={{ backgroundColor: UI_THEME.danger, borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <AlertTriangle size={16} color="#B91C1C" />
+                    <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#B91C1C', fontWeight: '700' }}>
+                      Swap hiện tại vi phạm Hard Guard (PVNA/Team). Hãy chọn phương án khác.
+                    </Text>
+                  </View>
+                )}
+
+                <ManualSwapPanel
+                  alternative={workingAlternative}
+                  state={state}
+                  playersById={playersById}
+                  selectedPlayerId={swapFromPlayerId}
+                  onSelectPlayer={setSwapFromPlayerId}
+                  onSwap={swapPlayersInWorkingAlternative}
+                  onReset={() => { setManualAlternative(null); setSwapFromPlayerId(null); }}
+                />
+
+                <ActionButton
+                  label={targetReached ? 'CHẠY THÊM VÒNG' : 'BẮT ĐẦU VÒNG ĐÃ CHỌN'}
+                  icon={<Play size={18} color="white" />}
+                  loading={busy === 'start'}
+                  disabled={Boolean(activeRound) || hasManualSwapHardGuard}
+                  onPress={() => startRound(workingAlternative)}
+                />
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+
       {targetReached && !activeRound && (
-        <View style={{ backgroundColor: '#E1F5EE', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#88D4B5' }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: '#0F6E56', fontWeight: '900' }}>
-            Da du muc tieu {targetRounds} vong
+        <View style={{ backgroundColor: UI_THEME.accent, borderRadius: DASHBOARD_RADIUS, padding: 20, marginTop: 16, borderWidth: 1, borderColor: UI_THEME.primary, ...DASHBOARD_SHADOW.sm }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: UI_THEME.primary, fontWeight: '900' }}>
+            🎉 ĐÃ ĐẠT MỤC TIÊU {effectiveTargetRounds} VÒNG
           </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#0F6E56', marginTop: 5, lineHeight: 16 }}>
-            Nen ket thuc session va xem report fairness. Host van co the chay them vong neu con gio.
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: UI_THEME.textSub, marginTop: 8, lineHeight: 18 }}>
+            Bạn đã hoàn thành đủ số vòng mục tiêu. Nên kết thúc session và xem báo cáo tổng kết Fairness.
           </Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
             <ActionButton
-              label={showSessionReport ? 'An report' : 'Xem report'}
-              icon={<Star size={16} color="white" />}
+              label={showSessionReport ? 'ẨN REPORT' : 'XEM TỔNG KẾT'}
+              icon={<Star size={18} color="white" />}
               onPress={() => setShowSessionReport(current => !current)}
             />
             {workingAlternative && (
               <ActionButton
-                label="Chay them vong"
-                icon={<Play size={16} color="white" />}
+                label="CHƠI THÊM VÒNG"
+                icon={<Play size={18} color="white" />}
                 loading={busy === 'start'}
                 disabled={Boolean(activeRound)}
                 onPress={() => startRound(workingAlternative)}
+                danger={false}
               />
             )}
           </View>
@@ -1606,76 +1752,86 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
       )}
 
       {activeRound && (
-        <View style={{ backgroundColor: '#E1F5EE', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#88D4B5' }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: '#0F6E56', fontWeight: '900' }}>
-            VÒNG {activeRound.round_no} ĐANG CHẠY
-          </Text>
-          <View style={{ gap: 8, marginTop: 10 }}>
+        <View style={{ backgroundColor: UI_THEME.cardBg, borderRadius: DASHBOARD_RADIUS, padding: 20, marginTop: 16, borderWidth: 2, borderColor: UI_THEME.primary, ...DASHBOARD_SHADOW.md }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: UI_THEME.primary, fontWeight: '900' }}>
+              VÒNG {activeRound.round_no} ĐANG DIỄN RA
+            </Text>
+            <ActivityIndicator size="small" color={UI_THEME.primary} />
+          </View>
+          <View style={{ gap: 12, marginBottom: 20 }}>
             {activeRound.matches.map(match => (
               <MatchCard key={`active-${match.court_idx}`} match={match} state={state} playersById={playersById} />
             ))}
           </View>
-          <View style={{ marginTop: 12 }}>
-            <ActionButton
-              label="End round & commit"
-              icon={<CheckCircle2 size={16} color="white" />}
-              loading={busy === 'end'}
-              onPress={endActiveRound}
-              danger={false}
-            />
-          </View>
+          <ActionButton
+            label="KẾT THÚC & LƯU VÒNG"
+            icon={<CheckCircle2 size={18} color="white" />}
+            loading={busy === 'end'}
+            onPress={endActiveRound}
+            danger={false}
+          />
         </View>
       )}
 
-      <View style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: '#1A2E2A', fontWeight: '900' }}>
-          Người chơi live
+      <View style={{ backgroundColor: UI_THEME.cardBg, borderRadius: DASHBOARD_RADIUS, padding: 20, marginTop: 16, ...DASHBOARD_SHADOW.sm }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: UI_THEME.textMain, fontWeight: '900', marginBottom: 16 }}>
+          Người chơi Live ({rows.playerRows.length})
         </Text>
-        <View style={{ gap: 8, marginTop: 10 }}>
+        <View style={{ gap: 10 }}>
           {rows.playerRows.length === 0 ? (
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#7A8884' }}>
-              Chưa có live state. Bấm Sync roster để lấy những người đã check-in có mặt.
-            </Text>
+            <View style={{ backgroundColor: UI_THEME.background, borderRadius: 12, padding: 20, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: UI_THEME.border }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: UI_THEME.textMuted, textAlign: 'center' }}>
+                Chưa có danh sách người chơi. Bấm ĐỒNG BỘ (SYNC) để bắt đầu.
+              </Text>
+            </View>
           ) : rows.playerRows.map(row => {
             const player = playersById.get(row.player_id)
             const checkedOut = Boolean(row.checked_out_at)
+            const isSelected = groupSelection.includes(row.player_id)
             return (
-              <View key={row.player_id} style={{ backgroundColor: checkedOut ? '#F3F0EA' : '#F8F3E8', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <View key={row.player_id} style={{ backgroundColor: checkedOut ? '#F9FAFB' : 'white', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: isSelected ? UI_THEME.primary : UI_THEME.border, opacity: checkedOut ? 0.6 : 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: UI_THEME.textMain, fontWeight: '900' }}>
                       {player?.name ?? row.player_id}
                     </Text>
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 3, fontWeight: '800' }}>
-                      {row.group_id ? `${groupAliases.get(row.group_id) ?? shortGroupId(row.group_id)} · ${shortGroupId(row.group_id)}` : shortGroupId(row.group_id)}
-                    </Text>
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 2 }}>
-                      PVNA {getPlayerPvna(player).toFixed(2)} · Trận {row.matches_played} · Nghỉ {row.consecutive_rest} · Chơi liền {row.consecutive_play}
-                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                      {row.group_id && (
+                        <View style={{ backgroundColor: UI_THEME.accent, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: UI_THEME.primary, fontWeight: '900' }}>
+                            {groupAliases.get(row.group_id) ?? shortGroupId(row.group_id)}
+                          </Text>
+                        </View>
+                      )}
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub }}>
+                        PVNA {getPlayerPvna(player).toFixed(2)} · Trận {row.matches_played} · Nghỉ {row.consecutive_rest}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <View style={{ flexDirection: 'row', gap: 4 }}>
                     <MiniButton
-                      label={groupSelection.includes(row.player_id) ? 'Picked' : row.group_id ? 'Move group' : 'Group'}
+                      label={isSelected ? 'PICKED' : 'GROUP'}
                       loading={busy?.startsWith('group-')}
                       onPress={() => toggleGroupSelection(row.player_id)}
-                      muted={groupSelection.includes(row.player_id)}
+                      muted={isSelected}
                     />
                     {row.group_id && (
                       <MiniButton
-                        label="Clear"
+                        label="CLEAR"
                         loading={busy === `group-clear-${row.player_id}`}
                         onPress={() => clearGroup(row.player_id)}
                         muted
                       />
                     )}
                     <MiniButton
-                      label={checkedOut ? 'In' : 'Out'}
-                      icon={checkedOut ? <UserPlus size={13} color="white" /> : <UserMinus size={13} color="white" />}
+                      label={checkedOut ? 'IN' : 'OUT'}
                       loading={busy === `checkout-${row.player_id}`}
                       onPress={() => toggleCheckout(row.player_id, checkedOut)}
+                      muted={checkedOut}
                     />
                     <MiniButton
-                      label={row.opted_rest ? 'Play' : 'Rest'}
+                      label={row.opted_rest ? 'PLAY' : 'REST'}
                       loading={busy === `rest-${row.player_id}`}
                       onPress={() => toggleRest(row.player_id, row.opted_rest)}
                       muted={row.opted_rest}
@@ -1686,141 +1842,51 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
             )
           })} 
         </View>
+
         {rows.playerRows.length > 0 && (
-          <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
+          <View style={{ marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: UI_THEME.border }}>
             {groupSummaries.length > 0 && (
-              <View style={{ gap: 7 }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
-                  Group hien tai
-                </Text>
-                {groupSummaries.map(group => (
-                  <View key={group.group_id} style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC', gap: 6 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', marginBottom: 10 }}>NHÓM HIỆN TẠI</Text>
+                <View style={{ gap: 8 }}>
+                  {groupSummaries.map(group => (
+                    <View key={group.group_id} style={{ backgroundColor: UI_THEME.background, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: UI_THEME.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: UI_THEME.textMain, fontWeight: '900' }} numberOfLines={1}>
                         {group.label}: {group.player_ids.map(id => playerName(id, playersById)).join(', ')}
                       </Text>
-                      <MiniButton
-                        label="Clear group"
-                        loading={busy === `group-clear-${group.group_id}`}
-                        onPress={() => clearWholeGroup(group.group_id)}
-                        muted
-                      />
+                      <MiniButton label="CLEAR GROUP" loading={busy === `group-clear-${group.group_id}`} onPress={() => clearWholeGroup(group.group_id)} muted />
                     </View>
-                  </View>
-                ))}
+                  ))}
+                </View>
               </View>
             )}
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
-              Group ban: chon 2+ nguoi roi tao group. Group chi la bonus, khong bat buoc cung team.
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
+            
+            <View style={{ backgroundColor: UI_THEME.background, borderRadius: 12, padding: 12, marginBottom: 16 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, lineHeight: 15 }}>
+                💡 Chọn 2+ người chơi để tạo Group bạn bè. Engine sẽ ưu tiên xếp họ cùng team hoặc cùng sân nhưng không bắt buộc.
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10 }}>
               <ActionButton
-                label={`Tao group (${groupSelection.length})`}
+                label={`TẠO GROUP (${groupSelection.length})`}
                 loading={busy?.startsWith('group-')}
                 disabled={groupSelection.length < 2}
                 onPress={createGroupFromSelection}
               />
-              <ActionButton
-                label="Bo chon"
-                disabled={groupSelection.length === 0}
-                onPress={() => setGroupSelection([])}
-                danger
-              />
-            </View>
-          </View>
-        )}
-      </View>
-
-      <View style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: '#1A2E2A', fontWeight: '900' }}>
-              Gợi ý vòng kế tiếp
-            </Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 2 }}>
-              {suggestion.should_end ? 'Không đủ người để chơi tiếp.' : `${suggestion.alternatives.length} phương án`}
-            </Text>
-          </View>
-          {suggestion.warnings.length > 0 && (
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#A05A16', fontWeight: '900' }}>
-              {suggestion.warnings.map(formatWarning).join(' · ')}
-            </Text>
-          )}
-        </View>
-
-        {suggestion.alternatives.length === 0 ? (
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: '#7A8884', marginTop: 12 }}>
-            {suggestion.should_end ? 'Suggest end: cần ít nhất 4 người đang có mặt và không xin nghỉ.' : 'Không có split hợp lệ theo tolerance hiện tại.'}
-          </Text>
-        ) : (
-          <>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-              {suggestion.alternatives.map((alternative, index) => (
-                <TouchableOpacity
-                  key={`alt-${index}`}
-                  onPress={() => {
-                    setSelectedAlternative(index)
-                    setManualAlternative(null)
-                    setSwapFromPlayerId(null)
-                  }}
-                  style={{
-                    flex: 1,
-                    borderRadius: 999,
-                    paddingVertical: 9,
-                    alignItems: 'center',
-                    backgroundColor: selectedAlternative === index ? '#0F6E56' : '#F8F3E8',
-                    borderWidth: 1,
-                    borderColor: selectedAlternative === index ? '#0F6E56' : '#E5E3DC',
-                  }}
+              {groupSelection.length > 0 && (
+                <TouchableOpacity 
+                  onPress={() => setGroupSelection([])}
+                  style={{ width: 44, height: 52, borderRadius: 16, backgroundColor: UI_THEME.border, alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: selectedAlternative === index ? 'white' : '#596864', fontWeight: '900' }}>
-                    Alt {index + 1} · {alternative.score.toFixed(1)}
-                  </Text>
+                  <X size={20} color={UI_THEME.textMain} />
                 </TouchableOpacity>
-              ))}
+              )}
             </View>
-
-            {workingAlternative && (
-              <View style={{ gap: 10, marginTop: 12 }}>
-                <SuggestionStatsCard alternative={workingAlternative} />
-                {fairnessPreview && (
-                  <FairnessPreviewCard preview={fairnessPreview} />
-                )}
-                {workingAlternative.matches.map(match => (
-                  <MatchCard key={`suggest-${match.court_idx}`} match={match} state={state} playersById={playersById} />
-                ))}
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864' }}>
-                  Nghỉ: {workingAlternative.resting.map(id => playerName(id, playersById)).join(', ') || 'Không có'} · Iter {workingAlternative.iterations ?? '-'} · {workingAlternative.runtime_ms ?? 0}ms
-                </Text>
-                {hasManualSwapHardGuard && (
-                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#B91C1C', lineHeight: 16 }}>
-                    Swap hien tai vi pham hard guard PVNA/team gap. Hay chon swap khac truoc khi start.
-                  </Text>
-                )}
-                <ManualSwapPanel
-                  alternative={workingAlternative}
-                  state={state}
-                  playersById={playersById}
-                  selectedPlayerId={swapFromPlayerId}
-                  onSelectPlayer={setSwapFromPlayerId}
-                  onSwap={swapPlayersInWorkingAlternative}
-                  onReset={() => {
-                    setManualAlternative(null)
-                    setSwapFromPlayerId(null)
-                  }}
-                />
-                <ActionButton
-                  label={targetReached ? 'Chay them vong' : 'Start selected round'}
-                  icon={<Play size={16} color="white" />}
-                  loading={busy === 'start'}
-                  disabled={Boolean(activeRound) || hasManualSwapHardGuard}
-                  onPress={() => startRound(workingAlternative)}
-                />
-              </View>
-            )}
-          </>
+          </View>
         )}
       </View>
+
       {completedRounds.length > 0 && showSessionReport && (
         <SessionFairnessSummaryCard
           summary={sessionSummary}
@@ -1902,68 +1968,88 @@ function FairnessBanner({
       : { bg: '#E1F5EE', border: '#88D4B5', text: '#0F6E56' }
 
   return (
-    <View style={{ backgroundColor: tone.bg, borderRadius: RADIUS.xl, padding: 14, marginTop: 14, borderWidth: 1, borderColor: tone.border }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        {primaryWarning || primaryAction ? <AlertTriangle size={18} color={tone.text} /> : <Star size={18} color={tone.text} />}
+    <View style={{ backgroundColor: tone.bg, borderRadius: DASHBOARD_RADIUS, padding: 20, marginTop: 16, borderWidth: 1, borderColor: tone.border, ...DASHBOARD_SHADOW.sm }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View style={{ backgroundColor: 'white', borderRadius: 12, padding: 8 }}>
+          {primaryWarning || primaryAction ? <AlertTriangle size={20} color={tone.text} /> : <CheckCircle2 size={20} color={tone.text} />}
+        </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: tone.text, fontWeight: '900' }}>
-            Fairness {score.total}/100 · {fairnessLabel(score)}
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: tone.text, fontWeight: '900' }}>
+            Fairness {score.total}/100
           </Text>
-          {primaryWarning ? (
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, marginTop: 4, lineHeight: 16 }}>
-              {primaryWarning.message} {formatAffectedPlayers(primaryWarning.affected_players, playersById)}
-            </Text>
-          ) : primaryAction ? (
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, marginTop: 4, lineHeight: 16 }}>
-              Co phuong an mot cham de giam repeat/range truoc khi start.
-            </Text>
-          ) : (
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, marginTop: 4 }}>
-              Không có cảnh báo fairness ở thời điểm này.
-            </Text>
-          )}
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, opacity: 0.8, fontWeight: '700' }}>
+            {fairnessLabel(score).toUpperCase()}
+          </Text>
         </View>
       </View>
-      {primaryWarning && (
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: tone.text, marginTop: 8, lineHeight: 15 }}>
-          Gợi ý: {primaryWarning.suggested_action}
-        </Text>
-      )}
-      {adjustmentReasons.length > 0 && (
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 8, lineHeight: 15 }}>
-          Engine tự hiệu chỉnh: {adjustmentReasons.join(', ').replace(/_/g, ' ')}
-        </Text>
-      )}
-      {actions.length > 0 && (
-        <View style={{ gap: 7, marginTop: 10 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: tone.text, fontWeight: '900' }}>
-            One-tap alternatives
+
+      <View style={{ marginTop: 16, backgroundColor: 'rgba(255,255,255,0.4)', borderRadius: 16, padding: 12 }}>
+        {primaryWarning ? (
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: tone.text, fontWeight: '600', lineHeight: 18 }}>
+            {primaryWarning.message} {formatAffectedPlayers(primaryWarning.affected_players, playersById)}
           </Text>
-          {actions.map((action, index) => {
-            const actionTone = suggestedActionTone(action, tone.border)
-            return (
-              <TouchableOpacity
-                key={`${action.type}-${index}`}
-                disabled={action.type === 'accept_tradeoff'}
-                onPress={() => onAction(action)}
-                style={{
-                  borderRadius: 10,
-                  padding: 9,
-                  backgroundColor: actionTone.bg,
-                  borderWidth: 1,
-                  borderColor: actionTone.border,
-                  opacity: action.type === 'accept_tradeoff' ? 0.75 : 1,
-                }}
-              >
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: actionTone.text, fontWeight: '900' }}>
-                  {action.label}
-                </Text>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', marginTop: 3, lineHeight: 13 }}>
-                  {action.detail}
-                </Text>
-              </TouchableOpacity>
-            )
-          })}
+        ) : primaryAction ? (
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: tone.text, fontWeight: '600', lineHeight: 18 }}>
+            Có phương án một chạm để tối ưu repeat/range trước khi bắt đầu.
+          </Text>
+        ) : (
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: tone.text, fontWeight: '600' }}>
+            Hệ thống đang ở trạng thái cân bằng tốt.
+          </Text>
+        )}
+      </View>
+
+      {primaryWarning && (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 12 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: tone.text, fontWeight: '900' }}>GỢI Ý:</Text>
+          <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, lineHeight: 16 }}>{primaryWarning.suggested_action}</Text>
+        </View>
+      )}
+
+      {adjustmentReasons.length > 0 && (
+        <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.05)' }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900' }}>
+            ENGINE TỰ HIỆU CHỈNH: <Text style={{ color: UI_THEME.textMain }}>{adjustmentReasons.join(', ').replace(/_/g, ' ')}</Text>
+          </Text>
+        </View>
+      )}
+
+      {actions.length > 0 && (
+        <View style={{ gap: 10, marginTop: 16 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: tone.text, fontWeight: '900', letterSpacing: 0.5 }}>
+            ONE-TAP ALTERNATIVES (TRADEOFFS)
+          </Text>
+          <View style={{ gap: 8 }}>
+            {actions.map((action, index) => {
+              const actionTone = suggestedActionTone(action, tone.border)
+              return (
+                <TouchableOpacity
+                  key={`${action.type}-${index}`}
+                  disabled={action.type === 'accept_tradeoff'}
+                  onPress={() => onAction(action)}
+                  style={{
+                    borderRadius: 14,
+                    padding: 12,
+                    backgroundColor: actionTone.bg,
+                    borderWidth: 1,
+                    borderColor: actionTone.border,
+                    ...DASHBOARD_SHADOW.sm,
+                    opacity: action.type === 'accept_tradeoff' ? 0.75 : 1,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: actionTone.text, fontWeight: '900' }}>
+                      {action.label}
+                    </Text>
+                    {action.type !== 'accept_tradeoff' && <Play size={12} color={actionTone.text} />}
+                  </View>
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, lineHeight: 15 }}>
+                    {action.detail}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
         </View>
       )}
     </View>
@@ -2039,73 +2125,77 @@ function SessionFairnessSummaryCard({
   ]
 
   return (
-    <View style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+    <View style={{ backgroundColor: UI_THEME.cardBg, borderRadius: DASHBOARD_RADIUS, padding: 20, marginTop: 16, borderWidth: 1, borderColor: UI_THEME.border, ...DASHBOARD_SHADOW.sm }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A', fontWeight: '900' }}>
-            Tổng kết fairness
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: UI_THEME.textMain, fontWeight: '900' }}>
+            Tổng kết Fairness
           </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', marginTop: 3 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: UI_THEME.textSub, marginTop: 4 }}>
             {summary.total_rounds} vòng · {summary.total_players} người · {displayedDuration} phút
           </Text>
         </View>
-        <View style={{ backgroundColor: '#E1F5EE', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center' }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: '#0F6E56', fontWeight: '900' }}>
+        <View style={{ backgroundColor: UI_THEME.accent, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', ...DASHBOARD_SHADOW.sm }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 22, color: UI_THEME.primary, fontWeight: '900' }}>
             {summary.fairness_score.total}
           </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#0F6E56', fontWeight: '900' }}>
-            {fairnessLabel(summary.fairness_score)}
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.primary, fontWeight: '900', letterSpacing: 0.5 }}>
+            {fairnessLabel(summary.fairness_score).toUpperCase()}
           </Text>
         </View>
       </View>
 
-      <View style={{ gap: 7, marginTop: 12 }}>
+      <View style={{ gap: 10, marginBottom: 20 }}>
         {summary.per_player.map(player => (
-          <View key={`fairness-player-${player.player_id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <View style={{ flex: 1, height: 8, backgroundColor: '#F3E7D4', borderRadius: 999, overflow: 'hidden' }}>
-              <View style={{ width: `${Math.max(8, (player.matches_played / maxMatches) * 100)}%`, height: '100%', backgroundColor: '#0F6E56' }} />
-            </View>
-            <Text style={{ width: 92, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900' }} numberOfLines={1}>
+          <View key={`fairness-player-${player.player_id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Text style={{ width: 100, fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: UI_THEME.textMain, fontWeight: '900' }} numberOfLines={1}>
               {playerName(player.player_id, playersById)}
             </Text>
-            <Text style={{ width: 20, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900', textAlign: 'right' }}>
+            <View style={{ flex: 1, height: 8, backgroundColor: UI_THEME.background, borderRadius: 999, overflow: 'hidden' }}>
+              <View style={{ width: `${Math.max(8, (player.matches_played / maxMatches) * 100)}%`, height: '100%', backgroundColor: UI_THEME.primary }} />
+            </View>
+            <Text style={{ width: 20, fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: UI_THEME.textMain, fontWeight: '900', textAlign: 'right' }}>
               {player.matches_played}
             </Text>
           </View>
         ))}
       </View>
 
-      <View style={{ marginTop: 12, gap: 5 }}>
-        {lines.map(line => (
-          <Text key={line} style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864', lineHeight: 16 }}>
-            ✓ {line}
-          </Text>
+      <View style={{ backgroundColor: UI_THEME.background, borderRadius: 16, padding: 16, marginBottom: 20 }}>
+        {lines.map((line, idx) => (
+          <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <CheckCircle2 size={12} color={UI_THEME.primary} />
+            <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 11, color: UI_THEME.textSub, lineHeight: 18 }}>
+              {line}
+            </Text>
+          </View>
         ))}
         {summary.highlights.flagged_issues.length > 0 && (
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#A05A16', lineHeight: 16 }}>
-            ℹ {summary.highlights.flagged_issues.length} cảnh báo fairness cần theo dõi
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <AlertTriangle size={12} color={UI_THEME.warning} />
+            <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#92400E', fontWeight: '700' }}>
+              {summary.highlights.flagged_issues.length} cảnh báo fairness cần theo dõi
+            </Text>
+          </View>
         )}
       </View>
 
-      <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
-          Chi tiet diem
-        </Text>
+      <View style={{ gap: 12, marginBottom: 20 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', letterSpacing: 0.5 }}>CHI TIẾT ĐIỂM SỐ</Text>
         {breakdownRows.map(([label, value, max, detail]) => (
-          <View key={`breakdown-${label}`} style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ width: 82, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+          <View key={`breakdown-${label}`} style={{ backgroundColor: 'white', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: UI_THEME.border, ...DASHBOARD_SHADOW.sm }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <Text style={{ width: 80, fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: UI_THEME.textMain, fontWeight: '900' }}>
                 {label}
               </Text>
-              <View style={{ flex: 1, height: 7, borderRadius: 999, backgroundColor: '#F3E7D4', overflow: 'hidden' }}>
-                <View style={{ width: `${Math.max(4, (value / max) * 100)}%`, height: '100%', backgroundColor: value === max ? '#0F6E56' : '#A05A16' }} />
+              <View style={{ flex: 1, height: 6, borderRadius: 999, backgroundColor: UI_THEME.background, overflow: 'hidden' }}>
+                <View style={{ width: `${Math.max(4, (value / max) * 100)}%`, height: '100%', backgroundColor: value === max ? UI_THEME.primary : UI_THEME.secondary }} />
               </View>
-              <Text style={{ width: 42, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#1A2E2A', fontWeight: '900' }}>
+              <Text style={{ width: 44, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: UI_THEME.textMain, fontWeight: '900' }}>
                 {value}/{max}
               </Text>
             </View>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 4, lineHeight: 14 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textMuted, lineHeight: 14 }}>
               {detail}
             </Text>
           </View>
@@ -2113,78 +2203,56 @@ function SessionFairnessSummaryCard({
       </View>
 
       {matchCountConsistencyRows.length > 0 && (
-        <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#A05A16', fontWeight: '900' }}>
-            Canh bao dong bo so tran
-          </Text>
-          <View style={{ backgroundColor: '#FFF3CD', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E3C77A', gap: 4 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A4A00', lineHeight: 14 }}>
-              Live state khac replay tu lich su round. Audit report dang dung replay tu rounds.
+        <View style={{ backgroundColor: UI_THEME.danger, borderRadius: 16, padding: 16, marginBottom: 20 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <AlertTriangle size={16} color="#B91C1C" />
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#B91C1C', fontWeight: '900' }}>
+              CẢNH BÁO ĐỒNG BỘ
             </Text>
-            {matchCountConsistencyRows.slice(0, 12).map(row => (
-              <Text key={`match-count-mismatch-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A4A00', lineHeight: 14 }}>
-                {playerName(row.player_id, playersById)}: live {row.live}, replay {row.replay}
+          </View>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B91C1C', marginBottom: 8, opacity: 0.8 }}>
+            Live state khác replay từ lịch sử. Report đang dùng dữ liệu Replay.
+          </Text>
+          <View style={{ gap: 4 }}>
+            {matchCountConsistencyRows.slice(0, 8).map(row => (
+              <Text key={`mismatch-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B91C1C', fontWeight: '700' }}>
+                • {playerName(row.player_id, playersById)}: live {row.live}, replay {row.replay}
               </Text>
             ))}
-            {matchCountConsistencyRows.length > 12 && (
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A4A00', lineHeight: 14 }}>
-                +{matchCountConsistencyRows.length - 12} players khac
-              </Text>
-            )}
           </View>
         </View>
       )}
 
-      <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
-          Cap lap nhieu nhat
-        </Text>
-        <RepeatPairsBlock
-          title="Partner lap"
-          pairs={partnerRepeats}
-          playersById={playersById}
-          emptyText="Khong co cap partner lap 2+ lan."
-        />
-        <RepeatPairsBlock
-          title="Doi thu lap"
-          pairs={opponentRepeats}
-          playersById={playersById}
-          emptyText="Khong co cap doi thu lap 2+ lan."
-        />
-      </View>
-
-      <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
-          Nguoi bi lap doi thu nhieu
-        </Text>
+      <View style={{ gap: 12, marginBottom: 20 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', letterSpacing: 0.5 }}>THỐNG KÊ LẶP</Text>
+        <RepeatPairsBlock title="Partner lặp" pairs={partnerRepeats} playersById={playersById} emptyText="Không có cặp partner lặp 2+ lần." />
+        <RepeatPairsBlock title="Đối thủ lặp" pairs={opponentRepeats} playersById={playersById} emptyText="Không có cặp đối thủ lặp 2+ lần." />
         <OpponentBurdenBlock burden={opponentBurden} playersById={playersById} />
       </View>
 
-      <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E3DC', gap: 8 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
-          Group audit
-        </Text>
+      <View style={{ gap: 12, marginBottom: 20 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', letterSpacing: 0.5 }}>AUDIT NHÓM</Text>
         <GroupAuditBlock rows={groupAuditRows} playersById={playersById} />
       </View>
 
       {summary.fairness_evolution.length > 0 && (
-        <View style={{ marginTop: 12, gap: 6 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
-            Diễn biến
-          </Text>
-          {summary.fairness_evolution.slice(-6).map(point => (
-            <View key={`fairness-evolution-${point.round}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ width: 48, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900' }}>
-                Vòng {point.round}
-              </Text>
-              <View style={{ flex: 1, height: 7, borderRadius: 999, backgroundColor: '#F3E7D4', overflow: 'hidden' }}>
-                <View style={{ width: `${Math.max(4, point.score)}%`, height: '100%', backgroundColor: '#0F6E56' }} />
+        <View style={{ backgroundColor: UI_THEME.background, borderRadius: 16, padding: 16 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', marginBottom: 12 }}>DIỄN BIẾN FAIRNESS</Text>
+          <View style={{ gap: 8 }}>
+            {summary.fairness_evolution.slice(-6).map(point => (
+              <View key={`evolution-${point.round}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Text style={{ width: 50, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textMuted, fontWeight: '900' }}>
+                  VÒNG {point.round}
+                </Text>
+                <View style={{ flex: 1, height: 6, borderRadius: 999, backgroundColor: 'white', overflow: 'hidden' }}>
+                  <View style={{ width: `${Math.max(4, point.score)}%`, height: '100%', backgroundColor: UI_THEME.primary }} />
+                </View>
+                <Text style={{ width: 24, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: UI_THEME.textMain, fontWeight: '900', textAlign: 'right' }}>
+                  {point.score}
+                </Text>
               </View>
-              <Text style={{ width: 28, fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: '#1A2E2A', fontWeight: '900', textAlign: 'right' }}>
-                {point.score}
-              </Text>
-            </View>
-          ))}
+            ))}
+          </View>
         </View>
       )}
     </View>
@@ -2203,23 +2271,25 @@ function RepeatPairsBlock({
   emptyText: string
 }) {
   return (
-    <View style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
-      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
-        {title}
+    <View style={{ backgroundColor: 'white', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: UI_THEME.border }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: UI_THEME.textMain, fontWeight: '900', marginBottom: 10 }}>
+        {title.toUpperCase()}
       </Text>
       {pairs.length === 0 ? (
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 5 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: UI_THEME.textMuted }}>
           {emptyText}
         </Text>
       ) : (
-        <View style={{ gap: 4, marginTop: 6 }}>
+        <View style={{ gap: 6 }}>
           {pairs.map(pair => (
-            <Text
-              key={`${title}-${pair.player_a}-${pair.player_b}`}
-              style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: pair.count >= 3 ? '#A05A16' : '#596864', lineHeight: 14 }}
-            >
-              {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} lan
-            </Text>
+            <View key={`${title}-${pair.player_a}-${pair.player_b}`} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 11, color: UI_THEME.textSub }}>
+                {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: pair.count >= 3 ? '#A05A16' : UI_THEME.primary, fontWeight: '900' }}>
+                {pair.count} lần
+              </Text>
+            </View>
           ))}
         </View>
       )}
@@ -2236,28 +2306,28 @@ function OpponentBurdenBlock({
 }) {
   const rows = burden.per_player
     .filter(player => player.repeated_opponents > 0)
-    .sort((a, b) => {
-      if (b.repeated_opponents !== a.repeated_opponents) {
-        return b.repeated_opponents - a.repeated_opponents
-      }
-      return playerName(a.player_id, playersById).localeCompare(playerName(b.player_id, playersById))
-    })
+    .sort((a, b) => b.repeated_opponents - a.repeated_opponents)
 
   return (
-    <View style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
+    <View style={{ backgroundColor: 'white', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: UI_THEME.border }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: UI_THEME.textMain, fontWeight: '900', marginBottom: 10 }}>
+        GÁNH NẶNG ĐỐI THỦ
+      </Text>
       {rows.length === 0 ? (
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884' }}>
-          Khong co ai bi lap doi thu.
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: UI_THEME.textMuted }}>
+          Không có ai bị lặp đối thủ.
         </Text>
       ) : (
-        <View style={{ gap: 4 }}>
+        <View style={{ gap: 6 }}>
           {rows.map(row => (
-            <Text
-              key={`opponent-burden-${row.player_id}`}
-              style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: row.repeated_opponents >= 4 ? '#A05A16' : '#596864', lineHeight: 14 }}
-            >
-              {playerName(row.player_id, playersById)}: {row.repeated_opponents} doi thu lap
-            </Text>
+            <View key={`burden-${row.player_id}`} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 11, color: UI_THEME.textSub }}>
+                {playerName(row.player_id, playersById)}
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: row.repeated_opponents >= 4 ? '#A05A16' : UI_THEME.primary, fontWeight: '900' }}>
+                {row.repeated_opponents} đối thủ lặp
+              </Text>
+            </View>
           ))}
         </View>
       )}
@@ -2274,32 +2344,34 @@ function GroupAuditBlock({
 }) {
   if (rows.length === 0) {
     return (
-      <View style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884' }}>
-          Chua co group nao.
+      <View style={{ backgroundColor: 'white', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: UI_THEME.border }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: UI_THEME.textMuted }}>
+          Chưa có group nào được tạo.
         </Text>
       </View>
     )
   }
 
   return (
-    <View style={{ gap: 8 }}>
+    <View style={{ gap: 10 }}>
       {rows.map(row => (
-        <View key={`group-audit-${row.group_id}`} style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+        <View key={`group-audit-${row.group_id}`} style={{ backgroundColor: 'white', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: UI_THEME.border }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: UI_THEME.textMain, fontWeight: '900', marginBottom: 4 }}>
             {row.label}: {row.player_ids.map(id => playerName(id, playersById)).join(', ')}
           </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', marginTop: 4 }}>
-            Cung xuat hien trong {row.shared_matches} tran.
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, marginBottom: 8 }}>
+            Cùng xuất hiện trong {row.shared_matches} trận.
           </Text>
-          <View style={{ gap: 3, marginTop: 6 }}>
+          <View style={{ gap: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.05)' }}>
             {row.pair_counts.map(pair => (
-              <Text
-                key={`group-pair-${row.group_id}-${pair.player_a}-${pair.player_b}`}
-                style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: pair.count > 0 ? '#596864' : '#A05A16', lineHeight: 14 }}
-              >
-                {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} tran chung team
-              </Text>
+              <View key={`pair-${pair.player_a}-${pair.player_b}`} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textMuted }}>
+                  {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}
+                </Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: pair.count > 0 ? UI_THEME.primary : '#A05A16', fontWeight: '900' }}>
+                  {pair.count} trận cùng team
+                </Text>
+              </View>
             ))}
           </View>
         </View>
@@ -2310,36 +2382,40 @@ function GroupAuditBlock({
 
 function FairnessAuditCard({ audit }: { audit: FairnessAudit }) {
   return (
-    <View style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
+    <View style={{ backgroundColor: UI_THEME.cardBg, borderRadius: DASHBOARD_RADIUS, padding: 20, marginTop: 16, borderWidth: 1, borderColor: UI_THEME.border, ...DASHBOARD_SHADOW.sm }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: '#1A2E2A', fontWeight: '900' }}>
-            Audit diem fairness
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: UI_THEME.textMain, fontWeight: '900' }}>
+            Audit điểm Fairness
           </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 2 }}>
-            Sau vong {audit.round_no}: {audit.before_total}{' -> '}{audit.after_total}
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, marginTop: 4 }}>
+            Sau vòng {audit.round_no}: {audit.before_total} → {audit.after_total}
           </Text>
         </View>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: audit.delta_total >= 0 ? '#0F6E56' : '#B45309', fontWeight: '900' }}>
-          {audit.delta_total > 0 ? '+' : ''}{audit.delta_total}
-        </Text>
+        <View style={{ backgroundColor: audit.delta_total >= 0 ? UI_THEME.accent : UI_THEME.warning, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: audit.delta_total >= 0 ? UI_THEME.primary : '#B45309', fontWeight: '900' }}>
+            {audit.delta_total > 0 ? '+' : ''}{audit.delta_total}
+          </Text>
+        </View>
       </View>
 
-      <View style={{ gap: 8, marginTop: 12 }}>
+      <View style={{ gap: 10, marginTop: 16 }}>
         {audit.rows.map(row => (
-          <View key={row.key} style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E5E3DC' }}>
+          <View key={row.key} style={{ backgroundColor: UI_THEME.background, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: UI_THEME.border }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '900' }}>
+              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: UI_THEME.textMain, fontWeight: '900' }}>
                 {row.label}
               </Text>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864', fontWeight: '900' }}>
-                {row.before}{' -> '}{row.after}
-              </Text>
-              <Text style={{ width: 34, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: row.delta >= 0 ? '#0F6E56' : '#B45309', fontWeight: '900' }}>
-                {row.delta > 0 ? '+' : ''}{row.delta}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub }}>
+                  {row.before} → {row.after}
+                </Text>
+                <Text style={{ width: 40, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: row.delta >= 0 ? UI_THEME.primary : '#B45309', fontWeight: '900' }}>
+                  {row.delta > 0 ? '+' : ''}{row.delta}
+                </Text>
+              </View>
             </View>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 4, lineHeight: 15 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, marginTop: 6, lineHeight: 15 }}>
               {row.detail}
             </Text>
           </View>
@@ -2350,39 +2426,43 @@ function FairnessAuditCard({ audit }: { audit: FairnessAudit }) {
 }
 
 function FairnessPreviewCard({ preview }: { preview: FairnessPreview }) {
-  const tone = preview.delta_total >= 0 ? '#0F6E56' : '#B45309'
+  const tone = preview.delta_total >= 0 ? UI_THEME.primary : '#B45309'
 
   return (
-    <View style={{ backgroundColor: '#FFFCF5', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E3DC' }}>
+    <View style={{ backgroundColor: UI_THEME.background, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: UI_THEME.border }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900' }}>
-            Preview fairness neu start
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: UI_THEME.textMain, fontWeight: '900' }}>
+            Preview Fairness nếu bắt đầu
           </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', marginTop: 2 }}>
-            {preview.before_total}{' -> '}{preview.after_total}
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, marginTop: 4 }}>
+            Dự kiến: {preview.before_total} → {preview.after_total}
           </Text>
         </View>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: tone, fontWeight: '900' }}>
-          {preview.delta_total > 0 ? '+' : ''}{preview.delta_total}
-        </Text>
+        <View style={{ backgroundColor: 'white', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: tone, fontWeight: '900' }}>
+            {preview.delta_total > 0 ? '+' : ''}{preview.delta_total}
+          </Text>
+        </View>
       </View>
 
-      <View style={{ gap: 7, marginTop: 10 }}>
+      <View style={{ gap: 8, marginTop: 12 }}>
         {preview.rows.map(row => (
-          <View key={`preview-${row.key}`} style={{ backgroundColor: '#F8F3E8', borderRadius: 10, padding: 9, borderWidth: 1, borderColor: '#E5E3DC' }}>
+          <View key={`preview-${row.key}`} style={{ backgroundColor: 'white', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: 'rgba(0,0,0,0.03)', ...DASHBOARD_SHADOW.sm }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900' }}>
+              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: UI_THEME.textMain, fontWeight: '900' }}>
                 {row.label}
               </Text>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900' }}>
-                {row.before}{' -> '}{row.after}
-              </Text>
-              <Text style={{ width: 34, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: row.delta >= 0 ? '#0F6E56' : '#B45309', fontWeight: '900' }}>
-                {row.delta > 0 ? '+' : ''}{row.delta}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub }}>
+                  {row.before} → {row.after}
+                </Text>
+                <Text style={{ width: 34, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: row.delta >= 0 ? UI_THEME.primary : '#B45309', fontWeight: '900' }}>
+                  {row.delta > 0 ? '+' : ''}{row.delta}
+                </Text>
+              </View>
             </View>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', marginTop: 3, lineHeight: 13 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: UI_THEME.textMuted, marginTop: 4, lineHeight: 13 }}>
               {row.detail}
             </Text>
           </View>
@@ -2454,15 +2534,15 @@ function ManualSwapPanel({
   }, [alternative, playersById, selectedPlayerId, state, targetIds])
 
   return (
-    <View style={{ backgroundColor: '#FFFCF5', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E3DC', gap: 10 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-        <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900' }}>
-          Swap tay: chon 1 nguoi dang danh, roi chon nguoi muon doi cho.
+    <View style={{ backgroundColor: UI_THEME.cardBg, borderRadius: 16, padding: 16, marginTop: 16, borderWidth: 1, borderColor: UI_THEME.border }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900' }}>
+          SWAP TAY: CHỌN 1 NGƯỜI ĐANG ĐÁNH, RỒI CHỌN ĐỐI TƯỢNG ĐỔI CHỖ.
         </Text>
         <MiniButton label="Reset" onPress={onReset} muted />
       </View>
 
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
         {playingIds.map(playerId => {
           const active = selectedPlayerId === playerId
           return (
@@ -2470,15 +2550,12 @@ function ManualSwapPanel({
               key={`swap-from-${playerId}`}
               onPress={() => onSelectPlayer(active ? null : playerId)}
               style={{
-                borderRadius: 999,
-                paddingHorizontal: 10,
-                paddingVertical: 7,
-                backgroundColor: active ? '#0F6E56' : '#F8F3E8',
-                borderWidth: 1,
-                borderColor: active ? '#0F6E56' : '#E5E3DC',
+                borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
+                backgroundColor: active ? UI_THEME.primary : UI_THEME.background,
+                borderWidth: 1, borderColor: active ? UI_THEME.primary : UI_THEME.border,
               }}
             >
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: active ? 'white' : '#596864', fontWeight: '900' }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: active ? 'white' : UI_THEME.textMain, fontWeight: '900' }}>
                 {playerName(playerId, playersById)}
               </Text>
             </TouchableOpacity>
@@ -2487,38 +2564,38 @@ function ManualSwapPanel({
       </View>
 
       {selectedPlayerId && (
-        <View style={{ gap: 6 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900' }}>
-            Doi {playerName(selectedPlayerId, playersById)} voi:
+        <View style={{ gap: 8, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.05)' }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900' }}>
+            ĐỔI {playerName(selectedPlayerId, playersById).toUpperCase()} VỚI:
           </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          <View style={{ gap: 6 }}>
             {targetAuditRows.map(({ playerId, audit }) => {
               const isResting = alternative.resting.includes(playerId)
               const isInvalid = Boolean(audit && audit.invalid_matches > 0)
               const isBetter = Boolean(audit && audit.delta_fairness > 0)
-              const borderColor = isInvalid ? '#DC2626' : isBetter ? '#0F6E56' : isResting ? '#E5B94E' : '#E5E3DC'
-              const backgroundColor = isInvalid ? '#FEF2F2' : isBetter ? '#E1F5EE' : isResting ? '#FFF7D6' : '#F8F3E8'
+              const borderColor = isInvalid ? '#DC2626' : isBetter ? UI_THEME.primary : isResting ? '#E5B94E' : UI_THEME.border
+              const backgroundColor = isInvalid ? '#FEF2F2' : isBetter ? UI_THEME.accent : isResting ? '#FFF7D6' : 'white'
+              
               return (
                 <TouchableOpacity
                   key={`swap-to-${playerId}`}
                   onPress={() => onSwap(selectedPlayerId, playerId)}
                   disabled={isInvalid}
                   style={{
-                    borderRadius: 10,
-                    paddingHorizontal: 10,
-                    paddingVertical: 8,
-                    backgroundColor,
-                    borderWidth: 1,
-                    borderColor,
-                    width: '100%',
+                    borderRadius: 12, padding: 12,
+                    backgroundColor, borderWidth: 1, borderColor,
                     opacity: isInvalid ? 0.6 : 1,
+                    ...DASHBOARD_SHADOW.sm,
                   }}
                 >
-                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900' }}>
-                    {playerName(playerId, playersById)}{isResting ? ' (rest)' : ''}
-                  </Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: UI_THEME.textMain, fontWeight: '900' }}>
+                      {playerName(playerId, playersById)}{isResting ? ' (đang nghỉ)' : ''}
+                    </Text>
+                    {isBetter && <Star size={12} color={UI_THEME.primary} fill={UI_THEME.primary} />}
+                  </View>
                   {audit && (
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: isInvalid ? '#B91C1C' : '#596864', marginTop: 3, lineHeight: 13 }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: isInvalid ? '#B91C1C' : UI_THEME.textSub, marginTop: 4, lineHeight: 13 }}>
                       {describeManualSwapImpact(audit)}
                     </Text>
                   )}
@@ -2542,22 +2619,32 @@ function CompletedRoundsRecap({
   playersById: Map<string, ArrangementPlayer>
 }) {
   return (
-    <View style={{ backgroundColor: '#FFFCF5', borderRadius: RADIUS.xl, padding: 16, marginTop: 14, borderWidth: 1, borderColor: '#E5E3DC' }}>
-      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: '#1A2E2A', fontWeight: '900' }}>
-        Lich su round da xong
+    <View style={{ backgroundColor: UI_THEME.cardBg, borderRadius: DASHBOARD_RADIUS, padding: 20, marginTop: 16, ...DASHBOARD_SHADOW.sm }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: UI_THEME.textMain, fontWeight: '900', marginBottom: 16 }}>
+        Lịch sử các vòng đã xong
       </Text>
-      <View style={{ gap: 10, marginTop: 10 }}>
+      <View style={{ gap: 12 }}>
         {rounds.map(round => (
-          <View key={round.id ?? `${round.session_id}-${round.round_no}`} style={{ backgroundColor: '#F8F3E8', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E3DC', gap: 8 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#0F6E56', fontWeight: '900' }}>
-              Round {round.round_no}{round.ended_at ? ` · ${new Date(round.ended_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-            </Text>
-            {round.matches.map(match => (
-              <MatchCard key={`completed-${round.round_no}-${match.court_idx}`} match={match} state={state} playersById={playersById} />
-            ))}
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864' }}>
-              Nghi: {round.resting.map(id => playerName(id, playersById)).join(', ') || 'Khong co'}
-            </Text>
+          <View key={round.id ?? `${round.session_id}-${round.round_no}`} style={{ backgroundColor: UI_THEME.background, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: UI_THEME.border, gap: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: UI_THEME.primary, fontWeight: '900' }}>
+                VÒNG {round.round_no}
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textMuted }}>
+                {round.ended_at ? new Date(round.ended_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+              </Text>
+            </View>
+            <View style={{ gap: 8 }}>
+              {round.matches.map(match => (
+                <MatchCard key={`completed-${round.round_no}-${match.court_idx}`} match={match} state={state} playersById={playersById} />
+              ))}
+            </View>
+            <View style={{ marginTop: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.05)' }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, lineHeight: 14 }}>
+                <Text style={{ fontWeight: '900' }}>NGHỈ: </Text>
+                {round.resting.map(id => playerName(id, playersById)).join(', ') || 'Không có'}
+              </Text>
+            </View>
           </View>
         ))}
       </View>
@@ -2567,30 +2654,32 @@ function CompletedRoundsRecap({
 
 function SuggestionStatsCard({ alternative }: { alternative: SuggestionAlternative }) {
   const metrics = [
-    { label: 'PVNA diff tổng', value: alternative.stats.pvna_diff.toFixed(2), tone: '#0F6E56' },
-    { label: 'Partner lặp', value: String(alternative.stats.partner_repeats), tone: '#A05A16' },
-    { label: 'Đối thủ lặp', value: String(alternative.stats.opponent_repeats), tone: '#7C3AED' },
-    { label: 'Group bonus', value: String(alternative.stats.group_bonus), tone: '#2563EB' },
-    { label: 'Gender pref', value: alternative.stats.gender_pref_penalty.toFixed(1), tone: '#BE185D' },
-    { label: 'Score tổng', value: alternative.score.toFixed(1), tone: '#1A2E2A' },
+    { label: 'PVNA DIFF TỔNG', value: alternative.stats.pvna_diff.toFixed(2), tone: UI_THEME.primary },
+    { label: 'PARTNER LẶP', value: String(alternative.stats.partner_repeats), tone: '#A05A16' },
+    { label: 'ĐỐI THỦ LẶP', value: String(alternative.stats.opponent_repeats), tone: '#7C3AED' },
+    { label: 'GROUP BONUS', value: String(alternative.stats.group_bonus), tone: '#2563EB' },
+    { label: 'GENDER PREF', value: alternative.stats.gender_pref_penalty.toFixed(1), tone: '#BE185D' },
+    { label: 'SCORE TỔNG', value: alternative.score.toFixed(1), tone: UI_THEME.secondary },
   ]
 
   return (
-    <View style={{ backgroundColor: '#F8F3E8', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E3DC' }}>
-      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#7A8884', fontWeight: '900', marginBottom: 8 }}>
-        Vì sao phương án này được chọn
+    <View style={{ backgroundColor: UI_THEME.background, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: UI_THEME.border }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', marginBottom: 12, letterSpacing: 0.5 }}>
+        LÝ DO PHƯƠNG ÁN NÀY ĐƯỢC CHỌN
       </Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
         {metrics.map(metric => (
-          <View key={metric.label} style={{ width: '48%', backgroundColor: '#FFFCF5', borderRadius: 10, padding: 9, borderWidth: 1, borderColor: '#ECE3D3' }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#8A8174', fontWeight: '900' }}>{metric.label}</Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: metric.tone, fontWeight: '900', marginTop: 3 }}>{metric.value}</Text>
+          <View key={metric.label} style={{ width: '31%', backgroundColor: 'white', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: 'rgba(0,0,0,0.03)', ...DASHBOARD_SHADOW.sm }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: UI_THEME.textMuted, fontWeight: '900' }}>{metric.label}</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: metric.tone, fontWeight: '900', marginTop: 4 }}>{metric.value}</Text>
           </View>
         ))}
       </View>
-      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', lineHeight: 15, marginTop: 9 }}>
-        Score thấp hơn là tốt hơn. Engine ưu tiên không để ai nghỉ quá lâu, cân PVNA hai đội, giảm lặp partner/đối thủ và cộng điểm cho nhóm bạn cùng vòng.
-      </Text>
+      <View style={{ marginTop: 14, backgroundColor: 'white', borderRadius: 10, padding: 8 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, lineHeight: 15 }}>
+          💡 Engine ưu tiên: Không để ai nghỉ lâu, cân bằng PVNA, giảm lặp partner/đối thủ và tối ưu nhóm bạn.
+        </Text>
+      </View>
     </View>
   )
 }
@@ -2599,39 +2688,34 @@ function MatchCard({ match, state, playersById }: { match: Match; state: Session
   const diff = Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state))
   const scored = match.stats && match.score != null ? { score: match.score, stats: match.stats } : scoreMatch(match.team_a, match.team_b, state)
   const metrics = [
-    ['Score', Number.isFinite(scored.score) ? scored.score.toFixed(1) : '-'],
-    ['PVNA', scored.stats.pvna_diff.toFixed(2)],
-    ['Partner lặp', String(scored.stats.partner_repeats)],
-    ['Đối thủ lặp', String(scored.stats.opponent_repeats)],
-    ['Group', String(scored.stats.group_bonus)],
-    ['Gender pref', scored.stats.gender_pref_penalty.toFixed(1)],
+    ['SCORE', Number.isFinite(scored.score) ? scored.score.toFixed(1) : '-'],
+    ['DIFF', scored.stats.pvna_diff.toFixed(2)],
+    ['PARTNER', String(scored.stats.partner_repeats)],
+    ['OPPONENT', String(scored.stats.opponent_repeats)],
   ]
 
   return (
-    <View style={{ backgroundColor: '#F8F3E8', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E3DC' }}>
-      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#0F6E56', fontWeight: '900' }}>
-        Sân {match.court_idx + 1} · PVNA diff {diff.toFixed(2)}
-      </Text>
-      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#1A2E2A', fontWeight: '900', marginTop: 6, lineHeight: 18 }}>
-        {getMatchLabel(match, playersById)}
-      </Text>
-      <View style={{ marginTop: 8, gap: 4 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', lineHeight: 14 }}>
-          A: {match.team_a.map(id => formatPlayerPreference(id, playersById, state)).join(' / ')}
-        </Text>
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#596864', lineHeight: 14 }}>
-          B: {match.team_b.map(id => formatPlayerPreference(id, playersById, state)).join(' / ')}
+    <View style={{ backgroundColor: 'white', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: UI_THEME.border, ...DASHBOARD_SHADOW.sm }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <View style={{ backgroundColor: UI_THEME.accent, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: UI_THEME.primary, fontWeight: '900' }}>
+            SÂN {match.court_idx + 1}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '700' }}>
+          PVNA DIFF {diff.toFixed(2)}
         </Text>
       </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: UI_THEME.textMain, fontWeight: '900', lineHeight: 20 }}>
+        {getMatchLabel(match, playersById)}
+      </Text>
+
+      <View style={{ flexDirection: 'row', gap: 6, marginTop: 12 }}>
         {metrics.map(([label, value]) => (
-          <View key={`${match.court_idx}-${label}`} style={{ backgroundColor: '#FFFCF5', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, borderWidth: 1, borderColor: '#ECE3D3' }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 8, color: '#8A8174', fontWeight: '900' }}>
-              {label}
-            </Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#1A2E2A', fontWeight: '900', marginTop: 2 }}>
-              {value}
-            </Text>
+          <View key={`${match.court_idx}-${label}`} style={{ flex: 1, backgroundColor: UI_THEME.background, borderRadius: 8, paddingVertical: 6, alignItems: 'center' }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 7, color: UI_THEME.textMuted, fontWeight: '900' }}>{label}</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: UI_THEME.textMain, fontWeight: '900', marginTop: 2 }}>{value}</Text>
           </View>
         ))}
       </View>
@@ -2660,18 +2744,19 @@ function ActionButton({
       disabled={disabled || loading}
       style={{
         flex: 1,
-        backgroundColor: danger ? '#B91C1C' : '#0F6E56',
+        height: 52,
+        backgroundColor: danger ? '#B91C1C' : UI_THEME.primary,
         opacity: disabled ? 0.45 : loading ? 0.7 : 1,
-        paddingVertical: 12,
-        borderRadius: RADIUS.lg,
+        borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
         flexDirection: 'row',
-        gap: 8,
+        gap: 10,
+        ...DASHBOARD_SHADOW.sm,
       }}
     >
       {loading ? <ActivityIndicator color="white" /> : icon}
-      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: 'white', fontWeight: '900' }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: 'white', fontWeight: '900' }}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -2696,20 +2781,19 @@ function MiniButton({
       onPress={onPress}
       disabled={loading}
       style={{
-        minWidth: 54,
-        backgroundColor: muted ? '#A05A16' : '#0F6E56',
+        height: 34,
+        backgroundColor: muted ? UI_THEME.border : UI_THEME.primary,
         opacity: loading ? 0.7 : 1,
-        borderRadius: 999,
-        paddingHorizontal: 10,
-        paddingVertical: 7,
+        borderRadius: 10,
+        paddingHorizontal: 12,
         alignItems: 'center',
         justifyContent: 'center',
         flexDirection: 'row',
-        gap: 4,
+        gap: 6,
       }}
     >
-      {loading ? <ActivityIndicator color="white" size="small" /> : icon}
-      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: 'white', fontWeight: '900' }}>
+      {loading ? <ActivityIndicator color={muted ? UI_THEME.textMain : 'white'} size="small" /> : icon}
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: muted ? UI_THEME.textMain : 'white', fontWeight: '900' }}>
         {label}
       </Text>
     </TouchableOpacity>
