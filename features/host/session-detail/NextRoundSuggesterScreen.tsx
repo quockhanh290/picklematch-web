@@ -404,6 +404,14 @@ type AlternativeAudit = {
   gender_rate: number
 }
 
+type ManualSwapAudit = {
+  alternative: SuggestionAlternative
+  before: AlternativeAudit
+  after: AlternativeAudit
+  delta_fairness: number
+  invalid_matches: number
+}
+
 type SuggestedRoundAction =
   | {
       type: 'select_alternative'
@@ -457,6 +465,106 @@ function auditAlternative(
     max_opponent_pair: Math.max(0, ...opponent.repeat_pairs.map(pair => pair.count)),
     max_opponent_burden: burden.max_repeated_opponents,
     gender_rate: gender.total_pref_opportunities === 0 ? 1 : gender.satisfaction_rate,
+  }
+}
+
+function emptyMatchStats(): Match['stats'] {
+  return {
+    pvna_diff: 0,
+    partner_repeats: 0,
+    opponent_repeats: 0,
+    group_bonus: 0,
+    gender_pref_penalty: 0,
+  }
+}
+
+function addMatchStats(a: NonNullable<Match['stats']>, b: NonNullable<Match['stats']>): NonNullable<Match['stats']> {
+  return {
+    pvna_diff: a.pvna_diff + b.pvna_diff,
+    partner_repeats: a.partner_repeats + b.partner_repeats,
+    opponent_repeats: a.opponent_repeats + b.opponent_repeats,
+    group_bonus: a.group_bonus + b.group_bonus,
+    gender_pref_penalty: a.gender_pref_penalty + b.gender_pref_penalty,
+  }
+}
+
+function rescoreAlternative(
+  alternative: SuggestionAlternative,
+  state: SessionState,
+): SuggestionAlternative {
+  let totalScore = 0
+  let totalStats = emptyMatchStats()
+  let hasInvalidMatch = false
+  const matches = alternative.matches.map(match => {
+    const scored = scoreMatch(match.team_a, match.team_b, state)
+    if (!Number.isFinite(scored.score)) hasInvalidMatch = true
+    totalScore += Number.isFinite(scored.score) ? scored.score : 9999
+    totalStats = addMatchStats(totalStats, scored.stats)
+    return {
+      ...match,
+      score: scored.score,
+      stats: scored.stats,
+    }
+  })
+
+  return {
+    ...alternative,
+    matches,
+    score: totalScore,
+    stats: totalStats,
+    warnings: hasInvalidMatch
+      ? [...new Set([...alternative.warnings, 'MANUAL_SWAP_HARD_GUARD'])]
+      : alternative.warnings,
+  }
+}
+
+function buildSwappedAlternative(
+  base: SuggestionAlternative,
+  state: SessionState,
+  fromId: string,
+  toId: string,
+): { alternative: SuggestionAlternative | null; error?: string } {
+  if (fromId === toId) return { alternative: null }
+
+  const nextMatches = base.matches.map(match => ({
+    ...match,
+    team_a: match.team_a.map(id => id === fromId ? toId : id === toId ? fromId : id) as [string, string],
+    team_b: match.team_b.map(id => id === fromId ? toId : id === toId ? fromId : id) as [string, string],
+  }))
+  const nextResting = base.resting.map(id => id === toId ? fromId : id === fromId ? toId : id)
+  const restingSet = new Set(nextResting)
+  const allPlaying = new Set(nextMatches.flatMap(match => [...match.team_a, ...match.team_b]))
+
+  if (allPlaying.size !== nextMatches.length * 4) {
+    return { alternative: null, error: 'Swap khong hop le: mot nguoi bi trung trong cung vong.' }
+  }
+
+  const swapped = {
+    ...base,
+    matches: nextMatches,
+    resting: [...restingSet].filter(id => !allPlaying.has(id)).sort(),
+    warnings: [...new Set([...base.warnings, 'MANUAL_SWAP'])],
+  }
+
+  return { alternative: rescoreAlternative(swapped, state) }
+}
+
+function auditManualSwap(
+  state: SessionState,
+  base: SuggestionAlternative,
+  fromId: string,
+  toId: string,
+): ManualSwapAudit | null {
+  const result = buildSwappedAlternative(base, state, fromId, toId)
+  if (!result.alternative) return null
+  const before = auditAlternative(state, base, 0)
+  const after = auditAlternative(state, result.alternative, 0)
+  return {
+    alternative: result.alternative,
+    before,
+    after,
+    delta_fairness: after.fairness_total - before.fairness_total,
+    invalid_matches: result.alternative.matches.filter(match => !Number.isFinite(match.score ?? 0)).length,
   }
 }
 
@@ -878,6 +986,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
   )
   const selected = suggestion.alternatives[selectedAlternative] ?? suggestion.alternatives[0]
   const workingAlternative = manualAlternative ?? selected
+  const hasManualSwapHardGuard = Boolean(workingAlternative?.warnings.includes('MANUAL_SWAP_HARD_GUARD'))
   const fairnessScore = useMemo(() => computeSessionFairness(state), [state])
   const fairnessPreview = useMemo(
     () => buildFairnessPreview(state, workingAlternative),
@@ -1096,26 +1205,13 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     const base = manualAlternative ?? suggestion.alternatives[selectedAlternative]
     if (!base || fromId === toId) return
 
-    const nextMatches = base.matches.map(match => ({
-      ...match,
-      team_a: match.team_a.map(id => id === fromId ? toId : id === toId ? fromId : id) as [string, string],
-      team_b: match.team_b.map(id => id === fromId ? toId : id === toId ? fromId : id) as [string, string],
-    }))
-    const nextResting = base.resting.map(id => id === toId ? fromId : id === fromId ? toId : id)
-    const restingSet = new Set(nextResting)
-    const allPlaying = new Set(nextMatches.flatMap(match => [...match.team_a, ...match.team_b]))
-
-    if (allPlaying.size !== nextMatches.length * 4) {
-      setError('Swap không hợp lệ: một người bị trùng trong cùng vòng.')
+    const result = buildSwappedAlternative(base, state, fromId, toId)
+    if (!result.alternative) {
+      if (result.error) setError(result.error)
       return
     }
 
-    setManualAlternative({
-      ...base,
-      matches: nextMatches,
-      resting: [...restingSet].filter(id => !allPlaying.has(id)).sort(),
-      warnings: [...new Set([...base.warnings, 'MANUAL_SWAP'])],
-    })
+    setManualAlternative(result.alternative)
     setSwapFromPlayerId(null)
   }
 
@@ -1639,8 +1735,14 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                 <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864' }}>
                   Nghỉ: {workingAlternative.resting.map(id => playerName(id, playersById)).join(', ') || 'Không có'} · Iter {workingAlternative.iterations ?? '-'} · {workingAlternative.runtime_ms ?? 0}ms
                 </Text>
+                {hasManualSwapHardGuard && (
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#B91C1C', lineHeight: 16 }}>
+                    Swap hien tai vi pham hard guard PVNA/team gap. Hay chon swap khac truoc khi start.
+                  </Text>
+                )}
                 <ManualSwapPanel
                   alternative={workingAlternative}
+                  state={state}
                   playersById={playersById}
                   selectedPlayerId={swapFromPlayerId}
                   onSelectPlayer={setSwapFromPlayerId}
@@ -1654,7 +1756,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                   label={targetReached ? 'Chay them vong' : 'Start selected round'}
                   icon={<Play size={16} color="white" />}
                   loading={busy === 'start'}
-                  disabled={Boolean(activeRound)}
+                  disabled={Boolean(activeRound) || hasManualSwapHardGuard}
                   onPress={() => startRound(workingAlternative)}
                 />
               </View>
@@ -2208,6 +2310,19 @@ function formatAffectedPlayers(playerIds: string[], playersById: Map<string, Arr
   return `(${playerIds.map(id => playerName(id, playersById)).join(', ')})`
 }
 
+function describeManualSwapImpact(audit: ManualSwapAudit) {
+  const sign = audit.delta_fairness > 0 ? '+' : ''
+  const parts = [
+    `fairness ${sign}${audit.delta_fairness}`,
+    `range ${audit.before.match_range}->${audit.after.match_range}`,
+    `burden ${audit.before.max_opponent_burden}->${audit.after.max_opponent_burden}`,
+    `opp max ${audit.before.max_opponent_pair}->${audit.after.max_opponent_pair}`,
+    `partner max ${audit.before.max_partner_pair}->${audit.after.max_partner_pair}`,
+  ]
+  if (audit.invalid_matches > 0) parts.push(`${audit.invalid_matches} hard guard`)
+  return parts.join(' · ')
+}
+
 function averageNumber(values: number[]) {
   if (values.length === 0) return 0
   return values.reduce((sum, value) => sum + value, 0) / values.length
@@ -2215,6 +2330,7 @@ function averageNumber(values: number[]) {
 
 function ManualSwapPanel({
   alternative,
+  state,
   playersById,
   selectedPlayerId,
   onSelectPlayer,
@@ -2222,6 +2338,7 @@ function ManualSwapPanel({
   onReset,
 }: {
   alternative: SuggestionAlternative
+  state: SessionState
   playersById: Map<string, ArrangementPlayer>
   selectedPlayerId: string | null
   onSelectPlayer: (playerId: string | null) => void
@@ -2230,6 +2347,24 @@ function ManualSwapPanel({
 }) {
   const playingIds = alternative.matches.flatMap(match => [...match.team_a, ...match.team_b])
   const targetIds = [...new Set([...playingIds, ...alternative.resting])].filter(id => id !== selectedPlayerId)
+  const targetAuditRows = useMemo(() => {
+    if (!selectedPlayerId) return targetIds.map(playerId => ({ playerId, audit: null }))
+
+    return targetIds
+      .map(playerId => ({ playerId, audit: auditManualSwap(state, alternative, selectedPlayerId, playerId) }))
+      .sort((a, b) => {
+        const aInvalid = a.audit ? a.audit.invalid_matches > 0 : true
+        const bInvalid = b.audit ? b.audit.invalid_matches > 0 : true
+        if (aInvalid !== bInvalid) return aInvalid ? 1 : -1
+        const aDelta = a.audit?.delta_fairness ?? -999
+        const bDelta = b.audit?.delta_fairness ?? -999
+        if (aDelta !== bDelta) return bDelta - aDelta
+        const aBurden = a.audit?.after.max_opponent_burden ?? 999
+        const bBurden = b.audit?.after.max_opponent_burden ?? 999
+        if (aBurden !== bBurden) return aBurden - bBurden
+        return playerName(a.playerId, playersById).localeCompare(playerName(b.playerId, playersById))
+      })
+  }, [alternative, playersById, selectedPlayerId, state, targetIds])
 
   return (
     <View style={{ backgroundColor: '#FFFCF5', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E3DC', gap: 10 }}>
@@ -2270,24 +2405,36 @@ function ManualSwapPanel({
             Doi {playerName(selectedPlayerId, playersById)} voi:
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {targetIds.map(playerId => {
+            {targetAuditRows.map(({ playerId, audit }) => {
               const isResting = alternative.resting.includes(playerId)
+              const isInvalid = Boolean(audit && audit.invalid_matches > 0)
+              const isBetter = Boolean(audit && audit.delta_fairness > 0)
+              const borderColor = isInvalid ? '#DC2626' : isBetter ? '#0F6E56' : isResting ? '#E5B94E' : '#E5E3DC'
+              const backgroundColor = isInvalid ? '#FEF2F2' : isBetter ? '#E1F5EE' : isResting ? '#FFF7D6' : '#F8F3E8'
               return (
                 <TouchableOpacity
                   key={`swap-to-${playerId}`}
                   onPress={() => onSwap(selectedPlayerId, playerId)}
+                  disabled={isInvalid}
                   style={{
-                    borderRadius: 999,
+                    borderRadius: 10,
                     paddingHorizontal: 10,
-                    paddingVertical: 7,
-                    backgroundColor: isResting ? '#FFF7D6' : '#F8F3E8',
+                    paddingVertical: 8,
+                    backgroundColor,
                     borderWidth: 1,
-                    borderColor: isResting ? '#E5B94E' : '#E5E3DC',
+                    borderColor,
+                    width: '100%',
+                    opacity: isInvalid ? 0.6 : 1,
                   }}
                 >
                   <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#596864', fontWeight: '900' }}>
                     {playerName(playerId, playersById)}{isResting ? ' (rest)' : ''}
                   </Text>
+                  {audit && (
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: isInvalid ? '#B91C1C' : '#596864', marginTop: 3, lineHeight: 13 }}>
+                      {describeManualSwapImpact(audit)}
+                    </Text>
+                  )}
                 </TouchableOpacity>
               )
             })}
