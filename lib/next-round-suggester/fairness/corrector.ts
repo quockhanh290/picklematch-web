@@ -79,6 +79,7 @@ export function correctForFairness(state: SessionState): AdjustmentResult {
         break
 
       case 'gender_pref_impossible':
+      case 'repeat_pressure':
         break
     }
   }

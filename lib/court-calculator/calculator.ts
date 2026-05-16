@@ -1,5 +1,6 @@
 import { checkFeasibility } from './feasibility'
 import { PRESETS } from './presets'
+import { computeCourtRepeatPressure } from './pressure'
 import { buildCourtWarnings } from './warnings'
 import type { CourtCalculatorInput, CourtCalculatorOutput, CourtOption } from './types'
 
@@ -85,6 +86,7 @@ export function buildCourtOption(
     feasibility: feasibility.feasibility,
     warnings: feasibility.warnings,
     play_ratio: round2(playRatio),
+    repeat_pressure: computeCourtRepeatPressure(normalizedPlayers, normalizedCourts, normalizedRounds),
     quality_score: 0,
     quality_notes: [],
   }

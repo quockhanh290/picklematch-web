@@ -22,6 +22,7 @@ import {
   computeSessionFairness,
   type SessionFairnessScore,
 } from '@/lib/next-round-suggester/fairness/metrics'
+import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
 import { sanitizeSummaryForHost, sanitizeWarningsForHost } from '@/lib/next-round-suggester/fairness/sanitize'
 import { buildSessionSummary, type SessionSummary } from '@/lib/next-round-suggester/fairness/summary'
 import type {
@@ -409,6 +410,8 @@ type FairnessAudit = {
   before_total: number
   after_total: number
   delta_total: number
+  pressure_before: ReturnType<typeof computeRepeatPressure>
+  pressure_after: ReturnType<typeof computeRepeatPressure>
   rows: Array<{
     key: keyof SessionFairnessScore['breakdown']
     label: string
@@ -680,10 +683,13 @@ function buildSuggestedRoundActions(input: {
   const selected = input.alternatives[input.selectedIndex] ?? input.alternatives[0]
   if (!selected) return []
 
+  const pressure = computeRepeatPressure(input.state)
   const audits = input.alternatives.map((alternative, index) => auditAlternative(input.state, alternative, index))
   const current = audits[input.selectedIndex] ?? audits[0]
   const actions: SuggestedRoundAction[] = []
   const repeatRisk =
+    pressure.repeat_risk === 'high' ||
+    pressure.repeat_risk === 'extreme' ||
     current.max_opponent_burden >= 3 ||
     current.max_opponent_pair > 2 ||
     current.max_partner_pair > 2 ||
@@ -749,7 +755,7 @@ function buildSuggestedRoundActions(input: {
     actions.push({
       type: 'accept_tradeoff',
       label: 'Chap nhan phuong an nay',
-      detail: 'Giu setup hien tai va start neu host uu tien tiep tuc nhanh.',
+      detail: `Giu setup hien tai va start. Repeat pressure ${pressure.repeat_risk}, host chap nhan tradeoff.`,
       before: current,
     })
   }
@@ -779,6 +785,8 @@ function buildFairnessPreview(
   const afterState = previewStateAfterAlternative(state, alternative)
   const beforeScore = computeSessionFairness(state)
   const afterScore = computeSessionFairness(afterState)
+  const pressureBefore = computeRepeatPressure(state)
+  const pressureAfter = computeRepeatPressure(afterState)
   const rows = ([
     ['match_count', 'So tran', describeMatchCount(afterState)],
     ['partner_diversity', 'Partner', describePartnerDiversity(afterState)],
@@ -802,6 +810,8 @@ function buildFairnessPreview(
     before_total: beforeScore.total,
     after_total: afterScore.total,
     delta_total: afterScore.total - beforeScore.total,
+    pressure_before: pressureBefore,
+    pressure_after: pressureAfter,
     rows,
   }
 }
@@ -847,6 +857,8 @@ function buildLatestFairnessAudit(state: SessionState): FairnessAudit | null {
   const afterState = rebuildStateThroughRound(state, latestRound.round_no)
   const beforeScore = computeSessionFairness(beforeState)
   const afterScore = computeSessionFairness(afterState)
+  const pressureBefore = computeRepeatPressure(beforeState)
+  const pressureAfter = computeRepeatPressure(afterState)
   const rows = ([
     ['match_count', 'So tran', describeMatchCount(afterState)],
     ['partner_diversity', 'Partner', describePartnerDiversity(afterState)],
@@ -871,6 +883,8 @@ function buildLatestFairnessAudit(state: SessionState): FairnessAudit | null {
     before_total: beforeScore.total,
     after_total: afterScore.total,
     delta_total: afterScore.total - beforeScore.total,
+    pressure_before: pressureBefore,
+    pressure_after: pressureAfter,
     rows,
   }
 }
@@ -919,13 +933,15 @@ function describeMatchCount(state: SessionState): string {
 
 function describePartnerDiversity(state: SessionState): string {
   const metrics = computePartnerDiversity(state)
-  return `avg unique ${metrics.avg_unique_partners.toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(20 * metrics.avg_diversity_ratio).toFixed(1)}/20, repeat pairs ${metrics.repeat_pairs.length}`
+  const pressure = computeRepeatPressure(state)
+  return `avg unique ${metrics.avg_unique_partners.toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(20 * metrics.avg_diversity_ratio).toFixed(1)}/20, adjusted by pressure ${pressure.repeat_risk} x${pressure.penalty_multiplier.toFixed(2)}, repeat pairs ${metrics.repeat_pairs.length}`
 }
 
 function describeOpponentDiversity(state: SessionState): string {
   const metrics = computeOpponentDiversity(state)
   const burden = computeOpponentRepeatBurden(state)
-  return `avg unique ${(metrics.avg_unique_opponents ?? metrics.avg_unique_partners).toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(15 * metrics.avg_diversity_ratio).toFixed(1)}/15, repeat pairs ${metrics.repeat_pairs.length}, max burden ${burden.max_repeated_opponents}`
+  const pressure = computeRepeatPressure(state)
+  return `avg unique ${(metrics.avg_unique_opponents ?? metrics.avg_unique_partners).toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(15 * metrics.avg_diversity_ratio).toFixed(1)}/15, adjusted by pressure ${pressure.repeat_risk} x${pressure.penalty_multiplier.toFixed(2)}, repeat pairs ${metrics.repeat_pairs.length}, max burden ${burden.max_repeated_opponents}`
 }
 
 function describeRestFairness(state: SessionState): string {
@@ -1521,6 +1537,16 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: UI_THEME.textSub, lineHeight: 16 }}>
             Nên dùng {courtCalculator.recommended.courts} sân. {courtCalculator.reasoning}
           </Text>
+          <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.06)' }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, lineHeight: 15 }}>
+              Repeat pressure: {courtCalculator.recommended.repeat_pressure.risk.toUpperCase()} | avg {courtCalculator.recommended.repeat_pressure.avg_matches_per_player.toFixed(1)} matches/player | opponent pressure {courtCalculator.recommended.repeat_pressure.opponent_pressure.toFixed(2)}
+            </Text>
+            {(courtCalculator.recommended.repeat_pressure.risk === 'high' || courtCalculator.recommended.repeat_pressure.risk === 'extreme') && (
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#92400E', lineHeight: 15, marginTop: 4, fontWeight: '700' }}>
+                Setup nay co the tao repeat. Host co the giam san, giam vong, hoac giu setup neu uu tien choi nhieu.
+              </Text>
+            )}
+          </View>
         </View>
 
         {courtCalculator.setup_warnings.length > 0 && (
@@ -2107,14 +2133,15 @@ function SessionFairnessSummaryCard({
   const rest = computeRestFairness(state)
   const gender = computeGenderPrefSatisfaction(state)
   const opponentBurden = computeOpponentRepeatBurden(state)
+  const repeatPressure = computeRepeatPressure(state)
   const groupAuditRows = buildGroupAuditRows(state, groupSummaries)
   const breakdown = summary.fairness_score.breakdown
   const partnerRepeats = partner.repeat_pairs.filter(pair => pair.count > 1)
   const opponentRepeats = opponent.repeat_pairs.filter(pair => pair.count > 1)
   const breakdownRows = [
     ['So tran', breakdown.match_count, 25, `range ${matchRange}, avg ${averageNumber(matchCounts).toFixed(1)}`],
-    ['Partner', breakdown.partner_diversity, 20, `ratio ${(partner.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(20 * partner.avg_diversity_ratio).toFixed(1)}/20, repeat pairs ${partnerRepeats.length}`],
-    ['Doi thu', breakdown.opponent_diversity, 15, `ratio ${(opponent.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(15 * opponent.avg_diversity_ratio).toFixed(1)}/15, repeat pairs ${opponentRepeats.length}, max burden ${opponentBurden.max_repeated_opponents}`],
+    ['Partner', breakdown.partner_diversity, 20, `ratio ${(partner.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(20 * partner.avg_diversity_ratio).toFixed(1)}/20, pressure ${repeatPressure.repeat_risk} x${repeatPressure.penalty_multiplier.toFixed(2)}, repeat pairs ${partnerRepeats.length}`],
+    ['Doi thu', breakdown.opponent_diversity, 15, `ratio ${(opponent.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(15 * opponent.avg_diversity_ratio).toFixed(1)}/15, pressure ${repeatPressure.repeat_risk} x${repeatPressure.penalty_multiplier.toFixed(2)}, repeat pairs ${opponentRepeats.length}, max burden ${opponentBurden.max_repeated_opponents}`],
     ['Nghi', breakdown.rest, 20, `violations ${rest.violations.length}`],
     ['Gender pref', breakdown.gender_prefs, 20, `${gender.satisfied_count}/${gender.total_pref_opportunities} satisfied (${Math.round(gender.satisfaction_rate * 100)}%)`],
   ] as const
@@ -2178,6 +2205,23 @@ function SessionFairnessSummaryCard({
             </Text>
           </View>
         )}
+      </View>
+
+      <View style={{ backgroundColor: 'white', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: UI_THEME.border, ...DASHBOARD_SHADOW.sm }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+          <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: UI_THEME.textMain, fontWeight: '900' }}>
+            REPEAT PRESSURE
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: repeatPressure.repeat_risk === 'extreme' || repeatPressure.repeat_risk === 'high' ? '#A05A16' : UI_THEME.primary, fontWeight: '900' }}>
+            {repeatPressure.repeat_risk.toUpperCase()} x{repeatPressure.penalty_multiplier.toFixed(2)}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, lineHeight: 15 }}>
+          Setup: {repeatPressure.active_players} players, {repeatPressure.courts} courts, {repeatPressure.rounds_completed} rounds. Avg {repeatPressure.avg_matches_per_player.toFixed(1)} matches/player, play ratio {Math.round(repeatPressure.play_ratio * 100)}%, opponent pressure {repeatPressure.opponent_pressure.toFixed(2)}.
+        </Text>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textMuted, lineHeight: 15, marginTop: 6 }}>
+          Raw repeat is still shown below; fairness score reduces repeat penalty when setup makes repeat unavoidable.
+        </Text>
       </View>
 
       <View style={{ gap: 12, marginBottom: 20 }}>
@@ -2400,6 +2444,23 @@ function FairnessAuditCard({ audit }: { audit: FairnessAudit }) {
       </View>
 
       <View style={{ gap: 10, marginTop: 16 }}>
+        <View style={{ backgroundColor: UI_THEME.background, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: UI_THEME.border }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: UI_THEME.textMain, fontWeight: '900' }}>
+              Repeat pressure
+            </Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: audit.pressure_after.repeat_risk === 'extreme' || audit.pressure_after.repeat_risk === 'high' ? '#A05A16' : UI_THEME.primary, fontWeight: '900' }}>
+              {audit.pressure_before.repeat_risk.toUpperCase()} -> {audit.pressure_after.repeat_risk.toUpperCase()}
+            </Text>
+          </View>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, marginTop: 6, lineHeight: 15 }}>
+            Multiplier {audit.pressure_before.penalty_multiplier.toFixed(2)} -> {audit.pressure_after.penalty_multiplier.toFixed(2)}. Opponent pressure {audit.pressure_before.opponent_pressure.toFixed(2)} -> {audit.pressure_after.opponent_pressure.toFixed(2)}.
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textMuted, marginTop: 4, lineHeight: 15 }}>
+            Raw repeat stays visible; score impact is adjusted only when setup makes repeat hard to avoid.
+          </Text>
+        </View>
+
         {audit.rows.map(row => (
           <View key={row.key} style={{ backgroundColor: UI_THEME.background, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: UI_THEME.border }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -2447,6 +2508,20 @@ function FairnessPreviewCard({ preview }: { preview: FairnessPreview }) {
       </View>
 
       <View style={{ gap: 8, marginTop: 12 }}>
+        <View style={{ backgroundColor: 'white', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: 'rgba(0,0,0,0.03)', ...DASHBOARD_SHADOW.sm }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: UI_THEME.textMain, fontWeight: '900' }}>
+              Repeat pressure
+            </Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: preview.pressure_after.repeat_risk === 'extreme' || preview.pressure_after.repeat_risk === 'high' ? '#A05A16' : UI_THEME.primary, fontWeight: '900' }}>
+              {preview.pressure_before.repeat_risk.toUpperCase()} -> {preview.pressure_after.repeat_risk.toUpperCase()}
+            </Text>
+          </View>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: UI_THEME.textMuted, marginTop: 4, lineHeight: 13 }}>
+            Multiplier {preview.pressure_before.penalty_multiplier.toFixed(2)} -> {preview.pressure_after.penalty_multiplier.toFixed(2)}, opponent pressure {preview.pressure_before.opponent_pressure.toFixed(2)} -> {preview.pressure_after.opponent_pressure.toFixed(2)}.
+          </Text>
+        </View>
+
         {preview.rows.map(row => (
           <View key={`preview-${row.key}`} style={{ backgroundColor: 'white', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: 'rgba(0,0,0,0.03)', ...DASHBOARD_SHADOW.sm }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>

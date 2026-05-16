@@ -5,6 +5,7 @@ export type CourtWarningSeverity = 'info' | 'warning' | 'critical'
 export type CourtWarningType =
   | 'small_group_long_session'
   | 'repeat_unavoidable'
+  | 'repeat_pressure'
   | 'low_rotation'
   | 'high_rotation'
   | 'all_play_pressure'
@@ -22,6 +23,18 @@ export type CourtCalculatorInput = {
   preset?: CourtPreset
 }
 
+export type CourtRepeatRiskLevel = 'low' | 'medium' | 'high' | 'extreme'
+
+export type CourtRepeatPressure = {
+  play_ratio: number
+  avg_matches_per_player: number
+  partner_pressure: number
+  opponent_pressure: number
+  risk: CourtRepeatRiskLevel
+  penalty_multiplier: number
+  explanation: string[]
+}
+
 export type CourtOption = {
   courts: number
   total_rounds: number
@@ -33,6 +46,7 @@ export type CourtOption = {
   feasibility: Feasibility
   warnings: string[]
   play_ratio: number
+  repeat_pressure: CourtRepeatPressure
   quality_score: number
   quality_notes: string[]
 }
@@ -46,7 +60,7 @@ export type CourtWarningPreview = {
   rounds: number
   avg_matches_per_player: number
   play_ratio: number
-  risk_level: 'low' | 'medium' | 'high'
+  risk_level: CourtRepeatRiskLevel
 }
 
 export type CourtWarningAlternative = {

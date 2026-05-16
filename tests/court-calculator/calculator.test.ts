@@ -124,6 +124,35 @@ describe('court calculator', () => {
     expect(warning?.alternatives.find((item) => item.action === 'set_duration')?.duration_min).toBe(90)
   })
 
+  it('marks repeat pressure on small long setups with concrete alternatives', () => {
+    const result = calculateOptimalCourts({
+      n_players: 8,
+      session_duration_min: 150,
+      match_duration_min: 15,
+      preset: 'balanced',
+    })
+
+    expect(result.recommended.repeat_pressure.risk).toBe('extreme')
+    const warning = result.setup_warnings.find((item) => item.type === 'repeat_pressure')
+    expect(warning).toBeDefined()
+    expect(warning?.why).toContain('opponent pressure')
+    expect(warning?.alternatives.map((item) => item.action)).toEqual(
+      expect.arrayContaining(['set_duration', 'set_preset', 'accept_tradeoff']),
+    )
+  })
+
+  it('keeps repeat pressure low for roomier medium setups', () => {
+    const result = calculateOptimalCourts({
+      n_players: 24,
+      session_duration_min: 90,
+      match_duration_min: 15,
+      preset: 'balanced',
+    })
+
+    expect(result.recommended.repeat_pressure.risk).not.toBe('extreme')
+    expect(result.setup_warnings.some((item) => item.type === 'repeat_pressure')).toBe(false)
+  })
+
   it('adds a set-courts alternative when target matches are not reached', () => {
     const result = calculateOptimalCourts({
       n_players: 20,

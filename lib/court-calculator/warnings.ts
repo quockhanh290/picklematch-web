@@ -1,4 +1,5 @@
 import { PRESETS } from './presets'
+import { computeCourtRepeatPressure } from './pressure'
 import type {
   CourtCalculatorInput,
   CourtOption,
@@ -21,6 +22,25 @@ export function buildCourtWarnings(
   const matchDuration = Math.max(1, Math.floor(input.match_duration_min ?? DEFAULT_MATCH_DURATION_MIN))
   const preset = input.preset ?? 'balanced'
   const warnings: CourtWarning[] = []
+  const pressure = recommended.repeat_pressure
+
+  if (pressure.risk === 'high' || pressure.risk === 'extreme') {
+    const lowerCourt = [...alternatives]
+      .reverse()
+      .find((option) => option.courts < recommended.courts && option.feasibility !== 'infeasible')
+    warnings.push({
+      severity: pressure.risk === 'extreme' ? 'warning' : 'info',
+      type: 'repeat_pressure',
+      message: `Setup nay tao repeat pressure ${pressure.risk}.`,
+      why: `Du kien ${pressure.avg_matches_per_player.toFixed(1)} tran/nguoi, opponent pressure ${pressure.opponent_pressure.toFixed(2)}. Repeat co the la gioi han to hop, khong phai engine loi.`,
+      alternatives: compactAlternatives([
+        lowerCourt ? setCourtsAlternative(nPlayers, durationMin, matchDuration, preset, lowerCourt, 'Giam san de them nguoi nghi va mo them to hop vong sau.') : null,
+        reduceDurationAlternative(nPlayers, durationMin, matchDuration, preset, recommended),
+        preset !== 'relaxed' ? changePresetAlternative(nPlayers, durationMin, matchDuration, 'relaxed', recommended) : null,
+        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giu setup neu uu tien so tran/nguoi cao va chap nhan repeat.'),
+      ]),
+    })
+  }
 
   if (nPlayers <= 12 && recommended.total_rounds >= 8) {
     warnings.push({
@@ -206,7 +226,7 @@ function setCourtsAlternativeIfUseful(
   expectedEffect: string,
 ): CourtWarningAlternative | null {
   const alternative = setCourtsAlternative(nPlayers, durationMin, matchDuration, preset, option, expectedEffect)
-  return alternative.preview.risk_level === 'high' ? null : alternative
+  return alternative.preview.risk_level === 'high' || alternative.preview.risk_level === 'extreme' ? null : alternative
 }
 
 function acceptTradeoffAlternative(
@@ -234,9 +254,7 @@ function buildPreview(
   courts: number,
 ): CourtWarningPreview {
   const rounds = roundsFor(durationMin, matchDuration)
-  const slotsPerRound = Math.max(1, courts) * 4
-  const avgMatches = nPlayers === 0 ? 0 : (rounds * slotsPerRound) / nPlayers
-  const playRatio = nPlayers === 0 ? 0 : slotsPerRound / nPlayers
+  const pressure = computeCourtRepeatPressure(nPlayers, courts, rounds)
 
   return {
     n_players: nPlayers,
@@ -245,21 +263,10 @@ function buildPreview(
     preset,
     courts,
     rounds,
-    avg_matches_per_player: round1(avgMatches),
-    play_ratio: round2(playRatio),
-    risk_level: riskLevel(nPlayers, rounds, avgMatches, playRatio),
+    avg_matches_per_player: pressure.avg_matches_per_player,
+    play_ratio: pressure.play_ratio,
+    risk_level: pressure.risk,
   }
-}
-
-function riskLevel(
-  nPlayers: number,
-  rounds: number,
-  avgMatches: number,
-  playRatio: number,
-): CourtWarningPreview['risk_level'] {
-  if ((nPlayers <= 10 && avgMatches >= 5) || (playRatio >= 0.98 && rounds >= 8)) return 'high'
-  if ((nPlayers <= 12 && rounds >= 8) || playRatio > 0.9 || playRatio < 0.45) return 'medium'
-  return 'low'
 }
 
 function roundsFor(durationMin: number, matchDuration: number): number {
@@ -291,12 +298,4 @@ function dedupeWarnings(warnings: CourtWarning[]): CourtWarning[] {
     seen.add(warning.type)
     return true
   })
-}
-
-function round1(value: number): number {
-  return Number(value.toFixed(1))
-}
-
-function round2(value: number): number {
-  return Number(value.toFixed(2))
 }

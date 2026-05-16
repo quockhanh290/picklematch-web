@@ -13,8 +13,8 @@ import {
 import { computeRepeatPressure } from './lib/next-round-suggester/fairness/pressure'
 import { runSimulation, type SimulationConfig } from './tests/next-round-suggester/simulation/runner'
 
-const N_MIN = 8
-const N_MAX = 12
+const N_MIN = 1
+const N_MAX = 40
 const DURATIONS = [90, 120, 150]
 const PRESETS: CourtPreset[] = ['play_more', 'balanced', 'relaxed']
 const MATCH_DURATION_MIN = 15
@@ -42,12 +42,12 @@ type CompareRow = {
   preset: CourtPreset
   courts: number
   rounds: number
-  old_fairness: number
+  old_fairness: number | null
   new_fairness: number
-  delta: number
-  old_partner: number
+  delta: number | null
+  old_partner: number | null
   new_partner: number
-  old_opponent: number
+  old_opponent: number | null
   new_opponent: number
   repeat_risk: string
   penalty_multiplier: number
@@ -67,6 +67,7 @@ function hashSeed(value: string): number {
 }
 
 function groupPlan(nPlayers: number): { group_count: number; group_size_range: [number, number] } {
+  if (nPlayers < 4) return { group_count: 0, group_size_range: [2, 2] }
   if (nPlayers < 10) return { group_count: 1, group_size_range: [2, 2] }
   if (nPlayers < 20) return { group_count: 2, group_size_range: [2, 3] }
   if (nPlayers < 30) return { group_count: 3, group_size_range: [2, 4] }
@@ -117,15 +118,16 @@ function byPlayerCount(rows: CompareRow[]): string[][] {
   const out: string[][] = []
   for (let n = N_MIN; n <= N_MAX; n += 1) {
     const group = rows.filter((row) => row.n_players === n)
+    const comparable = group.filter((row) => row.old_fairness !== null && row.delta !== null)
     out.push([
       String(n),
       String(group.length),
-      average(group.map((row) => row.old_fairness)).toFixed(1),
+      comparable.length === 0 ? '-' : average(comparable.map((row) => row.old_fairness ?? 0)).toFixed(1),
       average(group.map((row) => row.new_fairness)).toFixed(1),
-      average(group.map((row) => row.delta)).toFixed(1),
-      average(group.map((row) => row.old_partner)).toFixed(1),
+      comparable.length === 0 ? '-' : average(comparable.map((row) => row.delta ?? 0)).toFixed(1),
+      comparable.length === 0 ? '-' : average(comparable.map((row) => row.old_partner ?? 0)).toFixed(1),
       average(group.map((row) => row.new_partner)).toFixed(1),
-      average(group.map((row) => row.old_opponent)).toFixed(1),
+      comparable.length === 0 ? '-' : average(comparable.map((row) => row.old_opponent ?? 0)).toFixed(1),
       average(group.map((row) => row.new_opponent)).toFixed(1),
     ])
   }
@@ -133,10 +135,11 @@ function byPlayerCount(rows: CompareRow[]): string[][] {
 }
 
 function buildMarkdown(rows: CompareRow[], generatedAt: string): string {
-  const totalDelta = average(rows.map((row) => row.delta))
-  const improved = rows.filter((row) => row.delta > 0).length
-  const same = rows.filter((row) => row.delta === 0).length
-  const worse = rows.filter((row) => row.delta < 0).length
+  const comparable = rows.filter((row) => row.old_fairness !== null && row.delta !== null)
+  const totalDelta = average(comparable.map((row) => row.delta ?? 0))
+  const improved = comparable.filter((row) => (row.delta ?? 0) > 0).length
+  const same = comparable.filter((row) => row.delta === 0).length
+  const worse = comparable.filter((row) => (row.delta ?? 0) < 0).length
 
   return [
     '# Small-N Baseline Fairness Compare',
@@ -144,11 +147,13 @@ function buildMarkdown(rows: CompareRow[], generatedAt: string): string {
     `Generated: ${generatedAt}`,
     `Compared with: ${OLD_REPORT_PATH}`,
     `Cases: ${rows.length} (n=${N_MIN}-${N_MAX}, durations=${DURATIONS.join('/')}, presets=${PRESETS.join('/')})`,
+    `Comparable with old baseline: ${comparable.length}`,
     '',
     '## Summary',
     '',
-    `- Avg old fairness: ${average(rows.map((row) => row.old_fairness)).toFixed(1)}`,
-    `- Avg new fairness: ${average(rows.map((row) => row.new_fairness)).toFixed(1)}`,
+    `- Avg old fairness: ${average(comparable.map((row) => row.old_fairness ?? 0)).toFixed(1)}`,
+    `- Avg new fairness comparable: ${average(comparable.map((row) => row.new_fairness)).toFixed(1)}`,
+    `- Avg new fairness all cases: ${average(rows.map((row) => row.new_fairness)).toFixed(1)}`,
     `- Avg delta: ${totalDelta.toFixed(1)}`,
     `- Improved/same/worse: ${improved}/${same}/${worse}`,
     '',
@@ -181,11 +186,11 @@ function buildMarkdown(rows: CompareRow[], generatedAt: string): string {
         row.id,
         String(row.courts),
         String(row.rounds),
-        String(row.old_fairness),
+        row.old_fairness === null ? '-' : String(row.old_fairness),
         String(row.new_fairness),
-        String(row.delta),
-        `${row.old_partner}/${row.new_partner}`,
-        `${row.old_opponent}/${row.new_opponent}`,
+        row.delta === null ? '-' : String(row.delta),
+        `${row.old_partner === null ? '-' : row.old_partner}/${row.new_partner}`,
+        `${row.old_opponent === null ? '-' : row.old_opponent}/${row.new_opponent}`,
         row.repeat_risk,
         row.penalty_multiplier.toFixed(2),
         String(row.match_range),
@@ -216,7 +221,6 @@ async function main() {
         const rest = computeRestFairness(result.final_state)
         const pressure = computeRepeatPressure(result.final_state)
         const old = oldById.get(config.scenario_name ?? '')
-        if (!old) throw new Error(`Missing old report row for ${config.scenario_name}`)
 
         rows.push({
           id: config.scenario_name ?? '',
@@ -225,12 +229,12 @@ async function main() {
           preset,
           courts: config.courts,
           rounds: config.rounds,
-          old_fairness: old.fairness.total,
+          old_fairness: old?.fairness.total ?? null,
           new_fairness: score.total,
-          delta: score.total - old.fairness.total,
-          old_partner: old.fairness.breakdown.partner_diversity,
+          delta: old ? score.total - old.fairness.total : null,
+          old_partner: old?.fairness.breakdown.partner_diversity ?? null,
           new_partner: score.breakdown.partner_diversity,
-          old_opponent: old.fairness.breakdown.opponent_diversity,
+          old_opponent: old?.fairness.breakdown.opponent_diversity ?? null,
           new_opponent: score.breakdown.opponent_diversity,
           repeat_risk: pressure.repeat_risk,
           penalty_multiplier: pressure.penalty_multiplier,
@@ -241,7 +245,9 @@ async function main() {
         })
 
         console.log(
-          `${config.scenario_name}: ${old.fairness.total} -> ${score.total} delta=${score.total - old.fairness.total} risk=${pressure.repeat_risk} restViol=${rest.violations.length}`,
+          old
+            ? `${config.scenario_name}: ${old.fairness.total} -> ${score.total} delta=${score.total - old.fairness.total} risk=${pressure.repeat_risk} restViol=${rest.violations.length}`
+            : `${config.scenario_name}: no old baseline -> ${score.total} risk=${pressure.repeat_risk} restViol=${rest.violations.length}`,
         )
       }
     }

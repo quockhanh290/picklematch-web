@@ -10,6 +10,7 @@ export type WarningType =
   | 'partner_repeat'
   | 'opponent_repeat'
   | 'opponent_repeat_burden'
+  | 'repeat_pressure'
   | 'rest_violation'
   | 'gender_pref_unsatisfied'
   | 'gender_pref_impossible'
@@ -27,6 +28,7 @@ export function detectFairnessIssues(state: SessionState): FairnessWarning[] {
   const warnings: FairnessWarning[] = []
 
   warnings.push(...detectMatchCountIssues(activeState))
+  warnings.push(...detectRepeatPressureIssues(activeState))
   warnings.push(...detectPartnerIssues(activeState))
   warnings.push(...detectOpponentIssues(activeState))
   warnings.push(...detectOpponentBurdenIssues(activeState))
@@ -34,6 +36,23 @@ export function detectFairnessIssues(state: SessionState): FairnessWarning[] {
   warnings.push(...detectGenderIssues(activeState))
 
   return warnings
+}
+
+function detectRepeatPressureIssues(state: SessionState): FairnessWarning[] {
+  if (state.current_round < 3) return []
+
+  const pressure = computeRepeatPressure(state)
+  if (pressure.repeat_risk !== 'high' && pressure.repeat_risk !== 'extreme') return []
+
+  return [
+    {
+      severity: pressure.repeat_risk === 'extreme' ? 'warning' : 'info',
+      type: 'repeat_pressure',
+      affected_players: [],
+      message: `Setup repeat pressure ${pressure.repeat_risk}: avg ${pressure.avg_matches_per_player.toFixed(1)} tran/nguoi, opponent pressure ${pressure.opponent_pressure.toFixed(2)}.`,
+      suggested_action: 'Repeat co the den tu setup; host co the giam san, giam vong, tang tolerance, hoac chap nhan neu uu tien choi nhieu.',
+    },
+  ]
 }
 
 function detectOpponentBurdenIssues(state: SessionState): FairnessWarning[] {
@@ -59,10 +78,10 @@ function detectOpponentBurdenIssues(state: SessionState): FairnessWarning[] {
       type: 'opponent_repeat_burden',
       affected_players: overloaded.map((player) => player.player_id),
       message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? `${overloaded.length} nguoi dang lap doi thu, nhung repeat risk ${pressure.repeat_risk} voi setup nay.`
+        ? `${overloaded.length} nguoi dang lap doi thu; setup repeat pressure ${pressure.repeat_risk}.`
         : `${overloaded.length} nguoi dang gap lai nhieu doi thu (${maxBurden}+ cap lap).`,
       suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? 'Repeat co the la gioi han to hop; engine van uu tien rai deu doi thu lap.'
+        ? 'Engine van rai deu doi thu lap; host co the chon tradeoff setup neu muon giam repeat manh hon.'
         : 'Engine se uu tien rai deu doi thu lap o vong ke tiep.',
     },
   ]
@@ -120,10 +139,10 @@ function detectPartnerIssues(state: SessionState): FairnessWarning[] {
       type: 'partner_repeat',
       affected_players: uniquePlayers(highRepeats.flatMap((pair) => [pair.player_a, pair.player_b])),
       message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? `${highRepeats.length} cap da danh chung 3+ lan, repeat risk ${pressure.repeat_risk} voi setup nay.`
+        ? `${highRepeats.length} cap da danh chung 3+ lan; setup repeat pressure ${pressure.repeat_risk}.`
         : `${highRepeats.length} cap da danh chung 3+ lan.`,
       suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? 'Repeat co the la gioi han to hop; host co the chon tradeoff neu muon giam lap.'
+        ? 'Engine van tranh lap partner; host co the giam san/giam vong/tang tolerance neu muon giam repeat manh hon.'
         : 'Engine se tang uu tien tranh lap partner.',
     },
   ]
@@ -142,10 +161,10 @@ function detectOpponentIssues(state: SessionState): FairnessWarning[] {
       type: 'opponent_repeat',
       affected_players: uniquePlayers(highRepeats.flatMap((pair) => [pair.player_a, pair.player_b])),
       message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? `${highRepeats.length} cap da doi dau 3+ lan, repeat risk ${pressure.repeat_risk} voi setup nay.`
+        ? `${highRepeats.length} cap da doi dau 3+ lan; setup repeat pressure ${pressure.repeat_risk}.`
         : `${highRepeats.length} cap da doi dau 3+ lan.`,
       suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? 'Repeat co the la gioi han to hop; host co the chon tradeoff neu muon giam lap.'
+        ? 'Engine van tranh lap doi thu; host co the giam san/giam vong/tang tolerance neu muon giam repeat manh hon.'
         : 'Engine se tang uu tien tranh lap doi thu.',
     },
   ]
