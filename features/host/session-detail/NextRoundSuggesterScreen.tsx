@@ -614,7 +614,38 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
       if (activeRound) throw new Error('Đang có vòng active. Hãy end vòng hiện tại trước.')
 
       await invokeLiveSessionFunction('session-rounds-start', sessionId, {
+        suggestion_idx: selectedAlternative,
         manual: alternative.matches,
+        decision_context: {
+          selected_alternative_index: selectedAlternative,
+          manual_swap_applied: manualAlternative !== null,
+          last_host_action: selectionUndo?.reason ?? null,
+          setup: {
+            court_count: courtCount,
+            pvna_tolerance: pvnaTolerance,
+            court_preset: courtPreset,
+            court_duration_min: courtDurationMin,
+            target_rounds: effectiveTargetRounds,
+          },
+          selected_alternative: {
+            score: alternative.score,
+            stats: alternative.stats,
+            warnings: alternative.warnings,
+          },
+          fairness_preview: fairnessPreview,
+          fairness_warnings: fairnessWarnings.map(warning => ({
+            severity: warning.severity,
+            type: warning.type,
+            affected_players: warning.affected_players,
+            message: warning.message,
+            suggested_action: warning.suggested_action,
+          })),
+          available_actions: suggestedRoundActions.map(action => ({
+            type: action.type,
+            label: action.label,
+            detail: action.detail,
+          })),
+        },
       })
     })
   }
@@ -1756,6 +1787,9 @@ function FairnessAuditCard({ audit }: { audit: FairnessAudit }) {
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, marginTop: 6, lineHeight: 15 }}>
             Multiplier {audit.pressure_before.penalty_multiplier.toFixed(2)} -> {audit.pressure_after.penalty_multiplier.toFixed(2)}. Opponent pressure {audit.pressure_before.opponent_pressure.toFixed(2)} -> {audit.pressure_after.opponent_pressure.toFixed(2)}.
           </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, marginTop: 4, lineHeight: 15 }}>
+            Availability {audit.availability_before.churn_level.toUpperCase()} -> {audit.availability_after.churn_level.toUpperCase()}, churn {(audit.availability_before.avg_churn_ratio * 100).toFixed(0)}% -> {(audit.availability_after.avg_churn_ratio * 100).toFixed(0)}%, multiplier {audit.availability_before.penalty_multiplier.toFixed(2)} -> {audit.availability_after.penalty_multiplier.toFixed(2)}.
+          </Text>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textMuted, marginTop: 4, lineHeight: 15 }}>
             Raw repeat stays visible; score impact is adjusted only when setup makes repeat hard to avoid.
           </Text>
@@ -1819,6 +1853,9 @@ function FairnessPreviewCard({ preview }: { preview: FairnessPreview }) {
           </View>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: UI_THEME.textMuted, marginTop: 4, lineHeight: 13 }}>
             Multiplier {preview.pressure_before.penalty_multiplier.toFixed(2)} -> {preview.pressure_after.penalty_multiplier.toFixed(2)}, opponent pressure {preview.pressure_before.opponent_pressure.toFixed(2)} -> {preview.pressure_after.opponent_pressure.toFixed(2)}.
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: UI_THEME.textMuted, marginTop: 4, lineHeight: 13 }}>
+            Availability {preview.availability_before.churn_level.toUpperCase()} -> {preview.availability_after.churn_level.toUpperCase()}, churn {(preview.availability_before.avg_churn_ratio * 100).toFixed(0)}% -> {(preview.availability_after.avg_churn_ratio * 100).toFixed(0)}%.
           </Text>
         </View>
 

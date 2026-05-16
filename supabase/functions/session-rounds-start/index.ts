@@ -7,6 +7,7 @@ import {
   correctForFairness,
 } from '../../../lib/next-round-suggester/fairness/corrector.ts'
 import { computeSessionFairness } from '../../../lib/next-round-suggester/fairness/metrics.ts'
+import { insertSuggesterAuditEvent } from '../_shared/suggester-audit.ts'
 
 type ManualMatch = {
   court_idx: number
@@ -33,6 +34,29 @@ function isValidMatch(value: unknown): value is ManualMatch {
   )
 }
 
+function compactMatches(matches: ManualMatch[]) {
+  return matches.map((match) => ({
+    court_idx: match.court_idx,
+    team_a: match.team_a,
+    team_b: match.team_b,
+  }))
+}
+
+function matchKey(match: ManualMatch) {
+  return JSON.stringify({
+    court_idx: match.court_idx,
+    team_a: [...match.team_a].sort(),
+    team_b: [...match.team_b].sort(),
+  })
+}
+
+function matchesEqual(left: ManualMatch[], right: ManualMatch[]) {
+  if (left.length !== right.length) return false
+  const leftKeys = left.map(matchKey).sort()
+  const rightKeys = right.map(matchKey).sort()
+  return leftKeys.every((key, index) => key === rightKeys[index])
+}
+
 Deno.serve(async (request) => {
   const corsResponse = handleCorsPreflight(request)
   if (corsResponse) return corsResponse
@@ -54,10 +78,17 @@ Deno.serve(async (request) => {
     const state = await loadSessionState(auth.supabase, sessionId)
     const adjustment = correctForFairness(state)
     const adjustedState = applyFairnessAdjustment(state, adjustment)
+    const fairnessScoreBefore = computeSessionFairness(state).total
 
     const manual = Array.isArray(body.manual) ? body.manual : null
+    const suggestionIdx = typeof body.suggestion_idx === 'number' ? body.suggestion_idx : 0
+    const decisionContext =
+      body.decision_context && typeof body.decision_context === 'object'
+        ? body.decision_context as Record<string, unknown>
+        : {}
     let matches: ManualMatch[]
     let resting: string[]
+    let decisionMode: 'host_selected_alternative' | 'host_manual_matches' | 'engine_suggestion' = 'engine_suggestion'
 
     if (manual) {
       if (!manual.every(isValidMatch)) {
@@ -84,8 +115,15 @@ Deno.serve(async (request) => {
         .filter((player) => player.checked_out_at === null && !playedIds.has(player.player_id))
         .map((player) => player.player_id)
         .sort()
+
+      const suggestion = suggestNextRound(adjustedState, {
+        tier_overrides: adjustment.tier_overrides,
+      })
+      const alternative = suggestion.alternatives[suggestionIdx]
+      decisionMode = alternative && matchesEqual(matches, alternative.matches)
+        ? 'host_selected_alternative'
+        : 'host_manual_matches'
     } else {
-      const suggestionIdx = typeof body.suggestion_idx === 'number' ? body.suggestion_idx : 0
       const suggestion = suggestNextRound(adjustedState, {
         tier_overrides: adjustment.tier_overrides,
       })
@@ -125,7 +163,7 @@ Deno.serve(async (request) => {
           triggered_by_warnings: adjustment.applied_for_warnings,
           config_changes: adjustment.config_changes,
           tier_overrides: adjustment.tier_overrides,
-          fairness_score_before: computeSessionFairness(state).total,
+          fairness_score_before: fairnessScoreBefore,
         })
 
       if (adjustmentError) {
@@ -133,7 +171,26 @@ Deno.serve(async (request) => {
       }
     }
 
-    return jsonResponse({ ok: true, round: data, adjustment })
+    const auditError = await insertSuggesterAuditEvent(auth.supabase, {
+      session_id: sessionId,
+      round_no: state.current_round,
+      event_type: 'round_started',
+      event_source: decisionMode === 'engine_suggestion' ? 'engine' : 'host',
+      actor_id: auth.userId,
+      payload: {
+        decision_mode: decisionMode,
+        selected_alternative_index: suggestionIdx,
+        matches: compactMatches(matches),
+        resting,
+        fairness_score_before: fairnessScoreBefore,
+        adjustment_applied: adjustment.applied_for_warnings,
+        adjustment_config_changes: adjustment.config_changes,
+        adjustment_tier_overrides: adjustment.tier_overrides,
+        decision_context: decisionContext,
+      },
+    })
+
+    return jsonResponse({ ok: true, round: data, adjustment, audit_error: auditError })
   } catch (error) {
     return jsonResponse(
       { ok: false, error: error instanceof Error ? error.message : 'Unknown error' },

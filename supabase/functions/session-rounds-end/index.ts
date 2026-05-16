@@ -4,6 +4,7 @@ import { commitCompletedRound } from '../../../lib/next-round-suggester/commit.t
 import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
 import type { SessionPairHistoryRow } from '../../../lib/next-round-suggester/types.ts'
 import { computeSessionFairness } from '../../../lib/next-round-suggester/fairness/metrics.ts'
+import { insertSuggesterAuditEvent } from '../_shared/suggester-audit.ts'
 
 function getRoundNo(request: Request): number | null {
   const url = new URL(request.url)
@@ -55,6 +56,7 @@ Deno.serve(async (request) => {
     }
 
     const state = await loadSessionState(auth.supabase, sessionId)
+    const scoreBefore = computeSessionFairness(state).total
     const playedIds = getPlayedIds(round.matches ?? [])
     const missingIds = [...playedIds].filter((playerId) => !state.players.has(playerId))
     if (missingIds.length > 0) {
@@ -180,9 +182,29 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: adjustmentError.message }, 500)
     }
 
+    const auditError = await insertSuggesterAuditEvent(auth.supabase, {
+      session_id: sessionId,
+      round_no: roundNo,
+      event_type: 'round_ended',
+      event_source: 'system',
+      actor_id: auth.userId,
+      payload: {
+        round_id: completedRound.id,
+        score_before: scoreBefore,
+        score_after: scoreAfter,
+        played_ids: [...playedIds].sort(),
+        resting: round.resting ?? [],
+        matches: round.matches ?? [],
+        commit_audit: {
+          deltas: commitAudit,
+        },
+      },
+    })
+
     return jsonResponse({
       ok: true,
       round: completedRound,
+      audit_error: auditError,
       commit_audit: {
         played_ids: [...playedIds].sort(),
         deltas: commitAudit,

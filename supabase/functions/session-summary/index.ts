@@ -22,9 +22,20 @@ Deno.serve(async (request) => {
 
   try {
     const state = await loadSessionState(auth.supabase, sessionId)
+    const { data: auditEvents, error: auditError } = await auth.supabase
+      .from('suggester_decision_events')
+      .select('id, round_no, event_type, event_source, actor_id, payload, created_at')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true })
+
+    if (auditError) {
+      return jsonResponse({ ok: false, error: auditError.message }, 500)
+    }
+
     return jsonResponse({
       ok: true,
       summary: sanitizeSummaryForHost(buildSessionSummary(state)),
+      audit_events: auditEvents ?? [],
     })
   } catch (error) {
     return jsonResponse(

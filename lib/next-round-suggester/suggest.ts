@@ -12,7 +12,7 @@ import type {
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { Tier } from './classify.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { computeProjectedOpponentRepeatBurden, computeProjectedPartnerRepeatBurden } from './fairness/metrics.ts'
+import { computeAvailabilityMetrics, computeProjectedOpponentRepeatBurden, computeProjectedPartnerRepeatBurden } from './fairness/metrics.ts'
 
 export type SuggestNextRoundOptions = {
   tier_overrides?: Record<string, Tier>
@@ -373,22 +373,39 @@ function getProjectedMatchCountExcess(
   state: SessionState,
 ): { range: number; excess: number } {
   const playedIds = new Set(alternative.matches.flatMap((match) => [...match.team_a, ...match.team_b]))
-  const counts = [...state.players.values()]
-    .filter((player) => player.checked_out_at === null)
-    .map((player) => player.matches_played + (playedIds.has(player.player_id) ? 1 : 0))
+  const presentPlayers = [...state.players.values()].filter((player) => player.checked_out_at === null)
+  const availability = computeAvailabilityMetrics(state)
+  const currentExpectedShare = presentPlayers.length === 0
+    ? 0
+    : alternative.matches.length * 4 / presentPlayers.length
+  const historicalDeltas = new Map(
+    availability.per_player.map((player) => [player.player_id, player.delta_from_expected]),
+  )
+  const deltas = presentPlayers.map((player) => {
+    const historicalDelta = availability.rounds_tracked > 0
+      ? historicalDeltas.get(player.player_id) ?? 0
+      : player.matches_played - averageMatches(presentPlayers)
 
-  if (counts.length === 0) return { range: 0, excess: 0 }
+    return historicalDelta +
+      (playedIds.has(player.player_id) ? 1 : 0) -
+      currentExpectedShare
+  })
 
-  const min = Math.min(...counts)
-  const max = Math.max(...counts)
-  const avg = counts.reduce((sum, count) => sum + count, 0) / counts.length
-  const allowedRange = Number.isInteger(avg) ? 0 : 1
+  if (deltas.length === 0) return { range: 0, excess: 0 }
+
+  const min = Math.min(...deltas)
+  const max = Math.max(...deltas)
   const range = max - min
 
   return {
     range,
-    excess: Math.max(0, range - allowedRange),
+    excess: Math.max(0, range - 1),
   }
+}
+
+function averageMatches(players: PlayerSessionState[]): number {
+  if (players.length === 0) return 0
+  return players.reduce((sum, player) => sum + player.matches_played, 0) / players.length
 }
 
 function getProjectedPartnerBurden(

@@ -1,5 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
+import { insertSuggesterAuditEvent } from '../_shared/suggester-audit.ts'
 
 Deno.serve(async (request) => {
   const corsResponse = handleCorsPreflight(request)
@@ -33,7 +34,19 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: error.message }, 500)
     }
 
-    return jsonResponse({ ok: true, players: data ?? [] })
+    const auditError = await insertSuggesterAuditEvent(auth.supabase, {
+      session_id: sessionId,
+      event_type: 'group_changed',
+      event_source: 'host',
+      actor_id: auth.userId,
+      payload: {
+        action: 'clear_group',
+        group_id: clearGroupId,
+        affected_player_ids: (data ?? []).map((row) => row.player_id),
+      },
+    })
+
+    return jsonResponse({ ok: true, players: data ?? [], audit_error: auditError })
   }
 
   if (clearPlayerId) {
@@ -48,7 +61,19 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: error.message }, 500)
     }
 
-    return jsonResponse({ ok: true, players: data ?? [] })
+    const auditError = await insertSuggesterAuditEvent(auth.supabase, {
+      session_id: sessionId,
+      event_type: 'group_changed',
+      event_source: 'host',
+      actor_id: auth.userId,
+      payload: {
+        action: 'clear_player',
+        player_id: clearPlayerId,
+        affected_player_ids: (data ?? []).map((row) => row.player_id),
+      },
+    })
+
+    return jsonResponse({ ok: true, players: data ?? [], audit_error: auditError })
   }
 
   const playerIds = Array.isArray(body.player_ids)
@@ -71,5 +96,18 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, error: error.message }, 500)
   }
 
-  return jsonResponse({ ok: true, group_id: groupId, players: data ?? [] })
+  const auditError = await insertSuggesterAuditEvent(auth.supabase, {
+    session_id: sessionId,
+    event_type: 'group_changed',
+    event_source: 'host',
+    actor_id: auth.userId,
+    payload: {
+      action: 'set_group',
+      group_id: groupId,
+      player_ids: playerIds,
+      affected_player_ids: (data ?? []).map((row) => row.player_id),
+    },
+  })
+
+  return jsonResponse({ ok: true, group_id: groupId, players: data ?? [], audit_error: auditError })
 })

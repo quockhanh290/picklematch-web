@@ -3,6 +3,7 @@ import { previewStateAfterAlternative, rebuildStateThroughRound } from '../histo
 import type { SessionState, SuggestionAlternative } from '../types'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import {
+  computeAvailabilityMetrics,
   computeGenderPrefSatisfaction,
   computeMatchCountMetrics,
   computeOpponentDiversity,
@@ -22,6 +23,8 @@ export type FairnessAudit = {
   delta_total: number
   pressure_before: ReturnType<typeof computeRepeatPressure>
   pressure_after: ReturnType<typeof computeRepeatPressure>
+  availability_before: ReturnType<typeof computeAvailabilityMetrics>
+  availability_after: ReturnType<typeof computeAvailabilityMetrics>
   rows: Array<{
     key: keyof SessionFairnessScore['breakdown']
     label: string
@@ -97,6 +100,8 @@ function buildFairnessAuditBetweenStates(
   const afterScore = computeSessionFairness(afterState)
   const pressureBefore = computeRepeatPressure(beforeState)
   const pressureAfter = computeRepeatPressure(afterState)
+  const availabilityBefore = computeAvailabilityMetrics(beforeState)
+  const availabilityAfter = computeAvailabilityMetrics(afterState)
   const rows = ([
     ['match_count', 'So tran', describeMatchCount(afterState)],
     ['partner_diversity', 'Partner', describePartnerDiversity(afterState)],
@@ -122,26 +127,31 @@ function buildFairnessAuditBetweenStates(
     delta_total: afterScore.total - beforeScore.total,
     pressure_before: pressureBefore,
     pressure_after: pressureAfter,
+    availability_before: availabilityBefore,
+    availability_after: availabilityAfter,
     rows,
   }
 }
 
 function describeMatchCount(state: SessionState): string {
   const metrics = computeMatchCountMetrics(state)
-  return `min ${metrics.min}, max ${metrics.max}, avg ${metrics.avg.toFixed(1)}, range ${metrics.range}`
+  const availability = computeAvailabilityMetrics(state)
+  return `min ${metrics.min}, max ${metrics.max}, avg ${metrics.avg.toFixed(1)}, range ${metrics.range}, expected delta range ${availability.expected_match_delta_range.toFixed(1)}, availability ${availability.churn_level} x${availability.penalty_multiplier.toFixed(2)}`
 }
 
 function describePartnerDiversity(state: SessionState): string {
   const metrics = computePartnerDiversity(state)
   const pressure = computeRepeatPressure(state)
-  return `avg unique ${metrics.avg_unique_partners.toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(20 * metrics.avg_diversity_ratio).toFixed(1)}/20, adjusted by pressure ${pressure.repeat_risk} x${pressure.penalty_multiplier.toFixed(2)}, repeat pairs ${metrics.repeat_pairs.length}`
+  const availability = computeAvailabilityMetrics(state)
+  return `avg unique ${metrics.avg_unique_partners.toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(20 * metrics.avg_diversity_ratio).toFixed(1)}/20, adjusted by pressure ${pressure.repeat_risk} x${pressure.penalty_multiplier.toFixed(2)} and availability ${availability.churn_level} x${availability.penalty_multiplier.toFixed(2)}, repeat pairs ${metrics.repeat_pairs.length}`
 }
 
 function describeOpponentDiversity(state: SessionState): string {
   const metrics = computeOpponentDiversity(state)
   const burden = computeOpponentRepeatBurden(state)
   const pressure = computeRepeatPressure(state)
-  return `avg unique ${(metrics.avg_unique_opponents ?? metrics.avg_unique_partners).toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(15 * metrics.avg_diversity_ratio).toFixed(1)}/15, adjusted by pressure ${pressure.repeat_risk} x${pressure.penalty_multiplier.toFixed(2)}, repeat pairs ${metrics.repeat_pairs.length}, max burden ${burden.max_repeated_opponents}`
+  const availability = computeAvailabilityMetrics(state)
+  return `avg unique ${(metrics.avg_unique_opponents ?? metrics.avg_unique_partners).toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(15 * metrics.avg_diversity_ratio).toFixed(1)}/15, adjusted by pressure ${pressure.repeat_risk} x${pressure.penalty_multiplier.toFixed(2)} and availability ${availability.churn_level} x${availability.penalty_multiplier.toFixed(2)}, repeat pairs ${metrics.repeat_pairs.length}, max burden ${burden.max_repeated_opponents}`
 }
 
 function describeRestFairness(state: SessionState): string {

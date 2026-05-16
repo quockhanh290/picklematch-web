@@ -1,6 +1,6 @@
 import type { PlayerSessionState, SessionState } from '../types'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { computeGenderPrefSatisfaction, computeMatchCountMetrics, computeOpponentDiversity, computeOpponentRepeatBurden, computePartnerDiversity } from './metrics.ts'
+import { computeAvailabilityMetrics, computeGenderPrefSatisfaction, computeMatchCountMetrics, computeOpponentDiversity, computeOpponentRepeatBurden, computePartnerDiversity } from './metrics.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { computeRepeatPressure } from './pressure.ts'
 
@@ -11,6 +11,7 @@ export type WarningType =
   | 'opponent_repeat'
   | 'opponent_repeat_burden'
   | 'repeat_pressure'
+  | 'availability_pressure'
   | 'rest_violation'
   | 'gender_pref_unsatisfied'
   | 'gender_pref_impossible'
@@ -28,6 +29,7 @@ export function detectFairnessIssues(state: SessionState): FairnessWarning[] {
   const warnings: FairnessWarning[] = []
 
   warnings.push(...detectMatchCountIssues(activeState))
+  warnings.push(...detectAvailabilityIssues(activeState))
   warnings.push(...detectRepeatPressureIssues(activeState))
   warnings.push(...detectPartnerIssues(activeState))
   warnings.push(...detectOpponentIssues(activeState))
@@ -36,6 +38,23 @@ export function detectFairnessIssues(state: SessionState): FairnessWarning[] {
   warnings.push(...detectGenderIssues(activeState))
 
   return warnings
+}
+
+function detectAvailabilityIssues(state: SessionState): FairnessWarning[] {
+  if (state.current_round < 3) return []
+
+  const availability = computeAvailabilityMetrics(state)
+  if (availability.churn_level !== 'high' && availability.churn_level !== 'extreme') return []
+
+  return [
+    {
+      severity: availability.churn_level === 'extreme' ? 'warning' : 'info',
+      type: 'availability_pressure',
+      affected_players: [],
+      message: `Roster thay doi ${availability.churn_level}: ${availability.total_roster_changes} luot vao/ra, avg churn ${(availability.avg_churn_ratio * 100).toFixed(0)}%, max churn ${(availability.max_churn_ratio * 100).toFixed(0)}%.`,
+      suggested_action: 'Fairness score da giam nhe penalty repeat/match-count vi repeat mot phan den tu nguoi vao/ra giua session.',
+    },
+  ]
 }
 
 function detectRepeatPressureIssues(state: SessionState): FairnessWarning[] {
@@ -91,19 +110,29 @@ function detectMatchCountIssues(state: SessionState): FairnessWarning[] {
   if (state.current_round < 3) return []
 
   const metrics = computeMatchCountMetrics(state)
+  const availability = computeAvailabilityMetrics(state)
   const warnings: FairnessWarning[] = []
-  const allowedRange = getAllowedMatchCountRange(metrics)
-  const excessRange = Math.max(0, metrics.range - allowedRange)
-  const underplayed = metrics.per_player
-    .filter((player) => player.matches_played < metrics.avg - 1.5)
-    .map((player) => player.player_id)
+  const allowedRange = availability.rounds_tracked > 0 ? 1 : getAllowedMatchCountRange(metrics)
+  const observedRange = availability.rounds_tracked > 0
+    ? availability.expected_match_delta_range
+    : metrics.range
+  const excessRange = Math.max(0, observedRange - allowedRange)
+  const underplayed = availability.rounds_tracked > 0
+    ? availability.per_player
+      .filter((player) => player.rounds_available > 0 && player.delta_from_expected < -1.5)
+      .map((player) => player.player_id)
+    : metrics.per_player
+      .filter((player) => player.matches_played < metrics.avg - 1.5)
+      .map((player) => player.player_id)
 
   if (excessRange > 0) {
     warnings.push({
       severity: 'warning',
       type: 'match_count_imbalance',
       affected_players: underplayed.length > 0 ? underplayed : getUnderplayedByMinimum(metrics),
-      message: `Chenh so tran dang la ${metrics.range}, muc hop ly la ${allowedRange}.`,
+      message: availability.rounds_tracked > 0
+        ? `Chenh so tran theo thoi gian co mat dang la ${observedRange.toFixed(1)}, muc hop ly la ${allowedRange}.`
+        : `Chenh so tran dang la ${metrics.range}, muc hop ly la ${allowedRange}.`,
       suggested_action: 'Engine se uu tien cac ban dang choi it tran hon o vong ke tiep.',
     })
   }

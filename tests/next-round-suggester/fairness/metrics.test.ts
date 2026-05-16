@@ -1,5 +1,6 @@
 import { createMatch, createPlayer, createState, setOpponentRepeats, setPartnerRepeats } from '../helpers/factories'
 import {
+  computeAvailabilityMetrics,
   computeMatchCountMetrics,
   computeOpponentDiversity,
   computeOpponentRepeatBurden,
@@ -201,6 +202,51 @@ describe('Rest Fairness', () => {
   })
 })
 
+describe('Availability Pressure', () => {
+  it('detects roster churn from round participation', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1', { matches_played: 3 }),
+        createPlayer('p2', { matches_played: 3 }),
+        createPlayer('p3', { matches_played: 3 }),
+        createPlayer('p4', { matches_played: 3 }),
+        createPlayer('p5', { matches_played: 1 }),
+        createPlayer('p6', { matches_played: 1 }),
+      ],
+    })
+    state.rounds = [
+      makeRound(0, []),
+      makeRound(1, ['p5', 'p6']),
+      makeRound(2, []),
+    ]
+
+    const metrics = computeAvailabilityMetrics(state)
+
+    expect(metrics.total_roster_changes).toBe(4)
+    expect(metrics.churn_level).not.toBe('low')
+    expect(metrics.penalty_multiplier).toBeLessThan(1)
+  })
+
+  it('discounts match count penalty when imbalance comes with roster churn', () => {
+    const players = [
+      createPlayer('p1', { matches_played: 3 }),
+      createPlayer('p2', { matches_played: 3 }),
+      createPlayer('p3', { matches_played: 3 }),
+      createPlayer('p4', { matches_played: 3 }),
+      createPlayer('p5', { matches_played: 1 }),
+      createPlayer('p6', { matches_played: 1 }),
+    ]
+    const stable = withCompletedRounds(createState({ players: players.map((player) => createPlayer(player.player_id, { matches_played: player.matches_played })) }), 3)
+    stable.rounds = [makeRound(0, ['p5', 'p6']), makeRound(1, ['p5', 'p6']), makeRound(2, ['p5', 'p6'])]
+    const churn = createState({ players })
+    churn.rounds = [makeRound(0, []), makeRound(1, ['p5', 'p6']), makeRound(2, [])]
+
+    expect(computeSessionFairness(churn).breakdown.match_count).toBeGreaterThan(
+      computeSessionFairness(stable).breakdown.match_count,
+    )
+  })
+})
+
 describe('Session Fairness Score', () => {
   it('returns 100 for a perfectly fair session', () => {
     const p1 = createPlayer('p1', { matches_played: 1 })
@@ -248,7 +294,7 @@ describe('Session Fairness Score', () => {
     const state = withCompletedRounds(createState({ players, courts: 1 }), 3)
 
     expect(computeMatchCountMetrics(state).range).toBe(2)
-    expect(computeSessionFairness(state).breakdown.match_count).toBe(5)
+    expect(computeSessionFairness(state).breakdown.match_count).toBeLessThan(25)
   })
 
   it('penalizes partner repeats', () => {

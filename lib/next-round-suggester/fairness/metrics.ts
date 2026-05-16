@@ -69,6 +69,26 @@ export type GenderPrefMetrics = {
   unsatisfiable: { player_id: string; reason: string }[]
 }
 
+export type AvailabilityPressureLevel = 'low' | 'medium' | 'high' | 'extreme'
+
+export type AvailabilityMetrics = {
+  rounds_tracked: number
+  avg_roster_size: number
+  total_roster_changes: number
+  avg_churn_ratio: number
+  max_churn_ratio: number
+  expected_match_delta_range: number
+  churn_level: AvailabilityPressureLevel
+  penalty_multiplier: number
+  per_player: {
+    player_id: string
+    rounds_available: number
+    expected_matches: number
+    actual_matches: number
+    delta_from_expected: number
+  }[]
+}
+
 export type SessionFairnessScore = {
   total: number
   breakdown: {
@@ -439,6 +459,75 @@ export function computeGenderPrefSatisfaction(state: SessionState): GenderPrefMe
   }
 }
 
+export function computeAvailabilityMetrics(state: SessionState): AvailabilityMetrics {
+  const completedRounds = [...state.rounds]
+    .filter((round) => round.status === 'completed')
+    .sort((a, b) => a.round_no - b.round_no)
+  const perPlayer = new Map(
+    sortedPlayers(state).map((player) => [
+      player.player_id,
+      {
+        player_id: player.player_id,
+        rounds_available: 0,
+        expected_matches: 0,
+        actual_matches: player.matches_played,
+        delta_from_expected: 0,
+      },
+    ]),
+  )
+  const rosterSizes: number[] = []
+  const churnRatios: number[] = []
+  let totalRosterChanges = 0
+  let previousRoster: Set<string> | null = null
+
+  for (const round of completedRounds) {
+    const roster = getRoundRoster(round)
+    rosterSizes.push(roster.size)
+
+    if (previousRoster) {
+      const changed = symmetricDifferenceSize(previousRoster, roster)
+      totalRosterChanges += changed
+      churnRatios.push(changed / Math.max(1, previousRoster.size, roster.size))
+    }
+
+    const slots = round.matches.length * 4
+    const expectedShare = roster.size === 0 ? 0 : slots / roster.size
+    for (const playerId of roster) {
+      const row = perPlayer.get(playerId)
+      if (!row) continue
+      row.rounds_available += 1
+      row.expected_matches += expectedShare
+    }
+
+    previousRoster = roster
+  }
+
+  const rows = [...perPlayer.values()].map((row) => ({
+    ...row,
+    expected_matches: round(row.expected_matches),
+    delta_from_expected: round(row.actual_matches - row.expected_matches),
+  }))
+  const avgChurnRatio = average(churnRatios)
+  const maxChurnRatio = Math.max(0, ...churnRatios)
+  const deltaValues = rows.map((row) => row.delta_from_expected)
+  const expectedMatchDeltaRange = deltaValues.length === 0
+    ? 0
+    : Math.max(...deltaValues) - Math.min(...deltaValues)
+  const churnLevel = availabilityLevelFromChurn(avgChurnRatio, maxChurnRatio, totalRosterChanges, completedRounds.length)
+
+  return {
+    rounds_tracked: completedRounds.length,
+    avg_roster_size: round(average(rosterSizes)),
+    total_roster_changes: totalRosterChanges,
+    avg_churn_ratio: round(avgChurnRatio),
+    max_churn_ratio: round(maxChurnRatio),
+    expected_match_delta_range: round(expectedMatchDeltaRange),
+    churn_level: churnLevel,
+    penalty_multiplier: AVAILABILITY_PENALTY_MULTIPLIER[churnLevel],
+    per_player: rows.sort((a, b) => a.player_id.localeCompare(b.player_id)),
+  }
+}
+
 export function computeSessionFairness(state: SessionState): SessionFairnessScore {
   const matchCount = computeMatchCountMetrics(state)
   const partner = computePartnerDiversity(state)
@@ -446,12 +535,19 @@ export function computeSessionFairness(state: SessionState): SessionFairnessScor
   const rest = computeRestFairness(state)
   const gender = computeGenderPrefSatisfaction(state)
   const repeatPressure = computeRepeatPressure(state)
+  const availability = computeAvailabilityMetrics(state)
+  const contextPenaltyMultiplier = repeatPressure.penalty_multiplier * availability.penalty_multiplier
   const completedRounds = countCompletedRounds(state)
   const isWarmup = completedRounds < 3
   const breakdown = {
-    match_count: isWarmup ? 25 : computeMatchCountScore(matchCount),
-    partner_diversity: isWarmup ? 20 : computeContextAwareDiversityScore(partner, 20, repeatPressure.penalty_multiplier),
-    opponent_diversity: isWarmup ? 15 : computeContextAwareDiversityScore(opponent, 15, repeatPressure.penalty_multiplier),
+    match_count: isWarmup
+      ? 25
+      : Math.max(
+        computeContextAwareMatchCountScore(matchCount, availability.penalty_multiplier),
+        computeAvailabilityMatchCountScore(availability),
+      ),
+    partner_diversity: isWarmup ? 20 : computeContextAwareDiversityScore(partner, 20, contextPenaltyMultiplier),
+    opponent_diversity: isWarmup ? 15 : computeContextAwareDiversityScore(opponent, 15, contextPenaltyMultiplier),
     rest: computeRestScore(rest),
     gender_prefs: isWarmup ? 20 : computeGenderScore(gender),
   }
@@ -477,6 +573,18 @@ function computeMatchCountScore(metrics: MatchCountMetrics): number {
   const unavoidableRange = hasFractionalMatchDistribution(metrics) ? 1 : 0
   const excessRange = Math.max(0, metrics.range - unavoidableRange)
   return Math.max(0, 25 - excessRange * 10)
+}
+
+function computeContextAwareMatchCountScore(metrics: MatchCountMetrics, penaltyMultiplier: number): number {
+  const rawScore = computeMatchCountScore(metrics)
+  const rawPenalty = 25 - rawScore
+  return Math.max(0, Math.min(25, Math.round(25 - rawPenalty * penaltyMultiplier)))
+}
+
+function computeAvailabilityMatchCountScore(metrics: AvailabilityMetrics): number {
+  if (metrics.rounds_tracked === 0) return 25
+  const excessRange = Math.max(0, metrics.expected_match_delta_range - 1)
+  return Math.max(0, Math.min(25, Math.round(25 - excessRange * 10)))
 }
 
 function hasFractionalMatchDistribution(metrics: MatchCountMetrics): boolean {
@@ -647,6 +755,44 @@ function collectRepeatPairs(
   })
 }
 
+const AVAILABILITY_PENALTY_MULTIPLIER: Record<AvailabilityPressureLevel, number> = {
+  low: 1,
+  medium: 0.85,
+  high: 0.7,
+  extreme: 0.55,
+}
+
+function availabilityLevelFromChurn(
+  avgChurnRatio: number,
+  maxChurnRatio: number,
+  totalRosterChanges: number,
+  roundsTracked: number,
+): AvailabilityPressureLevel {
+  if (roundsTracked < 2 || totalRosterChanges === 0) return 'low'
+  if (avgChurnRatio > 0.3 || maxChurnRatio > 0.45) return 'extreme'
+  if (avgChurnRatio > 0.18 || maxChurnRatio > 0.3) return 'high'
+  if (avgChurnRatio > 0.08 || maxChurnRatio > 0.15) return 'medium'
+  return 'low'
+}
+
+function getRoundRoster(round: { matches: Match[]; resting: string[] }): Set<string> {
+  return new Set([
+    ...round.matches.flatMap((match) => [...match.team_a, ...match.team_b]),
+    ...round.resting,
+  ])
+}
+
+function symmetricDifferenceSize(a: Set<string>, b: Set<string>): number {
+  let changes = 0
+  for (const item of a) {
+    if (!b.has(item)) changes += 1
+  }
+  for (const item of b) {
+    if (!a.has(item)) changes += 1
+  }
+  return changes
+}
+
 function sortedPlayers(state: SessionState): PlayerSessionState[] {
   return [...state.players.values()].sort((a, b) => a.player_id.localeCompare(b.player_id))
 }
@@ -661,4 +807,8 @@ function standardDeviation(values: number[]): number {
   const avg = average(values)
   const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / values.length
   return Math.sqrt(variance)
+}
+
+function round(value: number): number {
+  return Number(value.toFixed(2))
 }

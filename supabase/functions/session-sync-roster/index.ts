@@ -1,5 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
+import { insertSuggesterAuditEvent } from '../_shared/suggester-audit.ts'
 
 Deno.serve(async (request) => {
   const corsResponse = handleCorsPreflight(request)
@@ -76,11 +77,28 @@ Deno.serve(async (request) => {
     }
   }
 
+  const auditError = await insertSuggesterAuditEvent(auth.supabase, {
+    session_id: sessionId,
+    event_type: 'roster_synced',
+    event_source: 'host',
+    actor_id: auth.userId,
+    payload: {
+      requested_player_ids: playerIds,
+      inserted_player_ids: newIds,
+      revived_player_ids: reviveIds,
+      inserted: newIds.length,
+      revived: reviveIds.length,
+      removed: 0,
+      total: playerIds.length,
+    },
+  })
+
   return jsonResponse({
     ok: true,
     inserted: newIds.length,
     revived: reviveIds.length,
     removed: 0,
     total: playerIds.length,
+    audit_error: auditError,
   })
 })

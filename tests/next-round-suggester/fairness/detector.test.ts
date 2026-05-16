@@ -129,6 +129,26 @@ describe('Detector', () => {
     expect(detectFairnessIssues(state).map((warning) => warning.type)).not.toContain('rest_violation')
   })
 
+  it('detects availability pressure when roster changes between rounds', () => {
+    const state = createState({
+      currentRound: 4,
+      players: [
+        createPlayer('p1', { matches_played: 3 }),
+        createPlayer('p2', { matches_played: 3 }),
+        createPlayer('p3', { matches_played: 3 }),
+        createPlayer('p4', { matches_played: 3 }),
+        createPlayer('p5', { matches_played: 1 }),
+        createPlayer('p6', { matches_played: 1 }),
+      ],
+    })
+    state.rounds = [round(0, []), round(1, ['p5', 'p6']), round(2, [])]
+
+    const warning = detectFairnessIssues(state).find((item) => item.type === 'availability_pressure')
+
+    expect(warning?.affected_players).toEqual([])
+    expect(warning?.message).toContain('Roster thay doi')
+  })
+
   it('detects repeated partners', () => {
     const p1 = createPlayer('p1', { matches_played: 3 })
     const p2 = createPlayer('p2', { matches_played: 3 })
