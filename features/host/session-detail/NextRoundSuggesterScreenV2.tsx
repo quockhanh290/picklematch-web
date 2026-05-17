@@ -422,7 +422,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       if (activeRound) throw new Error('Đang có vòng active. Hãy kết thúc vòng hiện tại trước.')
       await invokeLiveSessionFunction('session-rounds-start', sessionId, {
         suggestion_idx: selectedAlternative,
-        manual: alternative.matches,
+        manual: manualAlternative ? alternative.matches : undefined,
+        courts: courtCount,
+        pvna_tolerance: pvnaTolerance,
         decision_context: {
           selected_alternative_index: selectedAlternative,
           manual_swap_applied: manualAlternative !== null,

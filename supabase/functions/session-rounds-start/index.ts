@@ -57,6 +57,10 @@ function matchesEqual(left: ManualMatch[], right: ManualMatch[]) {
   return leftKeys.every((key, index) => key === rightKeys[index])
 }
 
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
 Deno.serve(async (request) => {
   const corsResponse = handleCorsPreflight(request)
   if (corsResponse) return corsResponse
@@ -75,7 +79,14 @@ Deno.serve(async (request) => {
 
   try {
     const body = await readJson(request)
-    const state = await loadSessionState(auth.supabase, sessionId)
+    const state = await loadSessionState(auth.supabase, sessionId, {
+      courts: optionalNumber(body.courts),
+      pvnaTolerance: optionalNumber(body.pvna_tolerance),
+    })
+    if (state.rounds.some((round) => round.status === 'active')) {
+      return jsonResponse({ ok: false, error: 'A round is already active' }, 409)
+    }
+
     const adjustment = correctForFairness(state)
     const adjustedState = applyFairnessAdjustment(state, adjustment)
     const fairnessScoreBefore = computeSessionFairness(state).total
@@ -96,6 +107,10 @@ Deno.serve(async (request) => {
       }
 
       matches = manual
+      if (matches.length > state.config.courts) {
+        return jsonResponse({ ok: false, error: 'Manual matches exceed court count' }, 400)
+      }
+
       const playedIds = getPlayedIds(matches)
       if (playedIds.size !== matches.length * 4) {
         return jsonResponse({ ok: false, error: 'A player can only be assigned once per round' }, 400)

@@ -1,11 +1,15 @@
 /* eslint-disable import/no-unresolved */
-import { getSessionId, handleCorsPreflight, jsonResponse, requireHost } from '../_shared/live-session.ts'
+import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
 import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
 import { suggestNextRound } from '../../../lib/next-round-suggester/suggest.ts'
 import {
   applyFairnessAdjustment,
   correctForFairness,
 } from '../../../lib/next-round-suggester/fairness/corrector.ts'
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
 
 Deno.serve(async (request) => {
   const corsResponse = handleCorsPreflight(request)
@@ -24,7 +28,11 @@ Deno.serve(async (request) => {
   if (auth.error) return auth.error
 
   try {
-    const state = await loadSessionState(auth.supabase, sessionId)
+    const body = await readJson(request)
+    const state = await loadSessionState(auth.supabase, sessionId, {
+      courts: optionalNumber(body.courts),
+      pvnaTolerance: optionalNumber(body.pvna_tolerance),
+    })
     const adjustment = correctForFairness(state)
     const adjustedState = applyFairnessAdjustment(state, adjustment)
     const suggestion = suggestNextRound(adjustedState, {
