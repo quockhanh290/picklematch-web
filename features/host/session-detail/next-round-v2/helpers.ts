@@ -27,6 +27,10 @@ export function getTeamPvna(team: [string, string], state: SessionState) {
   return team.reduce((sum, id) => sum + (state.players.get(id)?.pvna ?? 3.0), 0) / 2
 }
 
+export function playerName(playerId: string, playersById: Map<string, ArrangementPlayer>) {
+  return playersById.get(playerId)?.name ?? 'Người chơi'
+}
+
 export function normalizeRoundRow(row: any): SessionRoundRow {
   return {
     id: row.id,

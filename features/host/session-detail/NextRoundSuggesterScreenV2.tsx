@@ -1,21 +1,16 @@
 import React, { useMemo, useState } from 'react'
+import { router } from 'expo-router'
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   AlertTriangle,
-  CheckCircle2,
   ChevronDown,
-  History,
   MoreHorizontal,
   RefreshCcw,
   Settings,
   ShieldCheck,
   Sparkles,
-  UserMinus,
-  UserPlus,
-  Users,
-  X,
   Zap,
 } from 'lucide-react-native'
 
@@ -63,8 +58,15 @@ import type {
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
 import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds } from './next-round-v2/api'
-import { Card, MiniAction, NextRoundSheet, PlayerAvatar, SheetAction, SheetTitle } from './next-round-v2/components'
+import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
+import {
+  HistorySheet as HistorySheetView,
+  MoreSheet as MoreSheetView,
+  RecapView as RecapViewModule,
+  RosterSheet as RosterSheetView,
+  SwapSheet as SwapSheetView,
+} from './next-round-v2/flow-sheets'
 import {
   ctaTextStyle,
   eyebrowStyle,
@@ -87,6 +89,35 @@ function fairnessLabel(score: SessionFairnessScore) {
   if (score.grade === 'good') return 'Đều'
   if (score.grade === 'acceptable') return 'Tạm ổn'
   return 'Cần chỉnh'
+}
+
+function repeatRiskLabel(risk: string) {
+  if (risk === 'low') return 'thấp'
+  if (risk === 'medium') return 'vừa'
+  if (risk === 'high') return 'cao'
+  if (risk === 'extreme') return 'rất cao'
+  return risk
+}
+
+function churnLevelLabel(level: string) {
+  if (level === 'low') return 'thấp'
+  if (level === 'medium') return 'vừa'
+  if (level === 'high') return 'cao'
+  return level
+}
+
+function warningTitle(type: string) {
+  if (type === 'match_count_imbalance') return 'Lệch số trận'
+  if (type === 'projected_match_count_imbalance') return 'Sắp lệch số trận'
+  if (type === 'underplayed') return 'Có người chơi ít hơn'
+  if (type === 'partner_repeat') return 'Lặp partner (đồng đội)'
+  if (type === 'opponent_repeat') return 'Lặp đối thủ'
+  if (type === 'opponent_repeat_burden') return 'Một người gặp lại nhiều đối thủ'
+  if (type === 'projected_opponent_repeat_burden') return 'Sắp lặp đối thủ nhiều'
+  if (type === 'rest_violation') return 'Nghỉ liên tiếp'
+  if (type === 'gender_pref_unsatisfied') return 'Sở thích giới tính chưa tốt'
+  if (type === 'gender_pref_impossible') return 'Sở thích giới tính khó đáp ứng'
+  return type.replace(/_/g, ' ')
 }
 
 function warningTone(theme: ReturnType<typeof useAppTheme>, severity: FairnessWarning['severity'] | 'ok') {
@@ -148,6 +179,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   const [expandedRosterPlayer, setExpandedRosterPlayer] = useState<string | null>(null)
   const [groupSelection, setGroupSelection] = useState<string[]>([])
   const [showEngineStats, setShowEngineStats] = useState(false)
+  const [showSessionReport, setShowSessionReport] = useState(false)
 
   const confirmedPlayers = useMemo(
     () => players.filter(player => player.status === 'confirmed' || !player.status),
@@ -197,6 +229,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   )
   const selected = suggestion.alternatives[selectedAlternative] ?? suggestion.alternatives[0]
   const workingAlternative = manualAlternative ?? selected
+  const hasManualSwapHardGuard = Boolean(workingAlternative?.warnings.includes('MANUAL_SWAP_HARD_GUARD'))
   const fairnessScore = useMemo(() => computeSessionFairness(state), [state])
   const fairnessPreview = useMemo(
     () => buildFairnessPreview(state, workingAlternative),
@@ -246,7 +279,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   )
   const groupSummaries = useMemo(() => buildGroupSummaries(rows.playerRows), [rows.playerRows])
   const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
-  const phase: 'plan' | 'active' | 'recap' = targetReached && !activeRound ? 'recap' : activeRound ? 'active' : 'plan'
+  const phase: 'plan' | 'active' | 'recap' = showSessionReport && targetReached && !activeRound ? 'recap' : activeRound ? 'active' : 'plan'
 
   const rememberRoundSelection = (reason: string) => {
     setSelectionUndo({
@@ -274,6 +307,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     setSelectedAlternative(index)
     setManualAlternative(null)
     setSwapFromPlayerId(null)
+    setShowSessionReport(false)
   }
 
   const applySuggestedRoundAction = (action: SuggestedRoundAction) => {
@@ -455,22 +489,40 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     setSheet(null)
   }
 
-  const refreshButton = (
-    <Pressable
-      onPress={loadLiveState}
-      style={{
-        height: 36,
-        width: 36,
-        borderRadius: RADIUS.full,
-        borderWidth: BORDER.hairline,
-        borderColor: theme.outlineVariant,
-        backgroundColor: theme.surface,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <RefreshCcw size={16} color={theme.onSurface} />
-    </Pressable>
+  const navbarRightSlot = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Pressable
+        onPress={() => router.push({ pathname: '/host/session/[id]/next-round', params: { id: sessionId, ui: 'v1' } })}
+        style={{
+          height: 36,
+          minWidth: 46,
+          borderRadius: RADIUS.full,
+          borderWidth: BORDER.hairline,
+          borderColor: theme.outlineVariant,
+          backgroundColor: theme.surface,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 10,
+        }}
+      >
+        <Text style={ctaTextStyle(theme.primary, 11)}>V1</Text>
+      </Pressable>
+      <Pressable
+        onPress={loadLiveState}
+        style={{
+          height: 36,
+          width: 36,
+          borderRadius: RADIUS.full,
+          borderWidth: BORDER.hairline,
+          borderColor: theme.outlineVariant,
+          backgroundColor: theme.surface,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <RefreshCcw size={16} color={theme.onSurface} />
+      </Pressable>
+    </View>
   )
 
   if (loading) {
@@ -483,15 +535,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      <SecondaryNavbar title="NEXT ROUND" rightSlot={refreshButton} />
+      <SecondaryNavbar title="NEXT ROUND" rightSlot={navbarRightSlot} />
       {phase === 'recap' ? (
-        <RecapView
+        <RecapViewModule
           summary={sessionSummary}
           state={reportState}
           matchCountConsistencyRows={matchCountConsistencyRows}
           groupSummaries={groupSummaries}
           playersById={playersById}
           onOpenHistory={() => setSheet('history')}
+          onContinue={() => setShowSessionReport(false)}
         />
       ) : (
         <ScrollView
@@ -515,6 +568,31 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
             onSettingsPress={() => setSheet('settings')}
           />
 
+          {targetReached && !activeRound ? (
+            <Card style={{ marginTop: 14, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: theme.primary }}>
+                Đã đủ số vòng mục tiêu
+              </Text>
+              <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.onSurface }}>
+                Host có thể xem tổng kết fairness hoặc chạy thêm một vòng nếu kèo vẫn muốn chơi tiếp.
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                <TouchableOpacity
+                  onPress={() => setShowSessionReport(true)}
+                  style={{ flex: 1, height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Text style={ctaTextStyle(theme.onPrimary, 12)}>Xem tổng kết</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setShowSessionReport(false)}
+                  style={{ flex: 1, height: 44, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Text style={ctaTextStyle(theme.primary, 12)}>Chạy thêm vòng</Text>
+                </TouchableOpacity>
+              </View>
+            </Card>
+          ) : null}
+
           {phase === 'plan' && (
             <>
               <AlternativeTabs
@@ -527,7 +605,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
               />
               {workingAlternative ? (
                 <>
-                  <FairnessPreviewCard preview={fairnessPreview} onPress={() => setSheet('fairness')} />
+                  <FairnessPreviewCard preview={fairnessPreview} onPress={() => setSheet('preview')} />
                   <EngineExplainCard
                     alternative={workingAlternative}
                     actions={suggestedRoundActions}
@@ -549,6 +627,14 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
                     onPlayerPress={openSwapForPlayer}
                   />
                   <RestingRow resting={workingAlternative.resting} playersById={playersById} />
+                  {hasManualSwapHardGuard ? (
+                    <View style={{ marginTop: 12, backgroundColor: theme.dangerBg, borderRadius: RADIUS.md, padding: 12, borderWidth: BORDER.hairline, borderColor: theme.dangerText, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <AlertTriangle size={16} color={theme.dangerText} />
+                      <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.dangerText, lineHeight: 17 }}>
+                        Swap hiện tại vi phạm hard guard PVNA/team. Hãy hoàn tác hoặc chọn phương án khác trước khi bắt đầu.
+                      </Text>
+                    </View>
+                  ) : null}
                 </>
               ) : (
                 <EmptyPlanCard onSyncRoster={syncRoster} busy={busy === 'sync'} />
@@ -599,12 +685,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       {phase !== 'recap' && (
         <StickyRoundCta
           busy={busy}
-          primaryLabel={phase === 'active' ? 'Kết thúc & lưu vòng' : 'Bắt đầu vòng kế'}
+          primaryLabel={phase === 'active' ? 'Kết thúc & lưu vòng' : targetReached ? 'Chạy thêm vòng' : 'Bắt đầu vòng kế'}
           onPrimary={() => {
             if (phase === 'active') void endActiveRound()
             else if (workingAlternative) void startRound(workingAlternative)
           }}
-          disabled={phase === 'plan' && !workingAlternative}
+          disabled={phase === 'plan' && (!workingAlternative || hasManualSwapHardGuard)}
           onMore={() => setSheet('more')}
         />
       )}
@@ -637,8 +723,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         />
       </NextRoundSheet>
 
+      <NextRoundSheet visible={sheet === 'preview'} snap="88" onClose={() => setSheet(null)}>
+        <FairnessPreviewSheet preview={fairnessPreview} />
+      </NextRoundSheet>
+
       <NextRoundSheet visible={sheet === 'swap'} snap="88" onClose={() => setSheet(null)}>
-        <SwapSheet
+        <SwapSheetView
           state={state}
           alternative={workingAlternative}
           playersById={playersById}
@@ -649,7 +739,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       </NextRoundSheet>
 
       <NextRoundSheet visible={sheet === 'roster'} snap="88" onClose={() => setSheet(null)}>
-        <RosterSheet
+        <RosterSheetView
           rows={rows.playerRows}
           playersById={playersById}
           expandedPlayerId={expandedRosterPlayer}
@@ -671,11 +761,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       </NextRoundSheet>
 
       <NextRoundSheet visible={sheet === 'history'} snap="88" onClose={() => setSheet(null)}>
-        <HistorySheet rounds={completedRounds} playersById={playersById} />
+        <HistorySheetView rounds={completedRounds} playersById={playersById} />
       </NextRoundSheet>
 
       <NextRoundSheet visible={sheet === 'more'} snap="50" onClose={() => setSheet(null)}>
-        <MoreSheet
+        <MoreSheetView
           onSyncRoster={syncRoster}
           onOpenRoster={() => setSheet('roster')}
           onOpenHistory={() => setSheet('history')}
@@ -890,12 +980,12 @@ function FairnessPreviewCard({ preview, onPress }: { preview: FairnessPreview; o
             <ShieldCheck size={18} color={tone} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={eyebrowStyle(theme.outline)}>Preview fairness vòng kế</Text>
+            <Text style={eyebrowStyle(theme.outline)}>Dự kiến điểm vòng kế</Text>
             <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>
               {beforeTotal} → {afterTotal}
             </Text>
             <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline, marginTop: 4 }}>
-              Bấm để xem audit chi tiết — partner / đối thủ / nghỉ / pressure
+              Bấm để xem audit chi tiết: partner (đồng đội), đối thủ, nhịp nghỉ và áp lực lặp
             </Text>
           </View>
           <View style={{ borderRadius: RADIUS.full, backgroundColor: delta >= 0 ? theme.successBg : theme.warningBg, paddingHorizontal: 10, paddingVertical: 5 }}>
@@ -905,6 +995,137 @@ function FairnessPreviewCard({ preview, onPress }: { preview: FairnessPreview; o
       </Card>
     </TouchableOpacity>
   )
+}
+
+function FairnessPreviewSheet({ preview }: { preview: FairnessPreview | null }) {
+  const theme = useAppTheme()
+  if (!preview) {
+    return <SheetTitle title="Dự kiến điểm vòng kế" subtitle="Chưa có phương án vòng kế để audit." />
+  }
+
+  const tone = preview.delta_total >= 0 ? theme.successText : theme.warningText
+  const summaryTone = preview.delta_total >= 0 ? theme.successText : theme.warningText
+  const summaryBg = preview.delta_total >= 0 ? theme.successBg : theme.warningBg
+  const pressureText = preview.pressure_after.repeat_risk === 'low'
+    ? 'Ít nguy cơ lặp partner (đồng đội) hoặc đối thủ.'
+    : preview.pressure_after.repeat_risk === 'medium'
+      ? 'Có thể bắt đầu lặp một vài partner (đồng đội) hoặc đối thủ.'
+      : 'Áp lực lặp partner (đồng đội) hoặc đối thủ đang cao.'
+  const availabilityText = preview.availability_after.churn_level === 'low'
+    ? 'Danh sách người chơi ổn định.'
+    : preview.availability_after.churn_level === 'medium'
+      ? 'Có thay đổi người chơi, điểm fairness đã tính nhẹ hơn.'
+      : 'Người vào/ra nhiều, nên xem đây là kèo khó giữ đều tuyệt đối.'
+  return (
+    <View>
+      <SheetTitle title="Nếu bắt đầu vòng này" subtitle="Ước tính fairness sau khi lưu phương án đang chọn." />
+      <LinearGradient colors={[theme.heroGradientStart, theme.primaryContainer]} style={{ borderRadius: RADIUS.lg, padding: 16, marginBottom: 14 }}>
+        <Text style={eyebrowStyle(theme.heroCountdownText)}>Điểm dự kiến</Text>
+        <Text style={{ marginTop: 8, fontFamily: SCREEN_FONTS.headlineItalic, fontSize: 42, color: theme.surface }}>
+          {preview.before_total} → {preview.after_total}
+        </Text>
+        <View style={{ alignSelf: 'flex-start', marginTop: 8, backgroundColor: theme.heroPillBg, borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 5 }}>
+          <Text style={ctaTextStyle(theme.heroCountdownText, 12)}>
+            {preview.delta_total > 0 ? '+' : ''}{preview.delta_total}
+          </Text>
+        </View>
+      </LinearGradient>
+
+      <Card style={{ borderRadius: RADIUS.md, padding: 12, marginBottom: 12, backgroundColor: summaryBg }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: summaryTone }}>
+          {preview.delta_total >= 0 ? 'Phương án này giữ fairness tốt' : 'Phương án này làm fairness giảm'}
+        </Text>
+        <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: summaryTone }}>
+          Điểm thay đổi {preview.delta_total > 0 ? '+' : ''}{preview.delta_total}. {pressureText} {availabilityText}
+        </Text>
+      </Card>
+
+      <Card style={{ borderRadius: RADIUS.md, padding: 12, marginBottom: 12, backgroundColor: theme.secondaryContainer }}>
+        <Text style={eyebrowStyle(theme.primary)}>Các chỉ số nền</Text>
+        <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.onSurface }}>
+          Áp lực lặp partner (đồng đội) hoặc đối thủ: {repeatRiskLabel(preview.pressure_before.repeat_risk)} → {repeatRiskLabel(preview.pressure_after.repeat_risk)}.
+        </Text>
+        <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.onSurface }}>
+          Hệ số giảm phạt: {preview.pressure_before.penalty_multiplier.toFixed(2)} → {preview.pressure_after.penalty_multiplier.toFixed(2)}. Áp lực đối thủ: {preview.pressure_before.opponent_pressure.toFixed(2)} → {preview.pressure_after.opponent_pressure.toFixed(2)}.
+        </Text>
+        <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.onSurface }}>
+          Biến động người chơi: {churnLevelLabel(preview.availability_before.churn_level)} → {churnLevelLabel(preview.availability_after.churn_level)}. Tỉ lệ người vào/ra: {(preview.availability_before.avg_churn_ratio * 100).toFixed(0)}% → {(preview.availability_after.avg_churn_ratio * 100).toFixed(0)}%.
+        </Text>
+      </Card>
+
+      <View style={{ gap: 8 }}>
+        {preview.rows.map(row => (
+          <Card key={`preview-row-${row.key}`} style={{ borderRadius: RADIUS.md, padding: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{row.label}</Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.outline }}>
+                {row.before} → {row.after}
+              </Text>
+              <Text style={{ width: 36, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: row.delta >= 0 ? theme.primary : tone }}>
+                {row.delta > 0 ? '+' : ''}{row.delta}
+              </Text>
+            </View>
+            <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 16, color: theme.outline }}>
+              {describePreviewRow(row)}
+            </Text>
+          </Card>
+        ))}
+      </View>
+    </View>
+  )
+}
+
+function describePreviewRow(row: FairnessPreview['rows'][number]) {
+  if (row.key === 'match_count') {
+    return row.delta < 0
+      ? 'Một số người sẽ lệch số trận sau vòng này. Nếu lệch chỉ 1 trận thì thường vẫn ổn.'
+      : 'Số trận giữa người chơi vẫn cân bằng.'
+  }
+  if (row.key === 'partner_diversity') {
+    return row.delta < 0
+      ? 'Có thêm cặp đánh chung bị lặp.'
+      : 'Không làm xấu độ đa dạng partner (đồng đội).'
+  }
+  if (row.key === 'opponent_diversity') {
+    return row.delta < 0
+      ? 'Có thêm đối thủ bị gặp lại.'
+      : 'Không làm xấu độ đa dạng đối thủ.'
+  }
+  if (row.key === 'rest') {
+    return row.delta < 0
+      ? 'Có người nghỉ liên tiếp hoặc nhịp nghỉ xấu hơn.'
+      : 'Nhịp nghỉ vẫn ổn.'
+  }
+  if (row.key === 'gender_prefs') {
+    return row.delta < 0
+      ? 'Một số sở thích giới tính không được đáp ứng trong vòng này.'
+      : 'Sở thích giới tính vẫn được giữ tốt.'
+  }
+  return humanizeAuditDetail(row.detail)
+}
+
+function humanizeAuditDetail(detail: string) {
+  return detail
+    .replace(/\bexpected delta range\b/g, 'mức lệch hợp lý theo setup')
+    .replace(/\bavg unique\b/g, 'trung bình số người khác')
+    .replace(/\bopponent pressure\b/g, 'áp lực đối thủ')
+    .replace(/\brepeat pairs\b/g, 'cặp bị lặp')
+    .replace(/\bmax burden\b/g, 'người bị lặp nhiều nhất')
+    .replace(/\badjusted by\b/g, 'đã điều chỉnh theo')
+    .replace(/\bavg\b/g, 'trung bình')
+    .replace(/\brange\b/g, 'chênh số trận')
+    .replace(/\bavailability\b/g, 'biến động người chơi')
+    .replace(/\bchurn\b/g, 'người vào/ra')
+    .replace(/\bmultiplier\b/g, 'hệ số giảm phạt')
+    .replace(/\bpressure\b/g, 'áp lực')
+    .replace(/\bburden\b/g, 'người bị lặp nhiều')
+    .replace(/\braw\b/g, 'điểm gốc')
+    .replace(/\bsatisfied\b/g, 'sở thích được đáp ứng')
+    .replace(/\bviolations\b/g, 'vi phạm')
+    .replace(/\blow\b/g, 'thấp')
+    .replace(/\bmedium\b/g, 'vừa')
+    .replace(/\bhigh\b/g, 'cao')
+    .replace(/\bextreme\b/g, 'rất cao')
 }
 
 function EngineExplainCard({
@@ -929,7 +1150,7 @@ function EngineExplainCard({
         <View style={{ flex: 1 }}>
           <Text style={eyebrowStyle(theme.primary)}>Engine giải thích</Text>
           <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 13, lineHeight: 19, color: theme.onSurface }}>
-            Engine đang chọn phương án có tổng score thấp nhất: cân PVNA, hạn chế lặp partner/đối thủ, giữ nhịp nghỉ và tôn trọng group/pref khi có thể.
+            Engine đang chọn phương án có điểm ghép thấp nhất: cân PVNA, hạn chế lặp partner (đồng đội)/đối thủ, giữ nhịp nghỉ và tôn trọng group/sở thích khi có thể.
           </Text>
           {primaryAction ? (
             <TouchableOpacity
@@ -963,9 +1184,9 @@ function EngineExplainCard({
             ['Chênh PVNA', alternative.stats.pvna_diff.toFixed(2)],
             ['Lặp partner', String(alternative.stats.partner_repeats)],
             ['Lặp đối thủ', String(alternative.stats.opponent_repeats)],
-            ['Group bonus', String(alternative.stats.group_bonus)],
-            ['Gender pref', alternative.stats.gender_pref_penalty.toFixed(1)],
-            ['Score tổng', alternative.score.toFixed(1)],
+            ['Điểm ưu tiên group', String(alternative.stats.group_bonus)],
+            ['Sở thích giới tính', alternative.stats.gender_pref_penalty.toFixed(1)],
+            ['Điểm ghép tổng', alternative.score.toFixed(1)],
           ].map(([label, value]) => (
             <View key={label} style={{ width: '48%', backgroundColor: theme.surface, borderRadius: RADIUS.md, padding: 10, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant }}>
               <Text style={eyebrowStyle(theme.outline, 9)}>{label}</Text>
@@ -1000,7 +1221,7 @@ function WarningsBlock({
         <AlertTriangle size={18} color={tone.text} />
         <View style={{ flex: 1 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: tone.text }}>
-            {warning ? warning.type.replace(/_/g, ' ') : 'Có phương án thay thế'}
+            {warning ? warningTitle(warning.type) : 'Có phương án thay thế'}
           </Text>
           <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: tone.text }}>
             {warning?.message ?? action?.detail}
@@ -1013,10 +1234,33 @@ function WarningsBlock({
           <Text style={ctaTextStyle(tone.text, 11)}>{action ? 'Áp dụng' : 'Mở swap'}</Text>
         </TouchableOpacity>
       </View>
+      {actions.length > 0 ? (
+        <View style={{ gap: 8, marginTop: 12 }}>
+          {actions.map((item, index) => (
+            <TouchableOpacity
+              key={`${item.type}-${index}`}
+              disabled={item.type === 'accept_tradeoff'}
+              onPress={() => onApplyAction(item)}
+              style={{
+                borderRadius: RADIUS.md,
+                backgroundColor: item.type === 'accept_tradeoff' ? theme.surfaceContainerLow : theme.surface,
+                borderWidth: BORDER.hairline,
+                borderColor: tone.border,
+                padding: 10,
+                opacity: item.type === 'accept_tradeoff' ? 0.75 : 1,
+              }}
+            >
+              <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: tone.text }}>{item.label}</Text>
+              <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, lineHeight: 15, color: theme.outline }}>
+                {item.detail}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
     </View>
   )
 }
-
 function MatchList({
   title,
   matches,
@@ -1086,7 +1330,7 @@ function MatchTile({
         <TeamBlock team={match.team_b} state={state} playersById={playersById} onPlayerPress={onPlayerPress} align="right" />
       </View>
       <Text style={{ marginTop: 10, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-        Score {Number.isFinite(scored.score) ? scored.score.toFixed(1) : '-'} · Partner {scored.stats.partner_repeats} · Đối thủ {scored.stats.opponent_repeats}
+        Điểm ghép {Number.isFinite(scored.score) ? scored.score.toFixed(1) : '-'} · Partner lặp {scored.stats.partner_repeats} · Đối thủ lặp {scored.stats.opponent_repeats}
       </Text>
     </Card>
   )
@@ -1257,7 +1501,7 @@ function SettingsSheet({
           <View style={{ flex: 1 }}>
             <Text style={eyebrowStyle(theme.heroCountdownText)}>Engine khuyến nghị</Text>
             <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
-              Giữ setup gần court calculator, chỉ mở PVNA tolerance khi repeat pressure tăng.
+              Giữ setup gần gợi ý sân, chỉ mở dung sai PVNA khi áp lực lặp partner/đối thủ tăng.
             </Text>
           </View>
         </View>
@@ -1449,11 +1693,11 @@ function FairnessSheet({
   const pressure = computeRepeatPressure(state)
   const burden = computeOpponentRepeatBurden(state)
   const rows = [
-    ['Số trận', score.breakdown.match_count, 25, `range ${match.range}, avg ${match.avg.toFixed(1)}`],
-    ['Partner', score.breakdown.partner_diversity, 20, `${partner.repeat_pairs.length} cặp lặp`],
-    ['Đối thủ', score.breakdown.opponent_diversity, 15, `${opponent.repeat_pairs.length} cặp lặp, burden ${burden.max_repeated_opponents}`],
+    ['Số trận', score.breakdown.match_count, 25, `Chênh số trận ${match.range} · Trung bình ${match.avg.toFixed(1)} trận/người`],
+    ['Partner (đồng đội)', score.breakdown.partner_diversity, 20, `${partner.repeat_pairs.length} cặp lặp`],
+    ['Đối thủ', score.breakdown.opponent_diversity, 15, `${opponent.repeat_pairs.length} cặp lặp · Một người bị lặp nhiều nhất ${burden.max_repeated_opponents} đối thủ`],
     ['Nghỉ', score.breakdown.rest, 20, `${rest.violations.length} vi phạm`],
-    ['Gender pref', score.breakdown.gender_prefs, 20, `${gender.satisfied_count}/${gender.total_pref_opportunities || 0} satisfied`],
+    ['Sở thích giới tính', score.breakdown.gender_prefs, 20, `${gender.satisfied_count}/${gender.total_pref_opportunities || 0} sở thích được đáp ứng`],
   ] as const
   return (
     <View>
@@ -1465,7 +1709,7 @@ function FairnessSheet({
           <Text style={ctaTextStyle(theme.heroCountdownText, 12)}>{fairnessLabel(score)}</Text>
         </View>
         <Text style={{ marginTop: 9, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
-          Repeat pressure {pressure.repeat_risk} · Avg trận {match.avg.toFixed(1)} · Opp pressure {pressure.opponent_pressure.toFixed(2)}
+          Áp lực lặp {repeatRiskLabel(pressure.repeat_risk)} · Trung bình {match.avg.toFixed(1)} trận/người · Áp lực đối thủ {pressure.opponent_pressure.toFixed(2)}
         </Text>
       </LinearGradient>
       {rows.map(([label, value, max, detail]) => (
@@ -1483,7 +1727,7 @@ function FairnessSheet({
             const tone = warningTone(theme, warning.severity)
             return (
               <View key={`${warning.type}-${index}`} style={{ backgroundColor: tone.bg, borderRadius: RADIUS.md, padding: 10, borderWidth: BORDER.hairline, borderColor: tone.border }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: tone.text }}>{warning.type.replace(/_/g, ' ')}</Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: tone.text }}>{warningTitle(warning.type)}</Text>
                 <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: tone.text }}>{warning.message}</Text>
               </View>
             )
@@ -1581,7 +1825,7 @@ function LatestFairnessAuditCard({ audit }: { audit: FairnessAudit | null }) {
                 {row.before} → {row.after} ({row.delta > 0 ? '+' : ''}{row.delta})
               </Text>
             </View>
-            <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>{row.detail}</Text>
+            <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>{humanizeAuditDetail(row.detail)}</Text>
           </View>
         ))}
       </View>
@@ -1615,7 +1859,7 @@ function RepeatDetailsBlock({
     <View style={{ marginTop: 12, gap: 8 }}>
       <Text style={eyebrowStyle(theme.outline)}>Cặp lặp chi tiết</Text>
       <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Partner lặp</Text>
+        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Partner lặp (đồng đội)</Text>
         <View style={{ gap: 3 }}>{renderPairs(partnerPairs)}</View>
       </View>
       <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
@@ -1652,383 +1896,5 @@ function OpponentBurdenSummary({
         </View>
       )}
     </Card>
-  )
-}
-
-function SwapSheet({
-  state,
-  alternative,
-  playersById,
-  swapFromPlayerId,
-  setSwapFromPlayerId,
-  onSwap,
-}: {
-  state: SessionState
-  alternative?: SuggestionAlternative | null
-  playersById: Map<string, ArrangementPlayer>
-  swapFromPlayerId: string | null
-  setSwapFromPlayerId: (playerId: string) => void
-  onSwap: (fromId: string, toId: string) => void
-}) {
-  const theme = useAppTheme()
-  if (!alternative) {
-    return <SheetTitle title="Đổi người" subtitle="Chưa có phương án để swap." />
-  }
-  const playingIds = alternative.matches.flatMap(match => [...match.team_a, ...match.team_b])
-  const targetIds = [...new Set([...playingIds, ...alternative.resting])]
-  const candidates = swapFromPlayerId
-    ? targetIds
-        .filter(playerId => playerId !== swapFromPlayerId)
-        .map(playerId => ({ playerId, audit: auditManualSwap(state, alternative, swapFromPlayerId, playerId) }))
-        .sort((a, b) => {
-          if (a.audit.blocked !== b.audit.blocked) return a.audit.blocked ? 1 : -1
-          return b.audit.score_delta - a.audit.score_delta
-        })
-    : []
-  return (
-    <View>
-      <SheetTitle title="Đổi người" subtitle="Chọn người cần đổi, rồi chọn candidate được sắp theo cải thiện." />
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>1. Đổi ra</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
-        {targetIds.map(playerId => {
-          const active = swapFromPlayerId === playerId
-          return (
-            <TouchableOpacity
-              key={playerId}
-              onPress={() => setSwapFromPlayerId(playerId)}
-              style={{
-                height: 44,
-                borderRadius: RADIUS.full,
-                backgroundColor: active ? theme.primary : theme.surface,
-                borderWidth: BORDER.hairline,
-                borderColor: active ? theme.primary : theme.outlineVariant,
-                paddingHorizontal: 10,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 7,
-              }}
-            >
-              <PlayerAvatar name={playerName(playerId, playersById)} size={24} />
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: active ? theme.onPrimary : theme.onSurface }}>
-                {playerName(playerId, playersById)}
-              </Text>
-            </TouchableOpacity>
-          )
-        })}
-      </ScrollView>
-      {swapFromPlayerId ? (
-        <>
-          <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>2. Đổi với · sắp theo cải thiện</Text>
-          <View style={{ gap: 8 }}>
-            {candidates.map(({ playerId, audit }) => {
-              const better = audit.score_delta > 0 && !audit.blocked
-              const borderColor = audit.blocked ? theme.dangerText : better ? theme.primary : theme.outlineVariant
-              return (
-                <TouchableOpacity
-                  key={playerId}
-                  onPress={() => !audit.blocked && onSwap(swapFromPlayerId, playerId)}
-                  disabled={audit.blocked}
-                  style={{
-                    minHeight: 58,
-                    borderRadius: RADIUS.md,
-                    backgroundColor: theme.surface,
-                    borderWidth: BORDER.hairline,
-                    borderColor: theme.outlineVariant,
-                    borderLeftWidth: 4,
-                    borderLeftColor: borderColor,
-                    padding: 10,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 10,
-                  }}
-                >
-                  <PlayerAvatar name={playerName(playerId, playersById)} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
-                    <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                      PVNA {(state.players.get(playerId)?.pvna ?? 0).toFixed(2)}
-                    </Text>
-                    <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>
-                      fairness {audit.delta_fairness > 0 ? '+' : ''}{audit.delta_fairness} · range {audit.before.match_range}→{audit.after.match_range} · burden {audit.before.max_opponent_burden}→{audit.after.max_opponent_burden}
-                    </Text>
-                  </View>
-                  <Text style={ctaTextStyle(audit.blocked ? theme.dangerText : better ? theme.primary : theme.outline, 12)}>
-                    {audit.blocked ? 'Chặn' : audit.score_delta > 0 ? `+${audit.score_delta.toFixed(1)}` : audit.score_delta.toFixed(1)}
-                  </Text>
-                </TouchableOpacity>
-              )
-            })}
-          </View>
-        </>
-      ) : null}
-    </View>
-  )
-}
-
-function RosterSheet({
-  rows,
-  playersById,
-  expandedPlayerId,
-  setExpandedPlayerId,
-  busy,
-  onToggleCheckout,
-  onToggleRest,
-  onSwap,
-  onSyncRoster,
-  groupSelection,
-  groupSummaries,
-  groupAliases,
-  onToggleGroupSelection,
-  onCreateGroup,
-  onClearGroup,
-  onClearWholeGroup,
-  onClearGroupSelection,
-}: {
-  rows: SessionPlayerStateRow[]
-  playersById: Map<string, ArrangementPlayer>
-  expandedPlayerId: string | null
-  setExpandedPlayerId: (playerId: string | null) => void
-  busy: string | null
-  onToggleCheckout: (playerId: string, checkedOut: boolean) => void
-  onToggleRest: (playerId: string, optedRest: boolean) => void
-  onSwap: (playerId: string) => void
-  onSyncRoster: () => void
-  groupSelection: string[]
-  groupSummaries: GroupSummary[]
-  groupAliases: Map<string, string>
-  onToggleGroupSelection: (playerId: string) => void
-  onCreateGroup: () => void
-  onClearGroup: (playerId: string) => void
-  onClearWholeGroup: (groupId: string) => void
-  onClearGroupSelection: () => void
-}) {
-  const theme = useAppTheme()
-  return (
-    <View>
-      <SheetTitle title="Người chơi" subtitle="Tap từng người để check-out, xin nghỉ, group hoặc swap." />
-      <TouchableOpacity onPress={onSyncRoster} style={{ height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-        {busy === 'sync' ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Sync roster</Text>}
-      </TouchableOpacity>
-      <View style={{ gap: 8 }}>
-        {rows.map(row => {
-          const playerId = row.player_id
-          const player = playersById.get(playerId)
-          const expanded = expandedPlayerId === playerId
-          const checkedOut = Boolean(row.checked_out_at)
-          const selectedForGroup = groupSelection.includes(playerId)
-          return (
-            <Card key={playerId} style={{ borderRadius: RADIUS.md, overflow: 'hidden', borderColor: selectedForGroup ? theme.primary : theme.outlineVariant }}>
-              <TouchableOpacity
-                onPress={() => setExpandedPlayerId(expanded ? null : playerId)}
-                style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}
-              >
-                <PlayerAvatar name={playerName(playerId, playersById)} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
-                  <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                    PVNA {getPlayerPvna(player).toFixed(2)} · {row.matches_played} trận · nghỉ {row.consecutive_rest}
-                  </Text>
-                </View>
-                <ChevronDown size={16} color={theme.outline} />
-              </TouchableOpacity>
-              {expanded ? (
-                <View style={{ borderTopWidth: BORDER.hairline, borderTopColor: theme.outlineVariant, padding: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  <MiniAction label={checkedOut ? 'Check-in' : 'Check-out'} icon={checkedOut ? UserPlus : UserMinus} onPress={() => onToggleCheckout(playerId, checkedOut)} tone={checkedOut ? 'good' : 'danger'} />
-                  <MiniAction label={row.opted_rest ? 'Bỏ nghỉ' : 'Xin nghỉ'} icon={History} onPress={() => onToggleRest(playerId, row.opted_rest)} tone="neutral" />
-                  <MiniAction label={selectedForGroup ? 'Bỏ chọn' : 'Chọn group'} icon={Users} onPress={() => onToggleGroupSelection(playerId)} tone={selectedForGroup ? 'good' : 'neutral'} />
-                  {row.group_id ? <MiniAction label="Xóa group" icon={X} onPress={() => onClearGroup(playerId)} tone="neutral" /> : null}
-                  <MiniAction label="Swap" icon={Zap} onPress={() => onSwap(playerId)} tone="good" />
-                </View>
-              ) : null}
-            </Card>
-          )
-        })}
-      </View>
-      {rows.length > 0 ? (
-        <View style={{ marginTop: 14, gap: 10 }}>
-          {groupSummaries.length > 0 ? (
-            <View style={{ gap: 8 }}>
-              <Text style={eyebrowStyle(theme.outline)}>Nhóm hiện tại</Text>
-              {groupSummaries.map(group => (
-                <View key={group.group_id} style={{ borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, padding: 10, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.onSurface }} numberOfLines={2}>
-                    {group.label}: {group.player_ids.map(id => playerName(id, playersById)).join(', ')}
-                  </Text>
-                  <TouchableOpacity onPress={() => onClearWholeGroup(group.group_id)} style={{ minHeight: 34, borderRadius: RADIUS.md, backgroundColor: theme.surface, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={ctaTextStyle(theme.outline, 10)}>Xóa</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          ) : null}
-          <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 12 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.primary }}>
-              Chọn 2+ người chơi để tạo group. Engine sẽ ưu tiên xếp họ cùng team hoặc cùng sân nhưng không bắt buộc.
-            </Text>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <TouchableOpacity
-              onPress={onCreateGroup}
-              disabled={groupSelection.length < 2 || Boolean(busy?.startsWith('group-'))}
-              style={{ flex: 1, height: 48, borderRadius: RADIUS.md, backgroundColor: groupSelection.length >= 2 ? theme.primary : theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}
-            >
-              {busy?.startsWith('group-') ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Tạo group ({groupSelection.length})</Text>}
-            </TouchableOpacity>
-            {groupSelection.length > 0 ? (
-              <TouchableOpacity onPress={onClearGroupSelection} style={{ width: 48, height: 48, borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' }}>
-                <X size={18} color={theme.onSurface} />
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-    </View>
-  )
-}
-
-function HistorySheet({ rounds, playersById }: { rounds: SessionRoundRow[]; playersById: Map<string, ArrangementPlayer> }) {
-  const theme = useAppTheme()
-  return (
-    <View>
-      <SheetTitle title="Lịch sử vòng" subtitle="Các vòng đã lưu trong live session." />
-      <View style={{ gap: 10 }}>
-        {rounds.map(round => (
-          <Card key={round.round_no} style={{ borderRadius: RADIUS.md, padding: 12 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>Vòng {round.round_no}</Text>
-              <View style={{ borderRadius: RADIUS.full, backgroundColor: theme.successBg, paddingHorizontal: 9, paddingVertical: 4 }}>
-                <Text style={ctaTextStyle(theme.successText, 11)}>Đã lưu</Text>
-              </View>
-            </View>
-            <View style={{ gap: 6 }}>
-              {round.matches.map(match => (
-                <View key={`${round.round_no}-${match.court_idx}`} style={{ borderRadius: RADIUS.xs, backgroundColor: theme.surfaceAlt, padding: 8 }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-                    {match.team_a.map(id => playerName(id, playersById)).join(' · ')}  vs  {match.team_b.map(id => playerName(id, playersById)).join(' · ')}
-                  </Text>
-                </View>
-              ))}
-            </View>
-            <Text style={{ marginTop: 8, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.rescueAccent }}>
-              Nghỉ: {round.resting.map(id => playerName(id, playersById)).join(', ') || 'Không có'}
-            </Text>
-          </Card>
-        ))}
-      </View>
-    </View>
-  )
-}
-
-function MoreSheet({
-  onSyncRoster,
-  onOpenRoster,
-  onOpenHistory,
-  onOpenFairness,
-  busy,
-}: {
-  onSyncRoster: () => void
-  onOpenRoster: () => void
-  onOpenHistory: () => void
-  onOpenFairness: () => void
-  busy: string | null
-}) {
-  return (
-    <View>
-      <SheetTitle title="Thao tác nhanh" />
-      <View style={{ gap: 10 }}>
-        <SheetAction label="Sync roster" onPress={onSyncRoster} loading={busy === 'sync'} />
-        <SheetAction label="Người chơi" onPress={onOpenRoster} />
-        <SheetAction label="Fairness audit" onPress={onOpenFairness} />
-        <SheetAction label="Lịch sử vòng" onPress={onOpenHistory} />
-      </View>
-    </View>
-  )
-}
-
-function RecapView({
-  summary,
-  state,
-  matchCountConsistencyRows,
-  groupSummaries,
-  playersById,
-  onOpenHistory,
-}: {
-  summary: ReturnType<typeof sanitizeSummaryForHost>
-  state: SessionState
-  matchCountConsistencyRows: MatchCountConsistencyRow[]
-  groupSummaries: GroupSummary[]
-  playersById: Map<string, ArrangementPlayer>
-  onOpenHistory: () => void
-}) {
-  const theme = useAppTheme()
-  const partner = computePartnerDiversity(state)
-  const opponent = computeOpponentDiversity(state)
-  const burden = computeOpponentRepeatBurden(state)
-  const pressure = computeRepeatPressure(state)
-  return (
-    <ScrollView contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 48 }}>
-      <LinearGradient colors={[theme.heroGradientStart, theme.primaryContainer]} style={{ borderRadius: RADIUS.lg, padding: 18, marginBottom: 14 }}>
-        <Text style={eyebrowStyle(theme.heroCountdownText)}>Session đã hoàn tất</Text>
-        <Text style={{ marginTop: 8, fontFamily: SCREEN_FONTS.headlineItalic, fontSize: 36, color: theme.surface }}>
-          {summary.total_rounds} vòng
-        </Text>
-        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
-          {summary.total_players} người chơi · fairness tổng session
-        </Text>
-      </LinearGradient>
-      <Card style={{ padding: 16, marginBottom: 14 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.headlineItalic, fontSize: 46, color: theme.primary }}>
-          {summary.fairness_score.total}<Text style={{ fontSize: 18 }}>/100</Text>
-        </Text>
-        {Object.entries(summary.fairness_score.breakdown).map(([key, value]) => (
-          <BreakdownRow key={key} label={key.replace(/_/g, ' ')} value={Number(value)} max={key === 'match_count' ? 25 : key === 'partner_diversity' ? 20 : key === 'opponent_diversity' ? 15 : 20} detail="" />
-        ))}
-      </Card>
-      <Card style={{ padding: 14, marginBottom: 14 }}>
-        <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Số trận mỗi người</Text>
-        {summary.per_player.slice(0, 12).map(player => {
-          const max = Math.max(1, ...summary.per_player.map(item => item.matches_played))
-          return (
-            <View key={player.player_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <PlayerAvatar name={playerName(player.player_id, playersById)} size={26} />
-              <Text style={{ width: 76, fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onSurface }} numberOfLines={1}>
-                {playerName(player.player_id, playersById)}
-              </Text>
-              <View style={{ flex: 1, height: 8, borderRadius: RADIUS.full, backgroundColor: theme.outlineVariant, overflow: 'hidden' }}>
-                <View style={{ width: `${(player.matches_played / max) * 100}%`, height: '100%', backgroundColor: theme.primary }} />
-              </View>
-              <Text style={{ width: 20, textAlign: 'right', fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface }}>{player.matches_played}</Text>
-            </View>
-          )
-        })}
-      </Card>
-      <Card style={{ padding: 14, marginBottom: 14 }}>
-        <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Repeat pressure</Text>
-        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 17 }}>
-          {pressure.repeat_risk} x{pressure.penalty_multiplier.toFixed(2)} · avg {pressure.avg_matches_per_player.toFixed(1)} trận/người · opponent pressure {pressure.opponent_pressure.toFixed(2)}
-        </Text>
-      </Card>
-      <RepeatDetailsBlock partnerPairs={partner.repeat_pairs} opponentPairs={opponent.repeat_pairs} playersById={playersById} />
-      <GroupAuditBlock state={state} groupSummaries={groupSummaries} playersById={playersById} />
-      <OpponentBurdenSummary burden={burden} playersById={playersById} />
-      {matchCountConsistencyRows.length > 0 ? (
-        <Card style={{ padding: 14, marginBottom: 14, backgroundColor: theme.dangerBg }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.dangerText }}>Cảnh báo đồng bộ</Text>
-          <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.dangerText }}>
-            Live state khác replay từ lịch sử. Report đang dùng dữ liệu replay.
-          </Text>
-          <View style={{ marginTop: 8, gap: 4 }}>
-            {matchCountConsistencyRows.slice(0, 8).map(row => (
-              <Text key={`mismatch-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.dangerText }}>
-                {playerName(row.player_id, playersById)}: live {row.live}, replay {row.replay}
-              </Text>
-            ))}
-          </View>
-        </Card>
-      ) : null}
-      <TouchableOpacity onPress={onOpenHistory} style={{ height: 52, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={ctaTextStyle(theme.onPrimary)}>Xem lịch sử vòng</Text>
-      </TouchableOpacity>
-    </ScrollView>
   )
 }

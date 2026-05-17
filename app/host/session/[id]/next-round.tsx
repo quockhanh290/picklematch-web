@@ -3,6 +3,7 @@ import { useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
 
 import { AppLoading } from '@/components/design'
+import { NextRoundSuggesterScreen } from '@/features/host/session-detail/NextRoundSuggesterScreen'
 import { NextRoundSuggesterScreenV2 } from '@/features/host/session-detail/NextRoundSuggesterScreenV2'
 import { useSessionDetail } from '@/hooks/useSessionDetail'
 import { buildArrangementPlayers } from '@/lib/sessionDetail'
@@ -10,7 +11,7 @@ import { useAuth } from '@/lib/useAuth'
 import { useAppTheme } from '@/lib/theme-context'
 
 export default function NextRoundRoute() {
-  const { id } = useLocalSearchParams<{ id: string }>()
+  const { id, ui } = useLocalSearchParams<{ id: string; ui?: string }>()
   const { userId } = useAuth()
   const theme = useAppTheme()
   const { loading, session } = useSessionDetail(id, userId)
@@ -24,7 +25,11 @@ export default function NextRoundRoute() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      <NextRoundSuggesterScreenV2 sessionId={id!} players={players} courts={courts} />
+      {ui === 'v1' ? (
+        <NextRoundSuggesterScreen sessionId={id!} players={players} courts={courts} />
+      ) : (
+        <NextRoundSuggesterScreenV2 sessionId={id!} players={players} courts={courts} />
+      )}
     </View>
   )
 }
