@@ -1,0 +1,29 @@
+import type {
+  SessionPairHistoryRow,
+  SessionPlayerStateRow,
+  SessionRoundRow,
+  SuggestionAlternative,
+} from '@/lib/next-round-suggester/types'
+import type { ArrangementPlayer } from '@/lib/sessionDetail'
+
+export type NextRoundSuggesterV2Props = {
+  sessionId: string
+  players: ArrangementPlayer[]
+  courts: number
+}
+
+export type LiveRows = {
+  playerRows: SessionPlayerStateRow[]
+  pairRows: SessionPairHistoryRow[]
+  roundRows: SessionRoundRow[]
+}
+
+export type SheetKey = 'settings' | 'swap' | 'fairness' | 'roster' | 'history' | 'more' | null
+
+export type RoundSelectionSnapshot = {
+  selectedAlternative: number
+  manualAlternative: SuggestionAlternative | null
+  pvnaTolerance: number
+  courtCount: number
+  reason: string
+}

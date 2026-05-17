@@ -1781,14 +1781,14 @@ function FairnessAuditCard({ audit }: { audit: FairnessAudit }) {
               Repeat pressure
             </Text>
             <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: audit.pressure_after.repeat_risk === 'extreme' || audit.pressure_after.repeat_risk === 'high' ? '#A05A16' : UI_THEME.primary, fontWeight: '900' }}>
-              {audit.pressure_before.repeat_risk.toUpperCase()} -> {audit.pressure_after.repeat_risk.toUpperCase()}
+              {audit.pressure_before.repeat_risk.toUpperCase()} {'->'} {audit.pressure_after.repeat_risk.toUpperCase()}
             </Text>
           </View>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, marginTop: 6, lineHeight: 15 }}>
-            Multiplier {audit.pressure_before.penalty_multiplier.toFixed(2)} -> {audit.pressure_after.penalty_multiplier.toFixed(2)}. Opponent pressure {audit.pressure_before.opponent_pressure.toFixed(2)} -> {audit.pressure_after.opponent_pressure.toFixed(2)}.
+            Multiplier {audit.pressure_before.penalty_multiplier.toFixed(2)} {'->'} {audit.pressure_after.penalty_multiplier.toFixed(2)}. Opponent pressure {audit.pressure_before.opponent_pressure.toFixed(2)} {'->'} {audit.pressure_after.opponent_pressure.toFixed(2)}.
           </Text>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, marginTop: 4, lineHeight: 15 }}>
-            Availability {audit.availability_before.churn_level.toUpperCase()} -> {audit.availability_after.churn_level.toUpperCase()}, churn {(audit.availability_before.avg_churn_ratio * 100).toFixed(0)}% -> {(audit.availability_after.avg_churn_ratio * 100).toFixed(0)}%, multiplier {audit.availability_before.penalty_multiplier.toFixed(2)} -> {audit.availability_after.penalty_multiplier.toFixed(2)}.
+            Availability {audit.availability_before.churn_level.toUpperCase()} {'->'} {audit.availability_after.churn_level.toUpperCase()}, churn {(audit.availability_before.avg_churn_ratio * 100).toFixed(0)}% {'->'} {(audit.availability_after.avg_churn_ratio * 100).toFixed(0)}%, multiplier {audit.availability_before.penalty_multiplier.toFixed(2)} {'->'} {audit.availability_after.penalty_multiplier.toFixed(2)}.
           </Text>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textMuted, marginTop: 4, lineHeight: 15 }}>
             Raw repeat stays visible; score impact is adjusted only when setup makes repeat hard to avoid.
@@ -1848,14 +1848,14 @@ function FairnessPreviewCard({ preview }: { preview: FairnessPreview }) {
               Repeat pressure
             </Text>
             <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: preview.pressure_after.repeat_risk === 'extreme' || preview.pressure_after.repeat_risk === 'high' ? '#A05A16' : UI_THEME.primary, fontWeight: '900' }}>
-              {preview.pressure_before.repeat_risk.toUpperCase()} -> {preview.pressure_after.repeat_risk.toUpperCase()}
+              {preview.pressure_before.repeat_risk.toUpperCase()} {'->'} {preview.pressure_after.repeat_risk.toUpperCase()}
             </Text>
           </View>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: UI_THEME.textMuted, marginTop: 4, lineHeight: 13 }}>
-            Multiplier {preview.pressure_before.penalty_multiplier.toFixed(2)} -> {preview.pressure_after.penalty_multiplier.toFixed(2)}, opponent pressure {preview.pressure_before.opponent_pressure.toFixed(2)} -> {preview.pressure_after.opponent_pressure.toFixed(2)}.
+            Multiplier {preview.pressure_before.penalty_multiplier.toFixed(2)} {'->'} {preview.pressure_after.penalty_multiplier.toFixed(2)}, opponent pressure {preview.pressure_before.opponent_pressure.toFixed(2)} {'->'} {preview.pressure_after.opponent_pressure.toFixed(2)}.
           </Text>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: UI_THEME.textMuted, marginTop: 4, lineHeight: 13 }}>
-            Availability {preview.availability_before.churn_level.toUpperCase()} -> {preview.availability_after.churn_level.toUpperCase()}, churn {(preview.availability_before.avg_churn_ratio * 100).toFixed(0)}% -> {(preview.availability_after.avg_churn_ratio * 100).toFixed(0)}%.
+            Availability {preview.availability_before.churn_level.toUpperCase()} {'->'} {preview.availability_after.churn_level.toUpperCase()}, churn {(preview.availability_before.avg_churn_ratio * 100).toFixed(0)}% {'->'} {(preview.availability_after.avg_churn_ratio * 100).toFixed(0)}%.
           </Text>
         </View>
 

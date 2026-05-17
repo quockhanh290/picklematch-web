@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react'
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import React, { useMemo, useState } from 'react'
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
@@ -20,9 +20,9 @@ import {
 } from 'lucide-react-native'
 
 import { SecondaryNavbar } from '@/components/design'
-import { BORDER, RADIUS, SHADOW, SPACING } from '@/constants/screenLayout'
+import { BORDER, RADIUS, SPACING } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { calculateOptimalCourts, PRESETS, type CourtPreset } from '@/lib/court-calculator'
+import { calculateOptimalCourts, PRESETS, type CourtCalculatorOutput, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
 import { buildSuggestedRoundActions, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import { auditManualSwap, buildSwappedAlternative } from '@/lib/next-round-suggester/manual-swap'
 import { previewStateAfterAlternative, rebuildStateThroughRound } from '@/lib/next-round-suggester/history'
@@ -32,9 +32,14 @@ import { scoreMatch } from '@/lib/next-round-suggester/score'
 import { applyFairnessAdjustment, correctForFairness } from '@/lib/next-round-suggester/fairness/corrector'
 import { detectFairnessIssues, type FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
 import {
+  buildMatchCountConsistencyRows,
+  buildLatestFairnessAudit,
   buildFairnessPreview,
+  type FairnessAudit,
+  type MatchCountConsistencyRow,
   type FairnessPreview,
 } from '@/lib/next-round-suggester/fairness/audit'
+import { buildGroupAliasMap, buildGroupAuditRows, buildGroupSummaries, type GroupSummary } from '@/lib/next-round-suggester/fairness/group-audit'
 import {
   computeGenderPrefSatisfaction,
   computeMatchCountMetrics,
@@ -50,106 +55,31 @@ import { sanitizeSummaryForHost, sanitizeWarningsForHost } from '@/lib/next-roun
 import { buildSessionSummary } from '@/lib/next-round-suggester/fairness/summary'
 import type {
   Match,
-  SessionPairHistoryRow,
   SessionPlayerStateRow,
   SessionRoundRow,
   SessionState,
   SuggestionAlternative,
 } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
-import { eloToPvna } from '@/lib/skillAssessment'
-import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
-
-type Props = {
-  sessionId: string
-  players: ArrangementPlayer[]
-  courts: number
-}
-
-type LiveRows = {
-  playerRows: SessionPlayerStateRow[]
-  pairRows: SessionPairHistoryRow[]
-  roundRows: SessionRoundRow[]
-}
-
-type SheetKey = 'settings' | 'swap' | 'fairness' | 'roster' | 'history' | 'more' | null
-
-type RoundSelectionSnapshot = {
-  selectedAlternative: number
-  manualAlternative: SuggestionAlternative | null
-  pvnaTolerance: number
-  courtCount: number
-  reason: string
-}
-
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
-
-const COURT_PRESET_OPTIONS: CourtPreset[] = ['play_more', 'balanced', 'relaxed']
-const COURT_DURATION_OPTIONS = [90, 120, 150]
-const PVNA_TOLERANCE_OPTIONS = [0.3, 0.5, 0.8, 1.0]
-
-function formatNumber(value: number, fractionDigits = 0) {
-  return new Intl.NumberFormat('vi-VN', {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  }).format(value)
-}
-
-function getPlayerPvna(player?: ArrangementPlayer | null) {
-  if (player?.pvna != null) return Number(player.pvna)
-  if (player?.elo != null) return eloToPvna(Number(player.elo))
-  return 0
-}
+import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds } from './next-round-v2/api'
+import { Card, MiniAction, NextRoundSheet, PlayerAvatar, SheetAction, SheetTitle } from './next-round-v2/components'
+import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
+import {
+  ctaTextStyle,
+  eyebrowStyle,
+  formatNumber,
+  getPlayerPvna,
+  getTeamPvna,
+  isConfirmedNonNoShow,
+  isRosterSyncEligible,
+  withWeights,
+} from './next-round-v2/helpers'
+import type { NextRoundSuggesterV2Props, RoundSelectionSnapshot, SheetKey } from './next-round-v2/types'
+import { useLiveRows } from './next-round-v2/useLiveRows'
 
 function playerName(playerId: string, playersById: Map<string, ArrangementPlayer>) {
   return playersById.get(playerId)?.name ?? 'Người chơi'
-}
-
-function initials(name: string) {
-  const words = name.trim().split(/\s+/).filter(Boolean)
-  if (words.length === 0) return 'P'
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
-  return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase()
-}
-
-function getTeamPvna(team: [string, string], state: SessionState) {
-  return team.reduce((sum, id) => sum + (state.players.get(id)?.pvna ?? 3.0), 0) / 2
-}
-
-function normalizeRoundRow(row: any): SessionRoundRow {
-  return {
-    id: row.id,
-    session_id: row.session_id,
-    round_no: row.round_no,
-    status: row.status,
-    matches: row.matches ?? [],
-    resting: row.resting ?? [],
-    started_at: row.started_at,
-    ended_at: row.ended_at,
-  }
-}
-
-function isRosterSyncEligible(player: ArrangementPlayer) {
-  if (player.status && player.status !== 'confirmed') return false
-  if (player.checkInStatus === 'no_show') return false
-  return player.checkInStatus === 'present' || player.checkInStatus === 'checked_in' || !player.checkInStatus
-}
-
-function isConfirmedNonNoShow(player: ArrangementPlayer) {
-  if (player.status && player.status !== 'confirmed') return false
-  return player.checkInStatus !== 'no_show'
-}
-
-function withWeights(state: SessionState, weights: SessionState['config']['weights']): SessionState {
-  return {
-    ...state,
-    config: {
-      ...state.config,
-      weights,
-    },
-  }
 }
 
 function fairnessLabel(score: SessionFairnessScore) {
@@ -201,81 +131,22 @@ function buildFairnessWarningsForBanner(
   })
 }
 
-async function invokeLiveSessionFunction(
-  functionName: string,
-  sessionId: string,
-  body: Record<string, unknown> = {},
-  extraQuery: Record<string, string | number> = {},
-) {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Missing Supabase function configuration')
-  }
-
-  const { data } = await supabase.auth.getSession()
-  const accessToken = data.session?.access_token
-  if (!accessToken) {
-    throw new Error('Host login expired')
-  }
-
-  const query = new URLSearchParams({ session_id: sessionId })
-  Object.entries(extraQuery).forEach(([key, value]) => query.set(key, String(value)))
-
-  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}?${query.toString()}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      apikey: supabaseAnonKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  })
-  const payload = await response.json().catch(() => ({}))
-
-  if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.error ?? `Edge Function ${functionName} failed`)
-  }
-
-  return payload
-}
-
-function ctaTextStyle(color: string, size = 15) {
-  return {
-    fontFamily: SCREEN_FONTS.cta,
-    fontSize: size,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase' as const,
-    color,
-  }
-}
-
-function eyebrowStyle(color: string, size = 10) {
-  return {
-    fontFamily: SCREEN_FONTS.label,
-    fontSize: size,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase' as const,
-    color,
-  }
-}
-
-export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: Props) {
+export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextRoundSuggesterV2Props) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
-  const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
-  const [rows, setRows] = useState<LiveRows>({ playerRows: [], pairRows: [], roundRows: [] })
   const [selectedAlternative, setSelectedAlternative] = useState(0)
   const [manualAlternative, setManualAlternative] = useState<SuggestionAlternative | null>(null)
   const [selectionUndo, setSelectionUndo] = useState<RoundSelectionSnapshot | null>(null)
   const [swapFromPlayerId, setSwapFromPlayerId] = useState<string | null>(null)
   const [sheet, setSheet] = useState<SheetKey>(null)
-  const [error, setError] = useState<string | null>(null)
   const [pvnaTolerance, setPvnaTolerance] = useState(0.5)
   const [courtCount, setCourtCount] = useState(Math.max(1, Math.min(4, courts)))
   const [courtPreset, setCourtPreset] = useState<CourtPreset>('balanced')
   const [courtDurationMin, setCourtDurationMin] = useState(120)
   const [targetRounds, setTargetRounds] = useState<number | null>(null)
   const [expandedRosterPlayer, setExpandedRosterPlayer] = useState<string | null>(null)
+  const [groupSelection, setGroupSelection] = useState<string[]>([])
   const [showEngineStats, setShowEngineStats] = useState(false)
 
   const confirmedPlayers = useMemo(
@@ -287,64 +158,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: Props
     return explicitlyPresent.length > 0 ? explicitlyPresent : confirmedPlayers.filter(isConfirmedNonNoShow)
   }, [confirmedPlayers])
   const playersById = useMemo(() => new Map(players.map(player => [String(player.id), player])), [players])
-
-  const loadLiveState = useCallback(async () => {
-    setError(null)
-    const [playerRes, pairRes, roundRes] = await Promise.all([
-      supabase
-        .from('session_player_state')
-        .select('*')
-        .eq('session_id', sessionId)
-        .order('checked_in_at', { ascending: true }),
-      supabase
-        .from('session_pair_history')
-        .select('*')
-        .eq('session_id', sessionId)
-        .order('player_a', { ascending: true }),
-      supabase
-        .from('session_rounds')
-        .select('*')
-        .eq('session_id', sessionId)
-        .order('round_no', { ascending: true }),
-    ])
-
-    const nextError = playerRes.error ?? pairRes.error ?? roundRes.error
-    if (nextError) {
-      setError(nextError.message)
-      return
-    }
-
-    setRows({
-      playerRows: ((playerRes.data ?? []) as any[]).map(row => ({
-        ...row,
-        players: {
-          pvna: getPlayerPvna(playersById.get(row.player_id)),
-          elo: playersById.get(row.player_id)?.elo,
-          gender: playersById.get(row.player_id)?.gender,
-          partner_gender_pref: playersById.get(row.player_id)?.metadata?.partner_gender_pref,
-          opponent_gender_pref: playersById.get(row.player_id)?.metadata?.opponent_gender_pref,
-        },
-        session_players: {
-          metadata: playersById.get(row.player_id)?.metadata ?? null,
-        },
-      })),
-      pairRows: (pairRes.data ?? []) as SessionPairHistoryRow[],
-      roundRows: ((roundRes.data ?? []) as any[]).map(normalizeRoundRow),
-    })
-  }, [playersById, sessionId])
-
-  React.useEffect(() => {
-    let mounted = true
-    async function run() {
-      setLoading(true)
-      await loadLiveState()
-      if (mounted) setLoading(false)
-    }
-    void run()
-    return () => {
-      mounted = false
-    }
-  }, [loadLiveState])
+  const { error, loading, loadLiveState, rows, setError } = useLiveRows(sessionId, playersById)
 
   const rawState = useMemo(() => mapRowsToSessionState({
     sessionId,
@@ -388,6 +202,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: Props
     () => buildFairnessPreview(state, workingAlternative),
     [state, workingAlternative],
   )
+  const fairnessAudit = useMemo(() => buildLatestFairnessAudit(state), [state])
   const fairnessWarnings = useMemo(() => {
     const currentWarnings = detectFairnessIssues(state)
     const projectedState = workingAlternative ? previewStateAfterAlternative(state, workingAlternative) : null
@@ -425,6 +240,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: Props
     [completedRoundCount, completedRounds, state],
   )
   const sessionSummary = useMemo(() => sanitizeSummaryForHost(buildSessionSummary(reportState)), [reportState])
+  const matchCountConsistencyRows = useMemo(
+    () => buildMatchCountConsistencyRows(state, reportState),
+    [reportState, state],
+  )
+  const groupSummaries = useMemo(() => buildGroupSummaries(rows.playerRows), [rows.playerRows])
+  const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
   const phase: 'plan' | 'active' | 'recap' = targetReached && !activeRound ? 'recap' : activeRound ? 'active' : 'plan'
 
   const rememberRoundSelection = (reason: string) => {
@@ -493,7 +314,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: Props
 
   const syncRoster = async () => {
     await runAction('sync', async () => {
-      const playerIds = checkedInPlayers.map(player => String(player.id))
+      const playerIds = await loadLatestSyncablePlayerIds(
+        sessionId,
+        checkedInPlayers.map(player => String(player.id)),
+      )
       if (playerIds.length === 0) {
         throw new Error('Không có người chơi đã xác nhận để sync.')
       }
@@ -518,6 +342,45 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: Props
         opted_rest: !optedRest,
       })
     })
+  }
+
+  const setGroupForPlayers = async (playerIds: string[]) => {
+    if (playerIds.length < 2) return
+    await runAction(`group-${playerIds.join('-')}`, async () => {
+      await invokeLiveSessionFunction('session-set-group', sessionId, {
+        player_ids: playerIds,
+      })
+    })
+  }
+
+  const clearGroup = async (playerId: string) => {
+    await runAction(`group-clear-${playerId}`, async () => {
+      await invokeLiveSessionFunction('session-set-group', sessionId, {
+        clear_player_id: playerId,
+      })
+    })
+  }
+
+  const clearWholeGroup = async (groupId: string) => {
+    await runAction(`group-clear-${groupId}`, async () => {
+      await invokeLiveSessionFunction('session-set-group', sessionId, {
+        clear_group_id: groupId,
+      })
+    })
+  }
+
+  const toggleGroupSelection = (playerId: string) => {
+    setGroupSelection(current => (
+      current.includes(playerId)
+        ? current.filter(id => id !== playerId)
+        : [...current, playerId]
+    ))
+  }
+
+  const createGroupFromSelection = async () => {
+    if (groupSelection.length < 2) return
+    await setGroupForPlayers(groupSelection)
+    setGroupSelection([])
   }
 
   const startRound = async (alternative: SuggestionAlternative) => {
@@ -624,6 +487,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: Props
       {phase === 'recap' ? (
         <RecapView
           summary={sessionSummary}
+          state={reportState}
+          matchCountConsistencyRows={matchCountConsistencyRows}
+          groupSummaries={groupSummaries}
           playersById={playersById}
           onOpenHistory={() => setSheet('history')}
         />
@@ -755,13 +621,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: Props
           setCourtDurationMin={setCourtDurationMin}
           targetRounds={effectiveTargetRounds}
           setTargetRounds={setTargetRounds}
-          calculatorRounds={courtCalculator.recommended.total_rounds}
+          calculator={courtCalculator}
           onApply={() => setSheet(null)}
         />
       </NextRoundSheet>
 
       <NextRoundSheet visible={sheet === 'fairness'} snap="88" onClose={() => setSheet(null)}>
-        <FairnessSheet score={fairnessScore} state={state} warnings={fairnessWarnings} />
+        <FairnessSheet
+          score={fairnessScore}
+          state={state}
+          warnings={fairnessWarnings}
+          latestAudit={fairnessAudit}
+          groupSummaries={groupSummaries}
+          playersById={playersById}
+        />
       </NextRoundSheet>
 
       <NextRoundSheet visible={sheet === 'swap'} snap="88" onClose={() => setSheet(null)}>
@@ -786,6 +659,14 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: Props
           onToggleRest={toggleRest}
           onSwap={openSwapForPlayer}
           onSyncRoster={syncRoster}
+          groupSelection={groupSelection}
+          groupSummaries={groupSummaries}
+          groupAliases={groupAliases}
+          onToggleGroupSelection={toggleGroupSelection}
+          onCreateGroup={createGroupFromSelection}
+          onClearGroup={clearGroup}
+          onClearWholeGroup={clearWholeGroup}
+          onClearGroupSelection={() => setGroupSelection([])}
         />
       </NextRoundSheet>
 
@@ -802,48 +683,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: Props
           busy={busy}
         />
       </NextRoundSheet>
-    </View>
-  )
-}
-
-function Card({ children, style }: { children: React.ReactNode; style?: any }) {
-  const theme = useAppTheme()
-  return (
-    <View
-      style={[
-        {
-          backgroundColor: theme.surface,
-          borderRadius: RADIUS.lg,
-          borderWidth: BORDER.hairline,
-          borderColor: theme.outlineVariant,
-          ...SHADOW.sm,
-        },
-        style,
-      ]}
-    >
-      {children}
-    </View>
-  )
-}
-
-function PlayerAvatar({ name, size = 30 }: { name: string; size?: number }) {
-  const theme = useAppTheme()
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: RADIUS.full,
-        backgroundColor: theme.secondaryContainer,
-        borderWidth: BORDER.hairline,
-        borderColor: theme.outlineVariant,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: Math.max(10, size * 0.34), color: theme.primary }}>
-        {initials(name)}
-      </Text>
     </View>
   )
 }
@@ -1030,7 +869,9 @@ function AlternativeTabs({
 
 function FairnessPreviewCard({ preview, onPress }: { preview: FairnessPreview; onPress: () => void }) {
   const theme = useAppTheme()
-  const delta = preview.after.total - preview.before.total
+  const beforeTotal = preview.before_total
+  const afterTotal = preview.after_total
+  const delta = preview.delta_total
   const tone = delta >= 0 ? theme.successText : theme.warningText
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={{ marginTop: 14 }}>
@@ -1051,7 +892,7 @@ function FairnessPreviewCard({ preview, onPress }: { preview: FairnessPreview; o
           <View style={{ flex: 1 }}>
             <Text style={eyebrowStyle(theme.outline)}>Preview fairness vòng kế</Text>
             <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>
-              {preview.before.total} → {preview.after.total}
+              {beforeTotal} → {afterTotal}
             </Text>
             <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline, marginTop: 4 }}>
               Bấm để xem audit chi tiết — partner / đối thủ / nghỉ / pressure
@@ -1122,7 +963,9 @@ function EngineExplainCard({
             ['Chênh PVNA', alternative.stats.pvna_diff.toFixed(2)],
             ['Lặp partner', String(alternative.stats.partner_repeats)],
             ['Lặp đối thủ', String(alternative.stats.opponent_repeats)],
+            ['Group bonus', String(alternative.stats.group_bonus)],
             ['Gender pref', alternative.stats.gender_pref_penalty.toFixed(1)],
+            ['Score tổng', alternative.score.toFixed(1)],
           ].map(([label, value]) => (
             <View key={label} style={{ width: '48%', backgroundColor: theme.surface, borderRadius: RADIUS.md, padding: 10, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant }}>
               <Text style={eyebrowStyle(theme.outline, 9)}>{label}</Text>
@@ -1359,51 +1202,6 @@ function StickyRoundCta({
   )
 }
 
-function NextRoundSheet({
-  visible,
-  onClose,
-  children,
-  snap,
-}: {
-  visible: boolean
-  onClose: () => void
-  children: React.ReactNode
-  snap: '50' | '88'
-}) {
-  const theme = useAppTheme()
-  const insets = useSafeAreaInsets()
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable onPress={onClose} style={{ flex: 1, backgroundColor: theme.overlay }} />
-      <View
-        style={{
-          maxHeight: snap === '88' ? '88%' : '54%',
-          minHeight: snap === '88' ? '60%' : '40%',
-          backgroundColor: theme.background,
-          borderTopLeftRadius: RADIUS.hero,
-          borderTopRightRadius: RADIUS.hero,
-          paddingTop: 10,
-          paddingHorizontal: 16,
-          paddingBottom: 16 + insets.bottom,
-        }}
-      >
-        <View style={{ width: 44, height: 5, borderRadius: RADIUS.full, backgroundColor: theme.outlineVariant, alignSelf: 'center', marginBottom: 12 }} />
-        <ScrollView showsVerticalScrollIndicator={false}>{children}</ScrollView>
-      </View>
-    </Modal>
-  )
-}
-
-function SheetTitle({ title, subtitle }: { title: string; subtitle?: string }) {
-  const theme = useAppTheme()
-  return (
-    <View style={{ marginBottom: 14 }}>
-      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 24, color: theme.onSurface }}>{title}</Text>
-      {subtitle ? <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline }}>{subtitle}</Text> : null}
-    </View>
-  )
-}
-
 function SettingsSheet({
   courtCount,
   setCourtCount,
@@ -1415,7 +1213,7 @@ function SettingsSheet({
   setCourtDurationMin,
   targetRounds,
   setTargetRounds,
-  calculatorRounds,
+  calculator,
   onApply,
 }: {
   courtCount: number
@@ -1428,10 +1226,28 @@ function SettingsSheet({
   setCourtDurationMin: (value: number) => void
   targetRounds: number
   setTargetRounds: (value: number) => void
-  calculatorRounds: number
+  calculator: CourtCalculatorOutput
   onApply: () => void
 }) {
   const theme = useAppTheme()
+  const recommended = calculator.recommended
+  const warning = calculator.setup_warnings[0]
+  const applyCourtWarningAlternative = (alternative: CourtWarningAlternative) => {
+    if (alternative.action === 'set_duration' && alternative.duration_min) {
+      setCourtDurationMin(alternative.duration_min)
+      setTargetRounds(alternative.preview.rounds)
+      return
+    }
+    if (alternative.action === 'set_preset' && alternative.preset) {
+      setCourtPreset(alternative.preset)
+      setTargetRounds(alternative.preview.rounds)
+      return
+    }
+    if (alternative.action === 'set_courts' && alternative.courts) {
+      setCourtCount(alternative.courts)
+      setTargetRounds(alternative.preview.rounds)
+    }
+  }
   return (
     <View>
       <SheetTitle title="Cài đặt vòng" subtitle="Điều chỉnh setup trước khi start vòng kế." />
@@ -1446,6 +1262,42 @@ function SettingsSheet({
           </View>
         </View>
       </LinearGradient>
+      <View style={{ marginBottom: 14, borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.primary }}>
+          Gợi ý: {recommended.courts} sân
+        </Text>
+        <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.onSurface }}>
+          {calculator.reasoning}
+        </Text>
+      </View>
+      {warning ? (
+        <View style={{ marginBottom: 14, borderRadius: RADIUS.md, backgroundColor: theme.warningBg, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, padding: 12 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.warningText }}>{warning.message}</Text>
+          <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText }}>{warning.why}</Text>
+          {warning.alternatives.length > 0 ? (
+            <View style={{ marginTop: 10, gap: 8 }}>
+              {warning.alternatives.map((alternative, index) => (
+                <TouchableOpacity
+                  key={`${warning.type}-${alternative.action}-${index}`}
+                  onPress={() => applyCourtWarningAlternative(alternative)}
+                  style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 10 }}
+                >
+                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface }}>{alternative.label}</Text>
+                  <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>
+                    {alternative.expected_effect} · {alternative.tradeoff}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      <CourtSuggestionOptions
+        options={calculator.alternatives}
+        selectedCourts={courtCount}
+        recommendedCourts={recommended.courts}
+        onSelect={setCourtCount}
+      />
       <ChoiceRow label="Sân" options={[1, 2, 3, 4, 5, 6].map(value => ({ label: String(value), value }))} value={courtCount} onChange={setCourtCount} />
       <ChoiceRow
         label="Chế độ"
@@ -1455,10 +1307,77 @@ function SettingsSheet({
       />
       <ChoiceRow label="Dung sai PVNA" options={PVNA_TOLERANCE_OPTIONS.map(value => ({ label: `±${value}`, value }))} value={pvnaTolerance} onChange={setPvnaTolerance} />
       <ChoiceRow label="Thời lượng" options={COURT_DURATION_OPTIONS.map(value => ({ label: `${value}p`, value }))} value={courtDurationMin} onChange={setCourtDurationMin} />
-      <ChoiceRow label="Mục tiêu vòng" options={[6, 8, 10, calculatorRounds].filter((value, index, arr) => arr.indexOf(value) === index).map(value => ({ label: `${value}`, value }))} value={targetRounds} onChange={setTargetRounds} />
+      <ChoiceRow label="Mục tiêu vòng" options={[6, 8, 10, recommended.total_rounds].filter((value, index, arr) => arr.indexOf(value) === index).map(value => ({ label: `${value}`, value }))} value={targetRounds} onChange={setTargetRounds} />
       <TouchableOpacity onPress={onApply} style={{ height: 52, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginTop: 10 }}>
         <Text style={ctaTextStyle(theme.onPrimary)}>Áp dụng</Text>
       </TouchableOpacity>
+    </View>
+  )
+}
+
+function CourtSuggestionOptions({
+  options,
+  selectedCourts,
+  recommendedCourts,
+  onSelect,
+}: {
+  options: CourtOption[]
+  selectedCourts: number
+  recommendedCourts: number
+  onSelect: (courts: number) => void
+}) {
+  const theme = useAppTheme()
+  return (
+    <View style={{ marginBottom: 14 }}>
+      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Gợi ý số sân</Text>
+      <View style={{ gap: 8 }}>
+        {options.map(option => {
+          const selected = option.courts === selectedCourts
+          const recommended = option.courts === recommendedCourts
+          const disabled = option.feasibility === 'infeasible'
+          const toneColor = option.feasibility === 'optimal'
+            ? theme.primary
+            : option.feasibility === 'tight'
+              ? theme.warningText
+              : theme.outline
+          return (
+            <TouchableOpacity
+              key={`court-option-${option.courts}`}
+              disabled={disabled}
+              onPress={() => onSelect(option.courts)}
+              style={{
+                borderRadius: RADIUS.md,
+                borderWidth: BORDER.hairline,
+                borderColor: selected ? theme.primary : theme.outlineVariant,
+                backgroundColor: selected ? theme.secondaryContainer : theme.surface,
+                padding: 12,
+                opacity: disabled ? 0.45 : 1,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>
+                    {option.courts} sân · {option.avg_matches_per_player.toFixed(1)} trận/người
+                  </Text>
+                  <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
+                    {option.total_rounds} vòng · nghỉ {option.resting_per_round}/vòng · repeat {option.repeat_pressure.risk}
+                  </Text>
+                  {option.warnings[0] ? (
+                    <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.warningText }}>
+                      {option.warnings[0]}
+                    </Text>
+                  ) : null}
+                </View>
+                <View style={{ borderRadius: RADIUS.full, backgroundColor: recommended ? theme.heroCountdownText : theme.surfaceContainerLow, paddingHorizontal: 9, paddingVertical: 5 }}>
+                  <Text style={ctaTextStyle(recommended ? theme.primaryContainer : toneColor, 10)}>
+                    {recommended ? 'Đề xuất' : option.feasibility}
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          )
+        })}
+      </View>
     </View>
   )
 }
@@ -1506,7 +1425,21 @@ function ChoiceRow<T extends string | number>({
   )
 }
 
-function FairnessSheet({ score, state, warnings }: { score: SessionFairnessScore; state: SessionState; warnings: FairnessWarning[] }) {
+function FairnessSheet({
+  score,
+  state,
+  warnings,
+  latestAudit,
+  groupSummaries,
+  playersById,
+}: {
+  score: SessionFairnessScore
+  state: SessionState
+  warnings: FairnessWarning[]
+  latestAudit: FairnessAudit | null
+  groupSummaries: GroupSummary[]
+  playersById: Map<string, ArrangementPlayer>
+}) {
   const theme = useAppTheme()
   const match = computeMatchCountMetrics(state)
   const partner = computePartnerDiversity(state)
@@ -1538,6 +1471,12 @@ function FairnessSheet({ score, state, warnings }: { score: SessionFairnessScore
       {rows.map(([label, value, max, detail]) => (
         <BreakdownRow key={label} label={label} value={value} max={max} detail={detail} />
       ))}
+      <LatestFairnessAuditCard audit={latestAudit} />
+      <RepeatDetailsBlock
+        partnerPairs={partner.repeat_pairs}
+        opponentPairs={opponent.repeat_pairs}
+        playersById={playersById}
+      />
       {warnings.length > 0 ? (
         <View style={{ marginTop: 12, gap: 8 }}>
           {warnings.map((warning, index) => {
@@ -1551,6 +1490,50 @@ function FairnessSheet({ score, state, warnings }: { score: SessionFairnessScore
           })}
         </View>
       ) : null}
+      <GroupAuditBlock state={state} groupSummaries={groupSummaries} playersById={playersById} />
+    </View>
+  )
+}
+
+function GroupAuditBlock({
+  state,
+  groupSummaries,
+  playersById,
+}: {
+  state: SessionState
+  groupSummaries: GroupSummary[]
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  const rows = buildGroupAuditRows(state, groupSummaries)
+  return (
+    <View style={{ marginTop: 14 }}>
+      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Group audit</Text>
+      {rows.length === 0 ? (
+        <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, padding: 12 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Chưa có group nào được tạo.</Text>
+        </View>
+      ) : (
+        <View style={{ gap: 10 }}>
+          {rows.map(row => (
+            <View key={row.group_id} style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.onSurface }}>
+                {row.label}: {row.player_ids.map(id => playerName(id, playersById)).join(', ')}
+              </Text>
+              <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>
+                Cùng xuất hiện trong {row.shared_matches} trận.
+              </Text>
+              <View style={{ marginTop: 8, gap: 4 }}>
+                {row.pair_counts.map(pair => (
+                  <Text key={`${pair.player_a}-${pair.player_b}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
+                    {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} trận chung team
+                  </Text>
+                ))}
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   )
 }
@@ -1569,6 +1552,106 @@ function BreakdownRow({ label, value, max, detail }: { label: string; value: num
       </View>
       <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>{detail}</Text>
     </View>
+  )
+}
+
+function LatestFairnessAuditCard({ audit }: { audit: FairnessAudit | null }) {
+  const theme = useAppTheme()
+  if (!audit) return null
+  const tone = audit.delta_total >= 0 ? theme.successText : theme.warningText
+  return (
+    <View style={{ marginTop: 12, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.onSurface }}>Audit điểm fairness</Text>
+          <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>
+            Sau vòng {audit.round_no}: {audit.before_total} → {audit.after_total}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: tone }}>
+          {audit.delta_total > 0 ? '+' : ''}{audit.delta_total}
+        </Text>
+      </View>
+      <View style={{ marginTop: 10, gap: 6 }}>
+        {audit.rows.map(row => (
+          <View key={row.key} style={{ borderRadius: RADIUS.xs, backgroundColor: theme.surfaceContainerLow, padding: 8 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
+              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.bold, fontSize: 11.5, color: theme.onSurface }}>{row.label}</Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: row.delta < 0 ? theme.warningText : theme.primary }}>
+                {row.before} → {row.after} ({row.delta > 0 ? '+' : ''}{row.delta})
+              </Text>
+            </View>
+            <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>{row.detail}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  )
+}
+
+function RepeatDetailsBlock({
+  partnerPairs,
+  opponentPairs,
+  playersById,
+}: {
+  partnerPairs: Array<{ player_a: string; player_b: string; count: number }>
+  opponentPairs: Array<{ player_a: string; player_b: string; count: number }>
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  const renderPairs = (pairs: Array<{ player_a: string; player_b: string; count: number }>) => {
+    const repeated = pairs.filter(pair => pair.count > 1)
+    if (repeated.length === 0) {
+      return <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>Không có cặp lặp.</Text>
+    }
+    return repeated.map(pair => (
+      <Text key={`${pair.player_a}-${pair.player_b}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
+        {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} lần
+      </Text>
+    ))
+  }
+
+  return (
+    <View style={{ marginTop: 12, gap: 8 }}>
+      <Text style={eyebrowStyle(theme.outline)}>Cặp lặp chi tiết</Text>
+      <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Partner lặp</Text>
+        <View style={{ gap: 3 }}>{renderPairs(partnerPairs)}</View>
+      </View>
+      <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Đối thủ lặp</Text>
+        <View style={{ gap: 3 }}>{renderPairs(opponentPairs)}</View>
+      </View>
+    </View>
+  )
+}
+
+function OpponentBurdenSummary({
+  burden,
+  playersById,
+}: {
+  burden: ReturnType<typeof computeOpponentRepeatBurden>
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  const rows = burden.per_player
+    .filter(player => player.repeated_opponents > 0)
+    .sort((a, b) => b.repeated_opponents - a.repeated_opponents)
+  return (
+    <Card style={{ padding: 14, marginBottom: 14 }}>
+      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Người bị lặp đối thủ nhiều</Text>
+      {rows.length === 0 ? (
+        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Không có ai bị lặp đối thủ.</Text>
+      ) : (
+        <View style={{ gap: 4 }}>
+          {rows.map(row => (
+            <Text key={`burden-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
+              {playerName(row.player_id, playersById)}: {row.repeated_opponents} đối thủ lặp
+            </Text>
+          ))}
+        </View>
+      )}
+    </Card>
   )
 }
 
@@ -1665,6 +1748,9 @@ function SwapSheet({
                     <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
                       PVNA {(state.players.get(playerId)?.pvna ?? 0).toFixed(2)}
                     </Text>
+                    <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>
+                      fairness {audit.delta_fairness > 0 ? '+' : ''}{audit.delta_fairness} · range {audit.before.match_range}→{audit.after.match_range} · burden {audit.before.max_opponent_burden}→{audit.after.max_opponent_burden}
+                    </Text>
                   </View>
                   <Text style={ctaTextStyle(audit.blocked ? theme.dangerText : better ? theme.primary : theme.outline, 12)}>
                     {audit.blocked ? 'Chặn' : audit.score_delta > 0 ? `+${audit.score_delta.toFixed(1)}` : audit.score_delta.toFixed(1)}
@@ -1689,6 +1775,14 @@ function RosterSheet({
   onToggleRest,
   onSwap,
   onSyncRoster,
+  groupSelection,
+  groupSummaries,
+  groupAliases,
+  onToggleGroupSelection,
+  onCreateGroup,
+  onClearGroup,
+  onClearWholeGroup,
+  onClearGroupSelection,
 }: {
   rows: SessionPlayerStateRow[]
   playersById: Map<string, ArrangementPlayer>
@@ -1699,6 +1793,14 @@ function RosterSheet({
   onToggleRest: (playerId: string, optedRest: boolean) => void
   onSwap: (playerId: string) => void
   onSyncRoster: () => void
+  groupSelection: string[]
+  groupSummaries: GroupSummary[]
+  groupAliases: Map<string, string>
+  onToggleGroupSelection: (playerId: string) => void
+  onCreateGroup: () => void
+  onClearGroup: (playerId: string) => void
+  onClearWholeGroup: (groupId: string) => void
+  onClearGroupSelection: () => void
 }) {
   const theme = useAppTheme()
   return (
@@ -1713,8 +1815,9 @@ function RosterSheet({
           const player = playersById.get(playerId)
           const expanded = expandedPlayerId === playerId
           const checkedOut = Boolean(row.checked_out_at)
+          const selectedForGroup = groupSelection.includes(playerId)
           return (
-            <Card key={playerId} style={{ borderRadius: RADIUS.md, overflow: 'hidden' }}>
+            <Card key={playerId} style={{ borderRadius: RADIUS.md, overflow: 'hidden', borderColor: selectedForGroup ? theme.primary : theme.outlineVariant }}>
               <TouchableOpacity
                 onPress={() => setExpandedPlayerId(expanded ? null : playerId)}
                 style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}
@@ -1732,7 +1835,8 @@ function RosterSheet({
                 <View style={{ borderTopWidth: BORDER.hairline, borderTopColor: theme.outlineVariant, padding: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                   <MiniAction label={checkedOut ? 'Check-in' : 'Check-out'} icon={checkedOut ? UserPlus : UserMinus} onPress={() => onToggleCheckout(playerId, checkedOut)} tone={checkedOut ? 'good' : 'danger'} />
                   <MiniAction label={row.opted_rest ? 'Bỏ nghỉ' : 'Xin nghỉ'} icon={History} onPress={() => onToggleRest(playerId, row.opted_rest)} tone="neutral" />
-                  <MiniAction label="Group+" icon={Users} onPress={() => Alert.alert('Group+', 'Chọn nhiều người trên màn chính để tạo group.')} tone="neutral" />
+                  <MiniAction label={selectedForGroup ? 'Bỏ chọn' : 'Chọn group'} icon={Users} onPress={() => onToggleGroupSelection(playerId)} tone={selectedForGroup ? 'good' : 'neutral'} />
+                  {row.group_id ? <MiniAction label="Xóa group" icon={X} onPress={() => onClearGroup(playerId)} tone="neutral" /> : null}
                   <MiniAction label="Swap" icon={Zap} onPress={() => onSwap(playerId)} tone="good" />
                 </View>
               ) : null}
@@ -1740,29 +1844,45 @@ function RosterSheet({
           )
         })}
       </View>
+      {rows.length > 0 ? (
+        <View style={{ marginTop: 14, gap: 10 }}>
+          {groupSummaries.length > 0 ? (
+            <View style={{ gap: 8 }}>
+              <Text style={eyebrowStyle(theme.outline)}>Nhóm hiện tại</Text>
+              {groupSummaries.map(group => (
+                <View key={group.group_id} style={{ borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, padding: 10, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.onSurface }} numberOfLines={2}>
+                    {group.label}: {group.player_ids.map(id => playerName(id, playersById)).join(', ')}
+                  </Text>
+                  <TouchableOpacity onPress={() => onClearWholeGroup(group.group_id)} style={{ minHeight: 34, borderRadius: RADIUS.md, backgroundColor: theme.surface, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={ctaTextStyle(theme.outline, 10)}>Xóa</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 12 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.primary }}>
+              Chọn 2+ người chơi để tạo group. Engine sẽ ưu tiên xếp họ cùng team hoặc cùng sân nhưng không bắt buộc.
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              onPress={onCreateGroup}
+              disabled={groupSelection.length < 2 || Boolean(busy?.startsWith('group-'))}
+              style={{ flex: 1, height: 48, borderRadius: RADIUS.md, backgroundColor: groupSelection.length >= 2 ? theme.primary : theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}
+            >
+              {busy?.startsWith('group-') ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Tạo group ({groupSelection.length})</Text>}
+            </TouchableOpacity>
+            {groupSelection.length > 0 ? (
+              <TouchableOpacity onPress={onClearGroupSelection} style={{ width: 48, height: 48, borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' }}>
+                <X size={18} color={theme.onSurface} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
     </View>
-  )
-}
-
-function MiniAction({
-  label,
-  icon: Icon,
-  onPress,
-  tone,
-}: {
-  label: string
-  icon: any
-  onPress: () => void
-  tone: 'good' | 'danger' | 'neutral'
-}) {
-  const theme = useAppTheme()
-  const color = tone === 'danger' ? theme.dangerText : tone === 'good' ? theme.primary : theme.outline
-  const bg = tone === 'danger' ? theme.dangerBg : tone === 'good' ? theme.secondaryContainer : theme.surfaceContainerLow
-  return (
-    <TouchableOpacity onPress={onPress} style={{ minHeight: 40, borderRadius: RADIUS.md, backgroundColor: bg, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-      <Icon size={14} color={color} />
-      <Text style={ctaTextStyle(color, 11)}>{label}</Text>
-    </TouchableOpacity>
   )
 }
 
@@ -1825,25 +1945,26 @@ function MoreSheet({
   )
 }
 
-function SheetAction({ label, onPress, loading }: { label: string; onPress: () => void; loading?: boolean }) {
-  const theme = useAppTheme()
-  return (
-    <TouchableOpacity onPress={onPress} disabled={loading} style={{ height: 46, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}>
-      {loading ? <ActivityIndicator color={theme.primary} /> : <Text style={ctaTextStyle(theme.primary, 13)}>{label}</Text>}
-    </TouchableOpacity>
-  )
-}
-
 function RecapView({
   summary,
+  state,
+  matchCountConsistencyRows,
+  groupSummaries,
   playersById,
   onOpenHistory,
 }: {
   summary: ReturnType<typeof sanitizeSummaryForHost>
+  state: SessionState
+  matchCountConsistencyRows: MatchCountConsistencyRow[]
+  groupSummaries: GroupSummary[]
   playersById: Map<string, ArrangementPlayer>
   onOpenHistory: () => void
 }) {
   const theme = useAppTheme()
+  const partner = computePartnerDiversity(state)
+  const opponent = computeOpponentDiversity(state)
+  const burden = computeOpponentRepeatBurden(state)
+  const pressure = computeRepeatPressure(state)
   return (
     <ScrollView contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 48 }}>
       <LinearGradient colors={[theme.heroGradientStart, theme.primaryContainer]} style={{ borderRadius: RADIUS.lg, padding: 18, marginBottom: 14 }}>
@@ -1881,6 +2002,30 @@ function RecapView({
           )
         })}
       </Card>
+      <Card style={{ padding: 14, marginBottom: 14 }}>
+        <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Repeat pressure</Text>
+        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 17 }}>
+          {pressure.repeat_risk} x{pressure.penalty_multiplier.toFixed(2)} · avg {pressure.avg_matches_per_player.toFixed(1)} trận/người · opponent pressure {pressure.opponent_pressure.toFixed(2)}
+        </Text>
+      </Card>
+      <RepeatDetailsBlock partnerPairs={partner.repeat_pairs} opponentPairs={opponent.repeat_pairs} playersById={playersById} />
+      <GroupAuditBlock state={state} groupSummaries={groupSummaries} playersById={playersById} />
+      <OpponentBurdenSummary burden={burden} playersById={playersById} />
+      {matchCountConsistencyRows.length > 0 ? (
+        <Card style={{ padding: 14, marginBottom: 14, backgroundColor: theme.dangerBg }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.dangerText }}>Cảnh báo đồng bộ</Text>
+          <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.dangerText }}>
+            Live state khác replay từ lịch sử. Report đang dùng dữ liệu replay.
+          </Text>
+          <View style={{ marginTop: 8, gap: 4 }}>
+            {matchCountConsistencyRows.slice(0, 8).map(row => (
+              <Text key={`mismatch-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.dangerText }}>
+                {playerName(row.player_id, playersById)}: live {row.live}, replay {row.replay}
+              </Text>
+            ))}
+          </View>
+        </Card>
+      ) : null}
       <TouchableOpacity onPress={onOpenHistory} style={{ height: 52, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={ctaTextStyle(theme.onPrimary)}>Xem lịch sử vòng</Text>
       </TouchableOpacity>
