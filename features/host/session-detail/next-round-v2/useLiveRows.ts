@@ -42,7 +42,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
       }
 
       setRows({
-        playerRows: ((playerRes.data ?? []) as any[]).map(row => ({
+        playerRows: ((playerRes.data ?? []) as SessionPlayerStateRow[]).map(row => ({
           ...row,
           players: {
             pvna: getPlayerPvna(playersById.get(row.player_id)) ?? 0,
@@ -56,7 +56,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
           },
         })),
         pairRows: (pairRes.data ?? []) as SessionPairHistoryRow[],
-        roundRows: ((roundRes.data ?? []) as any[]).map(normalizeRoundRow),
+        roundRows: ((roundRes.data ?? []) as RawRoundRow[]).map(normalizeRoundRow),
       })
     } finally {
       setRefreshing(false)

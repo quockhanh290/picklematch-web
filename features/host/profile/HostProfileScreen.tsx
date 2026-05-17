@@ -76,13 +76,16 @@ export function HostProfileScreen() {
 
   const init = useCallback(async () => {
     setLoading(true)
-    const snapshot = await fetchCurrentPlayerProfileDataApi()
-    setLoggedIn(snapshot.loggedIn)
-    setPlayer(snapshot.player)
-    setPlayerStats(snapshot.playerStats)
-    setHistory(snapshot.history)
-    setLoading(false)
-    setChecking(false)
+    try {
+      const snapshot = await fetchCurrentPlayerProfileDataApi()
+      setLoggedIn(snapshot.loggedIn)
+      setPlayer(snapshot.player)
+      setPlayerStats(snapshot.playerStats)
+      setHistory(snapshot.history)
+    } finally {
+      setLoading(false)
+      setChecking(false)
+    }
   }, [])
 
   useEffect(() => {

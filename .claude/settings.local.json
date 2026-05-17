@@ -6,7 +6,9 @@
       "Bash(git -C /c/Users/quock/OneDrive/picklematch-vn status --short)",
       "Bash(Get-ChildItem -Force)",
       "Bash(cat)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(Get-ChildItem -Path \"d:\\\\picklematch-web\" -Recurse -Directory -Name)",
+      "Bash(Select-Object -First 30)"
     ]
   }
 }

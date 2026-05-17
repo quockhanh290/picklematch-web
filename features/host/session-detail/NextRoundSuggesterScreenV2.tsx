@@ -64,14 +64,11 @@ import {
   eyebrowStyle,
   formatNumber,
   getTeamPvna,
+  playerName,
   repeatRiskLabel,
 } from './next-round-v2/helpers'
 import type { NextRoundSuggesterV2Props } from './next-round-v2/types'
 import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
-
-function playerName(playerId: string, playersById: Map<string, ArrangementPlayer>) {
-  return playersById.get(playerId)?.name ?? 'Người chơi'
-}
 
 function fairnessLabel(score: SessionFairnessScore) {
   if (score.grade === 'excellent') return 'Rất đều'
@@ -951,31 +948,7 @@ function describePreviewRow(row: FairnessPreview['rows'][number]) {
       ? 'Một số sở thích giới tính không được đáp ứng trong vòng này.'
       : 'Sở thích giới tính vẫn được giữ tốt.'
   }
-  return humanizeAuditDetail(row.detail)
-}
-
-function humanizeAuditDetail(detail: string) {
-  return detail
-    .replace(/\bexpected delta range\b/g, 'mức lệch hợp lý theo setup')
-    .replace(/\bavg unique\b/g, 'trung bình số người khác')
-    .replace(/\bopponent pressure\b/g, 'áp lực đối thủ')
-    .replace(/\brepeat pairs\b/g, 'cặp bị lặp')
-    .replace(/\bmax burden\b/g, 'người bị lặp nhiều nhất')
-    .replace(/\badjusted by\b/g, 'đã điều chỉnh theo')
-    .replace(/\bavg\b/g, 'trung bình')
-    .replace(/\brange\b/g, 'chênh số trận')
-    .replace(/\bavailability\b/g, 'biến động người chơi')
-    .replace(/\bchurn\b/g, 'người vào/ra')
-    .replace(/\bmultiplier\b/g, 'hệ số giảm phạt')
-    .replace(/\bpressure\b/g, 'áp lực')
-    .replace(/\bburden\b/g, 'người bị lặp nhiều')
-    .replace(/\braw\b/g, 'điểm gốc')
-    .replace(/\bsatisfied\b/g, 'sở thích được đáp ứng')
-    .replace(/\bviolations\b/g, 'vi phạm')
-    .replace(/\blow\b/g, 'thấp')
-    .replace(/\bmedium\b/g, 'vừa')
-    .replace(/\bhigh\b/g, 'cao')
-    .replace(/\bextreme\b/g, 'rất cao')
+  return row.detail
 }
 
 function EngineExplainCard({
@@ -1532,7 +1505,7 @@ function LatestFairnessAuditCard({ audit }: { audit: FairnessAudit | null }) {
                 {row.before} → {row.after} ({row.delta > 0 ? '+' : ''}{row.delta})
               </Text>
             </View>
-            <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>{humanizeAuditDetail(row.detail)}</Text>
+            <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>{describePreviewRow(row)}</Text>
           </View>
         ))}
       </View>
