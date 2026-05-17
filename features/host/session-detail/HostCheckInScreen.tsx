@@ -6,6 +6,7 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, SHADOW } from '@/constants/screenLayout'
 import type { SessionPlayer } from '@/hooks/useSessionDetail'
 import { supabase } from '@/lib/supabase'
+import { STRINGS } from '@/constants/strings'
 
 interface Props {
   sessionId: string
@@ -35,11 +36,11 @@ export function HostCheckInScreen({ sessionId, players, onUpdated, onClose }: Pr
   const handleComplete = async () => {
     const pendingCount = confirmedPlayers.length - Object.keys(statuses).length
     if (pendingCount > 0) {
-      Alert.alert('Chưa hoàn tất', 'Vui lòng xác nhận trạng thái cho tất cả người chơi.')
+      Alert.alert(STRINGS.host_flow.check_in.alert_incomplete, STRINGS.host_flow.check_in.alert_confirm_all)
       return
     }
 
-    const message = 'Sau khi hoàn tất Check-in, bạn sẽ không thể chỉnh sửa hoặc hủy kèo này nữa. Tiếp tục?'
+    const message = STRINGS.host_flow.check_in.confirm_message
     const confirmAction = async () => {
       setSubmitting(true)
       try {
@@ -53,7 +54,7 @@ export function HostCheckInScreen({ sessionId, players, onUpdated, onClose }: Pr
         onUpdated()
         onClose()
       } catch (err) {
-        Alert.alert('Lỗi', 'Không thể hoàn tất check-in.')
+        Alert.alert('Lỗi', STRINGS.host_flow.check_in.error_complete)
       } finally {
         setSubmitting(false)
       }
@@ -62,7 +63,7 @@ export function HostCheckInScreen({ sessionId, players, onUpdated, onClose }: Pr
     if (Platform.OS === 'web') {
       if (window.confirm(message)) await confirmAction()
     } else {
-      Alert.alert('Xác nhận hoàn tất', message, [{ text: 'QUAY LẠI', style: 'cancel' }, { text: 'XÁC NHẬN', onPress: confirmAction }])
+      Alert.alert(STRINGS.host_flow.check_in.confirm_title, message, [{ text: 'QUAY LẠI', style: 'cancel' }, { text: 'XÁC NHẬN', onPress: confirmAction }])
     }
   }
 
@@ -73,7 +74,7 @@ export function HostCheckInScreen({ sessionId, players, onUpdated, onClose }: Pr
           <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 12 }}>
             <Users size={48} color={theme.outline} opacity={0.5} />
             <Text style={{ fontFamily: SCREEN_FONTS.body, color: theme.onSurfaceVariant, textAlign: 'center' }}>
-              Chưa có người chơi nào được xác nhận.
+              {STRINGS.host_flow.check_in.no_players}
             </Text>
           </View>
         ) : (
@@ -151,7 +152,7 @@ export function HostCheckInScreen({ sessionId, players, onUpdated, onClose }: Pr
             opacity: submitting ? 0.7 : (pressed ? 0.9 : 1) 
           })}
         >
-          {submitting ? <ActivityIndicator color="#fff" /> : <><Check size={20} color="#fff" /><Text style={{ color: '#fff', fontSize: 16, fontFamily: SCREEN_FONTS.headline, fontWeight: '700' }}>XÁC NHẬN HOÀN TẤT</Text></>}
+          {submitting ? <ActivityIndicator color="#fff" /> : <><Check size={20} color="#fff" /><Text style={{ color: '#fff', fontSize: 16, fontFamily: SCREEN_FONTS.headline, fontWeight: '700' }}>{STRINGS.host_flow.check_in.complete}</Text></>}
         </Pressable>
       </View>
     </View>

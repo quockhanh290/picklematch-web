@@ -9,6 +9,7 @@ import { ADVANCED_FILTER_INITIAL, AdvancedFilter } from '@/components/find-sessi
 import { AppDialogConfig } from '@/components/design'
 import { getSkillLevelFromEloRange, getSkillLevelFromPlayer } from '@/lib/skillAssessment'
 import { haversineKm } from '@/lib/useNearbyCourts'
+import { STRINGS } from '@/constants/strings'
 
 import { 
   Session, 
@@ -89,9 +90,9 @@ export function useFindSessionController() {
     } catch (error) {
       console.warn('[FindSession] fetchSessions failed:', error)
       setDialogConfig({
-        title: 'Network issue',
-        message: 'Unable to refresh sessions right now. Please try again.',
-        actions: [{ label: 'OK' }],
+        title: STRINGS.find_session.dialogs.network_error.title,
+        message: STRINGS.find_session.dialogs.network_error.message,
+        actions: [{ label: STRINGS.find_session.dialogs.network_error.understand }],
       })
     } finally {
       setLoading(false)
@@ -159,9 +160,9 @@ export function useFindSessionController() {
       const { status } = await Location.requestForegroundPermissionsAsync()
       if (status !== 'granted') {
         setDialogConfig({
-          title: 'Quyền truy cập',
-          message: 'Vui lòng cho phép ứng dụng truy cập vị trí để tìm các kèo gần bạn.',
-          actions: [{ label: 'Đã hiểu' }],
+          title: STRINGS.find_session.dialogs.permission_location.title,
+          message: STRINGS.find_session.dialogs.permission_location.message,
+          actions: [{ label: STRINGS.find_session.dialogs.permission_location.understand }],
         })
         return
       }
@@ -179,9 +180,9 @@ export function useFindSessionController() {
     } catch (error) {
       console.warn('[FindSession] nearby filter failed:', error)
       setDialogConfig({
-        title: 'Lỗi',
-        message: 'Không thể xác định vị trí của bạn lúc này.',
-        actions: [{ label: 'Đã hiểu' }],
+        title: STRINGS.find_session.dialogs.location_error.title,
+        message: STRINGS.find_session.dialogs.location_error.message,
+        actions: [{ label: STRINGS.find_session.dialogs.location_error.understand }],
       })
     } finally {
       setLoading(false)
@@ -192,11 +193,11 @@ export function useFindSessionController() {
     async (enabled: boolean) => {
       if (!playerProfile?.id) {
         setDialogConfig({
-          title: 'Cần hoàn thiện hồ sơ',
-          message: 'Gợi ý hợp gu cần thành phố và mức trình gần đúng để ưu tiên kèo phù hợp hơn.',
+          title: STRINGS.find_session.dialogs.complete_profile.title,
+          message: STRINGS.find_session.dialogs.complete_profile.message,
           actions: [
-            { label: 'Để sau', tone: 'secondary' },
-            { label: 'Chỉnh hồ sơ', onPress: () => router.push('/edit-profile' as never) },
+            { label: STRINGS.find_session.dialogs.complete_profile.cancel, tone: 'secondary' },
+            { label: STRINGS.find_session.dialogs.complete_profile.confirm, onPress: () => router.push('/edit-profile' as never) },
           ],
         })
         return

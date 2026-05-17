@@ -4,6 +4,7 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import { SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
 import { ShieldCheck, ChevronDown, ChevronRight } from 'lucide-react-native'
 import { type ArrangementPlayer } from '@/lib/sessionDetail'
+import { STRINGS } from '@/constants/strings'
 import { supabase } from '@/lib/supabase'
 import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { arrangeFixedTeams } from '@/lib/scheduler/fixedTeamPairing'
@@ -146,8 +147,11 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
       .filter(team => team.count !== 2)
     if (invalidTeams.length > 0) {
       Alert.alert(
-        'Chua du doi',
-        `Moi doi can dung 2 nguoi. Doi can chinh: ${invalidTeams.map(team => `Doi ${team.teamNo} (${team.count})`).join(', ')}`
+        STRINGS.host_flow.team_arrangement.not_enough_players,
+        STRINGS.host_flow.team_arrangement.invalid_team_count.replace(
+          '{info}',
+          invalidTeams.map(team => `Đội ${team.teamNo} (${team.count})`).join(', ')
+        )
       )
       return
     }
@@ -211,8 +215,11 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
       .filter(team => team.count !== 2)
     if (invalidTeams.length > 0) {
       Alert.alert(
-        'Chua du doi',
-        `Moi doi can dung 2 nguoi. Doi can chinh: ${invalidTeams.map(team => `Doi ${team.teamNo} (${team.count})`).join(', ')}`
+        STRINGS.host_flow.team_arrangement.not_enough_players,
+        STRINGS.host_flow.team_arrangement.invalid_team_count.replace(
+          '{info}',
+          invalidTeams.map(team => `Đội ${team.teamNo} (${team.count})`).join(', ')
+        )
       )
       return
     }
@@ -430,7 +437,10 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                       color: '#92400E',
                       fontWeight: '900',
                     }}>
-                      CO {fixedPairWaitingPlayers.length} NGUOI CHUA CO CAP
+                      {STRINGS.host_flow.team_arrangement.waiting_no_partner.replace(
+                        '{count}',
+                        String(fixedPairWaitingPlayers.length)
+                      )}
                     </Text>
                     <Text style={{
                       fontFamily: SCREEN_FONTS.label,
@@ -439,7 +449,10 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                       marginTop: 4,
                       lineHeight: 15,
                     }}>
-                      {fixedPairWaitingNames} se ngoi ngoai lich co dinh cap. Chuyen sang Xoay vong neu muon tat ca nguoi choi duoc xep tran.
+                      {STRINGS.host_flow.team_arrangement.waiting_no_partner_hint.replace(
+                        '{names}',
+                        fixedPairWaitingNames
+                      )}
                     </Text>
                   </View>
                 )}

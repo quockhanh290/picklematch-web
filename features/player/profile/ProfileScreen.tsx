@@ -180,12 +180,12 @@ export function ProfileScreen() {
     const confirmRequired = async (): Promise<boolean> => {
       return new Promise((resolve) => {
         setDialogConfig({
-          title: 'KÍCH HOẠT CHẾ ĐỘ HOST',
-          message: 'Bạn có muốn kích hoạt quyền Chủ sân để bắt đầu tạo kèo và quản lý trận đấu không?',
+          title: STRINGS.profile.actions.activate_host_title,
+          message: STRINGS.profile.actions.activate_host_msg,
           actions: [
-            { label: 'HỦY', tone: 'secondary', onPress: () => resolve(false) },
+            { label: STRINGS.profile.actions.cancel, tone: 'secondary', onPress: () => resolve(false) },
             { 
-              label: 'KÍCH HOẠT NGAY', 
+              label: STRINGS.profile.actions.activate_host_btn, 
               onPress: () => resolve(true) 
             },
           ],
@@ -203,7 +203,7 @@ export function ProfileScreen() {
   async function logout() {
     setDialogConfig({
       title: `${STRINGS.profile.actions.logout}?`,
-      message: 'Bạn chắc muốn đăng xuất không?',
+      message: STRINGS.profile.actions.logout_confirm,
       actions: [
         { label: STRINGS.common.back, tone: 'secondary' },
         {
@@ -245,11 +245,11 @@ export function ProfileScreen() {
         />
         <EmptyState
           icon={<UserCircle size={28} color={theme.outline} />}
-          title="Đăng nhập để xem hồ sơ"
-          description="Quản lý thông tin cá nhân và lịch sử tham gia kèo của bạn ở một nơi gọn gàng hơn."
+          title={STRINGS.profile.login_required.title}
+          description={STRINGS.profile.login_required.description}
         />
         <View className="mt-6 gap-3 px-5">
-          <AppButton label="Đăng nhập" onPress={() => router.push('/login' as any)} />
+          <AppButton label={STRINGS.profile.login_required.login_btn} onPress={() => router.push('/login' as any)} />
           <AppButton label={STRINGS.common.back} onPress={() => router.replace('/(tabs)')} variant="secondary" />
         </View>
       </View>
@@ -269,8 +269,8 @@ export function ProfileScreen() {
       <View className="flex-1" style={{ backgroundColor: theme.backgroundMuted, paddingTop: insets.top }}>
         <EmptyState
           icon={<AlertCircle size={28} color={theme.outline} />}
-          title="Không tìm thấy hồ sơ"
-          description="Thử tải lại hoặc đăng nhập lại để tiếp tục."
+          title={STRINGS.profile.not_found.title}
+          description={STRINGS.profile.not_found.description}
         />
       </View>
     )
@@ -327,7 +327,7 @@ export function ProfileScreen() {
         <WebContainer maxWidth={600}>
           <View style={{ paddingTop: 12 }}>
             <MainHeader
-              title="HỒ SƠ NGƯỜI CHƠI"
+              title={STRINGS.profile.header}
               brandedSubtitle="PICKLEMATCH"
               style={{ paddingHorizontal: 0 }}
             />
@@ -391,7 +391,7 @@ export function ProfileScreen() {
             <View style={{ paddingBottom: 100 }}>
               {/* Skill Proficiency Section */}
               <View>
-                <ProfileSectionDivider index="01" title="TRÌNH ĐỘ PVNA" theme={theme} />
+                <ProfileSectionDivider index="01" title={STRINGS.profile.sections.pvna} theme={theme} />
                 <ProfileSkillHero
                   elo={effectiveElo}
                   title={skill?.title ?? 'MỚI CHƠI'}
@@ -403,7 +403,7 @@ export function ProfileScreen() {
 
               {/* Favorite Courts Section */}
               <View>
-                <ProfileSectionDivider index="02" title="SÂN HAY CHƠI" theme={theme} />
+                <ProfileSectionDivider index="02" title={STRINGS.profile.sections.favorite_courts} theme={theme} />
                 {displayHistory.length > 0 ? (
                   <View style={{ gap: 10 }}>
                     {(() => {
@@ -450,7 +450,7 @@ export function ProfileScreen() {
                           </View>
                           <View style={{ backgroundColor: theme.background, paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.full, borderWidth: 1, borderColor: theme.outlineVariant }}>
                             <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 10, color: theme.primary }}>
-                              {court.count} TRẬN
+                              {STRINGS.profile.sections.matches_count.replace('{count}', String(court.count))}
                             </Text>
                           </View>
                         </View>
@@ -460,7 +460,7 @@ export function ProfileScreen() {
                 ) : (
                   <View style={{ padding: 24, backgroundColor: theme.surfaceAlt, borderRadius: RADIUS.lg, borderStyle: 'dashed', borderWidth: 1, borderColor: theme.outlineVariant, alignItems: 'center' }}>
                     <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, color: theme.outline }}>
-                      Chưa có dữ liệu sân đã chơi
+                      {STRINGS.profile.sections.empty_courts}
                     </Text>
                   </View>
                 )}
@@ -468,7 +468,7 @@ export function ProfileScreen() {
 
               {/* Account Management Section */}
               <View>
-                <ProfileSectionDivider index="03" title="QUẢN LÝ TÀI KHOẢN" theme={theme} />
+                <ProfileSectionDivider index="03" title={STRINGS.profile.sections.account_mgmt} theme={theme} />
                 <View style={{ gap: 10 }}>
                   <TouchableOpacity
                     onPress={handleSwitchToHost}
@@ -483,7 +483,7 @@ export function ProfileScreen() {
                       fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: 'white',
                       textTransform: 'uppercase', letterSpacing: 1
                     }}>
-                      Chế độ Host
+                      {STRINGS.profile.actions.host_mode}
                     </Text>
                   </TouchableOpacity>
 
@@ -500,7 +500,7 @@ export function ProfileScreen() {
                       fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: 'white',
                       textTransform: 'uppercase', letterSpacing: 1
                     }}>
-                      Đăng xuất
+                      {STRINGS.profile.actions.logout}
                     </Text>
                   </TouchableOpacity>
                 </View>

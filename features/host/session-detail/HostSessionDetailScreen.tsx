@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Trophy, CheckCircle2, Check, AlertTriangle, Sparkles } from 'lucide-react-native'
 import { Alert } from 'react-native'
 import { supabase } from '@/lib/supabase'
+import { STRINGS } from '@/constants/strings'
 
 import { AppDialog, type AppDialogConfig, SecondaryNavbar } from '@/components/design'
 import { useAppTheme } from '@/lib/theme-context'
@@ -95,7 +96,7 @@ export function HostSessionDetailScreen({
 
   const handleCompleteCheckIn = async () => {
     // Message for confirmation
-    const message = 'Sau khi hoan tat Check-in, ban se chuyen sang man Quan ly tran de sap lich theo hinh thuc choi. Tiep tuc?'
+    const message = STRINGS.host_flow.check_in.transition_confirm
     
     const confirmAction = async () => {
       try {
@@ -114,18 +115,18 @@ export function HostSessionDetailScreen({
         onRefresh()
         setIsCheckInMode(false)
       } catch (err: any) {
-        Alert.alert('Lỗi', err.message || 'Không thể hoàn tất check-in')
+        Alert.alert(STRINGS.common.error, err.message || 'Không thể hoàn tất check-in')
       } finally {
         setIsProcessingCheckIn(false)
       }
     }
 
     setDialogConfig({
-      title: 'Hoàn tất Check-in',
+      title: STRINGS.host_flow.check_in.complete,
       message,
       actions: [
-        { label: 'Hủy', tone: 'secondary', onPress: () => setDialogConfig(null) },
-        { label: 'Tiếp tục', tone: 'primary', onPress: confirmAction }
+        { label: STRINGS.common.later, tone: 'secondary', onPress: () => setDialogConfig(null) },
+        { label: STRINGS.common.confirm, tone: 'primary', onPress: confirmAction }
       ]
     })
   }
@@ -334,7 +335,7 @@ export function HostSessionDetailScreen({
                 }}
               >
                 <CheckCircle2 size={20} color={theme.onPrimary} />
-                <Text style={{ color: theme.onPrimary, fontSize: 16, fontFamily: SCREEN_FONTS.headline }}>BẮT ĐẦU ĐIỂM DANH</Text>
+                <Text style={{ color: theme.onPrimary, fontSize: 16, fontFamily: SCREEN_FONTS.headline }}>{STRINGS.host_flow.check_in.start}</Text>
               </TouchableOpacity>
             ) : (
               <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -359,7 +360,7 @@ export function HostSessionDetailScreen({
                   ) : (
                     <>
                       <CheckCircle2 size={20} color={theme.onPrimary} />
-                      <Text style={{ color: theme.onPrimary, fontSize: 16, fontFamily: SCREEN_FONTS.headline }}>HOÀN TẤT ĐIỂM DANH</Text>
+                      <Text style={{ color: theme.onPrimary, fontSize: 16, fontFamily: SCREEN_FONTS.headline }}>{STRINGS.host_flow.check_in.complete}</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -378,7 +379,7 @@ export function HostSessionDetailScreen({
                     ...SHADOW.sm
                   }}
                 >
-                  <Text style={{ color: 'white', fontSize: 16, fontFamily: SCREEN_FONTS.headline, fontWeight: '700' }}>HỦY</Text>
+                  <Text style={{ color: 'white', fontSize: 16, fontFamily: SCREEN_FONTS.headline, fontWeight: '700' }}>{STRINGS.common.cancel}</Text>
                 </TouchableOpacity>
               </View>
             )}

@@ -46,6 +46,7 @@ import type {
 } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { eloToPvna } from '@/lib/skillAssessment'
+import { STRINGS } from '@/constants/strings'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
 
@@ -142,22 +143,22 @@ function formatPlayerPreference(playerId: string, playersById: Map<string, Arran
 function formatWarning(code: string) {
   switch (code) {
     case 'NOT_ENOUGH_PRESENT':
-      return 'Không đủ 4 người đang có mặt'
+      return STRINGS.host_flow.suggester.warning_not_enough_present
     case 'MUST_PLAY_OVER_CAPACITY':
-      return 'Nhiều người cần vào sân hơn số slot'
+      return STRINGS.host_flow.suggester.warning_over_capacity
     case 'NO_VALID_MATCH':
-      return 'Chưa có cặp đấu cân PVNA hợp lệ'
+      return STRINGS.host_flow.suggester.warning_no_valid_match
     case 'PARTIAL_COURTS':
-      return 'Chỉ đủ người cho một phần số sân'
+      return STRINGS.host_flow.suggester.warning_partial_courts
     case 'MANUAL_SWAP':
-      return 'Đã chỉnh tay'
+      return STRINGS.host_flow.suggester.warning_manual_swap
     default:
       return code.replace(/_/g, ' ').toLowerCase()
   }
 }
 
 function shortGroupId(groupId: string | null | undefined) {
-  if (!groupId) return 'Chưa có group'
+  if (!groupId) return STRINGS.host_flow.suggester.no_group
   const parts = groupId.split(':')
   return `Group ${parts.slice(-2).map(part => part.slice(0, 4)).join('-')}`
 }
@@ -874,7 +875,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
             </Text>
             {(courtCalculator.recommended.repeat_pressure.risk === 'high' || courtCalculator.recommended.repeat_pressure.risk === 'extreme') && (
               <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#92400E', lineHeight: 15, marginTop: 4, fontWeight: '700' }}>
-                Setup nay co the tao repeat. Host co the giam san, giam vong, hoac giu setup neu uu tien choi nhieu.
+                {STRINGS.host_flow.suggester.repeat_warning}
               </Text>
             )}
           </View>
@@ -948,7 +949,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
           }}
         >
           {busy === 'sync' ? <ActivityIndicator color="white" /> : <RefreshCcw size={18} color="white" />}
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: 'white', fontWeight: '900' }}>ĐỒNG BỘ DANH SÁCH (SYNC)</Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: 'white', fontWeight: '900' }}>{STRINGS.host_flow.suggester.sync_list}</Text>
         </TouchableOpacity>
       </View>
 
@@ -1015,7 +1016,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
             {selectionUndo && (
               <View style={{ backgroundColor: UI_THEME.background, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: UI_THEME.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, lineHeight: 15 }}>
-                  Da doi lua chon vong: {selectionUndo.reason}
+                  {STRINGS.host_flow.suggester.undo_reason.replace('{reason}', selectionUndo.reason)}
                 </Text>
                 <MiniButton
                   label="Undo"
@@ -1139,7 +1140,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
           {rows.playerRows.length === 0 ? (
             <View style={{ backgroundColor: UI_THEME.background, borderRadius: 12, padding: 20, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: UI_THEME.border }}>
               <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: UI_THEME.textMuted, textAlign: 'center' }}>
-                Chưa có danh sách người chơi. Bấm ĐỒNG BỘ (SYNC) để bắt đầu.
+                {STRINGS.host_flow.suggester.sync_required_hint}
               </Text>
             </View>
           ) : rows.playerRows.map(row => {

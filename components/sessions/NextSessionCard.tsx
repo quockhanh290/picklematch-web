@@ -5,6 +5,7 @@ import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS, AppFontSet } from '@/constants/typography'
 import { RADIUS, SPACING, BORDER, SHADOW } from '@/constants/screenLayout'
 import { getSessionSkillLabel } from '@/lib/sessionDetail'
+import { STRINGS } from '@/constants/strings'
 
 interface NextSessionCardProps {
   session: any
@@ -18,13 +19,13 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
   // Data normalization
   const startTime = session.start_time || session.slot?.start_time
   const endTime = session.end_time || session.slot?.end_time
-  const courtName = session.court_name || session.slot?.court?.name || 'KÈO PICKLEBALL'
-  const address = session.court_address || session.slot?.court?.address || 'Chưa cập nhật địa chỉ'
+  const courtName = session.court_name || session.slot?.court?.name || STRINGS.session_card.default_court_title
+  const address = session.court_address || session.slot?.court?.address || STRINGS.session_card.no_address
   const ownerSessions = session.owner_sessions
   const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
   const formatType = ownerDetails.format_type || session.format_type || 'social'
   const fmt = formatType.toLowerCase()
-  const title = session.title || (fmt === 'round_robin' ? 'Round Robin' : (fmt === 'open_play' ? 'Open Play' : 'Giao lưu Social'))
+  const title = session.title || (fmt === 'round_robin' ? 'Round Robin' : (fmt === 'open_play' ? 'Open Play' : STRINGS.session_card.format_social))
   
   const confirmedCount = isHost 
     ? (session.session_players?.filter((p: any) => p.status === 'confirmed' || p.status === 'checked_in').length || 0)
@@ -32,7 +33,7 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
     
   const maxPlayers = session.is_unlimited ? 16 : (session.max_players || 16)
   const costPerPerson = ownerDetails.format_metadata?.cost_per_person ?? ownerDetails.total_cost ?? session.total_cost
-  const priceLabel = costPerPerson > 0 ? `${Math.round(costPerPerson / 1000)}K` : 'Miễn phí'
+  const priceLabel = costPerPerson > 0 ? `${Math.round(costPerPerson / 1000)}K` : STRINGS.session_card.free
   const skillLabel = getSessionSkillLabel(session.elo_min, session.elo_max)
 
   // Status Logic
@@ -62,22 +63,22 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
   
   if (isHost) {
     if (isPlaying) {
-      statusLabel = 'THI ĐẤU'
+      statusLabel = STRINGS.session_card.status_playing_match
       statusBg = COLORS.darkTeal
     } else if (isCancelled) {
-      statusLabel = 'ĐÃ HỦY'
+      statusLabel = STRINGS.session_card.status_cancelled
       statusBg = COLORS.gray
     } else if (isDone) {
-      statusLabel = 'KẾT THÚC'
+      statusLabel = STRINGS.session_card.status_done
       statusBg = COLORS.gray
     } else if (isFull) {
-      statusLabel = 'ĐÃ ĐẦY'
+      statusLabel = STRINGS.session_card.status_full
       statusBg = COLORS.amber
     } else if (isUrgent) {
-      statusLabel = 'CẦN THÊM NGƯỜI'
+      statusLabel = STRINGS.session_card.status_need_players
       statusBg = COLORS.coral
     } else {
-      statusLabel = 'ĐANG MỞ'
+      statusLabel = STRINGS.session_card.status_open
       statusBg = COLORS.teal
     }
   } else {
@@ -88,7 +89,7 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
     const fmt = (ownerDetails.format_type || session.format_type || '').toLowerCase()
     if (fmt === 'round_robin') statusLabel = 'ROUND ROBIN'
     else if (fmt === 'open_play') statusLabel = 'OPEN PLAY'
-    else statusLabel = 'GIAO LƯU SOCIAL'
+    else statusLabel = STRINGS.session_card.format_social
   }
 
   const formatClock = (date: Date) => {
@@ -100,10 +101,10 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
     const tomorrow = new Date()
     tomorrow.setDate(today.getDate() + 1)
     
-    if (date.toDateString() === today.toDateString()) return 'Hôm nay'
-    if (date.toDateString() === tomorrow.toDateString()) return 'Ngày mai'
+    if (date.toDateString() === today.toDateString()) return STRINGS.session_card.today
+    if (date.toDateString() === tomorrow.toDateString()) return STRINGS.session_card.tomorrow
     
-    const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
+    const days = STRINGS.session_card.days
     return days[date.getDay()]
   }
 
@@ -149,7 +150,7 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
           <Text style={styles.statusLabel}>{statusLabel}</Text>
         </View>
         {subCourts.length > 0 && (
-          <Text style={styles.courtBadge}>SÂN {subCourts.join(', ')}</Text>
+          <Text style={styles.courtBadge}>{STRINGS.session_card.court_number.replace('{number}', subCourts.join(', '))}</Text>
         )}
       </View>
 
@@ -158,7 +159,7 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
           {isHost ? title.toUpperCase() : courtName.toUpperCase()}
         </Text>
         <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.location, { color: theme.onSurfaceVariant }]}>
-          {isHost ? courtName : session.court_address}
+          {isHost ? courtName : address}
         </Text>
       </View>
 
@@ -176,22 +177,22 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
 
         <View style={styles.gridMain}>
           <View>
-            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>THỜI GIAN</Text>
+            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{STRINGS.session_card.time_label}</Text>
             <Text style={[styles.clockValue, { color: theme.onSurface }]}>
               {formatClock(startDate)}
             </Text>
             <Text style={[styles.gridSubValue, { color: theme.onSurfaceVariant }]}>
-              đến {formatClock(endDate)}
+              {STRINGS.session_card.time_to.replace('{time}', formatClock(endDate))}
             </Text>
           </View>
 
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>CHI PHÍ</Text>
+            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{STRINGS.session_card.cost_label}</Text>
             <Text style={[styles.priceValue, { color: theme.onSurface }]}>
               {priceLabel}
             </Text>
             <Text style={[styles.gridSubValue, { color: theme.onSurfaceVariant }]}>
-              {priceLabel === 'Miễn phí' ? '' : '/ người'}
+              {priceLabel === STRINGS.session_card.free ? '' : STRINGS.session_card.per_person}
             </Text>
           </View>
         </View>
@@ -222,7 +223,7 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
             onPress={() => onPress(session.id)}
             style={[styles.detailButton, { backgroundColor: statusBg + '10' }]}
           >
-            <Text style={[styles.detailButtonText, { color: statusBg }]}>CHI TIẾT</Text>
+            <Text style={[styles.detailButtonText, { color: statusBg }]}>{STRINGS.session_card.details_btn}</Text>
             <ChevronRight size={14} color={statusBg} />
           </TouchableOpacity>
         </View>

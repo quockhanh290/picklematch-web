@@ -3,6 +3,7 @@ import { AppDialogConfig } from '@/components/design'
 import type { SessionDetailRecord } from '@/hooks/useSessionDetail'
 import { type ArrangementPlayer, autoBalance, buildArrangementPlayers } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
+import { STRINGS } from '@/constants/strings'
 
 export function useSessionArrangement(
   session: SessionDetailRecord | null,
@@ -46,10 +47,15 @@ export function useSessionArrangement(
 
     const expectedPerTeam = session.max_players / 2
     if (teamA.length > expectedPerTeam || teamB.length > expectedPerTeam) {
+      const typeLabel = session.max_players === 4 
+        ? STRINGS.session_arrangement.invalid_teams.type_double 
+        : STRINGS.session_arrangement.invalid_teams.type_single
       presentDialog?.({
-        title: 'Đội hình không hợp lệ',
-        message: `Mỗi đội chỉ được phép có tối đa ${expectedPerTeam} người cho kèo ${session.max_players === 4 ? 'đánh đôi' : 'đánh đơn'}.`,
-        actions: [{ label: 'Đã hiểu' }],
+        title: STRINGS.session_arrangement.invalid_teams.title,
+        message: STRINGS.session_arrangement.invalid_teams.message
+          .replace('{count}', String(expectedPerTeam))
+          .replace('{type}', typeLabel),
+        actions: [{ label: STRINGS.session_arrangement.invalid_teams.understand }],
       })
       return
     }
@@ -68,9 +74,9 @@ export function useSessionArrangement(
 
     if (error) {
       presentDialog?.({
-        title: 'Không lưu được đội',
+        title: STRINGS.session_arrangement.save_failed.title,
         message: error.message,
-        actions: [{ label: 'Đã hiểu' }],
+        actions: [{ label: STRINGS.session_arrangement.save_failed.understand }],
       })
       return
     }
@@ -79,9 +85,9 @@ export function useSessionArrangement(
     setSavedTeams(nextSavedTeams)
     setIsArranging(false)
     presentDialog?.({
-      title: 'Đã lưu thay đổi',
-      message: 'Đội hình đã được cập nhật.',
-      actions: [{ label: 'Đã hiểu' }],
+      title: STRINGS.session_arrangement.save_success.title,
+      message: STRINGS.session_arrangement.save_success.message,
+      actions: [{ label: STRINGS.session_arrangement.save_success.understand }],
     })
     await refreshSession()
   }, [arrangedPlayers, isHost, refreshSession, session, teamA, teamB])

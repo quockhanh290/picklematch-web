@@ -8,6 +8,7 @@ import { MySession } from '@/features/player/my-sessions/types'
 import { formatDatePart } from '@/features/player/my-sessions/utils'
 
 import { getSessionSkillLabel } from '@/lib/sessionDetail'
+import { STRINGS } from '@/constants/strings'
 
 interface UpcomingSessionCardProps {
   session: MySession
@@ -35,13 +36,13 @@ export function UpcomingSessionCard({ session, onPress, isHost = false }: Upcomi
   
   if (isHost) {
     if (isFull) {
-      statusLabel = 'ĐÃ ĐẦY'
+      statusLabel = STRINGS.session_card.status_full
       statusBg = COLORS.amber
     } else if (fillRatio < 0.6) {
-      statusLabel = 'CẦN THÊM NGƯỜI'
+      statusLabel = STRINGS.session_card.status_need_players
       statusBg = COLORS.coral
     } else {
-      statusLabel = 'ĐANG MỞ'
+      statusLabel = STRINGS.session_card.status_open
       statusBg = COLORS.teal
     }
   } else {
@@ -52,7 +53,7 @@ export function UpcomingSessionCard({ session, onPress, isHost = false }: Upcomi
     const fmtInternal = (ownerDetails.format_type || session.format_type || '').toLowerCase()
     if (fmtInternal === 'round_robin') statusLabel = 'ROUND ROBIN'
     else if (fmtInternal === 'open_play') statusLabel = 'OPEN PLAY'
-    else statusLabel = 'GIAO LƯU SOCIAL'
+    else statusLabel = STRINGS.session_card.format_social
   }
 
   const ownerSessions = session.owner_sessions
@@ -102,17 +103,17 @@ export function UpcomingSessionCard({ session, onPress, isHost = false }: Upcomi
           <Text style={styles.statusLabel}>{statusLabel}</Text>
         </View>
         {session.status === 'playing' && (
-          <Text style={styles.courtBadge}>ĐANG THI ĐẤU</Text>
+          <Text style={styles.courtBadge}>{STRINGS.session_card.status_playing}</Text>
         )}
       </View>
 
       <View style={styles.contentPadding}>
         <Text numberOfLines={1} style={[styles.title, { color: theme.onSurface }]}>
-          {(session.court_name || 'SÂN PICKLEBALL').toUpperCase()}
+          {(session.court_name || STRINGS.session_card.default_court_name).toUpperCase()}
         </Text>
         <Text numberOfLines={1} style={[styles.location, { color: theme.onSurfaceVariant }]}>
           {isHost 
-            ? (session.title || (fmt === 'round_robin' ? 'Round Robin' : (fmt === 'open_play' ? 'Open Play' : 'Giao lưu Social')))
+            ? (session.title || (fmt === 'round_robin' ? 'Round Robin' : (fmt === 'open_play' ? 'Open Play' : STRINGS.session_card.format_social)))
             : session.court_address}
         </Text>
       </View>
@@ -131,24 +132,24 @@ export function UpcomingSessionCard({ session, onPress, isHost = false }: Upcomi
 
         <View style={styles.gridMain}>
           <View>
-            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>THỜI GIAN</Text>
+            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{STRINGS.session_card.time_label}</Text>
             <Text style={[styles.clockValue, { color: theme.onSurface }]}>
               {formatClock(session.start_time)}
             </Text>
             <Text style={[styles.gridSubValue, { color: theme.onSurfaceVariant }]}>
-              đến {formatClock(session.end_time)}
+              {STRINGS.session_card.time_to.replace('{time}', formatClock(session.end_time))}
             </Text>
           </View>
 
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>CHI PHÍ</Text>
+            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{STRINGS.session_card.cost_label}</Text>
             <Text style={[styles.priceValue, { color: theme.onSurface }]}>
               {session.total_cost && session.total_cost > 0 
                 ? `${Math.round(session.total_cost / 1000)}K` 
-                : 'Miễn phí'}
+                : STRINGS.session_card.free}
             </Text>
             <Text style={[styles.gridSubValue, { color: theme.onSurfaceVariant }]}>
-              {session.total_cost && session.total_cost > 0 ? '/ người' : ''}
+              {session.total_cost && session.total_cost > 0 ? STRINGS.session_card.per_person : ''}
             </Text>
           </View>
         </View>

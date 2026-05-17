@@ -4,28 +4,18 @@ import { useAppTheme } from '@/lib/theme-context'
 import { RADIUS, SHADOW } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 
+import { STRINGS } from '@/constants/strings'
+
 export type SessionTab = 'upcoming' | 'pending' | 'history'
 
 export function MySessionsEmptyState({ activeTab }: { activeTab: SessionTab }) {
   const theme = useAppTheme()
   const config =
     activeTab === 'upcoming'
-      ? {
-          eyebrow: 'SẴN SÀNG RA SÂN',
-          title: 'Bạn chưa có kèo sắp tới',
-          description: 'Tạo kèo mới hoặc tham gia một trận phù hợp để lịch chơi của bạn bắt đầu đầy lên.',
-        }
+      ? STRINGS.session_empty.upcoming
       : activeTab === 'pending'
-        ? {
-            eyebrow: 'ĐANG CHỜ',
-            title: 'Chưa có yêu cầu nào cần duyệt',
-            description: 'Những kèo bạn đang chờ chủ kèo phản hồi sẽ xuất hiện tại đây.',
-          }
-        : {
-            eyebrow: 'LỊCH SỬ THI ĐẤU',
-            title: 'Bạn chưa có lịch sử trận đấu',
-            description: 'Sau khi hoàn thành các trận đã chơi, phần lịch sử sẽ hiển thị tại đây.',
-          }
+        ? STRINGS.session_empty.pending
+        : STRINGS.session_empty.history
 
   return (
     <View

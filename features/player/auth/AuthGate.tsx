@@ -9,6 +9,7 @@ import { AlertTriangle, X } from 'lucide-react-native'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { AppLoading } from '@/components/design/AppLoading'
 import { useNetworkState } from '@/lib/NetworkContext'
+import { STRINGS } from '@/constants/strings'
 
 export type AuthStatus = 'loading' | 'unauthenticated' | 'needs_setup' | 'needs_onboarding' | 'ready'
 export type UserRole = 'player' | 'host' | null
@@ -197,7 +198,7 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
           {authStatus === 'loading' || !fontsLoaded ? (
             status !== 'online' ? (
               <View style={{ alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-                <AppLoading label={status === 'offline' ? "KHÔNG CÓ KẾT NỐI" : "ĐANG KẾT NỐI LẠI..."} />
+                <AppLoading label={status === 'offline' ? STRINGS.auth_gate.no_connection : STRINGS.auth_gate.reconnecting} />
                 <Text style={{ 
                   marginTop: 8, 
                   color: theme.onSurfaceVariant, 
@@ -206,8 +207,8 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
                   textAlign: 'center' 
                 }}>
                   {status === 'offline' 
-                    ? "Vui lòng kiểm tra kết nối mạng của bạn để tiếp tục." 
-                    : "Kết nối mạng của bạn có vẻ không ổn định. Đang thử lại..."}
+                    ? STRINGS.auth_gate.offline_message 
+                    : STRINGS.auth_gate.unstable_message}
                 </Text>
                 <TouchableOpacity 
                   onPress={() => status === 'offline' ? retry() : router.replace(pathname as any)} 
@@ -220,15 +221,15 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
                   }}
                 >
                   <Text style={{ color: theme.onSecondaryContainer, fontFamily: SCREEN_FONTS.medium }}>
-                    {status === 'offline' ? 'Thử lại ngay' : 'Thử tải lại trang'}
+                    {status === 'offline' ? STRINGS.auth_gate.retry_now : STRINGS.auth_gate.reload_page}
                   </Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <AppLoading label="ĐANG XÁC THỰC..." />
+              <AppLoading label={STRINGS.auth_gate.authenticating} />
             )
           ) : (
-            <AppLoading label="ĐANG CHUYỂN HƯỚNG..." />
+            <AppLoading label={STRINGS.auth_gate.redirecting} />
           )}
         </View>
       )}
@@ -255,7 +256,7 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
             fontFamily: SCREEN_FONTS.medium,
             lineHeight: 16
           }}>
-            Trình duyệt đang chặn lưu trữ (chế độ ẩn danh). Bạn sẽ bị đăng xuất khi đóng tab này.
+            {STRINGS.auth_gate.persistence_warning}
           </Text>
           <TouchableOpacity onPress={() => setPersistenceWarning(false)}>
             <X size={16} color={theme.warningStrong} />

@@ -12,6 +12,7 @@ import {
     getBadgeIcon, 
     getBadgeTone 
 } from './utils'
+import { STRINGS } from '@/constants/strings'
 
 let profileDataCache:
   | {
@@ -72,8 +73,8 @@ export async function fetchCurrentPlayerProfileDataApi(options?: { force?: boole
     key: badge.badge_key,
     title: badge.badge_title,
     category: badge.badge_category,
-    description: badge.badge_description ?? 'Danh hiệu mở khóa từ kết quả và uy tín trong hệ thống.',
-    requirement: badge.meta?.requirement ?? BADGE_REQUIREMENTS[badge.badge_key] ?? 'Đạt mốc hệ thống',
+    description: badge.badge_description ?? STRINGS.profile.badge_default_desc,
+    requirement: badge.meta?.requirement ?? BADGE_REQUIREMENTS[badge.badge_key] ?? STRINGS.profile.badge_default_req,
     icon: getBadgeIcon(badge.icon),
     tone: getBadgeTone(badge.badge_category),
     earned: true,

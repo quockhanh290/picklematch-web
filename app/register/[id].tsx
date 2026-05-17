@@ -27,6 +27,7 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, SPACING, SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
 import { supabase } from '@/lib/supabase'
 import { RegistrationSuccessView } from '@/components/register/RegistrationSuccessView'
+import { STRINGS } from '@/constants/strings'
 
 const REGISTER_INFO_STORAGE_PREFIX = 'zalo_player_info:'
 const REGISTER_INFO_TTL_MS = 24 * 60 * 60 * 1000
@@ -55,18 +56,18 @@ const normalizePhoneForSubmit = (value: string) => {
 
 const validateName = (value: string) => {
   const cleaned = value.trim().replace(/\s+/g, ' ')
-  if (!cleaned) return 'Vui lòng nhập họ và tên.'
-  if (cleaned.length < 2) return 'Họ tên cần tối thiểu 2 ký tự.'
-  if (!/^[\p{L}\s'.-]+$/u.test(cleaned)) return 'Họ tên chỉ nên gồm chữ cái.'
+  if (!cleaned) return STRINGS.common.validation.name_required
+  if (cleaned.length < 2) return STRINGS.common.validation.name_min_length
+  if (!/^[\p{L}\s'.-]+$/u.test(cleaned)) return STRINGS.common.validation.name_invalid
   return null
 }
 
 const validatePhone = (value: string) => {
   const digits = value.replace(/\D/g, '')
-  if (!digits) return 'Vui lòng nhập số điện thoại.'
+  if (!digits) return STRINGS.common.validation.phone_required
   if (digits.startsWith('0') && digits.length === 10) return null
   if (digits.startsWith('84') && digits.length === 11) return null
-  return 'SĐT không hợp lệ. Dùng 10 số (0xxxxxxxxx) hoặc 84xxxxxxxxx.'
+  return STRINGS.common.validation.phone_invalid
 }
 
 export default function ZaloRegisterScreen() {
@@ -243,7 +244,7 @@ export default function ZaloRegisterScreen() {
     if (nameError || phoneError) {
       setNameTouched(true)
       setPhoneTouched(true)
-      setErrorMsg(nameError || phoneError || 'Vui lòng nhập họ tên và SĐT trước khi đánh giá.')
+      setErrorMsg(nameError || phoneError || STRINGS.common.validation.generic_error)
       return
     }
 
@@ -263,7 +264,7 @@ export default function ZaloRegisterScreen() {
     if (nameError || phoneError) {
       setNameTouched(true)
       setPhoneTouched(true)
-      setErrorMsg(nameError || phoneError || 'Vui lòng kiểm tra lại thông tin.')
+      setErrorMsg(nameError || phoneError || STRINGS.common.validation.generic_error)
       return
     }
 
@@ -274,7 +275,7 @@ export default function ZaloRegisterScreen() {
     }
 
     setSubmitting(true)
-    setStatusMsg('Đang chuẩn bị dữ liệu...')
+    setStatusMsg(STRINGS.register.loading_data)
 
     try {
       const cleanedName = name.trim().replace(/\s+/g, ' ')
@@ -282,7 +283,7 @@ export default function ZaloRegisterScreen() {
       const elo = Math.round(pvnaToElo(pvnaValue))
 
       console.log('[ZaloRegister] RPC Start:', { id, cleanedName, submitPhone, gender, elo })
-      setStatusMsg('Đang kết nối Database (vui lòng đợi)...')
+      setStatusMsg(STRINGS.register.db_connecting)
       
       const rpcPromise = supabase.rpc('register_and_join_session', {
         p_session_id: id,
@@ -298,7 +299,7 @@ export default function ZaloRegisterScreen() {
       })
 
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('KẾT NỐI QUÁ HẠN: Server không phản hồi sau 15 giây.')), 15000)
+        setTimeout(() => reject(new Error(STRINGS.register.db_timeout)), 15000)
       )
 
       const { data, error: joinError } = await Promise.race([rpcPromise, timeoutPromise]) as any
@@ -317,7 +318,7 @@ export default function ZaloRegisterScreen() {
       }
 
       setRegStatus(data?.status || 'confirmed')
-      setStatusMsg('Đang lưu thông tin cá nhân...')
+      setStatusMsg(STRINGS.register.saving_info)
       
       if (id) {
         try {
@@ -344,7 +345,7 @@ export default function ZaloRegisterScreen() {
         }
       }
 
-      setStatusMsg('Thành công!')
+      setStatusMsg(STRINGS.register.success)
       setSuccess(true)
       void fetchSession()
     } catch (err: any) {
@@ -386,7 +387,7 @@ export default function ZaloRegisterScreen() {
   if (success) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.background }}>
-        <SecondaryNavbar title="ĐĂNG KÝ THÀNH CÔNG" onBackPress={() => router.replace('/')} />
+        <SecondaryNavbar title={STRINGS.register.success_title} onBackPress={() => router.replace('/')} />
         <RegistrationSuccessView 
           session={previewMatch} 
           onBackHome={() => router.replace('/')} 
@@ -401,7 +402,7 @@ export default function ZaloRegisterScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1, backgroundColor: theme.background }}
     >
-      <SecondaryNavbar title="ĐĂNG KÝ VÀO KÈO" onBackPress={() => router.back()} />
+      <SecondaryNavbar title={STRINGS.register.title} onBackPress={() => router.back()} />
 
       <ScrollView contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 100 }}>
         <MatchSessionCard 
@@ -444,7 +445,7 @@ export default function ZaloRegisterScreen() {
             <Text style={{
               fontFamily: SCREEN_FONTS.headlineBlack,
               fontSize: 20, color: theme.onSurface, lineHeight: 22,
-            }}>THÔNG TIN NGƯỜI CHƠI</Text>
+            }}>{STRINGS.register.player_info}</Text>
           </View>
 
           {/* Form body */}
@@ -456,7 +457,7 @@ export default function ZaloRegisterScreen() {
                 fontFamily: SCREEN_FONTS.label,
                 fontSize: 13, fontWeight: '600',
                 color: theme.onSurface, marginBottom: 6,
-              }}>Họ và tên</Text>
+              }}>{STRINGS.register.name_label}</Text>
 
               <View style={{ position: 'relative' }}>
                 <Text style={{
@@ -472,7 +473,7 @@ export default function ZaloRegisterScreen() {
                     fontSize: 16, color: theme.onSurface,
                     fontFamily: SCREEN_FONTS.body,
                   }}
-                  placeholder="Họ và tên"
+                  placeholder={STRINGS.register.name_label}
                   placeholderTextColor={theme.onSurfaceVariant}
                   value={name}
                   onChangeText={setName}
@@ -485,7 +486,7 @@ export default function ZaloRegisterScreen() {
                 marginTop: 4, lineHeight: 16,
                 fontFamily: SCREEN_FONTS.body,
               }}>
-                {nameTouched && nameError ? nameError : "Dùng đúng họ tên để chủ sân dễ xác nhận."}
+                {nameTouched && nameError ? nameError : STRINGS.register.name_hint}
               </Text>
             </View>
 
@@ -497,7 +498,7 @@ export default function ZaloRegisterScreen() {
                 fontFamily: SCREEN_FONTS.label,
                 fontSize: 13, fontWeight: '600',
                 color: theme.onSurface, marginBottom: 6,
-              }}>Số điện thoại</Text>
+              }}>{STRINGS.register.phone_label}</Text>
 
               <View style={{ position: 'relative' }}>
                 <Text style={{
@@ -527,7 +528,7 @@ export default function ZaloRegisterScreen() {
                 marginTop: 4, lineHeight: 16,
                 fontFamily: SCREEN_FONTS.body,
               }}>
-                {phoneTouched && phoneError ? phoneError : "Nhập 10 số bắt đầu bằng 0 hoặc 84xxxxxxxx."}
+                {phoneTouched && phoneError ? phoneError : STRINGS.register.phone_hint}
               </Text>
             </View>
 
@@ -539,11 +540,11 @@ export default function ZaloRegisterScreen() {
                 fontFamily: SCREEN_FONTS.label,
                 fontSize: 13, fontWeight: '600',
                 color: theme.onSurface, marginBottom: 6,
-              }}>Giới tính</Text>
+              }}>{STRINGS.register.gender_label}</Text>
               <View style={{ flexDirection: 'row', gap: 6 }}>
                 {[
-                  { id: 'male', label: 'Nam' },
-                  { id: 'female', label: 'Nữ' }
+                  { id: 'male', label: STRINGS.common.gender.male },
+                  { id: 'female', label: STRINGS.common.gender.female }
                 ].map(opt => (
                   <TouchableOpacity
                     key={opt.id}
@@ -578,12 +579,12 @@ export default function ZaloRegisterScreen() {
               <View style={{ gap: 16 }}>
                 {/* Partner Preference */}
                 <View>
-                  <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, marginBottom: 8, fontFamily: SCREEN_FONTS.body }}>Bạn đồng hành (Partner)</Text>
+                  <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, marginBottom: 8, fontFamily: SCREEN_FONTS.body }}>{STRINGS.register.partner_pref}</Text>
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     {[
-                      { id: 'any', label: 'Bất kỳ', icon: '🚻' },
-                      { id: 'male', label: 'Nam', icon: '♂' },
-                      { id: 'female', label: 'Nữ', icon: '♀' },
+                      { id: 'any', label: STRINGS.common.gender.any, icon: '🚻' },
+                      { id: 'male', label: STRINGS.common.gender.male, icon: '♂' },
+                      { id: 'female', label: STRINGS.common.gender.female, icon: '♀' },
                     ].map((opt) => (
                       <TouchableOpacity
                         key={opt.id}
@@ -607,12 +608,12 @@ export default function ZaloRegisterScreen() {
 
                 {/* Opponent Preference */}
                 <View>
-                  <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, marginBottom: 8, fontFamily: SCREEN_FONTS.body }}>Đối thủ (Opponent)</Text>
+                  <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, marginBottom: 8, fontFamily: SCREEN_FONTS.body }}>{STRINGS.register.opponent_pref}</Text>
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     {[
-                      { id: 'any', label: 'Bất kỳ', icon: '🚻' },
-                      { id: 'male', label: 'Nam', icon: '♂' },
-                      { id: 'female', label: 'Nữ', icon: '♀' },
+                      { id: 'any', label: STRINGS.common.gender.any, icon: '🚻' },
+                      { id: 'male', label: STRINGS.common.gender.male, icon: '♂' },
+                      { id: 'female', label: STRINGS.common.gender.female, icon: '♀' },
                     ].map((opt) => (
                       <TouchableOpacity
                         key={opt.id}
@@ -648,7 +649,7 @@ export default function ZaloRegisterScreen() {
                     fontFamily: SCREEN_FONTS.label,
                     fontSize: 13, fontWeight: '600',
                     color: theme.onSurface,
-                  }}>Điểm trình PVNA</Text>
+                  }}>{STRINGS.register.skill_level_label}</Text>
                   
                   <TouchableOpacity
                     onPress={toggleNewbie}
@@ -725,7 +726,7 @@ export default function ZaloRegisterScreen() {
                 marginTop: 8, lineHeight: 16,
                 fontFamily: SCREEN_FONTS.body,
               }}>
-                {isNewbie ? "* Bạn đã chọn chế độ Người mới chơi." : "Kéo thanh trượt để chọn mức phù hợp. Nếu mới chơi, chọn thấp trong khoảng."}
+                {isNewbie ? STRINGS.register.skill_helper_newbie : STRINGS.register.skill_helper_slider}
               </Text>
 
               <TouchableOpacity 
@@ -734,9 +735,9 @@ export default function ZaloRegisterScreen() {
                 style={{ marginTop: 12, paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: '#F0EDE5', borderStyle: 'dashed' }}
               >
                 <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, lineHeight: 18, fontFamily: SCREEN_FONTS.body }}>
-                  Bạn không biết điểm trình của mình? {' '}
+                  {STRINGS.register.skill_assessment_prompt}
                   <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.label, textDecorationLine: 'underline' }}>
-                    Làm ngay bài đánh giá của PVNA để biết trình độ
+                    {STRINGS.register.skill_assessment_link}
                   </Text>
                 </Text>
               </TouchableOpacity>
@@ -773,7 +774,7 @@ export default function ZaloRegisterScreen() {
                 fontFamily: SCREEN_FONTS.bold, 
                 fontSize: 14 
               }}>
-                ⚠️ Kèo đấu này đã kết thúc hoặc không còn nhận đăng ký.
+                {STRINGS.register.ended_warning}
               </Text>
             </View>
           ) : null}
@@ -798,7 +799,7 @@ export default function ZaloRegisterScreen() {
             <Text style={{
               fontFamily: SCREEN_FONTS.bold,
               fontSize: 16, fontWeight: '700', color: 'white',
-            }}>{submitting ? 'ĐANG XỬ LÝ...' : 'Xác nhận tham gia'}</Text>
+            }}>{submitting ? STRINGS.register.submitting : STRINGS.register.confirm_btn}</Text>
           </TouchableOpacity>
 
           {/* Social proof below button */}

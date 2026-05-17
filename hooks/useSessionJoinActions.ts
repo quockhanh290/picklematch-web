@@ -268,12 +268,12 @@ export function useSessionJoinActions({
     // 2. If it's waitlist mode, show informative dialog instead of modal
     if (matchStatus === 'WAITLIST') {
       presentDialog({
-        title: 'Kèo đã đầy',
-        message: 'Kèo hiện đã đầy và bạn sẽ vào danh sách dự bị. Chủ kèo sẽ liên hệ nếu có slot trống gần giờ chơi. Bạn vẫn muốn đăng ký chứ?',
+        title: STRINGS.session_join.dialogs.waitlist_confirm.title,
+        message: STRINGS.session_join.dialogs.waitlist_confirm.message,
         actions: [
-          { label: 'Bỏ qua', tone: 'secondary' },
+          { label: STRINGS.session_join.dialogs.waitlist_confirm.cancel, tone: 'secondary' },
           { 
-            label: 'Đăng ký dự bị', 
+            label: STRINGS.session_join.dialogs.waitlist_confirm.confirm, 
             tone: 'primary', 
             onPress: () => {
               void sendJoinRequest()
@@ -288,11 +288,11 @@ export function useSessionJoinActions({
     const skillDiff = eloMin - viewerElo
     if (skillDiff > 200) {
       presentDialog({
-        title: 'Chênh lệch trình độ',
-        message: `Trình độ của bạn thấp hơn yêu cầu của kèo này (${(skillDiff / 1000).toFixed(1)} PVNA). Bạn vẫn muốn tham gia chứ?`,
+        title: STRINGS.session_join.dialogs.skill_warning.title,
+        message: STRINGS.session_join.dialogs.skill_warning.message.replace('{diff}', (skillDiff / 1000).toFixed(1)),
         actions: [
-          { label: 'Bỏ qua', tone: 'secondary' },
-          { label: 'Tham gia ngay', tone: 'primary', onPress: () => void directJoinSession() }
+          { label: STRINGS.session_join.dialogs.skill_warning.cancel, tone: 'secondary' },
+          { label: STRINGS.session_join.dialogs.skill_warning.confirm, tone: 'primary', onPress: () => void directJoinSession() }
         ]
       })
       return

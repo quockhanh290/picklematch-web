@@ -27,6 +27,7 @@ import { MySessionsEmptyState } from '@/components/sessions/MySessionsEmptyState
 import { ExpandingCreateButton } from '@/components/sessions/ExpandingCreateButton'
 import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { useMySessions, HISTORY_PAGE_SIZE } from './hooks/useMySessions'
+import { STRINGS } from '@/constants/strings'
 
 import { HomeGreetingHeader } from '@/components/home/HomeGreetingHeader'
 import { DashboardStatsStrip, buildDashboardStats } from '@/components/home/DashboardStatsStrip'
@@ -169,9 +170,9 @@ export function MySessionsScreen() {
       })
     }
 
-    addSection('Hôm nay', todaySessions)
-    addSection('Ngày mai', tomorrowSessions)
-    addSection('Sắp tới', laterSessions)
+    addSection(STRINGS.my_sessions.sections.today, todaySessions)
+    addSection(STRINGS.my_sessions.sections.tomorrow, tomorrowSessions)
+    addSection(STRINGS.my_sessions.sections.later, laterSessions)
 
     return rows
   }, [sessionsByTab.upcoming])
@@ -205,12 +206,12 @@ export function MySessionsScreen() {
   async function handleShare(session?: MySession) {
     const message = session 
       ? [
-          'Cùng xem kèo pickleball này nhé:',
+          STRINGS.my_sessions.share.body,
           session.court_name,
           `${formatDatePart(session.start_time)} · ${formatTimeRange(session.start_time, session.end_time)}`,
           session.court_address ? `${session.court_address}${session.court_city ? `, ${session.court_city}` : ''}` : '',
         ].filter(Boolean).join('\n')
-      : 'Lịch chơi PickleMatch của tôi đang được cập nhật.'
+      : STRINGS.my_sessions.share.default_message
 
     try {
       await Share.share({ message })
@@ -242,7 +243,7 @@ export function MySessionsScreen() {
 
       <WebContainer style={{ flex: 1 }}>
         {loading ? (
-          <AppLoading label="Đang tải kèo của bạn..." style={{ flex: 1 }} />
+          <AppLoading label={STRINGS.my_sessions.loading} style={{ flex: 1 }} />
         ) : (
           <View className="flex-1">
             <FlatList
@@ -256,7 +257,7 @@ export function MySessionsScreen() {
                   onRefresh={onRefresh} 
                   tintColor={theme.primary} 
                   colors={[theme.primary]}
-                  title="Cập nhật lịch thi đấu..."
+                  title={STRINGS.my_sessions.refreshing} 
                   titleColor={theme.onSurfaceVariant}
                   progressViewOffset={SPACING.xl}
                 />
@@ -355,7 +356,7 @@ export function MySessionsScreen() {
                         letterSpacing: 1,
                         textTransform: 'uppercase'
                       }}>
-                        Kèo tiếp theo
+                        {STRINGS.my_sessions.sections.next_session}
                       </Text>
                       <View style={{ flex: 1, height: 1, backgroundColor: theme.primary, opacity: 0.2 }} />
                     </View>
@@ -401,7 +402,7 @@ export function MySessionsScreen() {
                           textTransform: 'uppercase',
                           letterSpacing: 0.5
                         }}>
-                          {monthTotal} TRẬN
+                          {STRINGS.my_sessions.sections.matches_count.replace('{count}', String(monthTotal))}
                         </Text>
                         {isExpanded ? (
                           <ChevronDown size={14} color={theme.outline} strokeWidth={2} />

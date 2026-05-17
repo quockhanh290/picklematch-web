@@ -7,6 +7,7 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, SPACING, BORDER, SHADOW } from '@/constants/screenLayout'
 import { getSessionSkillLabel } from '@/lib/sessionDetail'
 import { format as formatDate } from 'date-fns'
+import { STRINGS } from '@/constants/strings'
 
 export type SessionRequestStatus = 'pending' | 'accepted' | 'rejected' | null
 export type SessionRole = 'host' | 'player'
@@ -48,10 +49,10 @@ function formatRelativeDate(date: Date) {
     d1.getMonth() === d2.getMonth() &&
     d1.getDate() === d2.getDate()
 
-  if (isSameDay(date, today)) return 'Hôm nay'
-  if (isSameDay(date, tomorrow)) return 'Ngày mai'
+  if (isSameDay(date, today)) return STRINGS.session_card.today
+  if (isSameDay(date, tomorrow)) return STRINGS.session_card.tomorrow
   
-  const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
+  const days = STRINGS.session_card.days
   return days[date.getDay()]
 }
 
@@ -79,7 +80,7 @@ export function MySessionCard({
   const end = new Date(item.end_time)
   const confirmedCount = item.player_count
   const maxPlayers = item.max_players
-  const pricePerPerson = item.total_cost && item.total_cost > 0 ? `${Math.round(item.total_cost / 1000)}K` : 'Miễn phí'
+  const pricePerPerson = item.total_cost && item.total_cost > 0 ? `${Math.round(item.total_cost / 1000)}K` : STRINGS.session_card.free
   const isHistory = tab === 'history'
   const isPending = tab === 'pending'
   
@@ -89,8 +90,8 @@ export function MySessionCard({
   // Day Badge Logic
   const dateLabel = formatRelativeDate(start)
   let dayBadgeBg = theme.outline
-  if (dateLabel === 'Hôm nay') dayBadgeBg = theme.primary
-  else if (dateLabel === 'Ngày mai') dayBadgeBg = theme.onSurfaceVariant
+  if (dateLabel === STRINGS.session_card.today) dayBadgeBg = theme.primary
+  else if (dateLabel === STRINGS.session_card.tomorrow) dayBadgeBg = theme.onSurfaceVariant
 
   // Enhanced Color System
   const COLORS = {
@@ -105,26 +106,26 @@ export function MySessionCard({
   const fillRatio = confirmedCount / maxPlayers
   const isFull = fillRatio >= 1
 
-  let statusLabel = 'SẮP ĐÁNH'
+  let statusLabel = STRINGS.session_card.status_upcoming
   let statusBg = COLORS.teal
   
   if (isHistory) {
-    statusLabel = 'LỊCH SỬ'
+    statusLabel = STRINGS.session_card.status_history
     statusBg = COLORS.gray
     if (item.status === 'cancelled') {
-      statusLabel = 'ĐÃ HỦY'
+      statusLabel = STRINGS.session_card.status_cancelled
     } else if (item.user_result === 'win') {
-      statusLabel = 'THẮNG'
+      statusLabel = STRINGS.session_card.status_win
       statusBg = COLORS.teal
     } else if (item.user_result === 'loss') {
-      statusLabel = 'THUA'
+      statusLabel = STRINGS.session_card.status_loss
       statusBg = COLORS.coral
     }
   } else if (isPending) {
-    statusLabel = 'CHỜ DUYỆT'
+    statusLabel = STRINGS.session_card.status_pending
     statusBg = COLORS.amber
   } else if (isFull) {
-    statusLabel = 'ĐÃ ĐẦY'
+    statusLabel = STRINGS.session_card.status_full
     statusBg = COLORS.amber
   }
 
@@ -165,7 +166,7 @@ export function MySessionCard({
                   const fmt = (item.format_type || '').toLowerCase()
                   if (fmt === 'round_robin') return 'ROUND ROBIN'
                   if (fmt === 'open_play') return 'OPEN PLAY'
-                  return 'GIAO LƯU SOCIAL'
+                  return STRINGS.session_card.format_social
                 })()}
           </Text>
         </View>
@@ -179,7 +180,7 @@ export function MySessionCard({
             fontWeight: '700',
             opacity: 0.9 
           }}>
-            CHỦ KÈO
+            {STRINGS.session_card.host_role}
           </Text>
         )}
       </View>
@@ -195,7 +196,7 @@ export function MySessionCard({
               textTransform: 'uppercase',
               lineHeight: 24
             }} numberOfLines={1}>
-              {(item.court_name || 'SÂN PICKLEBALL').toUpperCase()}
+              {(item.court_name || STRINGS.session_card.default_court_name).toUpperCase()}
             </Text>
             
             <Text style={{ 
@@ -206,7 +207,7 @@ export function MySessionCard({
               letterSpacing: 0.3
             }}>
               {item.role === 'host' 
-                ? (item.title || (item.format_type === 'round_robin' ? 'Round Robin' : 'Giao lưu Social'))
+                ? (item.title || (item.format_type === 'round_robin' ? 'Round Robin' : STRINGS.session_card.format_social))
                 : item.court_address}
             </Text>
           </View>
@@ -217,7 +218,7 @@ export function MySessionCard({
             </Text>
             {item.total_cost && item.total_cost > 0 && (
               <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.onSurfaceVariant, marginTop: -2 }}>
-                / người
+                {STRINGS.session_card.per_person}
               </Text>
             )}
           </View>
@@ -306,7 +307,7 @@ export function MySessionCard({
             }}
           >
             <Text style={{ color: statusBg, fontFamily: SCREEN_FONTS.headline, fontSize: 10.5, textTransform: 'uppercase' }}>
-              CHI TIẾT
+              {STRINGS.session_card.details_btn}
             </Text>
             <ChevronRight size={12} color={statusBg} />
           </TouchableOpacity>

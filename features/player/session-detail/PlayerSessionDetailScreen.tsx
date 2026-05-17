@@ -112,7 +112,7 @@ export function PlayerSessionDetailScreen({
 
   const previewMatch: MatchSession = {
     id: session.id,
-    title: session.title || 'Kèo Pickleball',
+    title: session.title || STRINGS.session_detail.default_title,
     bookingId: session.booking_reference || 'Match',
     courtName: session.slot.court.name,
     courtId: session.slot.court.id,
@@ -123,9 +123,9 @@ export function PlayerSessionDetailScreen({
     timeLabel: formatTimeRange(session.slot.start_time, session.slot.end_time),
     priceLabel: (HostDetails.total_cost ?? session.total_cost ?? 0) > 0
       ? `${Math.round(Number(HostDetails.total_cost ?? session.total_cost ?? 0) / 1000)}K`
-      : 'Miễn phí',
-    openSlotsLabel: `Đã có ${session.session_players?.length || 0} người tham gia`,
-    statusLabel: isPast ? 'KẾT THÚC' : getStatusLabel(session.court_booking_status, session.status),
+      : STRINGS.session_detail.free,
+    openSlotsLabel: STRINGS.session_detail.open_slots.replace('{count}', String(session.session_players?.length || 0)),
+    statusLabel: isPast ? STRINGS.session_detail.ended : getStatusLabel(session.court_booking_status, session.status),
     courtBookingConfirmed: session.court_booking_status === 'confirmed',
     isBooked: true,
     isRanked: session.is_ranked,
@@ -142,10 +142,10 @@ export function PlayerSessionDetailScreen({
   const handleShare = async () => {
     try {
       const url = Linking.createURL(`/session/${id}`)
-      await Share.share({ message: `Tham gia kèo pickleball này nhé! ${url}` })
+      await Share.share({ message: STRINGS.session_detail.share_message.replace('{url}', url) })
     } catch (error) {
       console.warn('[PlayerSessionDetail] Failed to share session:', error)
-      setDialogConfig({ title: STRINGS.session_detail.errors.share_failed, message: 'Vui lòng thử lại sau ít phút.', actions: [{ label: STRINGS.common.back, tone: 'secondary' }] })
+      setDialogConfig({ title: STRINGS.session_detail.errors.share_failed, message: STRINGS.session_detail.share_failed_desc, actions: [{ label: STRINGS.common.back, tone: 'secondary' }] })
     }
   }
 
@@ -155,7 +155,7 @@ export function PlayerSessionDetailScreen({
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <SecondaryNavbar
-        title="CHI TIẾT KÈO"
+        title={STRINGS.session_detail.title}
         rightSlot={<NavbarShareButton onPress={() => void handleShare()} />}
       />
 
@@ -172,7 +172,7 @@ export function PlayerSessionDetailScreen({
           <MatchSessionCard
             item={previewMatch}
             variant="standard"
-            actionLabel={hasJoined ? "ĐÃ THAM GIA" : "THAM GIA NGAY"}
+            actionLabel={hasJoined ? STRINGS.session_detail.action.joined : STRINGS.session_detail.action.join}
             showFullAddress={true}
             isHostDetail={true} // Using the premium detail style
             fullCourtName={true}
@@ -235,7 +235,7 @@ export function PlayerSessionDetailScreen({
           {/* Player Roster Section using Host style */}
           <View style={{ marginTop: 24 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>DANH SÁCH THAM GIA</Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>{STRINGS.session_detail.roster_title}</Text>
             </View>
             
             <HostRosterSection
