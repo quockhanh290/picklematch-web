@@ -11,6 +11,7 @@ import {
   computeOpponentDiversity,
   computeOpponentRepeatBurden,
   computePartnerDiversity,
+  computeRestFairness,
 } from '@/lib/next-round-suggester/fairness/metrics'
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
 import type { sanitizeSummaryForHost } from '@/lib/next-round-suggester/fairness/sanitize'
@@ -59,6 +60,17 @@ function repeatRiskText(risk: string) {
   if (risk === 'high') return 'cao'
   if (risk === 'extreme') return 'rất cao'
   return risk
+}
+
+function backToBackSummary(playRatio: number) {
+  const pct = Math.round(playRatio * 100)
+  if (playRatio <= 0.55) {
+    return `Play ratio ${pct}%: ít khả năng back-to-back.`
+  }
+  if (playRatio <= 0.7) {
+    return `Play ratio ${pct}%: có thể có back-to-back nhẹ.`
+  }
+  return `Play ratio ${pct}%: khả năng cao có back-to-back.`
 }
 
 export function SwapSheet({
@@ -237,7 +249,7 @@ export function RosterSheet({
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
                   <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                    PVNA {getPlayerPvna(player).toFixed(2)} · {row.matches_played} trận · nghỉ {row.consecutive_rest}
+                    PVNA {getPlayerPvna(player).toFixed(2)} · {row.matches_played} trận · đang nghỉ liên tiếp {row.consecutive_rest} lượt
                   </Text>
                 </View>
                 <ChevronDown size={16} color={theme.outline} />
@@ -504,6 +516,8 @@ export function RecapView({
   const opponent = computeOpponentDiversity(state)
   const burden = computeOpponentRepeatBurden(state)
   const pressure = computeRepeatPressure(state)
+  const restByPlayer = new Map(computeRestFairness(state).per_player.map(player => [player.player_id, player]))
+  const maxMatchesForChart = Math.max(1, ...summary.per_player.map(item => item.matches_played))
   return (
     <ScrollView contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 48 }}>
       <LinearGradient colors={[theme.heroGradientStart, theme.primaryContainer]} style={{ borderRadius: RADIUS.lg, padding: 18, marginBottom: 14 }}>
@@ -525,16 +539,26 @@ export function RecapView({
       </Card>
       <Card style={{ padding: 14, marginBottom: 14 }}>
         <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Số trận mỗi người</Text>
-        {summary.per_player.slice(0, 12).map(player => {
-          const max = Math.max(1, ...summary.per_player.map(item => item.matches_played))
+        <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 10, marginBottom: 12 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.primary }}>
+            Cách đọc: mỗi vòng người chơi hoặc được xếp đánh, hoặc nghỉ vòng đó. Lượt nghỉ là số vòng không được xếp đánh. Max là số lượt nghỉ liên tiếp dài nhất. Ví dụ 8 vòng, đánh 6 trận thì nghỉ 2 lượt.
+          </Text>
+        </View>
+        {summary.per_player.map(player => {
+          const rest = restByPlayer.get(player.player_id)
           return (
             <View key={player.player_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <PlayerAvatar name={playerName(player.player_id, playersById)} size={26} />
-              <Text style={{ width: 76, fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onSurface }} numberOfLines={1}>
-                {playerName(player.player_id, playersById)}
-              </Text>
+              <View style={{ width: 92 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onSurface }} numberOfLines={1}>
+                  {playerName(player.player_id, playersById)}
+                </Text>
+                <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 9.5, color: theme.outline }} numberOfLines={1}>
+                  Nghỉ {rest?.total_rests ?? 0} lượt · max liên tiếp {rest?.max_consecutive_rest ?? player.max_consecutive_rest}
+                </Text>
+              </View>
               <View style={{ flex: 1, height: 8, borderRadius: RADIUS.full, backgroundColor: theme.outlineVariant, overflow: 'hidden' }}>
-                <View style={{ width: `${(player.matches_played / max) * 100}%`, height: '100%', backgroundColor: theme.primary }} />
+                <View style={{ width: `${(player.matches_played / maxMatchesForChart) * 100}%`, height: '100%', backgroundColor: theme.primary }} />
               </View>
               <Text style={{ width: 20, textAlign: 'right', fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface }}>{player.matches_played}</Text>
             </View>
@@ -545,6 +569,9 @@ export function RecapView({
         <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Áp lực lặp partner (đồng đội)/đối thủ</Text>
         <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 17 }}>
           Mức {repeatRiskText(pressure.repeat_risk)} · hệ số giảm phạt {pressure.penalty_multiplier.toFixed(2)} · trung bình {pressure.avg_matches_per_player.toFixed(1)} trận/người · áp lực đối thủ {pressure.opponent_pressure.toFixed(2)}
+        </Text>
+        <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 17 }}>
+          {backToBackSummary(pressure.play_ratio)} Back-to-back là người chơi đánh các vòng liền nhau không có lượt nghỉ xen giữa.
         </Text>
       </Card>
       <RepeatDetailsBlock partnerPairs={partner.repeat_pairs} opponentPairs={opponent.repeat_pairs} playersById={playersById} />
