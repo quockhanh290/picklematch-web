@@ -1,5 +1,5 @@
 import React from 'react'
-import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, FlatList, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { ChevronDown, History, UserMinus, UserPlus, Users, X, Zap } from 'lucide-react-native'
 
@@ -230,13 +230,23 @@ export function RosterSheet({
 }) {
   const theme = useAppTheme()
   return (
-    <View>
+    <FlatList
+      data={rows}
+      keyExtractor={row => row.player_id}
+      initialNumToRender={12}
+      maxToRenderPerBatch={12}
+      windowSize={7}
+      showsVerticalScrollIndicator={false}
+      ListHeaderComponent={(
+        <View>
       <SheetTitle title="Người chơi" subtitle="Tap từng người để check-out, xin nghỉ, group hoặc swap." />
       <TouchableOpacity onPress={onSyncRoster} style={{ height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
         {busy === 'sync' ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Sync roster</Text>}
       </TouchableOpacity>
-      <View style={{ gap: 8 }}>
-        {rows.map(row => {
+        </View>
+      )}
+      ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+      renderItem={({ item: row }) => {
           const playerId = row.player_id
           const player = playersById.get(playerId)
           const expanded = expandedPlayerId === playerId
@@ -265,9 +275,8 @@ export function RosterSheet({
               ) : null}
             </Card>
           )
-        })}
-      </View>
-      {rows.length > 0 ? (
+        }}
+      ListFooterComponent={rows.length > 0 ? (
         <View style={{ marginTop: 14, gap: 10 }}>
           {groupSummaries.length > 0 ? (
             <View style={{ gap: 8 }}>
@@ -305,7 +314,7 @@ export function RosterSheet({
           </View>
         </View>
       ) : null}
-    </View>
+    />
   )
 }
 

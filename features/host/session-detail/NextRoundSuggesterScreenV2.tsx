@@ -1,13 +1,10 @@
-import React, { useMemo, useState } from 'react'
-import { router } from 'expo-router'
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import React, { useMemo, useRef, useState } from 'react'
+import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   AlertTriangle,
   ChevronDown,
-  MoreHorizontal,
-  RefreshCcw,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -17,24 +14,18 @@ import {
 import { SecondaryNavbar } from '@/components/design'
 import { BORDER, RADIUS, SPACING } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { calculateOptimalCourts, PRESETS, type CourtCalculatorOutput, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
-import { buildSuggestedRoundActions, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
+import { PRESETS, type CourtCalculatorOutput, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
+import type { SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import { auditManualSwap, buildSwappedAlternative } from '@/lib/next-round-suggester/manual-swap'
-import { previewStateAfterAlternative, rebuildStateThroughRound } from '@/lib/next-round-suggester/history'
-import { mapRowsToSessionState } from '@/lib/next-round-suggester/state'
-import { suggestNextRound } from '@/lib/next-round-suggester/suggest'
 import { scoreMatch } from '@/lib/next-round-suggester/score'
-import { applyFairnessAdjustment, correctForFairness } from '@/lib/next-round-suggester/fairness/corrector'
-import { detectFairnessIssues, type FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
+import { buildSessionStateFingerprint } from '@/lib/next-round-suggester/state-version'
+import type { FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
 import {
-  buildMatchCountConsistencyRows,
-  buildLatestFairnessAudit,
-  buildFairnessPreview,
   type FairnessAudit,
   type MatchCountConsistencyRow,
   type FairnessPreview,
 } from '@/lib/next-round-suggester/fairness/audit'
-import { buildGroupAliasMap, buildGroupAuditRows, buildGroupSummaries, type GroupSummary } from '@/lib/next-round-suggester/fairness/group-audit'
+import { buildGroupAuditRows, type GroupSummary } from '@/lib/next-round-suggester/fairness/group-audit'
 import {
   computeGenderPrefSatisfaction,
   computeMatchCountMetrics,
@@ -46,11 +37,8 @@ import {
   type SessionFairnessScore,
 } from '@/lib/next-round-suggester/fairness/metrics'
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
-import { sanitizeSummaryForHost, sanitizeWarningsForHost } from '@/lib/next-round-suggester/fairness/sanitize'
-import { buildSessionSummary } from '@/lib/next-round-suggester/fairness/summary'
 import type {
   Match,
-  SessionPlayerStateRow,
   SessionRoundRow,
   SessionState,
   SuggestionAlternative,
@@ -60,6 +48,7 @@ import { useAppTheme } from '@/lib/theme-context'
 import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds } from './next-round-v2/api'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
+import { ChoiceRow, NavbarRightActions, StickyRoundCta } from './next-round-v2/controls'
 import {
   HistorySheet as HistorySheetView,
   MoreSheet as MoreSheetView,
@@ -71,14 +60,10 @@ import {
   ctaTextStyle,
   eyebrowStyle,
   formatNumber,
-  getPlayerPvna,
   getTeamPvna,
-  isConfirmedNonNoShow,
-  isRosterSyncEligible,
-  withWeights,
 } from './next-round-v2/helpers'
-import type { NextRoundSuggesterV2Props, RoundSelectionSnapshot, SheetKey } from './next-round-v2/types'
-import { useLiveRows } from './next-round-v2/useLiveRows'
+import type { NextRoundSuggesterV2Props } from './next-round-v2/types'
+import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
 
 function playerName(playerId: string, playersById: Map<string, ArrangementPlayer>) {
   return playersById.get(playerId)?.name ?? 'Người chơi'
@@ -127,221 +112,122 @@ function warningTone(theme: ReturnType<typeof useAppTheme>, severity: FairnessWa
   return { bg: theme.successBg, border: theme.secondaryContainer, text: theme.successText }
 }
 
-function severityRank(severity: FairnessWarning['severity']) {
-  if (severity === 'critical') return 3
-  if (severity === 'warning') return 2
-  return 1
-}
+function toUserSafeActionError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  const safeMessages = [
+    'A round is already active',
+    'A player can only be assigned once per round',
+    'Could not read login session. Open in Safari/Chrome or sign in again.',
+    'Invalid manual matches',
+    'Manual match has invalid court index',
+    'Manual matches cannot reuse the same court',
+    'Manual matches exceed court count',
+    'Manual matches must use checked-in players',
+    'Request timed out. Check your connection and try again.',
+    'Round commit audit failed. Please refresh before continuing.',
+    'Session changed. Refresh and review the swapped round before starting.',
+    'Temporary network issue. Please try again.',
+  ]
 
-function warningIdentity(warning: FairnessWarning): string {
-  return `${warning.type}:${[...warning.affected_players].sort().join(',')}`
-}
-
-function toProjectedWarning(warning: FairnessWarning): FairnessWarning {
-  return {
-    ...warning,
-    message: `Nếu start phương án này: ${warning.message}`,
-    suggested_action: warning.suggested_action.replace('Engine sẽ ', 'Engine đang '),
-  }
-}
-
-function buildFairnessWarningsForBanner(
-  currentWarnings: FairnessWarning[],
-  projectedWarnings: FairnessWarning[],
-): FairnessWarning[] {
-  const current = sanitizeWarningsForHost(currentWarnings)
-  const currentKeys = new Set(current.map(warningIdentity))
-  const projected = sanitizeWarningsForHost(projectedWarnings)
-    .filter(warning => !currentKeys.has(warningIdentity(warning)))
-    .map(toProjectedWarning)
-
-  return [...current, ...projected].sort((a, b) => {
-    const severityDiff = severityRank(b.severity) - severityRank(a.severity)
-    if (severityDiff !== 0) return severityDiff
-    return warningIdentity(a).localeCompare(warningIdentity(b))
-  })
+  if (safeMessages.includes(message)) return message
+  if (message.startsWith('Could not ')) return message
+  return 'Action failed. Please try again.'
 }
 
 export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextRoundSuggesterV2Props) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
   const [busy, setBusy] = useState<string | null>(null)
-  const [selectedAlternative, setSelectedAlternative] = useState(0)
-  const [manualAlternative, setManualAlternative] = useState<SuggestionAlternative | null>(null)
-  const [selectionUndo, setSelectionUndo] = useState<RoundSelectionSnapshot | null>(null)
-  const [swapFromPlayerId, setSwapFromPlayerId] = useState<string | null>(null)
-  const [sheet, setSheet] = useState<SheetKey>(null)
-  const [pvnaTolerance, setPvnaTolerance] = useState(0.5)
-  const [courtCount, setCourtCount] = useState(Math.max(1, Math.min(4, courts)))
-  const [courtPreset, setCourtPreset] = useState<CourtPreset>('balanced')
-  const [courtDurationMin, setCourtDurationMin] = useState(120)
-  const [targetRounds, setTargetRounds] = useState<number | null>(null)
-  const [expandedRosterPlayer, setExpandedRosterPlayer] = useState<string | null>(null)
-  const [groupSelection, setGroupSelection] = useState<string[]>([])
-  const [showEngineStats, setShowEngineStats] = useState(false)
-  const [showSessionReport, setShowSessionReport] = useState(false)
-
-  const confirmedPlayers = useMemo(
-    () => players.filter(player => player.status === 'confirmed' || !player.status),
-    [players],
-  )
-  const checkedInPlayers = useMemo(() => {
-    const explicitlyPresent = confirmedPlayers.filter(isRosterSyncEligible)
-    return explicitlyPresent.length > 0 ? explicitlyPresent : confirmedPlayers.filter(isConfirmedNonNoShow)
-  }, [confirmedPlayers])
-  const playersById = useMemo(() => new Map(players.map(player => [String(player.id), player])), [players])
-  const { error, loading, loadLiveState, rows, setError } = useLiveRows(sessionId, playersById)
-
-  const rawState = useMemo(() => mapRowsToSessionState({
-    sessionId,
-    playerRows: rows.playerRows.map(row => ({
-      ...row,
-      players: {
-        pvna: getPlayerPvna(playersById.get(row.player_id)) || row.players?.pvna || 0,
-        elo: row.players?.elo,
-        gender: playersById.get(row.player_id)?.gender ?? row.players?.gender,
-        partner_gender_pref: playersById.get(row.player_id)?.metadata?.partner_gender_pref ?? row.players?.partner_gender_pref,
-        opponent_gender_pref: playersById.get(row.player_id)?.metadata?.opponent_gender_pref ?? row.players?.opponent_gender_pref,
-      },
-      session_players: {
-        metadata: playersById.get(row.player_id)?.metadata ?? row.session_players?.metadata ?? null,
-      },
-    })),
-    pairRows: rows.pairRows,
-    roundRows: rows.roundRows,
-    courts: courtCount,
+  const actionInFlightRef = useRef(false)
+  const model = useNextRoundModel({ sessionId, players, courts })
+  const {
+    activeRound,
+    applySuggestedRoundAction,
+    checkedInPlayers,
+    completedRoundCount,
+    completedRounds,
+    courtCalculator,
+    courtCount,
+    courtDurationMin,
+    courtPreset,
+    effectiveTargetRounds,
+    error,
+    expandedRosterPlayer,
+    fairnessAudit,
+    fairnessPreview,
+    fairnessScore,
+    fairnessWarnings,
+    groupAliases,
+    groupSelection,
+    groupSummaries,
+    hasManualSwapHardGuard,
+    loadLiveState,
+    loading,
+    manualAlternative,
+    matchCountConsistencyRows,
+    phase,
+    playersById,
+    presentCount,
     pvnaTolerance,
-  }), [courtCount, playersById, pvnaTolerance, rows, sessionId])
-
-  const baseWeights = useMemo(() => ({
-    ...rawState.config.weights,
-    pvna: 1,
-  }), [rawState.config.weights])
-  const baseState = useMemo(() => withWeights(rawState, baseWeights), [baseWeights, rawState])
-  const fairnessAdjustment = useMemo(() => correctForFairness(baseState), [baseState])
-  const state = useMemo(
-    () => applyFairnessAdjustment(baseState, fairnessAdjustment),
-    [baseState, fairnessAdjustment],
-  )
-  const suggestion = useMemo(
-    () => suggestNextRound(state, { tier_overrides: fairnessAdjustment.tier_overrides }),
-    [fairnessAdjustment.tier_overrides, state],
-  )
-  const selected = suggestion.alternatives[selectedAlternative] ?? suggestion.alternatives[0]
-  const workingAlternative = manualAlternative ?? selected
-  const hasManualSwapHardGuard = Boolean(workingAlternative?.warnings.includes('MANUAL_SWAP_HARD_GUARD'))
-  const fairnessScore = useMemo(() => computeSessionFairness(state), [state])
-  const fairnessPreview = useMemo(
-    () => buildFairnessPreview(state, workingAlternative),
-    [state, workingAlternative],
-  )
-  const fairnessAudit = useMemo(() => buildLatestFairnessAudit(state), [state])
-  const fairnessWarnings = useMemo(() => {
-    const currentWarnings = detectFairnessIssues(state)
-    const projectedState = workingAlternative ? previewStateAfterAlternative(state, workingAlternative) : null
-    const projectedWarnings = projectedState ? detectFairnessIssues(projectedState) : []
-    return buildFairnessWarningsForBanner(currentWarnings, projectedWarnings)
-  }, [state, workingAlternative])
-
-  const suggestedRoundActions = useMemo(
-    () => buildSuggestedRoundActions({
-      state,
-      alternatives: suggestion.alternatives,
-      selectedIndex: selectedAlternative,
-      pvnaTolerance,
-      courtCount,
-    }),
-    [courtCount, pvnaTolerance, selectedAlternative, state, suggestion.alternatives],
-  )
-
-  const activeRound = useMemo(() => rows.roundRows.find(row => row.status === 'active') ?? null, [rows.roundRows])
-  const presentRows = rows.playerRows.filter(row => !row.checked_out_at)
-  const presentCount = presentRows.length
-  const calculatorPlayerCount = presentCount || checkedInPlayers.length || confirmedPlayers.length
-  const courtCalculator = useMemo(() => calculateOptimalCourts({
-    n_players: calculatorPlayerCount,
-    session_duration_min: courtDurationMin,
-    match_duration_min: 15,
-    preset: courtPreset,
-  }), [calculatorPlayerCount, courtDurationMin, courtPreset])
-  const effectiveTargetRounds = targetRounds ?? courtCalculator.recommended.total_rounds
-  const completedRounds = rows.roundRows.filter(row => row.status === 'completed').sort((a, b) => b.round_no - a.round_no)
-  const completedRoundCount = completedRounds.length
-  const targetReached = effectiveTargetRounds > 0 && completedRoundCount >= effectiveTargetRounds
-  const reportState = useMemo(
-    () => (completedRoundCount > 0 ? rebuildStateThroughRound(state, completedRounds[0].round_no) : state),
-    [completedRoundCount, completedRounds, state],
-  )
-  const sessionSummary = useMemo(() => sanitizeSummaryForHost(buildSessionSummary(reportState)), [reportState])
-  const matchCountConsistencyRows = useMemo(
-    () => buildMatchCountConsistencyRows(state, reportState),
-    [reportState, state],
-  )
-  const groupSummaries = useMemo(() => buildGroupSummaries(rows.playerRows), [rows.playerRows])
-  const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
-  const phase: 'plan' | 'active' | 'recap' = showSessionReport && targetReached && !activeRound ? 'recap' : activeRound ? 'active' : 'plan'
-
-  const rememberRoundSelection = (reason: string) => {
-    setSelectionUndo({
-      selectedAlternative,
-      manualAlternative,
-      pvnaTolerance,
-      courtCount,
-      reason,
-    })
-  }
-
-  const undoRoundSelection = () => {
-    if (!selectionUndo) return
-    setSelectedAlternative(selectionUndo.selectedAlternative)
-    setManualAlternative(selectionUndo.manualAlternative)
-    setPvnaTolerance(selectionUndo.pvnaTolerance)
-    setCourtCount(selectionUndo.courtCount)
-    setSwapFromPlayerId(null)
-    setSelectionUndo(null)
-  }
-
-  const selectAlternativeForRound = (index: number, reason = `ALT ${index + 1}`) => {
-    if (selectedAlternative === index && manualAlternative === null) return
-    rememberRoundSelection(reason)
-    setSelectedAlternative(index)
-    setManualAlternative(null)
-    setSwapFromPlayerId(null)
-    setShowSessionReport(false)
-  }
-
-  const applySuggestedRoundAction = (action: SuggestedRoundAction) => {
-    rememberRoundSelection(action.label)
-    if (action.type === 'select_alternative') {
-      setSelectedAlternative(action.alternative_index)
-      setManualAlternative(null)
-      setSwapFromPlayerId(null)
-      return
-    }
-    if (action.type === 'set_pvna_tolerance') {
-      setPvnaTolerance(action.pvna_tolerance)
-      setManualAlternative(null)
-      setSwapFromPlayerId(null)
-      return
-    }
-    if (action.type === 'set_courts') {
-      setCourtCount(action.courts)
-      setSelectedAlternative(0)
-      setManualAlternative(null)
-      setSwapFromPlayerId(null)
-    }
-  }
-
+    refreshing,
+    rememberRoundSelection,
+    reportState,
+    rows,
+    selectAlternativeForRound,
+    selectedAlternative,
+    selectionUndo,
+    sessionSummary,
+    setCourtCount,
+    setCourtDurationMin,
+    setCourtPreset,
+    setError,
+    setExpandedRosterPlayer,
+    setGroupSelection,
+    setManualAlternative,
+    setPvnaTolerance,
+    setSheet,
+    setShowEngineStats,
+    setShowSessionReport,
+    setSwapFromPlayerId,
+    setTargetRounds,
+    sheet,
+    showEngineStats,
+    state,
+    suggestedRoundActions,
+    suggestionIsUpdating,
+    suggestion,
+    swapFromPlayerId,
+    targetReached,
+    targetRounds,
+    toggleGroupSelection,
+    undoRoundSelection,
+    workingAlternative,
+  } = model
   const runAction = async (key: string, action: () => Promise<void>) => {
+    if (actionInFlightRef.current) return
+    actionInFlightRef.current = true
     setBusy(key)
     setError(null)
     try {
       await action()
       await loadLiveState()
     } catch (err: any) {
-      setError(err?.message ?? 'Action failed')
+      const safeMessage = toUserSafeActionError(err)
+      console.warn('[NextRoundSuggesterV2] action failed', err)
+      setError(safeMessage)
+      if (err && typeof err === 'object') {
+        try {
+          ;(err as { message?: string }).message = safeMessage
+        } catch {
+          err = new Error(safeMessage)
+          // Keep the user-facing fallback below safe when the error object is readonly.
+        }
+      } else {
+        err = new Error(safeMessage)
+      }
       Alert.alert('Lỗi', err?.message ?? 'Không thể thực hiện thao tác')
     } finally {
+      actionInFlightRef.current = false
       setBusy(null)
     }
   }
@@ -403,14 +289,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     })
   }
 
-  const toggleGroupSelection = (playerId: string) => {
-    setGroupSelection(current => (
-      current.includes(playerId)
-        ? current.filter(id => id !== playerId)
-        : [...current, playerId]
-    ))
-  }
-
   const createGroupFromSelection = async () => {
     if (groupSelection.length < 2) return
     await setGroupForPlayers(groupSelection)
@@ -423,6 +301,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       await invokeLiveSessionFunction('session-rounds-start', sessionId, {
         suggestion_idx: selectedAlternative,
         manual: manualAlternative ? alternative.matches : undefined,
+        expected_state_fingerprint: manualAlternative ? buildSessionStateFingerprint(state) : undefined,
         courts: courtCount,
         pvna_tolerance: pvnaTolerance,
         decision_context: {
@@ -467,7 +346,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         row?.played ? row?.delta !== 1 : row?.delta !== 0
       ) ?? []
       if (invalidDeltas.length > 0) {
-        throw new Error(`Commit audit mismatch: ${invalidDeltas.length} người bị đổi số trận sai.`)
+        console.error('[NextRoundSuggesterV2] commit audit mismatch', invalidDeltas)
+        throw new Error('Round commit audit failed. Please refresh before continuing.')
       }
     })
   }
@@ -491,41 +371,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     setSheet(null)
   }
 
-  const navbarRightSlot = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-      <Pressable
-        onPress={() => router.push({ pathname: '/host/session/[id]/next-round', params: { id: sessionId, ui: 'v1' } })}
-        style={{
-          height: 36,
-          minWidth: 46,
-          borderRadius: RADIUS.full,
-          borderWidth: BORDER.hairline,
-          borderColor: theme.outlineVariant,
-          backgroundColor: theme.surface,
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingHorizontal: 10,
-        }}
-      >
-        <Text style={ctaTextStyle(theme.primary, 11)}>V1</Text>
-      </Pressable>
-      <Pressable
-        onPress={loadLiveState}
-        style={{
-          height: 36,
-          width: 36,
-          borderRadius: RADIUS.full,
-          borderWidth: BORDER.hairline,
-          borderColor: theme.outlineVariant,
-          backgroundColor: theme.surface,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <RefreshCcw size={16} color={theme.onSurface} />
-      </Pressable>
-    </View>
-  )
+  const navbarRightSlot = <NavbarRightActions sessionId={sessionId} onRefresh={loadLiveState} refreshing={refreshing} />
 
   if (loading) {
     return (
@@ -692,7 +538,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
             if (phase === 'active') void endActiveRound()
             else if (workingAlternative) void startRound(workingAlternative)
           }}
-          disabled={phase === 'plan' && (!workingAlternative || hasManualSwapHardGuard)}
+          disabled={phase === 'plan' && (!workingAlternative || hasManualSwapHardGuard || suggestionIsUpdating)}
           onMore={() => setSheet('more')}
         />
       )}
@@ -740,7 +586,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         />
       </NextRoundSheet>
 
-      <NextRoundSheet visible={sheet === 'roster'} snap="88" onClose={() => setSheet(null)}>
+      <NextRoundSheet visible={sheet === 'roster'} snap="88" scroll={false} onClose={() => setSheet(null)}>
         <RosterSheetView
           rows={rows.playerRows}
           playersById={playersById}
@@ -1408,46 +1254,6 @@ function EmptyPlanCard({ onSyncRoster, busy }: { onSyncRoster: () => void; busy:
   )
 }
 
-function StickyRoundCta({
-  busy,
-  primaryLabel,
-  onPrimary,
-  disabled,
-  onMore,
-}: {
-  busy: string | null
-  primaryLabel: string
-  onPrimary: () => void
-  disabled?: boolean
-  onMore: () => void
-}) {
-  const theme = useAppTheme()
-  const insets = useSafeAreaInsets()
-  return (
-    <LinearGradient
-      pointerEvents="box-none"
-      colors={['rgba(255,251,245,0)', theme.background]}
-      style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 26, paddingHorizontal: 16, paddingBottom: 16 + insets.bottom }}
-    >
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        <TouchableOpacity
-          onPress={onMore}
-          style={{ width: 48, height: 52, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <MoreHorizontal size={22} color={theme.onSurface} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={onPrimary}
-          disabled={disabled || busy === 'start' || busy === 'end'}
-          style={{ flex: 1, height: 52, borderRadius: RADIUS.md, backgroundColor: disabled ? theme.outlineVariant : theme.primary, alignItems: 'center', justifyContent: 'center' }}
-        >
-          {busy === 'start' || busy === 'end' ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary)}>{primaryLabel}</Text>}
-        </TouchableOpacity>
-      </View>
-    </LinearGradient>
-  )
-}
-
 function SettingsSheet({
   courtCount,
   setCourtCount,
@@ -1620,49 +1426,6 @@ function CourtSuggestionOptions({
                   </Text>
                 </View>
               </View>
-            </TouchableOpacity>
-          )
-        })}
-      </View>
-    </View>
-  )
-}
-
-function ChoiceRow<T extends string | number>({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string
-  options: Array<{ label: string; value: T }>
-  value: T
-  onChange: (value: T) => void
-}) {
-  const theme = useAppTheme()
-  return (
-    <View style={{ marginBottom: 14 }}>
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>{label}</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {options.map(option => {
-          const active = option.value === value
-          return (
-            <TouchableOpacity
-              key={`${label}-${option.value}`}
-              onPress={() => onChange(option.value)}
-              style={{
-                minHeight: 40,
-                minWidth: 62,
-                borderRadius: RADIUS.md,
-                backgroundColor: active ? theme.primary : theme.surface,
-                borderWidth: BORDER.hairline,
-                borderColor: active ? theme.primary : theme.outlineVariant,
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingHorizontal: 10,
-              }}
-            >
-              <Text style={ctaTextStyle(active ? theme.onPrimary : theme.onSurface, 12)}>{option.label}</Text>
             </TouchableOpacity>
           )
         })}

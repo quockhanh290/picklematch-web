@@ -55,11 +55,13 @@ export function NextRoundSheet({
   onClose,
   children,
   snap,
+  scroll = true,
 }: {
   visible: boolean
   onClose: () => void
   children: React.ReactNode
   snap: '50' | '88'
+  scroll?: boolean
 }) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
@@ -79,7 +81,11 @@ export function NextRoundSheet({
         }}
       >
         <View style={{ width: 44, height: 5, borderRadius: RADIUS.full, backgroundColor: theme.outlineVariant, alignSelf: 'center', marginBottom: 12 }} />
-        <ScrollView showsVerticalScrollIndicator={false}>{children}</ScrollView>
+        {scroll ? (
+          <ScrollView showsVerticalScrollIndicator={false}>{children}</ScrollView>
+        ) : (
+          <View style={{ flex: 1 }}>{children}</View>
+        )}
       </View>
     </Modal>
   )

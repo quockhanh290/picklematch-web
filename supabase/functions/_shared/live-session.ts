@@ -3,26 +3,84 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 type JsonBody = Record<string, unknown>
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+const LOCAL_DEV_ORIGINS = [
+  'http://localhost:8081',
+  'http://localhost:19006',
+  'http://localhost:3000',
+  'http://127.0.0.1:8081',
+  'http://127.0.0.1:19006',
+  'http://127.0.0.1:3000',
+]
+
+function getAllowedOrigins(): string[] {
+  const vercelUrl = Deno.env.get('VERCEL_URL')
+  const configured = [
+    Deno.env.get('APP_ALLOWED_ORIGINS'),
+    Deno.env.get('ALLOWED_ORIGINS'),
+    Deno.env.get('SITE_URL'),
+    Deno.env.get('PUBLIC_SITE_URL'),
+    Deno.env.get('EXPO_PUBLIC_APP_URL'),
+    vercelUrl ? `https://${vercelUrl}` : null,
+  ]
+    .filter(Boolean)
+    .join(',')
+
+  return configured
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+}
+
+function isLocalDevOrigin(origin: string): boolean {
+  return LOCAL_DEV_ORIGINS.includes(origin)
+}
+
+function allowedOriginFor(request?: Request): string | null {
+  const requestOrigin = request?.headers.get('Origin') ?? ''
+  if (!requestOrigin) return null
+  if (isLocalDevOrigin(requestOrigin)) return requestOrigin
+
+  const allowedOrigins = getAllowedOrigins()
+  if (allowedOrigins.includes(requestOrigin)) return requestOrigin
+
+  return null
+}
+
+function corsHeadersFor(request?: Request): HeadersInit {
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Vary': 'Origin',
+  }
+
+  const allowOrigin = allowedOriginFor(request)
+  if (allowOrigin) {
+    headers['Access-Control-Allow-Origin'] = allowOrigin
+  }
+
+  return headers
 }
 
 export function handleCorsPreflight(request: Request): Response | null {
   if (request.method !== 'OPTIONS') return null
 
+  const requestOrigin = request.headers.get('Origin') ?? ''
+
+  if (requestOrigin && !allowedOriginFor(request)) {
+    return new Response(null, { status: 403 })
+  }
+
   return new Response(null, {
     status: 204,
-    headers: corsHeaders,
+    headers: corsHeadersFor(request),
   })
 }
 
-export function jsonResponse(body: JsonBody, status = 200) {
+export function jsonResponse(body: JsonBody, status = 200, request?: Request) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
-      ...corsHeaders,
+      ...corsHeadersFor(request),
       'Content-Type': 'application/json',
     },
   })
@@ -69,7 +127,7 @@ export async function requireHost(request: Request, sessionId: string) {
 
   if (!authorization) {
     return {
-      error: jsonResponse({ ok: false, error: 'Missing Authorization header' }, 401),
+      error: jsonResponse({ ok: false, error: 'Missing Authorization header' }, 401, request),
       supabase: null,
       userId: null,
     }
@@ -81,7 +139,7 @@ export async function requireHost(request: Request, sessionId: string) {
 
   if (userError || !userData.user) {
     return {
-      error: jsonResponse({ ok: false, error: 'Invalid access token' }, 401),
+      error: jsonResponse({ ok: false, error: 'Invalid access token' }, 401, request),
       supabase: null,
       userId: null,
     }
@@ -96,7 +154,7 @@ export async function requireHost(request: Request, sessionId: string) {
 
   if (sessionError) {
     return {
-      error: jsonResponse({ ok: false, error: sessionError.message }, 500),
+      error: jsonResponse({ ok: false, error: 'Unable to verify host access' }, 500, request),
       supabase: null,
       userId: null,
     }
@@ -104,7 +162,7 @@ export async function requireHost(request: Request, sessionId: string) {
 
   if (!session) {
     return {
-      error: jsonResponse({ ok: false, error: 'Session not found' }, 404),
+      error: jsonResponse({ ok: false, error: 'Session not found' }, 404, request),
       supabase: null,
       userId: null,
     }
@@ -112,7 +170,7 @@ export async function requireHost(request: Request, sessionId: string) {
 
   if (session.host_id !== userId) {
     return {
-      error: jsonResponse({ ok: false, error: 'Only the host can manage live session state' }, 403),
+      error: jsonResponse({ ok: false, error: 'Only the host can manage live session state' }, 403, request),
       supabase: null,
       userId: null,
     }

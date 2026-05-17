@@ -3,6 +3,10 @@ import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost 
 import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
 import { suggestNextRound } from '../../../lib/next-round-suggester/suggest.ts'
 import {
+  buildSessionStateFingerprint,
+  sessionStateFingerprintEquals,
+} from '../../../lib/next-round-suggester/state-version.ts'
+import {
   applyFairnessAdjustment,
   correctForFairness,
 } from '../../../lib/next-round-suggester/fairness/corrector.ts'
@@ -57,6 +61,22 @@ function matchesEqual(left: ManualMatch[], right: ManualMatch[]) {
   return leftKeys.every((key, index) => key === rightKeys[index])
 }
 
+function validateManualCourtIndexes(matches: ManualMatch[], courtCount: number): string | null {
+  const courtIndexes = new Set<number>()
+
+  for (const match of matches) {
+    if (!Number.isInteger(match.court_idx) || match.court_idx < 0 || match.court_idx >= courtCount) {
+      return 'Manual match has invalid court index'
+    }
+    if (courtIndexes.has(match.court_idx)) {
+      return 'Manual matches cannot reuse the same court'
+    }
+    courtIndexes.add(match.court_idx)
+  }
+
+  return null
+}
+
 function optionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
@@ -66,12 +86,12 @@ Deno.serve(async (request) => {
   if (corsResponse) return corsResponse
 
   if (request.method !== 'POST') {
-    return jsonResponse({ ok: false, error: 'Method not allowed' }, 405)
+    return jsonResponse({ ok: false, error: 'Method not allowed' }, 405, request)
   }
 
   const sessionId = getSessionId(request)
   if (!sessionId) {
-    return jsonResponse({ ok: false, error: 'Missing session id' }, 400)
+    return jsonResponse({ ok: false, error: 'Missing session id' }, 400, request)
   }
 
   const auth = await requireHost(request, sessionId)
@@ -84,7 +104,7 @@ Deno.serve(async (request) => {
       pvnaTolerance: optionalNumber(body.pvna_tolerance),
     })
     if (state.rounds.some((round) => round.status === 'active')) {
-      return jsonResponse({ ok: false, error: 'A round is already active' }, 409)
+      return jsonResponse({ ok: false, error: 'A round is already active' }, 409, request)
     }
 
     const adjustment = correctForFairness(state)
@@ -102,18 +122,32 @@ Deno.serve(async (request) => {
     let decisionMode: 'host_selected_alternative' | 'host_manual_matches' | 'engine_suggestion' = 'engine_suggestion'
 
     if (manual) {
+      const currentFingerprint = buildSessionStateFingerprint(state)
+      if (!sessionStateFingerprintEquals(body.expected_state_fingerprint, currentFingerprint)) {
+        return jsonResponse({
+          ok: false,
+          error: 'Session changed. Refresh and review the swapped round before starting.',
+          code: 'STATE_CHANGED',
+        }, 409, request)
+      }
+
       if (!manual.every(isValidMatch)) {
-        return jsonResponse({ ok: false, error: 'Invalid manual matches' }, 400)
+        return jsonResponse({ ok: false, error: 'Invalid manual matches' }, 400, request)
       }
 
       matches = manual
       if (matches.length > state.config.courts) {
-        return jsonResponse({ ok: false, error: 'Manual matches exceed court count' }, 400)
+        return jsonResponse({ ok: false, error: 'Manual matches exceed court count' }, 400, request)
+      }
+
+      const courtIndexError = validateManualCourtIndexes(matches, state.config.courts)
+      if (courtIndexError) {
+        return jsonResponse({ ok: false, error: courtIndexError }, 400, request)
       }
 
       const playedIds = getPlayedIds(matches)
       if (playedIds.size !== matches.length * 4) {
-        return jsonResponse({ ok: false, error: 'A player can only be assigned once per round' }, 400)
+        return jsonResponse({ ok: false, error: 'A player can only be assigned once per round' }, 400, request)
       }
 
       const presentIds = new Set(
@@ -123,7 +157,7 @@ Deno.serve(async (request) => {
       )
 
       if ([...playedIds].some((playerId) => !presentIds.has(playerId))) {
-        return jsonResponse({ ok: false, error: 'Manual matches must use checked-in players' }, 400)
+        return jsonResponse({ ok: false, error: 'Manual matches must use checked-in players' }, 400, request)
       }
 
       resting = [...state.players.values()]
@@ -145,7 +179,7 @@ Deno.serve(async (request) => {
       const alternative = suggestion.alternatives[suggestionIdx]
 
       if (!alternative) {
-        return jsonResponse({ ok: false, error: 'No suggestion available', suggestion }, 409)
+        return jsonResponse({ ok: false, error: 'No suggestion available', suggestion }, 409, request)
       }
 
       matches = alternative.matches
@@ -166,7 +200,8 @@ Deno.serve(async (request) => {
       .single()
 
     if (error) {
-      return jsonResponse({ ok: false, error: error.message }, 500)
+      console.error('session-rounds-start insert failed', error)
+      return jsonResponse({ ok: false, error: 'Could not start round' }, 500, request)
     }
 
     if (adjustment.applied_for_warnings.length > 0) {
@@ -182,7 +217,8 @@ Deno.serve(async (request) => {
         })
 
       if (adjustmentError) {
-        return jsonResponse({ ok: false, error: adjustmentError.message }, 500)
+        console.error('session-rounds-start adjustment insert failed', adjustmentError)
+        return jsonResponse({ ok: false, error: 'Could not record fairness adjustment' }, 500, request)
       }
     }
 
@@ -205,11 +241,13 @@ Deno.serve(async (request) => {
       },
     })
 
-    return jsonResponse({ ok: true, round: data, adjustment, audit_error: auditError })
+    return jsonResponse({ ok: true, round: data, adjustment, audit_error: auditError }, 200, request)
   } catch (error) {
+    console.error('session-rounds-start failed', error)
     return jsonResponse(
-      { ok: false, error: error instanceof Error ? error.message : 'Unknown error' },
+      { ok: false, error: 'Could not start round' },
       500,
+      request,
     )
   }
 })

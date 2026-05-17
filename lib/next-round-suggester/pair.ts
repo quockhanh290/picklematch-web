@@ -54,8 +54,11 @@ export function bestTeamSplit(players: PlayerSessionState[], state: SessionState
 
 const EXHAUSTIVE_MAX_ITER = 20000
 const SAMPLED_MAX_ITER = 600
+const SAMPLED_MAX_ITER_3_COURTS = 2000
+const SAMPLED_MAX_ITER_4_PLUS_COURTS = 3000
 const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
 const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
+const PARTITION_COUNT_CAP = 1_000_000_000
 
 function addStats(a: MatchScore['stats'], b: MatchScore['stats']): MatchScore['stats'] {
   return {
@@ -315,6 +318,41 @@ function historySignature(players: PlayerSessionState[]): string {
     .join('|')
 }
 
+function combinationCount(n: number, k: number): number {
+  if (k < 0 || k > n) return 0
+  const effectiveK = Math.min(k, n - k)
+  let result = 1
+  for (let i = 1; i <= effectiveK; i += 1) {
+    result = (result * (n - effectiveK + i)) / i
+    if (result > PARTITION_COUNT_CAP) return PARTITION_COUNT_CAP
+  }
+  return Math.round(result)
+}
+
+function estimateUniqueCourtPartitions(playerCount: number): number {
+  if (playerCount < 4 || playerCount % 4 !== 0) return 0
+  let remaining = playerCount
+  let total = 1
+
+  while (remaining > 0) {
+    total *= combinationCount(remaining - 1, 3)
+    if (total > PARTITION_COUNT_CAP) return PARTITION_COUNT_CAP
+    remaining -= 4
+  }
+
+  return Math.round(total)
+}
+
+function defaultMaxIterations(playerCount: number): number {
+  const partitionCount = estimateUniqueCourtPartitions(playerCount)
+  if (partitionCount <= EXHAUSTIVE_MAX_ITER) return EXHAUSTIVE_MAX_ITER
+
+  const courts = playerCount / 4
+  if (courts <= 2) return SAMPLED_MAX_ITER
+  if (courts === 3) return SAMPLED_MAX_ITER_3_COURTS
+  return SAMPLED_MAX_ITER_4_PLUS_COURTS
+}
+
 export function bestPartitioning(
   players: PlayerSessionState[],
   state: SessionState,
@@ -323,8 +361,9 @@ export function bestPartitioning(
   if (players.length < 4 || players.length % 4 !== 0) return null
 
   const normalizedPlayers = [...players].sort((a, b) => a.player_id.localeCompare(b.player_id))
-  const maxIterations =
-    options.maxIterations ?? (normalizedPlayers.length > 8 ? SAMPLED_MAX_ITER : EXHAUSTIVE_MAX_ITER)
+  const maxIterations = options.maxIterations ?? defaultMaxIterations(normalizedPlayers.length)
+  const partitionCount = estimateUniqueCourtPartitions(normalizedPlayers.length)
+  const canSearchExhaustively = partitionCount > 0 && partitionCount <= maxIterations
 
   function runSearch(
     searchOptions: { tolerance?: number; relaxedTolerance?: boolean } = {},
@@ -342,7 +381,7 @@ export function bestPartitioning(
     }
   }
 
-  if (normalizedPlayers.length <= 8) {
+  if (canSearchExhaustively) {
     function walk(remaining: PlayerSessionState[], groups: PlayerSessionState[][]) {
       if (iterations >= maxIterations) return
       if (remaining.length === 0) {
