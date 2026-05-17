@@ -1,5 +1,5 @@
 import { SCREEN_FONTS } from '@/constants/typography'
-import type { SessionRoundRow, SessionState } from '@/lib/next-round-suggester/types'
+import type { Match, RoundStatus, SessionRoundRow, SessionState } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { eloToPvna } from '@/lib/skillAssessment'
 
@@ -10,10 +10,18 @@ export function formatNumber(value: number, fractionDigits = 0) {
   }).format(value)
 }
 
-export function getPlayerPvna(player?: ArrangementPlayer | null) {
+export function getPlayerPvna(player?: ArrangementPlayer | null): number | null {
   if (player?.pvna != null) return Number(player.pvna)
   if (player?.elo != null) return eloToPvna(Number(player.elo))
-  return 0
+  return null
+}
+
+export function repeatRiskLabel(risk: string) {
+  if (risk === 'low') return 'thấp'
+  if (risk === 'medium') return 'vừa'
+  if (risk === 'high') return 'cao'
+  if (risk === 'extreme') return 'rất cao'
+  return risk
 }
 
 export function initials(name: string) {
@@ -31,7 +39,18 @@ export function playerName(playerId: string, playersById: Map<string, Arrangemen
   return playersById.get(playerId)?.name ?? 'Người chơi'
 }
 
-export function normalizeRoundRow(row: any): SessionRoundRow {
+interface RawRoundRow {
+  id: string
+  session_id: string
+  round_no: number
+  status: RoundStatus
+  matches?: Match[] | null
+  resting?: string[] | null
+  started_at?: string | null
+  ended_at?: string | null
+}
+
+export function normalizeRoundRow(row: RawRoundRow): SessionRoundRow {
   return {
     id: row.id,
     session_id: row.session_id,
@@ -39,8 +58,8 @@ export function normalizeRoundRow(row: any): SessionRoundRow {
     status: row.status,
     matches: row.matches ?? [],
     resting: row.resting ?? [],
-    started_at: row.started_at,
-    ended_at: row.ended_at,
+    started_at: row.started_at ?? null,
+    ended_at: row.ended_at ?? null,
   }
 }
 

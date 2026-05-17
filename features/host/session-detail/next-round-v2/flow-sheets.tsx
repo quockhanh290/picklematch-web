@@ -25,16 +25,8 @@ import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
 
 import { Card, MiniAction, PlayerAvatar, SheetAction, SheetTitle } from './components'
-import { ctaTextStyle, eyebrowStyle, getPlayerPvna, playerName } from './helpers'
+import { ctaTextStyle, eyebrowStyle, getPlayerPvna, playerName, repeatRiskLabel } from './helpers'
 import type { MatchCountConsistencyRow } from '@/lib/next-round-suggester/fairness/audit'
-
-function repeatRiskLabel(risk: string) {
-  if (risk === 'low') return 'thấp'
-  if (risk === 'medium') return 'vừa'
-  if (risk === 'high') return 'cao'
-  if (risk === 'extreme') return 'rất cao'
-  return risk
-}
 
 function fairnessBreakdownLabel(key: string) {
   if (key === 'match_count') return 'Số trận'
@@ -52,14 +44,6 @@ function fairnessBreakdownMax(key: string) {
   if (key === 'rest') return 20
   if (key === 'gender_prefs') return 20
   return 20
-}
-
-function repeatRiskText(risk: string) {
-  if (risk === 'low') return 'thấp'
-  if (risk === 'medium') return 'vừa'
-  if (risk === 'high') return 'cao'
-  if (risk === 'extreme') return 'rất cao'
-  return risk
 }
 
 function backToBackSummary(playRatio: number) {
@@ -259,7 +243,7 @@ export function RosterSheet({
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
                   <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                    PVNA {getPlayerPvna(player).toFixed(2)} · {row.matches_played} trận · đang nghỉ liên tiếp {row.consecutive_rest} lượt
+                    PVNA {(getPlayerPvna(player) ?? 0).toFixed(2)} · {row.matches_played} trận · đang nghỉ liên tiếp {row.consecutive_rest} lượt
                   </Text>
                 </View>
                 <ChevronDown size={16} color={theme.outline} />
@@ -377,7 +361,7 @@ export function MoreSheet({
   )
 }
 
-function GroupAuditBlock({
+export function GroupAuditBlock({
   state,
   groupSummaries,
   playersById,
@@ -420,7 +404,7 @@ function GroupAuditBlock({
   )
 }
 
-function BreakdownRow({ label, value, max, detail }: { label: string; value: number; max: number; detail: string }) {
+export function BreakdownRow({ label, value, max, detail }: { label: string; value: number; max: number; detail: string }) {
   const theme = useAppTheme()
   const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0
   return (
@@ -437,7 +421,7 @@ function BreakdownRow({ label, value, max, detail }: { label: string; value: num
   )
 }
 
-function RepeatDetailsBlock({
+export function RepeatDetailsBlock({
   partnerPairs,
   opponentPairs,
   playersById,
@@ -474,7 +458,7 @@ function RepeatDetailsBlock({
   )
 }
 
-function OpponentBurdenSummary({
+export function OpponentBurdenSummary({
   burden,
   playersById,
 }: {
@@ -577,7 +561,7 @@ export function RecapView({
       <Card style={{ padding: 14, marginBottom: 14 }}>
         <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Áp lực lặp partner (đồng đội)/đối thủ</Text>
         <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 17 }}>
-          Mức {repeatRiskText(pressure.repeat_risk)} · hệ số giảm phạt {pressure.penalty_multiplier.toFixed(2)} · trung bình {pressure.avg_matches_per_player.toFixed(1)} trận/người · áp lực đối thủ {pressure.opponent_pressure.toFixed(2)}
+          Mức {repeatRiskLabel(pressure.repeat_risk)} · hệ số giảm phạt {pressure.penalty_multiplier.toFixed(2)} · trung bình {pressure.avg_matches_per_player.toFixed(1)} trận/người · áp lực đối thủ {pressure.opponent_pressure.toFixed(2)}
         </Text>
         <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 17 }}>
           {backToBackSummary(pressure.play_ratio)} Back-to-back là người chơi đánh các vòng liền nhau không có lượt nghỉ xen giữa.

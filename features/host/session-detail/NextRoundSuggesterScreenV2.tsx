@@ -25,7 +25,7 @@ import {
   type MatchCountConsistencyRow,
   type FairnessPreview,
 } from '@/lib/next-round-suggester/fairness/audit'
-import { buildGroupAuditRows, type GroupSummary } from '@/lib/next-round-suggester/fairness/group-audit'
+import type { GroupSummary } from '@/lib/next-round-suggester/fairness/group-audit'
 import {
   computeGenderPrefSatisfaction,
   computeMatchCountMetrics,
@@ -50,9 +50,12 @@ import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
 import { ChoiceRow, NavbarRightActions, StickyRoundCta } from './next-round-v2/controls'
 import {
+  BreakdownRow,
+  GroupAuditBlock,
   HistorySheet as HistorySheetView,
   MoreSheet as MoreSheetView,
   RecapView as RecapViewModule,
+  RepeatDetailsBlock,
   RosterSheet as RosterSheetView,
   SwapSheet as SwapSheetView,
 } from './next-round-v2/flow-sheets'
@@ -61,6 +64,7 @@ import {
   eyebrowStyle,
   formatNumber,
   getTeamPvna,
+  repeatRiskLabel,
 } from './next-round-v2/helpers'
 import type { NextRoundSuggesterV2Props } from './next-round-v2/types'
 import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
@@ -74,14 +78,6 @@ function fairnessLabel(score: SessionFairnessScore) {
   if (score.grade === 'good') return 'Đều'
   if (score.grade === 'acceptable') return 'Tạm ổn'
   return 'Cần chỉnh'
-}
-
-function repeatRiskLabel(risk: string) {
-  if (risk === 'low') return 'thấp'
-  if (risk === 'medium') return 'vừa'
-  if (risk === 'high') return 'cao'
-  if (risk === 'extreme') return 'rất cao'
-  return risk
 }
 
 function churnLevelLabel(level: string) {
@@ -852,7 +848,6 @@ function FairnessPreviewSheet({ preview }: { preview: FairnessPreview | null }) 
   }
 
   const tone = preview.delta_total >= 0 ? theme.successText : theme.warningText
-  const summaryTone = preview.delta_total >= 0 ? theme.successText : theme.warningText
   const summaryBg = preview.delta_total >= 0 ? theme.successBg : theme.warningBg
   const pressureText = preview.pressure_after.repeat_risk === 'low'
     ? 'Ít nguy cơ lặp partner (đồng đội) hoặc đối thủ.'
@@ -880,10 +875,10 @@ function FairnessPreviewSheet({ preview }: { preview: FairnessPreview | null }) 
       </LinearGradient>
 
       <Card style={{ borderRadius: RADIUS.md, padding: 12, marginBottom: 12, backgroundColor: summaryBg }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: summaryTone }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: tone }}>
           {preview.delta_total >= 0 ? 'Phương án này giữ fairness tốt' : 'Phương án này làm fairness giảm'}
         </Text>
-        <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: summaryTone }}>
+        <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: tone }}>
           Điểm thay đổi {preview.delta_total > 0 ? '+' : ''}{preview.delta_total}. {pressureText} {availabilityText}
         </Text>
       </Card>
@@ -1504,66 +1499,6 @@ function FairnessSheet({
   )
 }
 
-function GroupAuditBlock({
-  state,
-  groupSummaries,
-  playersById,
-}: {
-  state: SessionState
-  groupSummaries: GroupSummary[]
-  playersById: Map<string, ArrangementPlayer>
-}) {
-  const theme = useAppTheme()
-  const rows = buildGroupAuditRows(state, groupSummaries)
-  return (
-    <View style={{ marginTop: 14 }}>
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Group audit</Text>
-      {rows.length === 0 ? (
-        <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, padding: 12 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Chưa có group nào được tạo.</Text>
-        </View>
-      ) : (
-        <View style={{ gap: 10 }}>
-          {rows.map(row => (
-            <View key={row.group_id} style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.onSurface }}>
-                {row.label}: {row.player_ids.map(id => playerName(id, playersById)).join(', ')}
-              </Text>
-              <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>
-                Cùng xuất hiện trong {row.shared_matches} trận.
-              </Text>
-              <View style={{ marginTop: 8, gap: 4 }}>
-                {row.pair_counts.map(pair => (
-                  <Text key={`${pair.player_a}-${pair.player_b}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-                    {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} trận chung team
-                  </Text>
-                ))}
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-    </View>
-  )
-}
-
-function BreakdownRow({ label, value, max, detail }: { label: string; value: number; max: number; detail: string }) {
-  const theme = useAppTheme()
-  const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0
-  return (
-    <View style={{ marginBottom: 10 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{label}</Text>
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: theme.outline }}>{value}/{max}</Text>
-      </View>
-      <View style={{ height: 8, borderRadius: RADIUS.full, backgroundColor: theme.outlineVariant, overflow: 'hidden' }}>
-        <View style={{ width: `${pct}%`, height: '100%', backgroundColor: pct >= 95 ? theme.primary : theme.primaryContainer }} />
-      </View>
-      <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>{detail}</Text>
-    </View>
-  )
-}
-
 function LatestFairnessAuditCard({ audit }: { audit: FairnessAudit | null }) {
   const theme = useAppTheme()
   if (!audit) return null
@@ -1595,71 +1530,5 @@ function LatestFairnessAuditCard({ audit }: { audit: FairnessAudit | null }) {
         ))}
       </View>
     </View>
-  )
-}
-
-function RepeatDetailsBlock({
-  partnerPairs,
-  opponentPairs,
-  playersById,
-}: {
-  partnerPairs: Array<{ player_a: string; player_b: string; count: number }>
-  opponentPairs: Array<{ player_a: string; player_b: string; count: number }>
-  playersById: Map<string, ArrangementPlayer>
-}) {
-  const theme = useAppTheme()
-  const renderPairs = (pairs: Array<{ player_a: string; player_b: string; count: number }>) => {
-    const repeated = pairs.filter(pair => pair.count > 1)
-    if (repeated.length === 0) {
-      return <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>Không có cặp lặp.</Text>
-    }
-    return repeated.map(pair => (
-      <Text key={`${pair.player_a}-${pair.player_b}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-        {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} lần
-      </Text>
-    ))
-  }
-
-  return (
-    <View style={{ marginTop: 12, gap: 8 }}>
-      <Text style={eyebrowStyle(theme.outline)}>Cặp lặp chi tiết</Text>
-      <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Partner lặp (đồng đội)</Text>
-        <View style={{ gap: 3 }}>{renderPairs(partnerPairs)}</View>
-      </View>
-      <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Đối thủ lặp</Text>
-        <View style={{ gap: 3 }}>{renderPairs(opponentPairs)}</View>
-      </View>
-    </View>
-  )
-}
-
-function OpponentBurdenSummary({
-  burden,
-  playersById,
-}: {
-  burden: ReturnType<typeof computeOpponentRepeatBurden>
-  playersById: Map<string, ArrangementPlayer>
-}) {
-  const theme = useAppTheme()
-  const rows = burden.per_player
-    .filter(player => player.repeated_opponents > 0)
-    .sort((a, b) => b.repeated_opponents - a.repeated_opponents)
-  return (
-    <Card style={{ padding: 14, marginBottom: 14 }}>
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Người bị lặp đối thủ nhiều</Text>
-      {rows.length === 0 ? (
-        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Không có ai bị lặp đối thủ.</Text>
-      ) : (
-        <View style={{ gap: 4 }}>
-          {rows.map(row => (
-            <Text key={`burden-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-              {playerName(row.player_id, playersById)}: {row.repeated_opponents} đối thủ lặp
-            </Text>
-          ))}
-        </View>
-      )}
-    </Card>
   )
 }

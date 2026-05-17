@@ -94,7 +94,11 @@ export async function invokeLiveSessionFunction(
   }
 
   const { data } = await supabase.auth.getSession()
-  const accessToken = data.session?.access_token
+  let accessToken = data.session?.access_token
+  if (!accessToken) {
+    const { data: refreshed } = await supabase.auth.refreshSession()
+    accessToken = refreshed.session?.access_token
+  }
   if (!accessToken) {
     throw new Error('Could not read login session. Open in Safari/Chrome or sign in again.')
   }

@@ -70,7 +70,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const enrichedPlayerRows = useMemo(() => liveRows.rows.playerRows.map(row => ({
     ...row,
     players: {
-      pvna: getPlayerPvna(playersById.get(row.player_id)) || row.players?.pvna || 0,
+      pvna: getPlayerPvna(playersById.get(row.player_id)) ?? row.players?.pvna ?? 0,
       elo: row.players?.elo,
       gender: playersById.get(row.player_id)?.gender ?? row.players?.gender,
       partner_gender_pref: playersById.get(row.player_id)?.metadata?.partner_gender_pref ?? row.players?.partner_gender_pref,

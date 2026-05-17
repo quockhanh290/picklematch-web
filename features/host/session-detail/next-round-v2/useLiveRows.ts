@@ -45,7 +45,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
         playerRows: ((playerRes.data ?? []) as any[]).map(row => ({
           ...row,
           players: {
-            pvna: getPlayerPvna(playersById.get(row.player_id)),
+            pvna: getPlayerPvna(playersById.get(row.player_id)) ?? 0,
             elo: playersById.get(row.player_id)?.elo,
             gender: playersById.get(row.player_id)?.gender,
             partner_gender_pref: playersById.get(row.player_id)?.metadata?.partner_gender_pref,
