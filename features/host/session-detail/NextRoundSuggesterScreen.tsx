@@ -241,20 +241,20 @@ function warningIdentity(warning: FairnessWarning): string {
 function toProjectedWarning(warning: FairnessWarning): FairnessWarning {
   return {
     ...warning,
-    message: `Neu start phuong an nay: ${projectWarningMessage(warning.message)}`,
+    message: `Nếu bắt đầu phương án này: ${projectWarningMessage(warning.message)}`,
     suggested_action: projectSuggestedAction(warning.suggested_action),
   }
 }
 
 function projectWarningMessage(message: string): string {
   return message
-    .replace(' da doi dau ', ' se doi dau ')
-    .replace(' da danh chung ', ' se danh chung ')
-    .replace(' da nghi ', ' se nghi ')
+    .replace(' đã đối đầu ', ' sẽ đối đầu ')
+    .replace(' đã đánh chung ', ' sẽ đánh chung ')
+    .replace(' đã nghỉ ', ' sẽ nghỉ ')
 }
 
 function projectSuggestedAction(action: string): string {
-  return action.replace('Engine se ', 'Engine dang ')
+  return action.replace('Engine sẽ ', 'Engine đang ')
 }
 
 const COURT_PRESET_OPTIONS: CourtPreset[] = ['play_more', 'balanced', 'relaxed']
@@ -531,7 +531,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
       await action()
       await loadLiveState()
     } catch (err: any) {
-      setError(err?.message ?? 'Action failed')
+      setError(err?.message ?? 'Thao tác thất bại')
       Alert.alert('Lỗi', err?.message ?? 'Không thể thực hiện thao tác')
     } finally {
       setBusy(null)
@@ -542,7 +542,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     await runAction('sync', async () => {
       const playerIds = checkedInPlayers.map(player => String(player.id))
       if (playerIds.length === 0) {
-        throw new Error('No confirmed players to sync. Confirm at least one player before syncing roster.')
+        throw new Error('Không có người chơi đã xác nhận để đồng bộ. Vui lòng xác nhận ít nhất một người chơi trước khi đồng bộ danh sách.')
       }
 
       await invokeLiveSessionFunction('session-sync-roster', sessionId, {
@@ -1212,7 +1212,7 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                       <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: UI_THEME.textMain, fontWeight: '900' }} numberOfLines={1}>
                         {group.label}: {group.player_ids.map(id => playerName(id, playersById)).join(', ')}
                       </Text>
-                      <MiniButton label="CLEAR GROUP" loading={busy === `group-clear-${group.group_id}`} onPress={() => clearWholeGroup(group.group_id)} muted />
+                      <MiniButton label="XÓA NHÓM" loading={busy === `group-clear-${group.group_id}`} onPress={() => clearWholeGroup(group.group_id)} muted />
                     </View>
                   ))}
                 </View>
@@ -1221,13 +1221,13 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
             
             <View style={{ backgroundColor: UI_THEME.background, borderRadius: 12, padding: 12, marginBottom: 16 }}>
               <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, lineHeight: 15 }}>
-                💡 Chọn 2+ người chơi để tạo Group bạn bè. Engine sẽ ưu tiên xếp họ cùng team hoặc cùng sân nhưng không bắt buộc.
+                💡 Chọn 2+ người chơi để tạo Nhóm bạn bè. Engine sẽ ưu tiên xếp họ cùng team hoặc cùng sân nhưng không bắt buộc.
               </Text>
             </View>
 
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <ActionButton
-                label={`TẠO GROUP (${groupSelection.length})`}
+                label={`TẠO NHÓM (${groupSelection.length})`}
                 loading={busy?.startsWith('group-')}
                 disabled={groupSelection.length < 2}
                 onPress={createGroupFromSelection}
@@ -1272,13 +1272,13 @@ async function invokeLiveSessionFunction(
   extraQuery: Record<string, string | number> = {},
 ) {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Missing Supabase function configuration')
+    throw new Error('Thiếu cấu hình hàm dịch vụ Supabase')
   }
 
   const { data } = await supabase.auth.getSession()
   const accessToken = data.session?.access_token
   if (!accessToken) {
-    throw new Error('Host login expired')
+    throw new Error('Phiên đăng nhập Host đã hết hạn')
   }
 
   const query = new URLSearchParams({ session_id: sessionId })
@@ -1471,16 +1471,16 @@ function SessionFairnessSummaryCard({
   const partnerRepeats = partner.repeat_pairs.filter(pair => pair.count > 1)
   const opponentRepeats = opponent.repeat_pairs.filter(pair => pair.count > 1)
   const breakdownRows = [
-    ['So tran', breakdown.match_count, 25, `range ${matchRange}, avg ${averageNumber(matchCounts).toFixed(1)}`],
-    ['Partner', breakdown.partner_diversity, 20, `ratio ${(partner.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(20 * partner.avg_diversity_ratio).toFixed(1)}/20, pressure ${repeatPressure.repeat_risk} x${repeatPressure.penalty_multiplier.toFixed(2)}, repeat pairs ${partnerRepeats.length}`],
-    ['Doi thu', breakdown.opponent_diversity, 15, `ratio ${(opponent.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(15 * opponent.avg_diversity_ratio).toFixed(1)}/15, pressure ${repeatPressure.repeat_risk} x${repeatPressure.penalty_multiplier.toFixed(2)}, repeat pairs ${opponentRepeats.length}, max burden ${opponentBurden.max_repeated_opponents}`],
-    ['Nghi', breakdown.rest, 20, `violations ${rest.violations.length}`],
-    ['Gender pref', breakdown.gender_prefs, 20, `${gender.satisfied_count}/${gender.total_pref_opportunities} satisfied (${Math.round(gender.satisfaction_rate * 100)}%)`],
+    ['Số trận', breakdown.match_count, 25, `chênh lệch ${matchRange}, TB ${averageNumber(matchCounts).toFixed(1)}`],
+    ['Đồng đội', breakdown.partner_diversity, 20, `tỉ lệ ${(partner.avg_diversity_ratio * 100).toFixed(0)}%, gốc ${(20 * partner.avg_diversity_ratio).toFixed(1)}/20, áp lực lặp ${repeatPressure.repeat_risk === 'low' ? 'thấp' : repeatPressure.repeat_risk === 'medium' ? 'vừa' : 'cao'} x${repeatPressure.penalty_multiplier.toFixed(2)}, số cặp lặp ${partnerRepeats.length}`],
+    ['Đối thủ', breakdown.opponent_diversity, 15, `tỉ lệ ${(opponent.avg_diversity_ratio * 100).toFixed(0)}%, gốc ${(15 * opponent.avg_diversity_ratio).toFixed(1)}/15, áp lực lặp ${repeatPressure.repeat_risk === 'low' ? 'thấp' : repeatPressure.repeat_risk === 'medium' ? 'vừa' : 'cao'} x${repeatPressure.penalty_multiplier.toFixed(2)}, cặp lặp đối thủ ${opponentRepeats.length}, tải lặp đối thủ tối đa ${opponentBurden.max_repeated_opponents}`],
+    ['Nghỉ', breakdown.rest, 20, `vi phạm nghỉ ${rest.violations.length}`],
+    ['Sở thích giới tính', breakdown.gender_prefs, 20, `${gender.satisfied_count}/${gender.total_pref_opportunities} thỏa mãn (${Math.round(gender.satisfaction_rate * 100)}%)`],
   ] as const
   const lines = [
     `Chênh tối đa ${matchRange} trận`,
-    `Trung bình ${averageNumber(summary.per_player.map(player => player.unique_partners)).toFixed(1)} partners khác/người`,
-    `${Math.round(summary.overall_pref_satisfaction_rate * 100)}% preferences được đáp ứng`,
+    `Trung bình ${averageNumber(summary.per_player.map(player => player.unique_partners)).toFixed(1)} đồng đội khác/người`,
+    `${Math.round(summary.overall_pref_satisfaction_rate * 100)}% sở thích được đáp ứng`,
   ]
 
   return (
@@ -2067,12 +2067,12 @@ function CompletedRoundsRecap({
 
 function SuggestionStatsCard({ alternative }: { alternative: SuggestionAlternative }) {
   const metrics = [
-    { label: 'PVNA DIFF TỔNG', value: alternative.stats.pvna_diff.toFixed(2), tone: UI_THEME.primary },
-    { label: 'PARTNER LẶP', value: String(alternative.stats.partner_repeats), tone: '#A05A16' },
+    { label: 'CHÊNH LỆCH PVNA TỔNG', value: alternative.stats.pvna_diff.toFixed(2), tone: UI_THEME.primary },
+    { label: 'ĐỒNG ĐỘI LẶP', value: String(alternative.stats.partner_repeats), tone: '#A05A16' },
     { label: 'ĐỐI THỦ LẶP', value: String(alternative.stats.opponent_repeats), tone: '#7C3AED' },
-    { label: 'GROUP BONUS', value: String(alternative.stats.group_bonus), tone: '#2563EB' },
-    { label: 'GENDER PREF', value: alternative.stats.gender_pref_penalty.toFixed(1), tone: '#BE185D' },
-    { label: 'SCORE TỔNG', value: alternative.score.toFixed(1), tone: UI_THEME.secondary },
+    { label: 'ĐIỂM NHÓM', value: String(alternative.stats.group_bonus), tone: '#2563EB' },
+    { label: 'SỞ THÍCH GIỚI TÍNH', value: alternative.stats.gender_pref_penalty.toFixed(1), tone: '#BE185D' },
+    { label: 'ĐIỂM TỔNG', value: alternative.score.toFixed(1), tone: UI_THEME.secondary },
   ]
 
   return (

@@ -244,7 +244,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
     const expectedMatches = scheduleMode === 'limited'
       ? rawLimitedMatches
       : Math.ceil((X * (X - 1)) / 4)
-    const modeLabel = scheduleMode === 'limited' ? `ít nhất ${minGamesPerPlayer} trận/người` : 'full rotation'
+    const modeLabel = scheduleMode === 'limited' ? `ít nhất ${minGamesPerPlayer} trận/người` : 'xoay vòng đầy đủ'
     const confirmMsg = `Tạo lịch ${modeLabel} cho ${X} người trên ${effectiveCourts} sân (${expectedMatches} trận dự kiến)?`
     if (Platform.OS === 'web') {
       if (window.confirm(confirmMsg)) performGeneration()
@@ -882,8 +882,8 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
 
       {false && isRoundRobinMode && (
       <MatchControlSection
-        title="CHI TIET THUAT TOAN"
-        subtitle="Mo khi can audit coverage, runtime va chat luong lich."
+        title="CHI TIẾT THUẬT TOÁN"
+        subtitle="Mở khi cần kiểm tra độ phủ (coverage), thời gian chạy (runtime) và chất lượng lịch."
         expanded={showScheduleDiagnostics}
         onToggle={() => setShowScheduleDiagnostics(value => !value)}
       >

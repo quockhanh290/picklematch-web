@@ -39,7 +39,7 @@ export function playerName(playerId: string, playersById: Map<string, Arrangemen
   return playersById.get(playerId)?.name ?? 'Người chơi'
 }
 
-interface RawRoundRow {
+export interface RawRoundRow {
   id: string
   session_id: string
   round_no: number

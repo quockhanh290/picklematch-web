@@ -29,7 +29,7 @@ export function MatchControlSection({ title, subtitle, expanded, onToggle, child
           )}
         </View>
         <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
-          {expanded ? 'Thu gon' : 'Mo'}
+          {expanded ? 'Thu gọn' : 'Mở'}
         </Text>
       </TouchableOpacity>
       {expanded && (

@@ -12,21 +12,21 @@ export function checkFeasibility(
   const warnings: string[] = []
 
   if (nPlayers < 4 || slotsPerRound > nPlayers || rounds < 1) {
-    warnings.push('Khong du nguoi hoac thoi luong de chay cau hinh nay.')
+    warnings.push('Không đủ người hoặc thời lượng để chạy cấu hình này.')
     return { feasibility: 'infeasible', warnings }
   }
 
   if (nPlayers > 2 * slotsPerRound) {
-    warnings.push('So nguoi cao so voi so san, co the co nguoi nghi lau.')
+    warnings.push('Số người cao so với số sân, có thể có người nghỉ lâu.')
     return { feasibility: 'tight', warnings }
   }
 
   if (restingRatio > 0.5 || avgMatches < 2) {
     if (restingRatio > 0.5) {
-      warnings.push('Qua nhieu nguoi phai nghi moi vong.')
+      warnings.push('Quá nhiều người phải nghỉ mỗi vòng.')
     }
     if (avgMatches < 2) {
-      warnings.push('Moi nguoi du kien choi duoi 2 tran.')
+      warnings.push('Mỗi người dự kiến chơi dưới 2 trận.')
     }
     return { feasibility: 'oversupply', warnings }
   }

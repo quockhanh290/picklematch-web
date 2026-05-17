@@ -41,7 +41,7 @@ export function ScheduleSetupPanel({
       </Text>
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
         {[
-          { id: 'full' as const, label: 'Full rotation' },
+          { id: 'full' as const, label: 'Xoay vòng đầy đủ' },
           { id: 'limited' as const, label: 'Tối thiểu trận' },
         ].map(mode => {
           const active = scheduleMode === mode.id

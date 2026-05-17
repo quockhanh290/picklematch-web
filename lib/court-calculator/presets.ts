@@ -6,18 +6,18 @@ export const PRESETS: Record<
 > = {
   play_more: {
     matches: 5.5,
-    label: 'Choi nhieu',
-    description: '5-6 tran/nguoi',
+    label: 'Chơi nhiều',
+    description: '5-6 trận/người',
   },
   balanced: {
     matches: 4.5,
-    label: 'Can bang',
-    description: '4-5 tran/nguoi',
+    label: 'Cân bằng',
+    description: '4-5 trận/người',
   },
   relaxed: {
     matches: 3,
-    label: 'Thu gian',
-    description: '3 tran/nguoi',
+    label: 'Thư giãn',
+    description: '3 trận/người',
   },
 }
 

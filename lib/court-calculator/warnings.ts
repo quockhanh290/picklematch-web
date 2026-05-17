@@ -31,13 +31,13 @@ export function buildCourtWarnings(
     warnings.push({
       severity: pressure.risk === 'extreme' ? 'warning' : 'info',
       type: 'repeat_pressure',
-      message: `Setup nay tao repeat pressure ${pressure.risk}.`,
-      why: `Du kien ${pressure.avg_matches_per_player.toFixed(1)} tran/nguoi, opponent pressure ${pressure.opponent_pressure.toFixed(2)}. Repeat co the la gioi han to hop, khong phai engine loi.`,
+      message: `Setup này tạo áp lực lặp (repeat pressure) ${pressure.risk === 'extreme' ? 'rất cao' : 'cao'}.`,
+      why: `Dự kiến ${pressure.avg_matches_per_player.toFixed(1)} trận/người, áp lực đối thủ ${pressure.opponent_pressure.toFixed(2)}. Lặp có thể là giới hạn tổ hợp, không phải do lỗi engine.`,
       alternatives: compactAlternatives([
-        lowerCourt ? setCourtsAlternative(nPlayers, durationMin, matchDuration, preset, lowerCourt, 'Giam san de them nguoi nghi va mo them to hop vong sau.') : null,
+        lowerCourt ? setCourtsAlternative(nPlayers, durationMin, matchDuration, preset, lowerCourt, 'Giảm sân để thêm người nghỉ và mở thêm tổ hợp vòng sau.') : null,
         reduceDurationAlternative(nPlayers, durationMin, matchDuration, preset, recommended),
         preset !== 'relaxed' ? changePresetAlternative(nPlayers, durationMin, matchDuration, 'relaxed', recommended) : null,
-        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giu setup neu uu tien so tran/nguoi cao va chap nhan repeat.'),
+        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giữ setup nếu ưu tiên số trận/người cao và chấp nhận lặp.'),
       ]),
     })
   }
@@ -46,12 +46,12 @@ export function buildCourtWarnings(
     warnings.push({
       severity: nPlayers <= 9 && recommended.total_rounds >= 10 ? 'critical' : 'warning',
       type: 'small_group_long_session',
-      message: 'Nhom it nguoi va session dai se lap cap nhieu.',
-      why: `${nPlayers} nguoi choi ${recommended.total_rounds} vong nen so to hop partner/doi thu rat han che.`,
+      message: 'Nhóm ít người và buổi chơi dài sẽ lặp cặp nhiều.',
+      why: `${nPlayers} người chơi ${recommended.total_rounds} vòng nên số tổ hợp partner (đồng đội)/đối thủ rất hạn chế.`,
       alternatives: compactAlternatives([
         reduceDurationAlternative(nPlayers, durationMin, matchDuration, preset, recommended),
         preset !== 'relaxed' ? changePresetAlternative(nPlayers, durationMin, matchDuration, 'relaxed', recommended) : null,
-        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giu setup nay neu uu tien moi nguoi choi nhieu hon diversity.'),
+        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giữ setup này nếu ưu tiên mỗi người chơi nhiều hơn độ đa dạng.'),
       ]),
     })
   }
@@ -60,12 +60,12 @@ export function buildCourtWarnings(
     warnings.push({
       severity: 'warning',
       type: 'repeat_unavoidable',
-      message: 'Repeat gan nhu khong tranh duoc voi setup nay.',
-      why: `Moi nguoi du kien choi ${recommended.avg_matches_per_player.toFixed(1)} tran trong nhom ${nPlayers} nguoi.`,
+      message: 'Lặp gần như không tránh được với setup này.',
+      why: `Mỗi người dự kiến chơi ${recommended.avg_matches_per_player.toFixed(1)} trận trong nhóm ${nPlayers} người.`,
       alternatives: compactAlternatives([
         reduceDurationAlternative(nPlayers, durationMin, matchDuration, preset, recommended),
         preset !== 'relaxed' ? changePresetAlternative(nPlayers, durationMin, matchDuration, 'relaxed', recommended) : null,
-        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Chap nhan lap cap de giu so tran moi nguoi cao.'),
+        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Chấp nhận lặp cặp để giữ số trận mỗi người cao.'),
       ]),
     })
   }
@@ -77,11 +77,11 @@ export function buildCourtWarnings(
     warnings.push({
       severity: 'info',
       type: 'low_rotation',
-      message: 'Moi vong hoi it nguoi vao san.',
-      why: `Rotation ${(recommended.play_ratio * 100).toFixed(0)}% thap hon vung dep cua mode ${PRESETS[preset].label}.`,
+      message: 'Mỗi vòng hơi ít người vào sân.',
+      why: `Tỉ lệ vào sân ${(recommended.play_ratio * 100).toFixed(0)}% thấp hơn vùng đẹp của chế độ ${PRESETS[preset].label}.`,
       alternatives: compactAlternatives([
-        higherCourt ? setCourtsAlternativeIfUseful(nPlayers, durationMin, matchDuration, preset, higherCourt, 'Tang san de nhieu nguoi duoc xoay moi vong hon.') : null,
-        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giu setup neu muon nghi nhieu hon va tran it hon.'),
+        higherCourt ? setCourtsAlternativeIfUseful(nPlayers, durationMin, matchDuration, preset, higherCourt, 'Tăng sân để nhiều người được xoay mỗi vòng hơn.') : null,
+        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giữ setup nếu muốn nghỉ nhiều hơn và trận ít hơn.'),
       ]),
     })
   }
@@ -93,12 +93,12 @@ export function buildCourtWarnings(
     warnings.push({
       severity: 'info',
       type: 'high_rotation',
-      message: 'Moi vong co nhieu nguoi vao san, diversity co the giam.',
-      why: `Rotation ${(recommended.play_ratio * 100).toFixed(0)}% cao hon vung dep cua mode ${PRESETS[preset].label}.`,
+      message: 'Mỗi vòng có nhiều người vào sân, độ đa dạng (diversity) có thể giảm.',
+      why: `Tỉ lệ vào sân ${(recommended.play_ratio * 100).toFixed(0)}% cao hơn vùng đẹp của chế độ ${PRESETS[preset].label}.`,
       alternatives: compactAlternatives([
-        lowerCourt ? setCourtsAlternativeIfUseful(nPlayers, durationMin, matchDuration, preset, lowerCourt, 'Giam san de tao them luot nghi va xoay to hop.') : null,
+        lowerCourt ? setCourtsAlternativeIfUseful(nPlayers, durationMin, matchDuration, preset, lowerCourt, 'Giảm sân để tạo thêm lượt nghỉ và xoay tổ hợp.') : null,
         reduceDurationAlternative(nPlayers, durationMin, matchDuration, preset, recommended),
-        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giu setup neu uu tien choi nhieu.'),
+        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giữ setup nếu ưu tiên chơi nhiều.'),
       ]),
     })
   }
@@ -110,12 +110,12 @@ export function buildCourtWarnings(
     warnings.push({
       severity: 'warning',
       type: 'all_play_pressure',
-      message: 'Gan nhu all-play moi vong.',
-      why: 'Khi hau het moi nguoi deu choi moi vong, engine co it luot nghi de doi to hop partner/doi thu.',
+      message: 'Gần như chơi tất cả mỗi vòng (all-play).',
+      why: 'Khi hầu hết mọi người đều chơi mỗi vòng, engine có ít lượt nghỉ để đổi tổ hợp đồng đội (partner)/đối thủ.',
       alternatives: compactAlternatives([
-        lowerCourt ? setCourtsAlternativeIfUseful(nPlayers, durationMin, matchDuration, preset, lowerCourt, 'Giam san de tang diversity.') : null,
+        lowerCourt ? setCourtsAlternativeIfUseful(nPlayers, durationMin, matchDuration, preset, lowerCourt, 'Giảm sân để tăng độ đa dạng (diversity).') : null,
         reduceDurationAlternative(nPlayers, durationMin, matchDuration, preset, recommended),
-        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giu setup neu day la session choi nhieu.'),
+        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giữ setup nếu đây là buổi chơi nhiều.'),
       ]),
     })
   }
@@ -127,13 +127,13 @@ export function buildCourtWarnings(
     warnings.push({
       severity: 'info',
       type: 'target_unreachable',
-      message: 'Setup nay chua dat muc tieu so tran cua mode.',
-      why: `Du kien ${recommended.avg_matches_per_player.toFixed(1)} tran/nguoi, muc tieu ${PRESETS[preset].label} la ${PRESETS[preset].matches.toFixed(1)}.`,
+      message: 'Setup này chưa đạt mục tiêu số trận của chế độ.',
+      why: `Dự kiến ${recommended.avg_matches_per_player.toFixed(1)} trận/người, mục tiêu ${PRESETS[preset].label} là ${PRESETS[preset].matches.toFixed(1)}.`,
       alternatives: compactAlternatives([
-        higherCourt ? setCourtsAlternativeIfUseful(nPlayers, durationMin, matchDuration, preset, higherCourt, 'Tang san de gan muc tieu tran/nguoi hon.') : null,
+        higherCourt ? setCourtsAlternativeIfUseful(nPlayers, durationMin, matchDuration, preset, higherCourt, 'Tăng sân để gần mục tiêu trận/người hơn.') : null,
         increaseDurationAlternative(nPlayers, durationMin, matchDuration, preset, recommended),
         preset !== 'relaxed' ? changePresetAlternative(nPlayers, durationMin, matchDuration, 'relaxed', recommended) : null,
-        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giu setup neu muon session nhe hon target.'),
+        acceptTradeoffAlternative(nPlayers, durationMin, matchDuration, preset, recommended, 'Giữ setup nếu muốn buổi chơi nhẹ hơn target.'),
       ]),
     })
   }
@@ -153,9 +153,9 @@ function reduceDurationAlternative(
 
   return {
     action: 'set_duration',
-    label: `Giam con ${nextDuration}p`,
-    expected_effect: `Giam so vong ${option.total_rounds} -> ${roundsFor(nextDuration, matchDuration)}, repeat risk thap hon.`,
-    tradeoff: 'Moi nguoi se choi it tran hon.',
+    label: `Giảm còn ${nextDuration}p`,
+    expected_effect: `Giảm số vòng ${option.total_rounds} ➔ ${roundsFor(nextDuration, matchDuration)}, nguy cơ lặp (repeat risk) thấp hơn.`,
+    tradeoff: 'Mỗi người sẽ chơi ít trận hơn.',
     duration_min: nextDuration,
     preview: buildPreview(nPlayers, nextDuration, matchDuration, preset, option.courts),
   }
@@ -174,9 +174,9 @@ function increaseDurationAlternative(
 
   return {
     action: 'set_duration',
-    label: `Tang len ${nextDuration}p`,
-    expected_effect: `Tang so vong ${option.total_rounds} -> ${roundsFor(nextDuration, matchDuration)}, gan target tran/nguoi hon.`,
-    tradeoff: 'Session dai hon va repeat co the tang neu nhom it nguoi.',
+    label: `Tăng lên ${nextDuration}p`,
+    expected_effect: `Tăng số vòng ${option.total_rounds} ➔ ${roundsFor(nextDuration, matchDuration)}, gần mục tiêu trận/người hơn.`,
+    tradeoff: 'Buổi chơi dài hơn và lặp có thể tăng nếu nhóm ít người.',
     duration_min: nextDuration,
     preview,
   }
@@ -191,9 +191,9 @@ function changePresetAlternative(
 ): CourtWarningAlternative {
   return {
     action: 'set_preset',
-    label: `Doi ${PRESETS[preset].label}`,
-    expected_effect: `Doi muc tieu sang ${PRESETS[preset].description}.`,
-    tradeoff: 'Recommendation so san co the thay doi theo muc tieu moi.',
+    label: `Đổi sang ${PRESETS[preset].label}`,
+    expected_effect: `Đổi mục tiêu sang ${PRESETS[preset].description}.`,
+    tradeoff: 'Khuyến nghị số sân có thể thay đổi theo mục tiêu mới.',
     preset,
     preview: buildPreview(nPlayers, durationMin, matchDuration, preset, option.courts),
   }
@@ -209,9 +209,9 @@ function setCourtsAlternative(
 ): CourtWarningAlternative {
   return {
     action: 'set_courts',
-    label: `Chon ${option.courts} san`,
+    label: `Chọn ${option.courts} sân`,
     expected_effect: expectedEffect,
-    tradeoff: `${option.avg_matches_per_player.toFixed(1)} tran/nguoi, rotation ${(option.play_ratio * 100).toFixed(0)}%.`,
+    tradeoff: `${option.avg_matches_per_player.toFixed(1)} trận/người, tỉ lệ vào sân ${(option.play_ratio * 100).toFixed(0)}%.`,
     courts: option.courts,
     preview: buildPreview(nPlayers, durationMin, matchDuration, preset, option.courts),
   }
@@ -239,9 +239,9 @@ function acceptTradeoffAlternative(
 ): CourtWarningAlternative {
   return {
     action: 'accept_tradeoff',
-    label: 'Giu setup',
+    label: 'Giữ setup',
     expected_effect: expectedEffect,
-    tradeoff: 'Host chap nhan tradeoff nay.',
+    tradeoff: 'Host chấp nhận đánh đổi (tradeoff) này.',
     preview: buildPreview(nPlayers, durationMin, matchDuration, preset, option.courts),
   }
 }

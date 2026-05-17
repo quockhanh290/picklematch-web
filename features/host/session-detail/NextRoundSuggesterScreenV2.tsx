@@ -87,6 +87,13 @@ function churnLevelLabel(level: string) {
   return level
 }
 
+function feasibilityLabel(feasibility: string) {
+  if (feasibility === 'optimal') return 'Tối ưu'
+  if (feasibility === 'tight') return 'Vừa khít'
+  if (feasibility === 'infeasible') return 'Không khả thi'
+  return feasibility
+}
+
 function warningTitle(type: string) {
   if (type === 'match_count_imbalance') return 'Lệch số trận'
   if (type === 'projected_match_count_imbalance') return 'Sắp lệch số trận'
@@ -110,24 +117,22 @@ function warningTone(theme: ReturnType<typeof useAppTheme>, severity: FairnessWa
 
 function toUserSafeActionError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? '')
-  const safeMessages = [
-    'A round is already active',
-    'A player can only be assigned once per round',
-    'Could not read login session. Open in Safari/Chrome or sign in again.',
-    'Invalid manual matches',
-    'Manual match has invalid court index',
-    'Manual matches cannot reuse the same court',
-    'Manual matches exceed court count',
-    'Manual matches must use checked-in players',
-    'Request timed out. Check your connection and try again.',
-    'Round commit audit failed. Please refresh before continuing.',
-    'Session changed. Refresh and review the swapped round before starting.',
-    'Temporary network issue. Please try again.',
-  ]
-
-  if (safeMessages.includes(message)) return message
-  if (message.startsWith('Could not ')) return message
-  return 'Action failed. Please try again.'
+  
+  if (message.includes('A round is already active')) return 'Đang có vòng đấu đang diễn ra.'
+  if (message.includes('A player can only be assigned once per round')) return 'Mỗi người chơi chỉ có thể xếp lịch 1 lần trong mỗi vòng.'
+  if (message.includes('Could not read login session')) return 'Không thể đọc phiên đăng nhập. Vui lòng mở bằng Safari/Chrome hoặc đăng nhập lại.'
+  if (message.includes('Invalid manual matches')) return 'Các trận đấu tự chọn không hợp lệ.'
+  if (message.includes('Manual match has invalid court index')) return 'Trận đấu tự chọn có số sân không hợp lệ.'
+  if (message.includes('Manual matches cannot reuse the same court')) return 'Các trận đấu tự chọn không thể trùng sân.'
+  if (message.includes('Manual matches exceed court count')) return 'Số trận đấu tự chọn vượt quá số lượng sân.'
+  if (message.includes('Manual matches must use checked-in players')) return 'Trận đấu tự chọn phải sử dụng người chơi đã check-in.'
+  if (message.includes('Request timed out')) return 'Yêu cầu quá hạn. Vui lòng kiểm tra kết nối mạng và thử lại.'
+  if (message.includes('Round commit audit failed')) return 'Đánh giá lưu vòng thất bại. Vui lòng làm mới trước khi tiếp tục.'
+  if (message.includes('Session changed')) return 'Buổi chơi đã thay đổi. Vui lòng làm mới và kiểm tra vòng đấu đã đổi trước khi bắt đầu.'
+  if (message.includes('Temporary network issue')) return 'Lỗi kết nối mạng tạm thời. Vui lòng thử lại.'
+  
+  if (message.startsWith('Could not ')) return 'Không thể thực hiện thao tác: ' + message
+  return 'Thao tác thất bại. Vui lòng thử lại.'
 }
 
 export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextRoundSuggesterV2Props) {
@@ -361,7 +366,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       if (result.error) setError(result.error)
       return
     }
-    rememberRoundSelection(`Swap ${playerName(fromId, playersById)}`)
+    rememberRoundSelection(`Đổi ${playerName(fromId, playersById)}`)
     setManualAlternative(result.alternative)
     setSwapFromPlayerId(null)
     setSheet(null)
@@ -379,7 +384,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      <SecondaryNavbar title="NEXT ROUND" rightSlot={navbarRightSlot} />
+      <SecondaryNavbar title="VÒNG KẾ TIẾP" rightSlot={navbarRightSlot} />
       {phase === 'recap' ? (
         <RecapViewModule
           summary={sessionSummary}
@@ -449,7 +454,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
               />
               {workingAlternative ? (
                 <>
-                  <FairnessPreviewCard preview={fairnessPreview} onPress={() => setSheet('preview')} />
+                  {fairnessPreview ? (
+                    <FairnessPreviewCard preview={fairnessPreview} onPress={() => setSheet('preview')} />
+                  ) : null}
                   <EngineExplainCard
                     alternative={workingAlternative}
                     actions={suggestedRoundActions}
@@ -844,7 +851,7 @@ function FairnessPreviewCard({ preview, onPress }: { preview: FairnessPreview; o
 function FairnessPreviewSheet({ preview }: { preview: FairnessPreview | null }) {
   const theme = useAppTheme()
   if (!preview) {
-    return <SheetTitle title="Dự kiến điểm vòng kế" subtitle="Chưa có phương án vòng kế để audit." />
+    return <SheetTitle title="Dự kiến điểm vòng kế" subtitle="Chưa có phương án vòng kế để đánh giá." />
   }
 
   const tone = preview.delta_total >= 0 ? theme.successText : theme.warningText
@@ -857,11 +864,11 @@ function FairnessPreviewSheet({ preview }: { preview: FairnessPreview | null }) 
   const availabilityText = preview.availability_after.churn_level === 'low'
     ? 'Danh sách người chơi ổn định.'
     : preview.availability_after.churn_level === 'medium'
-      ? 'Có thay đổi người chơi, điểm fairness đã tính nhẹ hơn.'
+      ? 'Có thay đổi người chơi, điểm độ cân bằng (fairness) đã tính nhẹ hơn.'
       : 'Người vào/ra nhiều, nên xem đây là kèo khó giữ đều tuyệt đối.'
   return (
     <View>
-      <SheetTitle title="Nếu bắt đầu vòng này" subtitle="Ước tính fairness sau khi lưu phương án đang chọn." />
+      <SheetTitle title="Nếu bắt đầu vòng này" subtitle="Ước tính độ cân bằng sau khi lưu phương án đang chọn." />
       <LinearGradient colors={[theme.heroGradientStart, theme.primaryContainer]} style={{ borderRadius: RADIUS.lg, padding: 16, marginBottom: 14 }}>
         <Text style={eyebrowStyle(theme.heroCountdownText)}>Điểm dự kiến</Text>
         <Text style={{ marginTop: 8, fontFamily: SCREEN_FONTS.headlineItalic, fontSize: 42, color: theme.surface }}>
@@ -876,7 +883,7 @@ function FairnessPreviewSheet({ preview }: { preview: FairnessPreview | null }) 
 
       <Card style={{ borderRadius: RADIUS.md, padding: 12, marginBottom: 12, backgroundColor: summaryBg }}>
         <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: tone }}>
-          {preview.delta_total >= 0 ? 'Phương án này giữ fairness tốt' : 'Phương án này làm fairness giảm'}
+          {preview.delta_total >= 0 ? 'Phương án này giữ độ cân bằng tốt' : 'Phương án này làm giảm độ cân bằng'}
         </Text>
         <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: tone }}>
           Điểm thay đổi {preview.delta_total > 0 ? '+' : ''}{preview.delta_total}. {pressureText} {availabilityText}
@@ -1407,7 +1414,7 @@ function CourtSuggestionOptions({
                     {option.courts} sân · {option.avg_matches_per_player.toFixed(1)} trận/người
                   </Text>
                   <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                    {option.total_rounds} vòng · nghỉ {option.resting_per_round}/vòng · repeat {option.repeat_pressure.risk}
+                    {option.total_rounds} vòng · nghỉ {option.resting_per_round}/vòng · lặp {repeatRiskLabel(option.repeat_pressure.risk)}
                   </Text>
                   {option.warnings[0] ? (
                     <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.warningText }}>
@@ -1417,7 +1424,7 @@ function CourtSuggestionOptions({
                 </View>
                 <View style={{ borderRadius: RADIUS.full, backgroundColor: recommended ? theme.heroCountdownText : theme.surfaceContainerLow, paddingHorizontal: 9, paddingVertical: 5 }}>
                   <Text style={ctaTextStyle(recommended ? theme.primaryContainer : toneColor, 10)}>
-                    {recommended ? 'Đề xuất' : option.feasibility}
+                    {recommended ? 'Đề xuất' : feasibilityLabel(option.feasibility)}
                   </Text>
                 </View>
               </View>

@@ -103,11 +103,11 @@ function buildFairnessAuditBetweenStates(
   const availabilityBefore = computeAvailabilityMetrics(beforeState)
   const availabilityAfter = computeAvailabilityMetrics(afterState)
   const rows = ([
-    ['match_count', 'So tran', describeMatchCount(afterState)],
-    ['partner_diversity', 'Partner', describePartnerDiversity(afterState)],
-    ['opponent_diversity', 'Doi thu', describeOpponentDiversity(afterState)],
-    ['rest', 'Nghi', describeRestFairness(afterState)],
-    ['gender_prefs', 'Gender pref', describeGenderPrefs(afterState)],
+    ['match_count', 'Số trận', describeMatchCount(afterState)],
+    ['partner_diversity', 'Đồng đội', describePartnerDiversity(afterState)],
+    ['opponent_diversity', 'Đối thủ', describeOpponentDiversity(afterState)],
+    ['rest', 'Nghỉ', describeRestFairness(afterState)],
+    ['gender_prefs', 'Sở thích giới tính', describeGenderPrefs(afterState)],
   ] as Array<[keyof SessionFairnessScore['breakdown'], string, string]>).map(([key, label, detail]) => {
     const before = beforeScore.breakdown[key]
     const after = afterScore.breakdown[key]
@@ -136,14 +136,17 @@ function buildFairnessAuditBetweenStates(
 function describeMatchCount(state: SessionState): string {
   const metrics = computeMatchCountMetrics(state)
   const availability = computeAvailabilityMetrics(state)
-  return `min ${metrics.min}, max ${metrics.max}, avg ${metrics.avg.toFixed(1)}, range ${metrics.range}, expected delta range ${availability.expected_match_delta_range.toFixed(1)}, availability ${availability.churn_level} x${availability.penalty_multiplier.toFixed(2)}`
+  const churnText = availability.churn_level === 'low' ? 'thấp' : availability.churn_level === 'medium' ? 'vừa' : 'cao'
+  return `nhỏ nhất ${metrics.min}, lớn nhất ${metrics.max}, TB ${metrics.avg.toFixed(1)}, chênh lệch ${metrics.range}, chênh lệch dự kiến ${availability.expected_match_delta_range.toFixed(1)}, biến động người chơi ${churnText} x${availability.penalty_multiplier.toFixed(2)}`
 }
 
 function describePartnerDiversity(state: SessionState): string {
   const metrics = computePartnerDiversity(state)
   const pressure = computeRepeatPressure(state)
   const availability = computeAvailabilityMetrics(state)
-  return `avg unique ${metrics.avg_unique_partners.toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(20 * metrics.avg_diversity_ratio).toFixed(1)}/20, adjusted by pressure ${pressure.repeat_risk} x${pressure.penalty_multiplier.toFixed(2)} and availability ${availability.churn_level} x${availability.penalty_multiplier.toFixed(2)}, repeat pairs ${metrics.repeat_pairs.length}`
+  const pressureText = pressure.repeat_risk === 'low' ? 'thấp' : pressure.repeat_risk === 'medium' ? 'vừa' : 'cao'
+  const churnText = availability.churn_level === 'low' ? 'thấp' : availability.churn_level === 'medium' ? 'vừa' : 'cao'
+  return `TB đồng đội khác ${metrics.avg_unique_partners.toFixed(1)}, tỉ lệ ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, điểm gốc ${(20 * metrics.avg_diversity_ratio).toFixed(1)}/20, hiệu chỉnh theo áp lực lặp ${pressureText} x${pressure.penalty_multiplier.toFixed(2)} và biến động ${churnText} x${availability.penalty_multiplier.toFixed(2)}, cặp lặp ${metrics.repeat_pairs.length}`
 }
 
 function describeOpponentDiversity(state: SessionState): string {
@@ -151,17 +154,19 @@ function describeOpponentDiversity(state: SessionState): string {
   const burden = computeOpponentRepeatBurden(state)
   const pressure = computeRepeatPressure(state)
   const availability = computeAvailabilityMetrics(state)
-  return `avg unique ${(metrics.avg_unique_opponents ?? metrics.avg_unique_partners).toFixed(1)}, ratio ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, raw ${(15 * metrics.avg_diversity_ratio).toFixed(1)}/15, adjusted by pressure ${pressure.repeat_risk} x${pressure.penalty_multiplier.toFixed(2)} and availability ${availability.churn_level} x${availability.penalty_multiplier.toFixed(2)}, repeat pairs ${metrics.repeat_pairs.length}, max burden ${burden.max_repeated_opponents}`
+  const pressureText = pressure.repeat_risk === 'low' ? 'thấp' : pressure.repeat_risk === 'medium' ? 'vừa' : 'cao'
+  const churnText = availability.churn_level === 'low' ? 'thấp' : availability.churn_level === 'medium' ? 'vừa' : 'cao'
+  return `TB đối thủ khác ${(metrics.avg_unique_opponents ?? metrics.avg_unique_partners).toFixed(1)}, tỉ lệ ${(metrics.avg_diversity_ratio * 100).toFixed(0)}%, điểm gốc ${(15 * metrics.avg_diversity_ratio).toFixed(1)}/15, hiệu chỉnh theo áp lực lặp ${pressureText} x${pressure.penalty_multiplier.toFixed(2)} và biến động ${churnText} x${availability.penalty_multiplier.toFixed(2)}, cặp lặp đối thủ ${metrics.repeat_pairs.length}, tải lặp tối đa ${burden.max_repeated_opponents}`
 }
 
 function describeRestFairness(state: SessionState): string {
   const metrics = computeRestFairness(state)
   const maxRest = Math.max(0, ...metrics.per_player.map((player) => player.max_consecutive_rest))
-  return `max lien tiep ${maxRest}, violations ${metrics.violations.length}`
+  return `nghỉ liên tiếp tối đa ${maxRest}, số lần vi phạm nghỉ ${metrics.violations.length}`
 }
 
 function describeGenderPrefs(state: SessionState): string {
   const metrics = computeGenderPrefSatisfaction(state)
-  if (metrics.total_pref_opportunities === 0) return 'khong co preference opportunity'
-  return `${metrics.satisfied_count}/${metrics.total_pref_opportunities} satisfied (${Math.round(metrics.satisfaction_rate * 100)}%)`
+  if (metrics.total_pref_opportunities === 0) return 'không có cơ hội đáp ứng sở thích'
+  return `${metrics.satisfied_count}/${metrics.total_pref_opportunities} thỏa mãn (${Math.round(metrics.satisfaction_rate * 100)}%)`
 }

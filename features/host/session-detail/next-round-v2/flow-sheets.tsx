@@ -225,7 +225,7 @@ export function RosterSheet({
         <View>
       <SheetTitle title="Người chơi" subtitle="Tap từng người để check-out, xin nghỉ, group hoặc swap." />
       <TouchableOpacity onPress={onSyncRoster} style={{ height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-        {busy === 'sync' ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Sync roster</Text>}
+        {busy === 'sync' ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Đồng bộ danh sách</Text>}
       </TouchableOpacity>
         </View>
       )}
@@ -254,7 +254,7 @@ export function RosterSheet({
                   <MiniAction label={row.opted_rest ? 'Bỏ nghỉ' : 'Xin nghỉ'} icon={History} onPress={() => onToggleRest(playerId, row.opted_rest)} tone="neutral" />
                   <MiniAction label={selectedForGroup ? 'Bỏ chọn' : 'Chọn group'} icon={Users} onPress={() => onToggleGroupSelection(playerId)} tone={selectedForGroup ? 'good' : 'neutral'} />
                   {row.group_id ? <MiniAction label="Xóa group" icon={X} onPress={() => onClearGroup(playerId)} tone="neutral" /> : null}
-                  <MiniAction label="Swap" icon={Zap} onPress={() => onSwap(playerId)} tone="good" />
+                  <MiniAction label="Đổi người" icon={Zap} onPress={() => onSwap(playerId)} tone="good" />
                 </View>
               ) : null}
             </Card>
@@ -279,7 +279,7 @@ export function RosterSheet({
           ) : null}
           <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 12 }}>
             <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.primary }}>
-              Chọn 2+ người chơi để tạo group. Engine sẽ ưu tiên xếp họ cùng team hoặc cùng sân nhưng không bắt buộc.
+              Chọn từ 2 người chơi trở lên để tạo nhóm. Engine sẽ ưu tiên xếp họ cùng đội hoặc cùng sân nhưng không bắt buộc.
             </Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -288,7 +288,7 @@ export function RosterSheet({
               disabled={groupSelection.length < 2 || Boolean(busy?.startsWith('group-'))}
               style={{ flex: 1, height: 48, borderRadius: RADIUS.md, backgroundColor: groupSelection.length >= 2 ? theme.primary : theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}
             >
-              {busy?.startsWith('group-') ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Tạo group ({groupSelection.length})</Text>}
+              {busy?.startsWith('group-') ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Tạo nhóm ({groupSelection.length})</Text>}
             </TouchableOpacity>
             {groupSelection.length > 0 ? (
               <TouchableOpacity onPress={onClearGroupSelection} style={{ width: 48, height: 48, borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' }}>
@@ -352,9 +352,9 @@ export function MoreSheet({
     <View>
       <SheetTitle title="Thao tác nhanh" />
       <View style={{ gap: 10 }}>
-        <SheetAction label="Sync roster" onPress={onSyncRoster} loading={busy === 'sync'} />
+        <SheetAction label="Đồng bộ danh sách" onPress={onSyncRoster} loading={busy === 'sync'} />
         <SheetAction label="Người chơi" onPress={onOpenRoster} />
-        <SheetAction label="Fairness audit" onPress={onOpenFairness} />
+        <SheetAction label="Đánh giá Fairness" onPress={onOpenFairness} />
         <SheetAction label="Lịch sử vòng" onPress={onOpenHistory} />
       </View>
     </View>
@@ -374,10 +374,10 @@ export function GroupAuditBlock({
   const rows = buildGroupAuditRows(state, groupSummaries)
   return (
     <View style={{ marginTop: 14 }}>
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Group audit</Text>
+      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Đánh giá Nhóm</Text>
       {rows.length === 0 ? (
         <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, padding: 12 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Chưa có group nào được tạo.</Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Chưa có nhóm nào được tạo.</Text>
         </View>
       ) : (
         <View style={{ gap: 10 }}>
@@ -392,7 +392,7 @@ export function GroupAuditBlock({
               <View style={{ marginTop: 8, gap: 4 }}>
                 {row.pair_counts.map(pair => (
                   <Text key={`${pair.player_a}-${pair.player_b}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-                    {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} trận chung team
+                    {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} trận chung đội
                   </Text>
                 ))}
               </View>
@@ -519,7 +519,7 @@ export function RecapView({
           {summary.total_rounds} vòng
         </Text>
         <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
-          {summary.total_players} người chơi · điểm fairness tổng session
+          {summary.total_players} người chơi · điểm fairness tổng buổi chơi
         </Text>
       </LinearGradient>
       <Card style={{ padding: 16, marginBottom: 14 }}>

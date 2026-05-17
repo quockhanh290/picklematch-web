@@ -106,7 +106,7 @@ export function buildSuggestedRoundActions(input: {
   if (better) {
     actions.push({
       type: 'select_alternative',
-      label: `Chon phuong an ${better.index + 1}`,
+      label: `Chọn phương án ${better.index + 1}`,
       detail: describeAlternativeDelta(current, better),
       alternative_index: better.index,
       before: current,
@@ -121,11 +121,11 @@ export function buildSuggestedRoundActions(input: {
     })
     actions.push({
       type: 'set_pvna_tolerance',
-      label: 'Tradeoff: Thu PVNA +/-0.8',
+      label: 'Đánh đổi: Thử PVNA ±0.8',
       detail: describeSetupTradeoff(
         current,
         after,
-        'Noi tolerance de engine co them split hop le. Tradeoff: tran co the lech trinh hon.',
+        'Nới rộng dung sai (tolerance) để thuật toán có thêm tổ hợp hợp lệ. Đánh đổi: trình độ các trận có thể lệch hơn.',
       ),
       pvna_tolerance: 0.8,
       before: current,
@@ -140,11 +140,11 @@ export function buildSuggestedRoundActions(input: {
     })
     actions.push({
       type: 'set_courts',
-      label: `Tradeoff: Giam con ${input.courtCount - 1} san`,
+      label: `Đánh đổi: Giảm còn ${input.courtCount - 1} sân`,
       detail: describeSetupTradeoff(
         current,
         after,
-        'Giam slot vong nay de co them nguoi nghi va doi to hop. Tradeoff: it nguoi duoc choi vong nay.',
+        'Giảm số sân vòng này để thêm người nghỉ và xoay vòng tổ hợp tốt hơn. Đánh đổi: ít người được chơi vòng này hơn.',
       ),
       courts: input.courtCount - 1,
       before: current,
@@ -155,8 +155,8 @@ export function buildSuggestedRoundActions(input: {
   if (actions.length > 0) {
     actions.push({
       type: 'accept_tradeoff',
-      label: 'Chap nhan phuong an nay',
-      detail: `Giu setup hien tai va start. Repeat pressure ${pressure.repeat_risk}, host chap nhan tradeoff.`,
+      label: 'Chấp nhận phương án này',
+      detail: `Giữ cấu hình hiện tại và bắt đầu. Áp lực lặp: ${pressure.repeat_risk === 'low' ? 'thấp' : pressure.repeat_risk === 'medium' ? 'vừa' : 'cao'}, host chấp nhận đánh đổi.`,
       before: current,
     })
   }
@@ -243,7 +243,7 @@ function describeSetupTradeoff(before: AlternativeAudit, after: AlternativeAudit
 
   return [
     describeAlternativeDelta(before, after),
-    `repeat pairs ${formatSigned(repeatDelta)}`,
-    'host tu quyet tradeoff',
+    `cặp lặp ${formatSigned(repeatDelta)}`,
+    'host tự quyết định đánh đổi',
   ].join(', ')
 }

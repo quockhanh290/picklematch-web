@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type { SessionPairHistoryRow } from '@/lib/next-round-suggester/types'
+import type { SessionPairHistoryRow, SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 
-import { getPlayerPvna, normalizeRoundRow } from './helpers'
+import { getPlayerPvna, normalizeRoundRow, type RawRoundRow } from './helpers'
 import type { LiveRows } from './types'
 
 export function useLiveRows(sessionId: string, playersById: Map<string, ArrangementPlayer>) {

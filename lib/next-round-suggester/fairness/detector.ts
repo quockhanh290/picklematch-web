@@ -51,8 +51,8 @@ function detectAvailabilityIssues(state: SessionState): FairnessWarning[] {
       severity: availability.churn_level === 'extreme' ? 'warning' : 'info',
       type: 'availability_pressure',
       affected_players: [],
-      message: `Roster thay doi ${availability.churn_level}: ${availability.total_roster_changes} luot vao/ra, avg churn ${(availability.avg_churn_ratio * 100).toFixed(0)}%, max churn ${(availability.max_churn_ratio * 100).toFixed(0)}%.`,
-      suggested_action: 'Fairness score da giam nhe penalty repeat/match-count vi repeat mot phan den tu nguoi vao/ra giua session.',
+      message: `Danh sách thay đổi ở mức ${availability.churn_level}: ${availability.total_roster_changes} lượt vào/ra, tỷ lệ thay đổi trung bình ${(availability.avg_churn_ratio * 100).toFixed(0)}%, cao nhất ${(availability.max_churn_ratio * 100).toFixed(0)}%.`,
+      suggested_action: 'Điểm Fairness đã giảm nhẹ phạt lặp/chênh lệch trận vì sự lặp lại một phần đến từ người vào/ra giữa buổi chơi.',
     },
   ]
 }
@@ -68,8 +68,8 @@ function detectRepeatPressureIssues(state: SessionState): FairnessWarning[] {
       severity: pressure.repeat_risk === 'extreme' ? 'warning' : 'info',
       type: 'repeat_pressure',
       affected_players: [],
-      message: `Setup repeat pressure ${pressure.repeat_risk}: avg ${pressure.avg_matches_per_player.toFixed(1)} tran/nguoi, opponent pressure ${pressure.opponent_pressure.toFixed(2)}.`,
-      suggested_action: 'Repeat co the den tu setup; host co the giam san, giam vong, tang tolerance, hoac chap nhan neu uu tien choi nhieu.',
+      message: `Cài đặt áp lực lặp ở mức ${pressure.repeat_risk}: trung bình ${pressure.avg_matches_per_player.toFixed(1)} trận/người, áp lực đối thủ ${pressure.opponent_pressure.toFixed(2)}.`,
+      suggested_action: 'Sự lặp lại có thể đến từ cài đặt; host có thể giảm sân, giảm vòng, tăng dung sai, hoặc chấp nhận nếu ưu tiên chơi nhiều.',
     },
   ]
 }
@@ -97,11 +97,11 @@ function detectOpponentBurdenIssues(state: SessionState): FairnessWarning[] {
       type: 'opponent_repeat_burden',
       affected_players: overloaded.map((player) => player.player_id),
       message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? `${overloaded.length} nguoi dang lap doi thu; setup repeat pressure ${pressure.repeat_risk}.`
-        : `${overloaded.length} nguoi dang gap lai nhieu doi thu (${maxBurden}+ cap lap).`,
+        ? `${overloaded.length} người đang bị lặp đối thủ; cài đặt áp lực lặp ở mức ${pressure.repeat_risk}.`
+        : `${overloaded.length} người đang gặp lại nhiều đối thủ (lặp ${maxBurden}+ cặp).`,
       suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? 'Engine van rai deu doi thu lap; host co the chon tradeoff setup neu muon giam repeat manh hon.'
-        : 'Engine se uu tien rai deu doi thu lap o vong ke tiep.',
+        ? 'Engine vẫn rải đều đối thủ lặp; host có thể chọn tinh chỉnh cài đặt nếu muốn giảm lặp mạnh hơn.'
+        : 'Engine sẽ ưu tiên rải đều đối thủ lặp ở vòng kế tiếp.',
     },
   ]
 }
@@ -131,9 +131,9 @@ function detectMatchCountIssues(state: SessionState): FairnessWarning[] {
       type: 'match_count_imbalance',
       affected_players: underplayed.length > 0 ? underplayed : getUnderplayedByMinimum(metrics),
       message: availability.rounds_tracked > 0
-        ? `Chenh so tran theo thoi gian co mat dang la ${observedRange.toFixed(1)}, muc hop ly la ${allowedRange}.`
-        : `Chenh so tran dang la ${metrics.range}, muc hop ly la ${allowedRange}.`,
-      suggested_action: 'Engine se uu tien cac ban dang choi it tran hon o vong ke tiep.',
+        ? `Chênh lệch số trận theo thời gian có mặt đang là ${observedRange.toFixed(1)}, mức hợp lý là ${allowedRange}.`
+        : `Chênh lệch số trận đang là ${metrics.range}, mức hợp lý là ${allowedRange}.`,
+      suggested_action: 'Engine sẽ ưu tiên các bạn đang chơi ít trận hơn ở vòng kế tiếp.',
     })
   }
 
@@ -142,8 +142,8 @@ function detectMatchCountIssues(state: SessionState): FairnessWarning[] {
       severity: 'warning',
       type: 'underplayed',
       affected_players: underplayed,
-      message: `${underplayed.length} nguoi dang choi it hon trung binh.`,
-      suggested_action: 'Engine se uu tien nhom nay neu con du slot o vong toi.',
+      message: `${underplayed.length} người đang chơi ít hơn trung bình.`,
+      suggested_action: 'Engine sẽ ưu tiên nhóm này nếu còn dư slot ở vòng tới.',
     })
   }
 
@@ -168,11 +168,11 @@ function detectPartnerIssues(state: SessionState): FairnessWarning[] {
       type: 'partner_repeat',
       affected_players: uniquePlayers(highRepeats.flatMap((pair) => [pair.player_a, pair.player_b])),
       message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? `${highRepeats.length} cap da danh chung 3+ lan; setup repeat pressure ${pressure.repeat_risk}.`
-        : `${highRepeats.length} cap da danh chung 3+ lan.`,
+        ? `${highRepeats.length} cặp đã đánh chung 3+ lần; cài đặt áp lực lặp ở mức ${pressure.repeat_risk}.`
+        : `${highRepeats.length} cặp đã đánh chung 3+ lần.`,
       suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? 'Engine van tranh lap partner; host co the giam san/giam vong/tang tolerance neu muon giam repeat manh hon.'
-        : 'Engine se tang uu tien tranh lap partner.',
+        ? 'Engine vẫn tránh lặp đồng đội; host có thể giảm sân/giảm vòng/tăng dung sai nếu muốn giảm lặp mạnh hơn.'
+        : 'Engine sẽ tăng ưu tiên tránh lặp đồng đội.',
     },
   ]
 }
@@ -190,11 +190,11 @@ function detectOpponentIssues(state: SessionState): FairnessWarning[] {
       type: 'opponent_repeat',
       affected_players: uniquePlayers(highRepeats.flatMap((pair) => [pair.player_a, pair.player_b])),
       message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? `${highRepeats.length} cap da doi dau 3+ lan; setup repeat pressure ${pressure.repeat_risk}.`
-        : `${highRepeats.length} cap da doi dau 3+ lan.`,
+        ? `${highRepeats.length} cặp đã đối đầu 3+ lần; cài đặt áp lực lặp ở mức ${pressure.repeat_risk}.`
+        : `${highRepeats.length} cặp đã đối đầu 3+ lần.`,
       suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? 'Engine van tranh lap doi thu; host co the giam san/giam vong/tang tolerance neu muon giam repeat manh hon.'
-        : 'Engine se tang uu tien tranh lap doi thu.',
+        ? 'Engine vẫn tránh lặp đối thủ; host có thể giảm sân/giảm vòng/tăng dung sai nếu muốn giảm lặp mạnh hơn.'
+        : 'Engine sẽ tăng ưu tiên tránh lặp đối thủ.',
     },
   ]
 }
@@ -211,8 +211,8 @@ function detectRestViolations(state: SessionState): FairnessWarning[] {
       severity: 'critical',
       type: 'rest_violation',
       affected_players: violations.map((player) => player.player_id),
-      message: `${violations.length} nguoi da nghi 2+ vong lien tiep.`,
-      suggested_action: 'Engine se force play vong ke tiep.',
+      message: `${violations.length} người đã nghỉ 2+ vòng liên tiếp.`,
+      suggested_action: 'Engine sẽ bắt buộc chơi ở vòng kế tiếp.',
     },
   ]
 }
@@ -230,8 +230,8 @@ function detectGenderIssues(state: SessionState): FairnessWarning[] {
       severity: 'warning',
       type: 'gender_pref_unsatisfied',
       affected_players: getLowGenderSatisfactionPlayers(metrics.per_player),
-      message: 'Mot so preferences chua duoc dap ung tot.',
-      suggested_action: 'Engine se uu tien satisfy preferences.',
+      message: 'Một số yêu cầu ưu tiên chưa được đáp ứng tốt.',
+      suggested_action: 'Engine sẽ ưu tiên đáp ứng yêu cầu ưu tiên.',
     })
   }
 
@@ -241,7 +241,7 @@ function detectGenderIssues(state: SessionState): FairnessWarning[] {
       type: 'gender_pref_impossible',
       affected_players: [item.player_id],
       message: item.reason,
-      suggested_action: 'Engine se bo qua preference nay khi can.',
+      suggested_action: 'Engine sẽ bỏ qua ưu tiên này khi cần.',
     })
   }
 
