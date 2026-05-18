@@ -159,7 +159,7 @@ export function HomeScreen() {
   }
 
   return (
-    <View className="flex-1" style={{ backgroundColor: theme.background }}>
+    <View className="flex-1" style={{ backgroundColor: theme.background }} testID="player-home-screen">
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 160 }}

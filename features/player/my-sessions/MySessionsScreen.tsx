@@ -223,9 +223,10 @@ export function MySessionsScreen() {
   const activeTabCount = isHistoryTab ? filteredHistorySessions.length : (sessionsByTab[activeTab]?.length ?? 0)
 
   return (
-    <View 
-      style={{ 
-        flex: 1, 
+    <View
+      testID="player-my-sessions-screen"
+      style={{
+        flex: 1,
         backgroundColor: theme.background,
         ...(Platform.OS === 'web' ? { minHeight: '100dvh' } : {})
       }}

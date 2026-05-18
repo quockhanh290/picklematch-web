@@ -255,7 +255,7 @@ export function HostSessionDetailScreen({
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.background }}>
+    <View style={{ flex: 1, backgroundColor: theme.background }} testID="host-session-detail-screen">
       <SecondaryNavbar
         title="CHI TIẾT KÈO CHỦ SÂN"
         onBackPress={() => router.replace('/host/dashboard')}

@@ -153,7 +153,7 @@ export function PlayerSessionDetailScreen({
   const viewerSessionPlayer = session.session_players.find((item: any) => item.player_id === userId) ?? null
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.background }}>
+    <View style={{ flex: 1, backgroundColor: theme.background }} testID="player-session-detail-screen">
       <SecondaryNavbar
         title={STRINGS.session_detail.title}
         rightSlot={<NavbarShareButton onPress={() => void handleShare()} />}

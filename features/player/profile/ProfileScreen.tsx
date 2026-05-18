@@ -306,7 +306,7 @@ export function ProfileScreen() {
   const displayHistory = _history.length > 0 ? _history : _PROFILE_MOCK_HISTORY
 
   return (
-    <View className="flex-1" style={{ backgroundColor: theme.background }}>
+    <View className="flex-1" style={{ backgroundColor: theme.background }} testID="player-profile-screen">
       <StatusBar style="light" translucent backgroundColor="transparent" />
       <ScrollView 
         contentContainerStyle={{ flexGrow: 1 }} 

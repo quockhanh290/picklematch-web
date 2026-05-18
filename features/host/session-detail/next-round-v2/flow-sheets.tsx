@@ -224,7 +224,7 @@ export function RosterSheet({
       ListHeaderComponent={(
         <View>
       <SheetTitle title="Người chơi" subtitle="Tap từng người để check-out, xin nghỉ, group hoặc swap." />
-      <TouchableOpacity onPress={onSyncRoster} style={{ height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+      <TouchableOpacity testID="nrv2-roster-sync" onPress={onSyncRoster} style={{ height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
         {busy === 'sync' ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Đồng bộ danh sách</Text>}
       </TouchableOpacity>
         </View>
@@ -238,7 +238,7 @@ export function RosterSheet({
           const selectedForGroup = groupSelection.includes(playerId)
           return (
             <Card key={playerId} style={{ borderRadius: RADIUS.md, overflow: 'hidden', borderColor: selectedForGroup ? theme.primary : theme.outlineVariant }}>
-              <TouchableOpacity onPress={() => setExpandedPlayerId(expanded ? null : playerId)} style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <TouchableOpacity testID={`nrv2-roster-player-${playerId}`} onPress={() => setExpandedPlayerId(expanded ? null : playerId)} style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <PlayerAvatar name={playerName(playerId, playersById)} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
@@ -250,9 +250,9 @@ export function RosterSheet({
               </TouchableOpacity>
               {expanded ? (
                 <View style={{ borderTopWidth: BORDER.hairline, borderTopColor: theme.outlineVariant, padding: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  <MiniAction label={checkedOut ? 'Check-in' : 'Check-out'} icon={checkedOut ? UserPlus : UserMinus} onPress={() => onToggleCheckout(playerId, checkedOut)} tone={checkedOut ? 'good' : 'danger'} />
-                  <MiniAction label={row.opted_rest ? 'Bỏ nghỉ' : 'Xin nghỉ'} icon={History} onPress={() => onToggleRest(playerId, row.opted_rest)} tone="neutral" />
-                  <MiniAction label={selectedForGroup ? 'Bỏ chọn' : 'Chọn group'} icon={Users} onPress={() => onToggleGroupSelection(playerId)} tone={selectedForGroup ? 'good' : 'neutral'} />
+                  <MiniAction testID={`nrv2-roster-checkout-${playerId}`} label={checkedOut ? 'Check-in' : 'Check-out'} icon={checkedOut ? UserPlus : UserMinus} onPress={() => onToggleCheckout(playerId, checkedOut)} tone={checkedOut ? 'good' : 'danger'} />
+                  <MiniAction testID={`nrv2-roster-rest-${playerId}`} label={row.opted_rest ? 'Bỏ nghỉ' : 'Xin nghỉ'} icon={History} onPress={() => onToggleRest(playerId, row.opted_rest)} tone="neutral" />
+                  <MiniAction testID={`nrv2-roster-group-${playerId}`} label={selectedForGroup ? 'Bỏ chọn' : 'Chọn group'} icon={Users} onPress={() => onToggleGroupSelection(playerId)} tone={selectedForGroup ? 'good' : 'neutral'} />
                   {row.group_id ? <MiniAction label="Xóa group" icon={X} onPress={() => onClearGroup(playerId)} tone="neutral" /> : null}
                   <MiniAction label="Đổi người" icon={Zap} onPress={() => onSwap(playerId)} tone="good" />
                 </View>
@@ -284,6 +284,7 @@ export function RosterSheet({
           </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity
+              testID="nrv2-roster-create-group"
               onPress={onCreateGroup}
               disabled={groupSelection.length < 2 || Boolean(busy?.startsWith('group-'))}
               style={{ flex: 1, height: 48, borderRadius: RADIUS.md, backgroundColor: groupSelection.length >= 2 ? theme.primary : theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}

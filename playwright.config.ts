@@ -4,6 +4,7 @@ const PORT = Number(process.env.PLAYWRIGHT_WEB_PORT ?? 4173)
 const baseURL = `http://127.0.0.1:${PORT}`
 
 export default defineConfig({
+  globalSetup: './e2e/global-setup.ts',
   testDir: './e2e',
   timeout: 60_000,
   expect: {
@@ -33,30 +34,48 @@ export default defineConfig({
   projects: [
     {
       name: 'setup',
-      testMatch: /.*\.auth\.setup\.ts/,
+      testMatch: /host\.auth\.setup\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'player-setup',
+      testMatch: /player\.auth\.setup\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'chromium',
-      testIgnore: /.*\.auth\.setup\.ts/,
+      testIgnore: [/.*\.auth\.setup\.ts/, /player-critical\.spec\.ts/, /next-round\.spec\.ts/],
       use: { ...devices['Desktop Chrome'], storageState: 'e2e/.auth/host.json' },
       dependencies: ['setup'],
     },
     {
+      name: 'next-round-chromium',
+      testMatch: /next-round\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], storageState: 'e2e/.auth/host.json' },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'player-chromium',
+      testMatch: /player-critical\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], storageState: 'e2e/.auth/player.json' },
+      dependencies: ['player-setup'],
+    },
+    {
       name: 'mobile-chrome',
-      testIgnore: /.*\.auth\.setup\.ts/,
+      testIgnore: [/.*\.auth\.setup\.ts/, /player-critical\.spec\.ts/, /next-round\.spec\.ts/],
       use: { ...devices['Pixel 7'], storageState: 'e2e/.auth/host.json' },
       dependencies: ['setup'],
     },
     {
       name: 'mobile-safari',
-      testIgnore: /.*\.auth\.setup\.ts/,
+      testIgnore: [/.*\.auth\.setup\.ts/, /player-critical\.spec\.ts/, /next-round\.spec\.ts/],
       use: { ...devices['iPhone 14'], storageState: 'e2e/.auth/host.json' },
       dependencies: ['setup'],
     },
     {
       name: 'storage-blocked-simulation',
-      use: { 
+      testIgnore: [/player-critical\.spec\.ts/, /next-round\.spec\.ts/],
+      use: {
         ...devices['Pixel 7'],
         storageState: 'e2e/.auth/host.json',
       },

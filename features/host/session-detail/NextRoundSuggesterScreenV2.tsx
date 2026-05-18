@@ -380,7 +380,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.background }}>
+    <View testID="nrv2-screen" style={{ flex: 1, backgroundColor: theme.background }}>
       <SecondaryNavbar title="VÒNG KẾ TIẾP" rightSlot={navbarRightSlot} />
       {phase === 'recap' ? (
         <RecapViewModule
@@ -523,7 +523,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
           )}
 
           {error ? (
-            <View style={{ marginTop: 12, backgroundColor: theme.dangerBg, borderRadius: RADIUS.md, padding: 12, borderWidth: BORDER.hairline, borderColor: theme.dangerText }}>
+            <View testID="nrv2-error-banner" style={{ marginTop: 12, backgroundColor: theme.dangerBg, borderRadius: RADIUS.md, padding: 12, borderWidth: BORDER.hairline, borderColor: theme.dangerText }}>
               <Text style={{ fontFamily: SCREEN_FONTS.body, color: theme.dangerText, fontSize: 12 }}>{error}</Text>
             </View>
           ) : null}
@@ -698,7 +698,7 @@ function StatusChipRow({
   const preset = PRESETS[courtPreset]
   return (
     <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-      <TouchableOpacity onPress={onFairnessPress} activeOpacity={0.9} style={{ flex: 1 }}>
+      <TouchableOpacity testID="nrv2-fairness-chip" onPress={onFairnessPress} activeOpacity={0.9} style={{ flex: 1 }}>
         <Card style={{ borderRadius: RADIUS.lg, padding: 12, minHeight: 72 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <ShieldCheck size={18} color={theme.primary} />
@@ -711,7 +711,7 @@ function StatusChipRow({
           </View>
         </Card>
       </TouchableOpacity>
-      <TouchableOpacity onPress={onSettingsPress} activeOpacity={0.9} style={{ flex: 1 }}>
+      <TouchableOpacity testID="nrv2-settings-chip" onPress={onSettingsPress} activeOpacity={0.9} style={{ flex: 1 }}>
         <Card style={{ borderRadius: RADIUS.lg, padding: 12, minHeight: 72 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Settings size={18} color={theme.primary} />
@@ -753,7 +753,7 @@ function AlternativeTabs({
           <TouchableOpacity onPress={onOpenHistory}>
             <Text style={eyebrowStyle(theme.primary)}>{targetReachedLabel}</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={onOpenRoster}>
+          <TouchableOpacity testID="nrv2-roster-link" onPress={onOpenRoster}>
             <Text style={eyebrowStyle(theme.primary)}>Người chơi</Text>
           </TouchableOpacity>
         </View>
@@ -765,6 +765,7 @@ function AlternativeTabs({
           return (
             <TouchableOpacity
               key={`alt-${index}`}
+              testID={`nrv2-alt-tab-${index}`}
               onPress={() => onSelect(index)}
               activeOpacity={0.9}
               style={{
@@ -1219,6 +1220,7 @@ function EmptyPlanCard({ onSyncRoster, busy }: { onSyncRoster: () => void; busy:
         Sync roster trước, sau đó engine sẽ tạo phương án cho vòng kế.
       </Text>
       <TouchableOpacity
+        testID="nrv2-sync-btn"
         onPress={onSyncRoster}
         disabled={busy}
         style={{ marginTop: 14, height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' }}
@@ -1335,7 +1337,7 @@ function SettingsSheet({
       <ChoiceRow label="Dung sai PVNA" options={PVNA_TOLERANCE_OPTIONS.map(value => ({ label: `±${value}`, value }))} value={pvnaTolerance} onChange={setPvnaTolerance} />
       <ChoiceRow label="Thời lượng" options={COURT_DURATION_OPTIONS.map(value => ({ label: `${value}p`, value }))} value={courtDurationMin} onChange={setCourtDurationMin} />
       <ChoiceRow label="Mục tiêu vòng" options={[6, 8, 10, recommended.total_rounds].filter((value, index, arr) => arr.indexOf(value) === index).map(value => ({ label: `${value}`, value }))} value={targetRounds} onChange={setTargetRounds} />
-      <TouchableOpacity onPress={onApply} style={{ height: 52, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginTop: 10 }}>
+      <TouchableOpacity testID="nrv2-settings-apply" onPress={onApply} style={{ height: 52, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginTop: 10 }}>
         <Text style={ctaTextStyle(theme.onPrimary)}>Áp dụng</Text>
       </TouchableOpacity>
     </View>

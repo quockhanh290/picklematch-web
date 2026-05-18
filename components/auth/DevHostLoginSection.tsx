@@ -137,7 +137,7 @@ export default function DevHostLoginSection({
               <Mail size={18} color={DEV.emeraldDark} />
             </View>
             <TextInput
-              testID="dev-owner-email-input"
+              testID="dev-host-email-input"
               value={devEmail}
               onChangeText={setDevEmail}
               placeholder="Nhập email dev"
@@ -158,7 +158,7 @@ export default function DevHostLoginSection({
               <Lock size={18} color={DEV.emeraldDark} />
             </View>
             <TextInput
-              testID="dev-owner-password-input"
+              testID="dev-host-password-input"
               value={devPassword}
               onChangeText={setDevPassword}
               placeholder="Nhập mật khẩu dev"
@@ -170,7 +170,7 @@ export default function DevHostLoginSection({
         </View>
 
         <Pressable
-          testID="dev-owner-login-submit"
+          testID="dev-host-login-submit"
           onPress={devSignIn}
           disabled={devLoading}
           style={{

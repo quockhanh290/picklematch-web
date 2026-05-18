@@ -36,6 +36,7 @@ const IDS = {
     pendingCompletion: '44444444-4444-4444-4444-444444444450',
     autoClosed: '44444444-4444-4444-4444-444444444451',
     ghostVoided: '44444444-4444-4444-4444-444444444452',
+    nextRoundTest: '44444444-4444-4444-4444-444444444470',
   },
   sessions: {
     openConfirmed: '55555555-5555-5555-5555-555555555551',
@@ -50,6 +51,7 @@ const IDS = {
     pendingCompletion: '55555555-5555-5555-5555-555555555560',
     autoClosed: '55555555-5555-5555-5555-555555555561',
     ghostVoided: '55555555-5555-5555-5555-555555555562',
+    nextRoundTest: '55555555-5555-5555-5555-555555555570',
   },
   notifications: {
     joinRequest: '66666666-6666-6666-6666-666666666661',
@@ -530,6 +532,8 @@ async function seedCourts() {
 
 async function seedSlotsAndSessions(authUsers) {
   const times = {
+    nextRoundTestStart: isoAt(0, 19, 0),
+    nextRoundTestEnd: isoAt(0, 21, 0),
     openConfirmedStart: isoAt(1, 18, 0),
     openConfirmedEnd: isoAt(1, 20, 0),
     openApprovalStart: isoAt(2, 19, 0),
@@ -557,6 +561,7 @@ async function seedSlotsAndSessions(authUsers) {
   }
 
   const slots = [
+    { id: IDS.slots.nextRoundTest, court_id: IDS.courts.vanPhuc, start_time: times.nextRoundTestStart, end_time: times.nextRoundTestEnd, price: 110000, status: 'booked' },
     { id: IDS.slots.openConfirmed, court_id: IDS.courts.tanBinh, start_time: times.openConfirmedStart, end_time: times.openConfirmedEnd, price: 120000, status: 'booked' },
     { id: IDS.slots.openApproval, court_id: IDS.courts.vanPhuc, start_time: times.openApprovalStart, end_time: times.openApprovalEnd, price: 100000, status: 'booked' },
     { id: IDS.slots.fullConfirmed, court_id: IDS.courts.thaoDien, start_time: times.fullConfirmedStart, end_time: times.fullConfirmedEnd, price: 180000, status: 'booked' },
@@ -575,6 +580,31 @@ async function seedSlotsAndSessions(authUsers) {
   if (slotError) throw slotError
 
   const sessions = [
+    {
+      id: IDS.sessions.nextRoundTest,
+      host_id: authUsers.hostConfirmed.id,
+      slot_id: IDS.slots.nextRoundTest,
+      elo_min: 900,
+      elo_max: 1600,
+      max_players: 8,
+      status: 'open',
+      require_approval: false,
+      fill_deadline: isoAt(0, 18, 0),
+      total_cost: 880000,
+      court_fee_total: 880000,
+      cost_per_player: 110000,
+      start_time: times.nextRoundTestStart,
+      end_time: times.nextRoundTestEnd,
+      court_id: IDS.courts.vanPhuc,
+      session_date: dateOnlyFromIso(times.nextRoundTestStart),
+      court_booking_status: 'confirmed',
+      booking_reference: 'VP-BOOK-E2E',
+      booking_name: 'Minh Tú',
+      booking_phone: '+84990000001',
+      booking_notes: 'E2E test session - next round',
+      booking_confirmed_at: new Date().toISOString(),
+      was_full_when_cancelled: false,
+    },
     {
       id: IDS.sessions.openConfirmed,
       host_id: authUsers.hostConfirmed.id,
@@ -913,6 +943,14 @@ async function seedSlotsAndSessions(authUsers) {
 
 async function seedSessionPlayersAndRequests(authUsers) {
   const sessionPlayers = [
+    { session_id: IDS.sessions.nextRoundTest, player_id: authUsers.hostConfirmed.id, status: 'confirmed', check_in_status: 'present' },
+    { session_id: IDS.sessions.nextRoundTest, player_id: authUsers.matchedPlayer.id, status: 'confirmed', check_in_status: 'present' },
+    { session_id: IDS.sessions.nextRoundTest, player_id: authUsers.lowerSkillPlayer.id, status: 'confirmed', check_in_status: 'present' },
+    { session_id: IDS.sessions.nextRoundTest, player_id: authUsers.waitlistPlayer.id, status: 'confirmed', check_in_status: 'present' },
+    { session_id: IDS.sessions.nextRoundTest, player_id: authUsers.hostApproval.id, status: 'confirmed', check_in_status: 'present' },
+    { session_id: IDS.sessions.nextRoundTest, player_id: authUsers.provisionalHost.id, status: 'confirmed', check_in_status: 'present' },
+    { session_id: IDS.sessions.nextRoundTest, player_id: authUsers.socialPlayer.id, status: 'confirmed', check_in_status: 'present' },
+
     { session_id: IDS.sessions.openConfirmed, player_id: authUsers.hostConfirmed.id, status: 'confirmed' },
     { session_id: IDS.sessions.openConfirmed, player_id: authUsers.matchedPlayer.id, status: 'confirmed' },
 

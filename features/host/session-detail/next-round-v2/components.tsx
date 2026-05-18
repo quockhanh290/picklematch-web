@@ -106,17 +106,19 @@ export function MiniAction({
   icon: Icon,
   onPress,
   tone,
+  testID,
 }: {
   label: string
   icon: any
   onPress: () => void
   tone: 'good' | 'danger' | 'neutral'
+  testID?: string
 }) {
   const theme = useAppTheme()
   const color = tone === 'danger' ? theme.dangerText : tone === 'good' ? theme.primary : theme.outline
   const bg = tone === 'danger' ? theme.dangerBg : tone === 'good' ? theme.secondaryContainer : theme.surfaceContainerLow
   return (
-    <TouchableOpacity onPress={onPress} style={{ minHeight: 40, borderRadius: RADIUS.md, backgroundColor: bg, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+    <TouchableOpacity testID={testID} onPress={onPress} style={{ minHeight: 40, borderRadius: RADIUS.md, backgroundColor: bg, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
       <Icon size={14} color={color} />
       <Text style={ctaTextStyle(color, 11)}>{label}</Text>
     </TouchableOpacity>

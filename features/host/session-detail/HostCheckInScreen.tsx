@@ -68,7 +68,7 @@ export function HostCheckInScreen({ sessionId, players, onUpdated, onClose }: Pr
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.background }}>
+    <View style={{ flex: 1, backgroundColor: theme.background }} testID="host-check-in-screen">
       <ScrollView contentContainerStyle={{ padding: 24 }}>
         {confirmedPlayers.length === 0 ? (
           <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 12 }}>

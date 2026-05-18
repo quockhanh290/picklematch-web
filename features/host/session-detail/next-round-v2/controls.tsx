@@ -72,12 +72,14 @@ export function StickyRoundCta({
     >
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <TouchableOpacity
+          testID="nrv2-cta-more"
           onPress={onMore}
           style={{ width: 48, height: 52, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}
         >
           <MoreHorizontal size={22} color={theme.onSurface} />
         </TouchableOpacity>
         <TouchableOpacity
+          testID="nrv2-cta-primary"
           onPress={onPrimary}
           disabled={disabled || busy === 'start' || busy === 'end'}
           style={{ flex: 1, height: 52, borderRadius: RADIUS.md, backgroundColor: disabled ? theme.outlineVariant : theme.primary, alignItems: 'center', justifyContent: 'center' }}
