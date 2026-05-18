@@ -19,7 +19,7 @@ export default function HostLayout() {
     onRateSession: (id) => {},
     onConfirmResult: (id) => {},
     onReviewSession: (id) => {}, 
-    onOpenPlayerProfile: (id) => router.push({ pathname: '/player/[id]', params: { id } } as any),
+    onOpenPlayerProfile: () => {},
     onOpenCourt: (id) => router.push({ pathname: '/host/court-config', params: { id } } as any),
   }
 

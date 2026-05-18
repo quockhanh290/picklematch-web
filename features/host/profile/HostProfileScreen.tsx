@@ -104,7 +104,7 @@ export function HostProfileScreen() {
           onPress: async () => {
             await supabase.auth.signOut()
             clearCurrentPlayerProfileCacheApi()
-            router.replace('/')
+            router.replace('/host/login')
           },
         },
       ],
@@ -128,7 +128,7 @@ export function HostProfileScreen() {
           <Text style={{ marginTop: 16, fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>
             Đăng nhập để xem hồ sơ
           </Text>
-          <AppButton label="Đăng nhập" onPress={() => router.push('/login' as any)} style={{ marginTop: 24, width: '100%' }} />
+          <AppButton label="Đăng nhập" onPress={() => router.push('/host/login' as any)} style={{ marginTop: 24, width: '100%' }} />
         </View>
       </View>
     )

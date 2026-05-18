@@ -466,7 +466,7 @@ export function HostMatchResultScreen() {
         return
       }
       if (!userId) {
-        router.replace('/login' as any)
+        router.replace('/host/login' as any)
         return
       }
 

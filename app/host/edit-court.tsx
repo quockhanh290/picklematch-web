@@ -1,5 +1,5 @@
-import { EditCourtScreen } from '@/features/host/court-management/EditCourtScreen'
+import { Redirect } from 'expo-router'
 
 export default function EditCourtRoute() {
-  return <EditCourtScreen />
+  return <Redirect href="/host/dashboard" />
 }
