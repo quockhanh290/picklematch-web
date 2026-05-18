@@ -185,7 +185,7 @@ export function RosterSheet({
   onToggleCheckout,
   onToggleRest,
   onSwap,
-  onSyncRoster,
+  onRefreshRoster,
   groupSelection,
   groupSummaries,
   onToggleGroupSelection,
@@ -202,7 +202,7 @@ export function RosterSheet({
   onToggleCheckout: (playerId: string, checkedOut: boolean) => void
   onToggleRest: (playerId: string, optedRest: boolean) => void
   onSwap: (playerId: string) => void
-  onSyncRoster: () => void
+  onRefreshRoster: () => void | Promise<void>
   groupSelection: string[]
   groupSummaries: GroupSummary[]
   groupAliases: Map<string, string>
@@ -213,9 +213,11 @@ export function RosterSheet({
   onClearGroupSelection: () => void
 }) {
   const theme = useAppTheme()
+  const activeRows = rows.filter(row => !row.checked_out_at)
+  const checkedOutRows = rows.filter(row => row.checked_out_at)
   return (
     <FlatList
-      data={rows}
+      data={activeRows}
       keyExtractor={row => row.player_id}
       initialNumToRender={12}
       maxToRenderPerBatch={12}
@@ -223,10 +225,21 @@ export function RosterSheet({
       showsVerticalScrollIndicator={false}
       ListHeaderComponent={(
         <View>
-      <SheetTitle title="Người chơi" subtitle="Tap từng người để check-out, xin nghỉ, group hoặc swap." />
-      <TouchableOpacity testID="nrv2-roster-sync" onPress={onSyncRoster} style={{ height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-        {busy === 'sync' ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Đồng bộ danh sách</Text>}
+      <SheetTitle title="Người chơi" subtitle="Danh sách đang chơi tách riêng với người đã check-out / về sớm." />
+      <TouchableOpacity testID="nrv2-roster-sync" onPress={() => { void onRefreshRoster() }} style={{ height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+        <Text style={ctaTextStyle(theme.onPrimary, 13)}>Làm mới danh sách người chơi</Text>
       </TouchableOpacity>
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+        <View style={{ flex: 1, borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 10 }}>
+          <Text style={eyebrowStyle(theme.primary)}>Đang trong roster</Text>
+          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.primary }}>{activeRows.length}</Text>
+        </View>
+        <View style={{ flex: 1, borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, padding: 10 }}>
+          <Text style={eyebrowStyle(theme.outline)}>Đã check-out</Text>
+          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.outline }}>{checkedOutRows.length}</Text>
+        </View>
+      </View>
+      {activeRows.length > 0 ? <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Đang trong roster</Text> : null}
         </View>
       )}
       ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
@@ -262,6 +275,29 @@ export function RosterSheet({
         }}
       ListFooterComponent={rows.length > 0 ? (
         <View style={{ marginTop: 14, gap: 10 }}>
+          {checkedOutRows.length > 0 ? (
+            <View style={{ gap: 8 }}>
+              <Text style={eyebrowStyle(theme.outline)}>Đã check-out / về sớm</Text>
+              {checkedOutRows.map(row => {
+                const playerId = row.player_id
+                const player = playersById.get(playerId)
+                return (
+                  <Card key={`checked-out-${playerId}`} style={{ borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: theme.surfaceContainerLow }}>
+                    <View style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <PlayerAvatar name={playerName(playerId, playersById)} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
+                        <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
+                          PVNA {(getPlayerPvna(player) ?? 0).toFixed(2)} · {row.matches_played} trận · đã check-out
+                        </Text>
+                      </View>
+                      <MiniAction testID={`nrv2-roster-checkout-${playerId}`} label="Check-in" icon={UserPlus} onPress={() => onToggleCheckout(playerId, true)} tone="good" />
+                    </View>
+                  </Card>
+                )
+              })}
+            </View>
+          ) : null}
           {groupSummaries.length > 0 ? (
             <View style={{ gap: 8 }}>
               <Text style={eyebrowStyle(theme.outline)}>Nhóm hiện tại</Text>
@@ -353,7 +389,7 @@ export function MoreSheet({
     <View>
       <SheetTitle title="Thao tác nhanh" />
       <View style={{ gap: 10 }}>
-        <SheetAction label="Đồng bộ danh sách" onPress={onSyncRoster} loading={busy === 'sync'} />
+        <SheetAction label="Cập nhật danh sách người chơi" onPress={onSyncRoster} loading={busy === 'sync'} />
         <SheetAction label="Người chơi" onPress={onOpenRoster} />
         <SheetAction label="Đánh giá Fairness" onPress={onOpenFairness} />
         <SheetAction label="Lịch sử vòng" onPress={onOpenHistory} />

@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 
 import { calculateOptimalCourts, type CourtPreset } from '@/lib/court-calculator'
 import { buildSuggestedRoundActions, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
@@ -40,6 +40,10 @@ function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): 
   }
 }
 
+function normalizeCourtCount(value: number) {
+  return Math.max(1, Math.floor(value || 1))
+}
+
 export function useNextRoundModel({ sessionId, players, courts }: NextRoundSuggesterV2Props) {
   const [selectedAlternative, setSelectedAlternative] = useState(0)
   const [manualAlternative, setManualAlternative] = useState<SuggestionAlternative | null>(null)
@@ -47,7 +51,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const [swapFromPlayerId, setSwapFromPlayerId] = useState<string | null>(null)
   const [sheet, setSheet] = useState<SheetKey>(null)
   const [pvnaTolerance, setPvnaTolerance] = useState(0.5)
-  const [courtCount, setCourtCount] = useState(Math.max(1, Math.min(4, courts)))
+  const [courtCountOverride, setCourtCountOverride] = useState<number | null>(null)
   const [courtPreset, setCourtPreset] = useState<CourtPreset>('balanced')
   const [courtDurationMin, setCourtDurationMin] = useState(120)
   const [targetRounds, setTargetRounds] = useState<number | null>(null)
@@ -66,8 +70,22 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   }, [confirmedPlayers])
   const playersById = useMemo(() => new Map(players.map(player => [String(player.id), player])), [players])
   const liveRows = useLiveRows(sessionId, playersById)
+  const deferredRows = useDeferredValue(liveRows.rows)
+  const presentRows = useMemo(() => liveRows.rows.playerRows.filter(row => !row.checked_out_at), [liveRows.rows.playerRows])
+  const presentCount = presentRows.length
+  const calculatorPlayerCount = presentCount || checkedInPlayers.length || confirmedPlayers.length
+  const courtCalculator = useMemo(() => calculateOptimalCourts({
+    n_players: calculatorPlayerCount,
+    session_duration_min: courtDurationMin,
+    match_duration_min: 15,
+    preset: courtPreset,
+  }), [calculatorPlayerCount, courtDurationMin, courtPreset])
+  const courtCount = courtCountOverride ?? courtCalculator.recommended.courts
+  const setCourtCount = useCallback((value: number) => {
+    setCourtCountOverride(normalizeCourtCount(value))
+  }, [])
 
-  const enrichedPlayerRows = useMemo(() => liveRows.rows.playerRows.map(row => ({
+  const enrichedPlayerRows = useMemo(() => deferredRows.playerRows.map(row => ({
     ...row,
     players: {
       pvna: getPlayerPvna(playersById.get(row.player_id)) ?? row.players?.pvna ?? 0,
@@ -79,16 +97,16 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     session_players: {
       metadata: playersById.get(row.player_id)?.metadata ?? row.session_players?.metadata ?? null,
     },
-  })), [liveRows.rows.playerRows, playersById])
+  })), [deferredRows.playerRows, playersById])
 
   const rawState = useMemo(() => mapRowsToSessionState({
     sessionId,
     playerRows: enrichedPlayerRows,
-    pairRows: liveRows.rows.pairRows,
-    roundRows: liveRows.rows.roundRows,
+    pairRows: deferredRows.pairRows,
+    roundRows: deferredRows.roundRows,
     courts: courtCount,
     pvnaTolerance,
-  }), [courtCount, enrichedPlayerRows, liveRows.rows.pairRows, liveRows.rows.roundRows, pvnaTolerance, sessionId])
+  }), [courtCount, deferredRows.pairRows, deferredRows.roundRows, enrichedPlayerRows, pvnaTolerance, sessionId])
 
   const baseWeights = useMemo(() => ({
     ...rawState.config.weights,
@@ -108,6 +126,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     || deferredTierOverrides !== fairnessAdjustment.tier_overrides
     || deferredCourtCount !== courtCount
     || deferredPvnaTolerance !== pvnaTolerance
+    || deferredRows !== liveRows.rows
   const suggestion = useMemo(
     () => suggestNextRound(deferredState, { tier_overrides: deferredTierOverrides }),
     [deferredState, deferredTierOverrides],
@@ -137,15 +156,6 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   )
 
   const activeRound = useMemo(() => liveRows.rows.roundRows.find(row => row.status === 'active') ?? null, [liveRows.rows.roundRows])
-  const presentRows = useMemo(() => liveRows.rows.playerRows.filter(row => !row.checked_out_at), [liveRows.rows.playerRows])
-  const presentCount = presentRows.length
-  const calculatorPlayerCount = presentCount || checkedInPlayers.length || confirmedPlayers.length
-  const courtCalculator = useMemo(() => calculateOptimalCourts({
-    n_players: calculatorPlayerCount,
-    session_duration_min: courtDurationMin,
-    match_duration_min: 15,
-    preset: courtPreset,
-  }), [calculatorPlayerCount, courtDurationMin, courtPreset])
   const effectiveTargetRounds = targetRounds ?? courtCalculator.recommended.total_rounds
   const completedRounds = useMemo(
     () => liveRows.rows.roundRows.filter(row => row.status === 'completed').sort((a, b) => b.round_no - a.round_no),
@@ -162,7 +172,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     () => buildMatchCountConsistencyRows(state, reportState),
     [reportState, state],
   )
-  const groupSummaries = useMemo(() => buildGroupSummaries(liveRows.rows.playerRows), [liveRows.rows.playerRows])
+  const groupSummaries = useMemo(() => buildGroupSummaries(deferredRows.playerRows), [deferredRows.playerRows])
   const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
   const phase: 'plan' | 'active' | 'recap' = showSessionReport && targetReached && !activeRound ? 'recap' : activeRound ? 'active' : 'plan'
 
@@ -181,7 +191,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     setSelectedAlternative(selectionUndo.selectedAlternative)
     setManualAlternative(selectionUndo.manualAlternative)
     setPvnaTolerance(selectionUndo.pvnaTolerance)
-    setCourtCount(selectionUndo.courtCount)
+    setCourtCountOverride(selectionUndo.courtCount)
     setSwapFromPlayerId(null)
     setSelectionUndo(null)
   }
@@ -253,6 +263,8 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     pvnaTolerance,
     reportState,
     rows: liveRows.rows,
+    clearPlayerPatch: liveRows.clearPlayerPatch,
+    patchPlayerRow: liveRows.patchPlayerRow,
     selectAlternativeForRound,
     selectedAlternative,
     selectionUndo,
@@ -272,6 +284,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     setTargetRounds,
     sheet,
     showEngineStats,
+    settlePlayerPatch: liveRows.settlePlayerPatch,
     state,
     suggestedRoundActions,
     suggestionIsUpdating,

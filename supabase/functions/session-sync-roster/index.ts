@@ -22,6 +22,7 @@ Deno.serve(async (request) => {
   const playerIds = Array.isArray(body.player_ids)
     ? [...new Set(body.player_ids.filter((value): value is string => typeof value === 'string'))]
     : []
+  const reviveCheckedOut = body.revive_checked_out === true
 
   if (playerIds.length === 0) {
     return jsonResponse({ ok: false, error: 'No player_ids provided for roster sync' }, 400)
@@ -37,9 +38,13 @@ Deno.serve(async (request) => {
   }
 
   const existingIds = new Set((existingRows ?? []).map((row) => row.player_id as string))
+  const requestedIds = new Set(playerIds)
   const newIds = playerIds.filter((playerId) => !existingIds.has(playerId))
   const reviveIds = (existingRows ?? [])
-    .filter((row) => playerIds.includes(row.player_id as string) && row.checked_out_at !== null)
+    .filter((row) => reviveCheckedOut && playerIds.includes(row.player_id as string) && row.checked_out_at !== null)
+    .map((row) => row.player_id as string)
+  const checkoutIds = (existingRows ?? [])
+    .filter((row) => !requestedIds.has(row.player_id as string) && row.checked_out_at === null)
     .map((row) => row.player_id as string)
 
   if (newIds.length > 0) {
@@ -77,6 +82,21 @@ Deno.serve(async (request) => {
     }
   }
 
+  if (checkoutIds.length > 0) {
+    const { error } = await auth.supabase
+      .from('session_player_state')
+      .update({
+        checked_out_at: new Date().toISOString(),
+        opted_rest: false,
+      })
+      .eq('session_id', sessionId)
+      .in('player_id', checkoutIds)
+
+    if (error) {
+      return jsonResponse({ ok: false, error: error.message }, 500)
+    }
+  }
+
   const auditError = await insertSuggesterAuditEvent(auth.supabase, {
     session_id: sessionId,
     event_type: 'roster_synced',
@@ -84,11 +104,13 @@ Deno.serve(async (request) => {
     actor_id: auth.userId,
     payload: {
       requested_player_ids: playerIds,
+      revive_checked_out: reviveCheckedOut,
       inserted_player_ids: newIds,
       revived_player_ids: reviveIds,
+      checked_out_player_ids: checkoutIds,
       inserted: newIds.length,
       revived: reviveIds.length,
-      removed: 0,
+      removed: checkoutIds.length,
       total: playerIds.length,
     },
   })
@@ -97,7 +119,7 @@ Deno.serve(async (request) => {
     ok: true,
     inserted: newIds.length,
     revived: reviveIds.length,
-    removed: 0,
+    removed: checkoutIds.length,
     total: playerIds.length,
     audit_error: auditError,
   })

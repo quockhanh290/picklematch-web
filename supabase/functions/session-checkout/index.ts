@@ -19,22 +19,26 @@ Deno.serve(async (request) => {
   if (auth.error) return auth.error
 
   const body = await readJson(request)
-  const playerId = typeof body.player_id === 'string' ? body.player_id : null
+  const playerIds = Array.isArray(body.player_ids)
+    ? [...new Set(body.player_ids.filter((value): value is string => typeof value === 'string'))]
+    : typeof body.player_id === 'string'
+      ? [body.player_id]
+      : []
 
-  if (!playerId) {
+  if (playerIds.length === 0) {
     return jsonResponse({ ok: false, error: 'Missing player_id' }, 400)
   }
 
+  const checkedOutAt = new Date().toISOString()
   const { data, error } = await auth.supabase
     .from('session_player_state')
     .update({
-      checked_out_at: new Date().toISOString(),
+      checked_out_at: checkedOutAt,
       opted_rest: false,
     })
     .eq('session_id', sessionId)
-    .eq('player_id', playerId)
+    .in('player_id', playerIds)
     .select('*')
-    .single()
 
   if (error) {
     return jsonResponse({ ok: false, error: error.message }, 500)
@@ -46,10 +50,11 @@ Deno.serve(async (request) => {
     event_source: 'host',
     actor_id: auth.userId,
     payload: {
-      player_id: playerId,
-      checked_out_at: data.checked_out_at,
+      player_id: playerIds.length === 1 ? playerIds[0] : undefined,
+      player_ids: playerIds,
+      checked_out_at: checkedOutAt,
     },
   })
 
-  return jsonResponse({ ok: true, player: data, audit_error: auditError })
+  return jsonResponse({ ok: true, player: data?.[0] ?? null, players: data ?? [], audit_error: auditError })
 })

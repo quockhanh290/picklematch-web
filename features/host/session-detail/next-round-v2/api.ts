@@ -175,5 +175,7 @@ export async function loadLatestSyncablePlayerIds(
     .map(row => String(row.player_id))
 
   const preferredIds = presentIds.length > 0 ? presentIds : activeIds
-  return [...new Set([...preferredIds, ...localFallbackIds])]
+  if (confirmedRows.length > 0) return [...new Set(preferredIds)]
+
+  return [...new Set(localFallbackIds)]
 }

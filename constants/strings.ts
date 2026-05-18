@@ -1,5 +1,6 @@
 export const STRINGS = {
   common: {
+    cancel: 'Hủy',
     confirmed: 'Đã xác nhận',
     pending: 'Đang chờ',
     cancelled: 'Đã hủy',
@@ -972,8 +973,8 @@ export const STRINGS = {
     },
     suggester: {
       insufficient_players: 'Chỉ đủ người cho một phần số sân',
-      sync_list: 'ĐỒNG BỘ DANH SÁCH (SYNC)',
-      sync_required_hint: 'Chưa có danh sách người chơi. Bấm ĐỒNG BỘ (SYNC) để bắt đầu.',
+      sync_list: 'CẬP NHẬT DANH SÁCH NGƯỜI CHƠI',
+      sync_required_hint: 'Chưa có danh sách người chơi. Bấm CẬP NHẬT DANH SÁCH NGƯỜI CHƠI để bắt đầu.',
       repeat_warning: 'Setup này có thể tạo trùng lặp. Host có thể giảm sân, giảm vòng, hoặc giữ nguyên nếu ưu tiên chơi nhiều.',
       undo_reason: 'Đã đổi lựa chọn vòng: {reason}',
       warning_not_enough_present: 'Không đủ 4 người đang có mặt',

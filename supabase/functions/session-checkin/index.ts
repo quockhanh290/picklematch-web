@@ -19,33 +19,42 @@ Deno.serve(async (request) => {
   if (auth.error) return auth.error
 
   const body = await readJson(request)
-  const playerId = typeof body.player_id === 'string' ? body.player_id : null
+  const playerIds = Array.isArray(body.player_ids)
+    ? [...new Set(body.player_ids.filter((value): value is string => typeof value === 'string'))]
+    : typeof body.player_id === 'string'
+      ? [body.player_id]
+      : []
   const groupWith = Array.isArray(body.group_with)
     ? body.group_with.filter((value): value is string => typeof value === 'string')
     : []
 
-  if (!playerId) {
+  if (playerIds.length === 0) {
     return jsonResponse({ ok: false, error: 'Missing player_id' }, 400)
   }
 
-  const groupMembers = [...new Set([playerId, ...groupWith])].sort()
-  const groupId = groupMembers.length > 1 ? `${sessionId}:${groupMembers.join(':')}` : null
+  if (playerIds.length > 1 && groupWith.length > 0) {
+    return jsonResponse({ ok: false, error: 'group_with is only supported for single-player check-in' }, 400)
+  }
+
+  const checkedInAt = new Date().toISOString()
+  const upsertRows = playerIds.map((playerId) => {
+    const groupMembers = [...new Set([playerId, ...groupWith])].sort()
+    const groupId = groupMembers.length > 1 ? `${sessionId}:${groupMembers.join(':')}` : null
+
+    return {
+      session_id: sessionId,
+      player_id: playerId,
+      group_id: groupId,
+      checked_in_at: checkedInAt,
+      checked_out_at: null,
+      opted_rest: false,
+    }
+  })
 
   const { data, error } = await auth.supabase
     .from('session_player_state')
-    .upsert(
-      {
-        session_id: sessionId,
-        player_id: playerId,
-        group_id: groupId,
-        checked_in_at: new Date().toISOString(),
-        checked_out_at: null,
-        opted_rest: false,
-      },
-      { onConflict: 'session_id,player_id' },
-    )
+    .upsert(upsertRows, { onConflict: 'session_id,player_id' })
     .select('*')
-    .single()
 
   if (error) {
     return jsonResponse({ ok: false, error: error.message }, 500)
@@ -57,12 +66,13 @@ Deno.serve(async (request) => {
     event_source: 'host',
     actor_id: auth.userId,
     payload: {
-      player_id: playerId,
+      player_id: playerIds.length === 1 ? playerIds[0] : undefined,
+      player_ids: playerIds,
       group_with: groupWith,
-      group_id: groupId,
-      checked_in_at: data.checked_in_at,
+      group_id: upsertRows.length === 1 ? upsertRows[0].group_id : null,
+      checked_in_at: checkedInAt,
     },
   })
 
-  return jsonResponse({ ok: true, player: data, audit_error: auditError })
+  return jsonResponse({ ok: true, player: data?.[0] ?? null, players: data ?? [], audit_error: auditError })
 })

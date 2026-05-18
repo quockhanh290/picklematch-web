@@ -34,6 +34,7 @@ export function rebuildStateThroughRound(
       playerId,
       {
         ...player,
+        checked_out_at: null,
         matches_played: 0,
         last_played_round: -1,
         consecutive_rest: 0,

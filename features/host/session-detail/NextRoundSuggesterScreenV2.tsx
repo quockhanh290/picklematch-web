@@ -40,6 +40,7 @@ import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/press
 import type {
   Match,
   SessionRoundRow,
+  SessionPlayerStateRow,
   SessionState,
   SuggestionAlternative,
 } from '@/lib/next-round-suggester/types'
@@ -137,11 +138,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   const insets = useSafeAreaInsets()
   const [busy, setBusy] = useState<string | null>(null)
   const actionInFlightRef = useRef(false)
+  const autoSyncAttemptedRef = useRef(false)
+  const checkoutBatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingCheckoutTargetsRef = useRef(new Map<string, boolean>())
+  const pendingCheckoutPatchesRef = useRef(new Map<string, Partial<SessionPlayerStateRow>>())
   const model = useNextRoundModel({ sessionId, players, courts })
   const {
     activeRound,
     applySuggestedRoundAction,
     checkedInPlayers,
+    clearPlayerPatch,
     completedRoundCount,
     completedRounds,
     courtCalculator,
@@ -164,6 +170,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     manualAlternative,
     matchCountConsistencyRows,
     phase,
+    patchPlayerRow,
     playersById,
     presentCount,
     pvnaTolerance,
@@ -188,6 +195,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     setShowSessionReport,
     setSwapFromPlayerId,
     setTargetRounds,
+    settlePlayerPatch,
     sheet,
     showEngineStats,
     state,
@@ -213,6 +221,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       const safeMessage = toUserSafeActionError(err)
       console.warn('[NextRoundSuggesterV2] action failed', err)
       setError(safeMessage)
+      await loadLiveState()
       if (err && typeof err === 'object') {
         try {
           ;(err as { message?: string }).message = safeMessage
@@ -237,20 +246,93 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         checkedInPlayers.map(player => String(player.id)),
       )
       if (playerIds.length === 0) {
-        throw new Error('Không có người chơi đã xác nhận để sync.')
+        throw new Error('Không có người chơi đã xác nhận để cập nhật danh sách.')
       }
       await invokeLiveSessionFunction('session-sync-roster', sessionId, { player_ids: playerIds })
     })
   }
 
+  React.useEffect(() => {
+    if (loading || activeRound || autoSyncAttemptedRef.current) return
+
+    if (rows.playerRows.length > 0) return
+
+    const checkedInIds = checkedInPlayers.map(player => String(player.id))
+    if (checkedInIds.length === 0) return
+
+    const livePresentIds = new Set(
+      rows.playerRows
+        .filter(row => !row.checked_out_at)
+        .map(row => String(row.player_id)),
+    )
+    const missingLiveRows = checkedInIds.some(playerId => !livePresentIds.has(playerId))
+    if (!missingLiveRows) return
+
+    autoSyncAttemptedRef.current = true
+    void syncRoster()
+  }, [activeRound, checkedInPlayers, loading, rows.playerRows])
+
+  React.useEffect(() => () => {
+    if (checkoutBatchTimerRef.current) {
+      clearTimeout(checkoutBatchTimerRef.current)
+    }
+  }, [])
+
+  const flushPendingCheckoutActions = async () => {
+    const targets = new Map(pendingCheckoutTargetsRef.current)
+    const patches = new Map(pendingCheckoutPatchesRef.current)
+    pendingCheckoutTargetsRef.current.clear()
+    pendingCheckoutPatchesRef.current.clear()
+    checkoutBatchTimerRef.current = null
+
+    const checkoutIds = [...targets.entries()]
+      .filter(([, targetCheckedOut]) => targetCheckedOut)
+      .map(([playerId]) => playerId)
+    const checkinIds = [...targets.entries()]
+      .filter(([, targetCheckedOut]) => !targetCheckedOut)
+      .map(([playerId]) => playerId)
+
+    try {
+      if (checkoutIds.length > 0) {
+        await invokeLiveSessionFunction('session-checkout', sessionId, { player_ids: checkoutIds })
+      }
+      if (checkinIds.length > 0) {
+        await invokeLiveSessionFunction('session-checkin', sessionId, { player_ids: checkinIds })
+      }
+      targets.forEach((_, playerId) => {
+        const patch = patches.get(playerId)
+        if (patch) settlePlayerPatch(playerId, patch)
+      })
+    } catch (err: any) {
+      targets.forEach((_, playerId) => clearPlayerPatch(playerId))
+      const safeMessage = toUserSafeActionError(err)
+      console.warn('[NextRoundSuggesterV2] checkout batch failed', err)
+      setError(safeMessage)
+      await loadLiveState()
+      Alert.alert('Lỗi', safeMessage)
+    }
+  }
+
+  const scheduleCheckoutFlush = () => {
+    if (checkoutBatchTimerRef.current) {
+      clearTimeout(checkoutBatchTimerRef.current)
+    }
+    checkoutBatchTimerRef.current = setTimeout(() => {
+      void flushPendingCheckoutActions()
+    }, 350)
+  }
+
   const toggleCheckout = async (playerId: string, checkedOut: boolean) => {
-    await runAction(`checkout-${playerId}`, async () => {
-      await invokeLiveSessionFunction(
-        checkedOut ? 'session-checkin' : 'session-checkout',
-        sessionId,
-        { player_id: playerId },
-      )
-    })
+    const targetCheckedOut = !checkedOut
+    const optimisticPatch = {
+      checked_out_at: targetCheckedOut ? new Date().toISOString() : null,
+      opted_rest: false,
+    }
+    patchPlayerRow(playerId, optimisticPatch)
+    setError(null)
+    pendingCheckoutTargetsRef.current.set(playerId, targetCheckedOut)
+    pendingCheckoutPatchesRef.current.set(playerId, optimisticPatch)
+    scheduleCheckoutFlush()
   }
 
   const toggleRest = async (playerId: string, optedRest: boolean) => {
@@ -298,8 +380,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       if (activeRound) throw new Error('Đang có vòng active. Hãy kết thúc vòng hiện tại trước.')
       await invokeLiveSessionFunction('session-rounds-start', sessionId, {
         suggestion_idx: selectedAlternative,
-        manual: manualAlternative ? alternative.matches : undefined,
-        expected_state_fingerprint: manualAlternative ? buildSessionStateFingerprint(state) : undefined,
+        manual: alternative.matches,
+        expected_state_fingerprint: buildSessionStateFingerprint(state),
         courts: courtCount,
         pvna_tolerance: pvnaTolerance,
         decision_context: {
@@ -369,6 +451,23 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     setSheet(null)
   }
 
+  const plannedPlayerCount = workingAlternative
+    ? new Set([
+      ...workingAlternative.matches.flatMap(match => [...match.team_a, ...match.team_b]),
+      ...workingAlternative.resting,
+    ]).size
+    : presentCount
+  const activePlayerCount = activeRound
+    ? new Set([
+      ...activeRound.matches.flatMap(match => [...match.team_a, ...match.team_b]),
+      ...activeRound.resting,
+    ]).size
+    : presentCount
+  const heroPlayerCount = phase === 'active' ? activePlayerCount : plannedPlayerCount
+  const rosterTotalCount = rows.playerRows.length
+  const checkedOutCount = rows.playerRows.filter(row => row.checked_out_at).length
+  const requestedRestCount = rows.playerRows.filter(row => !row.checked_out_at && row.opted_rest).length
+
   const navbarRightSlot = <NavbarRightActions sessionId={sessionId} onRefresh={loadLiveState} refreshing={refreshing} />
 
   if (loading) {
@@ -400,7 +499,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
           <SessionHeroCard
             phase={phase}
             roundNo={activeRound?.round_no ?? state.current_round}
-            presentCount={presentCount}
+            presentCount={heroPlayerCount}
+            rosterTotalCount={rosterTotalCount}
+            checkedOutCount={checkedOutCount}
+            requestedRestCount={requestedRestCount}
             courtCount={courtCount}
             completedRounds={completedRoundCount}
             targetRounds={effectiveTargetRounds}
@@ -596,7 +698,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
           onToggleCheckout={toggleCheckout}
           onToggleRest={toggleRest}
           onSwap={openSwapForPlayer}
-          onSyncRoster={syncRoster}
+          onRefreshRoster={loadLiveState}
           groupSelection={groupSelection}
           groupSummaries={groupSummaries}
           groupAliases={groupAliases}
@@ -629,6 +731,9 @@ function SessionHeroCard({
   phase,
   roundNo,
   presentCount,
+  rosterTotalCount,
+  checkedOutCount,
+  requestedRestCount,
   courtCount,
   completedRounds,
   targetRounds,
@@ -636,6 +741,9 @@ function SessionHeroCard({
   phase: 'plan' | 'active'
   roundNo: number
   presentCount: number
+  rosterTotalCount: number
+  checkedOutCount: number
+  requestedRestCount: number
   courtCount: number
   completedRounds: number
   targetRounds: number
@@ -661,7 +769,10 @@ function SessionHeroCard({
             Vòng {roundNo}
           </Text>
           <Text style={{ marginTop: 7, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
-            {presentCount} có mặt · {courtCount} sân · {completedRounds}/{targetRounds} vòng
+            {presentCount} {phase === 'active' ? 'trong vòng' : 'trong danh sách'} · {courtCount} sân · {completedRounds}/{targetRounds} vòng
+          </Text>
+          <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.heroBodyMuted }}>
+            Roster {rosterTotalCount} · Check-out {checkedOutCount} · Xin nghỉ {requestedRestCount}
           </Text>
         </View>
         <View
@@ -1217,7 +1328,7 @@ function EmptyPlanCard({ onSyncRoster, busy }: { onSyncRoster: () => void; busy:
     <Card style={{ marginTop: 16, padding: 18, alignItems: 'center' }}>
       <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>Chưa có gợi ý vòng</Text>
       <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline, textAlign: 'center' }}>
-        Sync roster trước, sau đó engine sẽ tạo phương án cho vòng kế.
+        Cập nhật danh sách người chơi trước, sau đó engine sẽ tạo phương án cho vòng kế.
       </Text>
       <TouchableOpacity
         testID="nrv2-sync-btn"
@@ -1225,7 +1336,7 @@ function EmptyPlanCard({ onSyncRoster, busy }: { onSyncRoster: () => void; busy:
         disabled={busy}
         style={{ marginTop: 14, height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' }}
       >
-        {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Sync roster</Text>}
+        {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Cập nhật danh sách người chơi</Text>}
       </TouchableOpacity>
     </Card>
   )

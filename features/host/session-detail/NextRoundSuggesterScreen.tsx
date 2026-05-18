@@ -36,6 +36,7 @@ import {
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
 import { sanitizeSummaryForHost, sanitizeWarningsForHost } from '@/lib/next-round-suggester/fairness/sanitize'
 import { buildSessionSummary, type SessionSummary } from '@/lib/next-round-suggester/fairness/summary'
+import { buildSessionStateFingerprint } from '@/lib/next-round-suggester/state-version'
 import type {
   Match,
   SessionPairHistoryRow,
@@ -49,6 +50,7 @@ import { eloToPvna } from '@/lib/skillAssessment'
 import { STRINGS } from '@/constants/strings'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
+import { loadLatestSyncablePlayerIds } from './next-round-v2/api'
 
 const UI_THEME = {
   primary: '#0F6E56',
@@ -262,6 +264,7 @@ const COURT_DURATION_OPTIONS = [90, 120, 150]
 
 export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) {
   const theme = useAppTheme()
+  const autoSyncAttemptedRef = React.useRef(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [rows, setRows] = useState<LiveRows>({ playerRows: [], pairRows: [], roundRows: [] })
@@ -540,9 +543,12 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
 
   const syncRoster = async () => {
     await runAction('sync', async () => {
-      const playerIds = checkedInPlayers.map(player => String(player.id))
+      const playerIds = await loadLatestSyncablePlayerIds(
+        sessionId,
+        checkedInPlayers.map(player => String(player.id)),
+      )
       if (playerIds.length === 0) {
-        throw new Error('Không có người chơi đã xác nhận để đồng bộ. Vui lòng xác nhận ít nhất một người chơi trước khi đồng bộ danh sách.')
+        throw new Error('Không có người chơi đã xác nhận để cập nhật danh sách. Vui lòng xác nhận ít nhất một người chơi trước khi cập nhật.')
       }
 
       await invokeLiveSessionFunction('session-sync-roster', sessionId, {
@@ -550,6 +556,26 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
       })
     })
   }
+
+  React.useEffect(() => {
+    if (loading || activeRound || autoSyncAttemptedRef.current) return
+
+    if (rows.playerRows.length > 0) return
+
+    const checkedInIds = checkedInPlayers.map(player => String(player.id))
+    if (checkedInIds.length === 0) return
+
+    const livePresentIds = new Set(
+      rows.playerRows
+        .filter(row => !row.checked_out_at)
+        .map(row => String(row.player_id)),
+    )
+    const missingLiveRows = checkedInIds.some(playerId => !livePresentIds.has(playerId))
+    if (!missingLiveRows) return
+
+    autoSyncAttemptedRef.current = true
+    void syncRoster()
+  }, [activeRound, checkedInPlayers, loading, rows.playerRows])
 
   const setGroupForPlayers = async (playerIds: string[]) => {
     if (playerIds.length < 2) return
@@ -617,6 +643,9 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
       await invokeLiveSessionFunction('session-rounds-start', sessionId, {
         suggestion_idx: selectedAlternative,
         manual: alternative.matches,
+        expected_state_fingerprint: buildSessionStateFingerprint(state),
+        courts: courtCount,
+        pvna_tolerance: pvnaTolerance,
         decision_context: {
           selected_alternative_index: selectedAlternative,
           manual_swap_applied: manualAlternative !== null,
@@ -1583,7 +1612,7 @@ function SessionFairnessSummaryCard({
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <AlertTriangle size={16} color="#B91C1C" />
             <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#B91C1C', fontWeight: '900' }}>
-              CẢNH BÁO ĐỒNG BỘ
+              CẢNH BÁO DỮ LIỆU
             </Text>
           </View>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B91C1C', marginBottom: 8, opacity: 0.8 }}>

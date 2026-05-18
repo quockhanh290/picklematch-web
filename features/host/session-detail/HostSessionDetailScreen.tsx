@@ -370,7 +370,9 @@ export function HostSessionDetailScreen({
                   disabled={isProcessingCheckIn}
                   style={{ 
                     flex: 1,
-                    backgroundColor: theme.dangerStrong,
+                    backgroundColor: theme.surface,
+                    borderWidth: 1,
+                    borderColor: theme.outlineVariant,
                     paddingVertical: 16,
                     borderRadius: RADIUS.xl,
                     alignItems: 'center',
@@ -379,7 +381,7 @@ export function HostSessionDetailScreen({
                     ...SHADOW.sm
                   }}
                 >
-                  <Text style={{ color: 'white', fontSize: 16, fontFamily: SCREEN_FONTS.headline, fontWeight: '700' }}>{STRINGS.common.cancel}</Text>
+                  <Text style={{ color: theme.dangerText, fontSize: 16, fontFamily: SCREEN_FONTS.headline, fontWeight: '700' }}>{STRINGS.common.cancel}</Text>
                 </TouchableOpacity>
               </View>
             )}

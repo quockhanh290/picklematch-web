@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { SessionPairHistoryRow, SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
@@ -12,6 +12,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
   const [refreshing, setRefreshing] = useState(false)
   const [rows, setRows] = useState<LiveRows>({ playerRows: [], pairRows: [], roundRows: [] })
   const [error, setError] = useState<string | null>(null)
+  const optimisticPlayerPatchesRef = useRef(new Map<string, Partial<SessionPlayerStateRow>>())
 
   const loadLiveState = useCallback(async () => {
     setRefreshing(true)
@@ -44,6 +45,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
       setRows({
         playerRows: ((playerRes.data ?? []) as SessionPlayerStateRow[]).map(row => ({
           ...row,
+          ...(optimisticPlayerPatchesRef.current.get(row.player_id) ?? {}),
           players: {
             pvna: getPlayerPvna(playersById.get(row.player_id)) ?? 0,
             elo: playersById.get(row.player_id)?.elo,
@@ -63,6 +65,28 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     }
   }, [playersById, sessionId])
 
+  const patchPlayerRow = useCallback((playerId: string, patch: Partial<SessionPlayerStateRow>) => {
+    optimisticPlayerPatchesRef.current.set(playerId, patch)
+    setRows(current => ({
+      ...current,
+      playerRows: current.playerRows.map(row => (
+        row.player_id === playerId ? { ...row, ...patch } : row
+      )),
+    }))
+  }, [])
+
+  const settlePlayerPatch = useCallback((playerId: string, patch: Partial<SessionPlayerStateRow>) => {
+    setTimeout(() => {
+      if (optimisticPlayerPatchesRef.current.get(playerId) === patch) {
+        optimisticPlayerPatchesRef.current.delete(playerId)
+      }
+    }, 2500)
+  }, [])
+
+  const clearPlayerPatch = useCallback((playerId: string) => {
+    optimisticPlayerPatchesRef.current.delete(playerId)
+  }, [])
+
   useEffect(() => {
     let mounted = true
     async function run() {
@@ -76,5 +100,5 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     }
   }, [loadLiveState])
 
-  return { error, loading, loadLiveState, refreshing, rows, setError }
+  return { clearPlayerPatch, error, loading, loadLiveState, patchPlayerRow, refreshing, rows, setError, settlePlayerPatch }
 }

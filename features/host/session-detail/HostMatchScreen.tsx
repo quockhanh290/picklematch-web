@@ -991,7 +991,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
               courtCount={Math.min(Math.max(1, Math.floor(scheduleCourtCount || 1)), Math.max(1, Math.floor(activePlayers.length / 4)))}
             />
 
-              {false && <TouchableOpacity
+              <TouchableOpacity
                 onPress={() => setScheduleSetupPageOpen(true)}
                 style={{
                   backgroundColor: scheduleNeedsRefresh ? '#A05A16' : '#0F6E56',
@@ -1005,7 +1005,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                 <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: 'white', fontWeight: '900' }}>
                   {scheduleNeedsRefresh ? 'CẬP NHẬT LỊCH TRẬN' : 'THIẾT LẬP / CẬP NHẬT LỊCH TRẬN'}
                 </Text>
-              </TouchableOpacity>}
+              </TouchableOpacity>
               {fullRotationSchedule.length > 0 && (
                 <TouchableOpacity 
                   onPress={() => setShowRotationTable(!showRotationTable)}
@@ -1745,7 +1745,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
           <View style={{ marginBottom: 32 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: '#1A2E2A' }}>LỊCH THI ĐẤU</Text>
-              {false && (() => {
+              {(() => {
                 const canOpenFixedSetup = activePlayers.length >= 4
                 return (
                   <TouchableOpacity
