@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
+import { ActivityIndicator, Alert, AppState, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
@@ -141,6 +141,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   const [busy, setBusy] = useState<string | null>(null)
   const actionInFlightRef = useRef(false)
   const autoSyncAttemptedRef = useRef(false)
+  const lateArrivalInFlightRef = useRef(new Set<string>())
   const checkoutBatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingCheckoutTargetsRef = useRef(new Map<string, boolean>())
   const pendingCheckoutPatchesRef = useRef(new Map<string, Partial<SessionPlayerStateRow>>())
@@ -160,7 +161,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     courtPreset,
     effectiveTargetRounds,
     error,
-    expandedRosterPlayer,
     fairnessAudit,
     fairnessPreview,
     fairnessScore,
@@ -190,7 +190,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     setCourtDurationMin,
     setCourtPreset,
     setError,
-    setExpandedRosterPlayer,
     setGroupSelection,
     setManualAlternative,
     setPvnaTolerance,
@@ -214,7 +213,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     undoRoundSelection,
     workingAlternative,
   } = model
-  const runAction = async (key: string, action: () => Promise<void>) => {
+  const runAction = useCallback(async (key: string, action: () => Promise<void>) => {
     if (actionInFlightRef.current) return
     actionInFlightRef.current = true
     setBusy(key)
@@ -242,9 +241,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       actionInFlightRef.current = false
       setBusy(null)
     }
-  }
+  }, [loadLiveState])
 
-  const syncRoster = async () => {
+  const syncRoster = useCallback(async () => {
     await runAction('sync', async () => {
       const playerIds = await loadLatestSyncablePlayerIds(
         sessionId,
@@ -255,7 +254,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       }
       await invokeLiveSessionFunction('session-sync-roster', sessionId, { player_ids: playerIds })
     })
-  }
+  }, [runAction, sessionId, checkedInPlayers])
 
   React.useEffect(() => {
     if (loading || activeRound || autoSyncAttemptedRef.current) return
@@ -275,7 +274,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
 
     autoSyncAttemptedRef.current = true
     void syncRoster()
-  }, [activeRound, checkedInPlayers, loading, rows.playerRows])
+  }, [activeRound, checkedInPlayers, loading, rows.playerRows, syncRoster])
 
   React.useEffect(() => () => {
     if (checkoutBatchTimerRef.current) {
@@ -283,7 +282,14 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     }
   }, [])
 
-  const flushPendingCheckoutActions = async () => {
+  React.useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') void loadLiveState()
+    })
+    return () => sub.remove()
+  }, [loadLiveState])
+
+  const flushPendingCheckoutActions = useCallback(async () => {
     const targets = new Map(pendingCheckoutTargetsRef.current)
     const patches = new Map(pendingCheckoutPatchesRef.current)
     pendingCheckoutTargetsRef.current.clear()
@@ -316,18 +322,18 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       await loadLiveState()
       Alert.alert('Lỗi', safeMessage)
     }
-  }
+  }, [sessionId, settlePlayerPatch, clearPlayerPatch, setError, loadLiveState])
 
-  const scheduleCheckoutFlush = () => {
+  const scheduleCheckoutFlush = useCallback(() => {
     if (checkoutBatchTimerRef.current) {
       clearTimeout(checkoutBatchTimerRef.current)
     }
     checkoutBatchTimerRef.current = setTimeout(() => {
       void flushPendingCheckoutActions()
     }, 350)
-  }
+  }, [flushPendingCheckoutActions])
 
-  const toggleCheckout = async (playerId: string, checkedOut: boolean) => {
+  const toggleCheckout = useCallback(async (playerId: string, checkedOut: boolean) => {
     const targetCheckedOut = !checkedOut
     const optimisticPatch = {
       checked_out_at: targetCheckedOut ? new Date().toISOString() : null,
@@ -338,9 +344,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     pendingCheckoutTargetsRef.current.set(playerId, targetCheckedOut)
     pendingCheckoutPatchesRef.current.set(playerId, optimisticPatch)
     scheduleCheckoutFlush()
-  }
+  }, [patchPlayerRow, setError, scheduleCheckoutFlush])
 
-  const toggleRest = async (playerId: string, optedRest: boolean) => {
+  const toggleRest = useCallback(async (playerId: string, optedRest: boolean) => {
     const optimisticPatch = { opted_rest: !optedRest }
     patchPlayerRow(playerId, optimisticPatch)
     setManualAlternative(null)
@@ -360,40 +366,44 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       await loadLiveState()
       Alert.alert('Lỗi', safeMessage)
     }
-  }
+  }, [patchPlayerRow, setManualAlternative, setSwapFromPlayerId, setError, sessionId, settlePlayerPatch, clearPlayerPatch, loadLiveState])
 
-  const setGroupForPlayers = async (playerIds: string[]) => {
+  const setGroupForPlayers = useCallback(async (playerIds: string[]) => {
     if (playerIds.length < 2) return
     await runAction(`group-${playerIds.join('-')}`, async () => {
       await invokeLiveSessionFunction('session-set-group', sessionId, {
         player_ids: playerIds,
       })
     })
-  }
+  }, [runAction, sessionId])
 
-  const clearGroup = async (playerId: string) => {
+  const clearGroup = useCallback(async (playerId: string) => {
     await runAction(`group-clear-${playerId}`, async () => {
       await invokeLiveSessionFunction('session-set-group', sessionId, {
         clear_player_id: playerId,
       })
     })
-  }
+  }, [runAction, sessionId])
 
-  const clearWholeGroup = async (groupId: string) => {
+  const clearWholeGroup = useCallback(async (groupId: string) => {
     await runAction(`group-clear-${groupId}`, async () => {
       await invokeLiveSessionFunction('session-set-group', sessionId, {
         clear_group_id: groupId,
       })
     })
-  }
+  }, [runAction, sessionId])
 
-  const createGroupFromSelection = async () => {
+  const createGroupFromSelection = useCallback(async () => {
     if (groupSelection.length < 2) return
     await setGroupForPlayers(groupSelection)
     setGroupSelection([])
-  }
+  }, [groupSelection, setGroupForPlayers, setGroupSelection])
 
   const addLateArrivalToRoster = async (playerId: string) => {
+    if (lateArrivalInFlightRef.current.has(playerId)) return
+    lateArrivalInFlightRef.current.add(playerId)
+    setBusy(`late-${playerId}`)
+    setError(null)
     const player = playersById.get(playerId)
     const optimisticRow: SessionPlayerStateRow = {
       session_id: sessionId,
@@ -417,10 +427,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         metadata: player?.metadata ?? null,
       },
     }
-
     addPlayerRow(optimisticRow)
-    setBusy(`late-${playerId}`)
-    setError(null)
     try {
       const [, checkinPayload] = await Promise.all([
         markSessionPlayersPresent(sessionId, [playerId]),
@@ -446,6 +453,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       await loadLiveState()
       Alert.alert('Lỗi', safeMessage)
     } finally {
+      lateArrivalInFlightRef.current.delete(playerId)
       setBusy(null)
     }
   }
@@ -516,10 +524,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     })
   }
 
-  const openSwapForPlayer = (playerId: string) => {
+  const openSwapForPlayer = useCallback((playerId: string) => {
     setSwapFromPlayerId(playerId)
     setSheet('swap')
-  }
+  }, [setSwapFromPlayerId, setSheet])
 
   const swapPlayersInWorkingAlternative = (fromId: string, toId: string) => {
     const base = manualAlternative ?? suggestion.alternatives[selectedAlternative]
@@ -786,8 +794,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         <RosterSheetView
           rows={rows.playerRows}
           playersById={playersById}
-          expandedPlayerId={expandedRosterPlayer}
-          setExpandedPlayerId={setExpandedRosterPlayer}
           busy={busy}
           onToggleCheckout={toggleCheckout}
           onToggleRest={toggleRest}

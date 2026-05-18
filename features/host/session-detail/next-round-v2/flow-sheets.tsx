@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { memo, useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, FlatList, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { ChevronDown, History, UserMinus, UserPlus, Users, X, Zap } from 'lucide-react-native'
@@ -307,11 +307,55 @@ export function SwapSheet({
   )
 }
 
+type RosterPlayerRowProps = {
+  row: SessionPlayerStateRow
+  player: ArrangementPlayer | undefined
+  expanded: boolean
+  selectedForGroup: boolean
+  onExpand: (id: string | null) => void
+  onToggleCheckout: (playerId: string, checkedOut: boolean) => void
+  onToggleRest: (playerId: string, optedRest: boolean) => void
+  onToggleGroupSelection: (playerId: string) => void
+  onClearGroup: (playerId: string) => void
+  onSwap: (playerId: string) => void
+}
+
+const RosterPlayerRow = memo(function RosterPlayerRow({
+  row, player, expanded, selectedForGroup, onExpand,
+  onToggleCheckout, onToggleRest, onToggleGroupSelection, onClearGroup, onSwap,
+}: RosterPlayerRowProps) {
+  const theme = useAppTheme()
+  const playerId = row.player_id
+  const checkedOut = Boolean(row.checked_out_at)
+  const name = player?.name ?? 'Người chơi'
+  return (
+    <Card style={{ borderRadius: RADIUS.md, overflow: 'hidden', borderColor: selectedForGroup ? theme.primary : theme.outlineVariant }}>
+      <TouchableOpacity testID={`nrv2-roster-player-${playerId}`} onPress={() => onExpand(expanded ? null : playerId)} style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <PlayerAvatar name={name} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{name}</Text>
+          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
+            PVNA {(getPlayerPvna(player) ?? 0).toFixed(2)} · {row.matches_played} trận · đang nghỉ liên tiếp {row.consecutive_rest} lượt
+          </Text>
+        </View>
+        <ChevronDown size={16} color={theme.outline} />
+      </TouchableOpacity>
+      {expanded ? (
+        <View style={{ borderTopWidth: BORDER.hairline, borderTopColor: theme.outlineVariant, padding: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <MiniAction testID={`nrv2-roster-checkout-${playerId}`} label={checkedOut ? 'Check-in' : 'Check-out'} icon={checkedOut ? UserPlus : UserMinus} onPress={() => onToggleCheckout(playerId, checkedOut)} tone={checkedOut ? 'good' : 'danger'} />
+          <MiniAction testID={`nrv2-roster-rest-${playerId}`} label={row.opted_rest ? 'Bỏ nghỉ' : 'Xin nghỉ'} icon={History} onPress={() => onToggleRest(playerId, row.opted_rest)} tone="neutral" />
+          <MiniAction testID={`nrv2-roster-group-${playerId}`} label={selectedForGroup ? 'Bỏ chọn' : 'Chọn group'} icon={Users} onPress={() => onToggleGroupSelection(playerId)} tone={selectedForGroup ? 'good' : 'neutral'} />
+          {row.group_id ? <MiniAction label="Xóa group" icon={X} onPress={() => onClearGroup(playerId)} tone="neutral" /> : null}
+          <MiniAction label="Đổi người" icon={Zap} onPress={() => onSwap(playerId)} tone="good" />
+        </View>
+      ) : null}
+    </Card>
+  )
+})
+
 export function RosterSheet({
   rows,
   playersById,
-  expandedPlayerId,
-  setExpandedPlayerId,
   busy,
   onToggleCheckout,
   onToggleRest,
@@ -327,8 +371,6 @@ export function RosterSheet({
 }: {
   rows: SessionPlayerStateRow[]
   playersById: Map<string, ArrangementPlayer>
-  expandedPlayerId: string | null
-  setExpandedPlayerId: (playerId: string | null) => void
   busy: string | null
   onToggleCheckout: (playerId: string, checkedOut: boolean) => void
   onToggleRest: (playerId: string, optedRest: boolean) => void
@@ -344,9 +386,25 @@ export function RosterSheet({
   onClearGroupSelection: () => void
 }) {
   const theme = useAppTheme()
-  const activeRows = rows.filter(row => !row.checked_out_at && !row.opted_rest)
-  const restingRows = rows.filter(row => !row.checked_out_at && row.opted_rest)
-  const checkedOutRows = rows.filter(row => row.checked_out_at)
+  const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null)
+  const activeRows = useMemo(() => rows.filter(row => !row.checked_out_at && !row.opted_rest), [rows])
+  const restingRows = useMemo(() => rows.filter(row => !row.checked_out_at && row.opted_rest), [rows])
+  const checkedOutRows = useMemo(() => rows.filter(row => Boolean(row.checked_out_at)), [rows])
+  const groupSelectionSet = useMemo(() => new Set(groupSelection), [groupSelection])
+  const renderItem = useCallback(({ item: row }: { item: SessionPlayerStateRow }) => (
+    <RosterPlayerRow
+      row={row}
+      player={playersById.get(row.player_id)}
+      expanded={expandedPlayerId === row.player_id}
+      selectedForGroup={groupSelectionSet.has(row.player_id)}
+      onExpand={setExpandedPlayerId}
+      onToggleCheckout={onToggleCheckout}
+      onToggleRest={onToggleRest}
+      onToggleGroupSelection={onToggleGroupSelection}
+      onClearGroup={onClearGroup}
+      onSwap={onSwap}
+    />
+  ), [expandedPlayerId, groupSelectionSet, playersById, onToggleCheckout, onToggleRest, onToggleGroupSelection, onClearGroup, onSwap])
   return (
     <FlatList
       data={activeRows}
@@ -379,36 +437,7 @@ export function RosterSheet({
         </View>
       )}
       ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
-      renderItem={({ item: row }) => {
-          const playerId = row.player_id
-          const player = playersById.get(playerId)
-          const expanded = expandedPlayerId === playerId
-          const checkedOut = Boolean(row.checked_out_at)
-          const selectedForGroup = groupSelection.includes(playerId)
-          return (
-            <Card key={playerId} style={{ borderRadius: RADIUS.md, overflow: 'hidden', borderColor: selectedForGroup ? theme.primary : theme.outlineVariant }}>
-              <TouchableOpacity testID={`nrv2-roster-player-${playerId}`} onPress={() => setExpandedPlayerId(expanded ? null : playerId)} style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <PlayerAvatar name={playerName(playerId, playersById)} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
-                  <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                    PVNA {(getPlayerPvna(player) ?? 0).toFixed(2)} · {row.matches_played} trận · đang nghỉ liên tiếp {row.consecutive_rest} lượt
-                  </Text>
-                </View>
-                <ChevronDown size={16} color={theme.outline} />
-              </TouchableOpacity>
-              {expanded ? (
-                <View style={{ borderTopWidth: BORDER.hairline, borderTopColor: theme.outlineVariant, padding: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  <MiniAction testID={`nrv2-roster-checkout-${playerId}`} label={checkedOut ? 'Check-in' : 'Check-out'} icon={checkedOut ? UserPlus : UserMinus} onPress={() => onToggleCheckout(playerId, checkedOut)} tone={checkedOut ? 'good' : 'danger'} />
-                  <MiniAction testID={`nrv2-roster-rest-${playerId}`} label={row.opted_rest ? 'Bỏ nghỉ' : 'Xin nghỉ'} icon={History} onPress={() => onToggleRest(playerId, row.opted_rest)} tone="neutral" />
-                  <MiniAction testID={`nrv2-roster-group-${playerId}`} label={selectedForGroup ? 'Bỏ chọn' : 'Chọn group'} icon={Users} onPress={() => onToggleGroupSelection(playerId)} tone={selectedForGroup ? 'good' : 'neutral'} />
-                  {row.group_id ? <MiniAction label="Xóa group" icon={X} onPress={() => onClearGroup(playerId)} tone="neutral" /> : null}
-                  <MiniAction label="Đổi người" icon={Zap} onPress={() => onSwap(playerId)} tone="good" />
-                </View>
-              ) : null}
-            </Card>
-          )
-        }}
+      renderItem={renderItem}
       ListFooterComponent={rows.length > 0 ? (
         <View style={{ marginTop: 14, gap: 10 }}>
           {restingRows.length > 0 ? (

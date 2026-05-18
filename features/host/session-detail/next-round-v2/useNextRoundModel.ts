@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
 
 import { calculateOptimalCourts, type CourtPreset } from '@/lib/court-calculator'
 import { buildSuggestedRoundActions, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
@@ -55,7 +55,6 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const [courtPreset, setCourtPreset] = useState<CourtPreset>('balanced')
   const [courtDurationMin, setCourtDurationMin] = useState(120)
   const [targetRounds, setTargetRounds] = useState<number | null>(null)
-  const [expandedRosterPlayer, setExpandedRosterPlayer] = useState<string | null>(null)
   const [groupSelection, setGroupSelection] = useState<string[]>([])
   const [showEngineStats, setShowEngineStats] = useState(false)
   const [showSessionReport, setShowSessionReport] = useState(false)
@@ -71,6 +70,16 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const playersById = useMemo(() => new Map(players.map(player => [String(player.id), player])), [players])
   const liveRows = useLiveRows(sessionId, playersById)
   const deferredRows = useDeferredValue(liveRows.rows)
+
+  // Đóng băng player rows cho engine khi sheet roster đang mở.
+  // User không nhìn thấy gợi ý → không cần recompute suggestNextRound,
+  // correctForFairness, computeSessionFairness trong lúc thao tác roster.
+  const frozenEnginePlayerRowsRef = useRef(deferredRows.playerRows)
+  const enginePlayerRows = useMemo(() => {
+    if (sheet !== 'roster') frozenEnginePlayerRowsRef.current = deferredRows.playerRows
+    return frozenEnginePlayerRowsRef.current
+  }, [sheet, deferredRows.playerRows])
+
   const presentRows = useMemo(() => liveRows.rows.playerRows.filter(row => !row.checked_out_at), [liveRows.rows.playerRows])
   const presentCount = presentRows.length
   const calculatorPlayerCount = presentCount || checkedInPlayers.length || confirmedPlayers.length
@@ -85,7 +94,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     setCourtCountOverride(normalizeCourtCount(value))
   }, [])
 
-  const enrichedPlayerRows = useMemo(() => deferredRows.playerRows.map(row => ({
+  const enrichedPlayerRows = useMemo(() => enginePlayerRows.map(row => ({
     ...row,
     players: {
       pvna: getPlayerPvna(playersById.get(row.player_id)) ?? row.players?.pvna ?? 0,
@@ -97,7 +106,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     session_players: {
       metadata: playersById.get(row.player_id)?.metadata ?? row.session_players?.metadata ?? null,
     },
-  })), [deferredRows.playerRows, playersById])
+  })), [enginePlayerRows, playersById])
 
   const rawState = useMemo(() => mapRowsToSessionState({
     sessionId,
@@ -227,13 +236,13 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     }
   }
 
-  const toggleGroupSelection = (playerId: string) => {
+  const toggleGroupSelection = useCallback((playerId: string) => {
     setGroupSelection(current => (
       current.includes(playerId)
         ? current.filter(id => id !== playerId)
         : [...current, playerId]
     ))
-  }
+  }, [])
 
   return {
     activeRound,
@@ -246,7 +255,6 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     courtDurationMin,
     courtPreset,
     effectiveTargetRounds,
-    expandedRosterPlayer,
     fairnessAudit,
     fairnessPreview,
     fairnessScore,
@@ -275,7 +283,6 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     setCourtDurationMin,
     setCourtPreset,
     setError: liveRows.setError,
-    setExpandedRosterPlayer,
     setGroupSelection,
     setManualAlternative,
     setPvnaTolerance,

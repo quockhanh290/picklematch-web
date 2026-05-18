@@ -14,6 +14,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
   const [error, setError] = useState<string | null>(null)
   const optimisticPlayerPatchesRef = useRef(new Map<string, Partial<SessionPlayerStateRow>>())
   const optimisticPlayerRowsRef = useRef(new Map<string, SessionPlayerStateRow>())
+  const settleTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   const loadLiveState = useCallback(async () => {
     setRefreshing(true)
@@ -94,11 +95,12 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
   }, [])
 
   const settlePlayerPatch = useCallback((playerId: string, patch: Partial<SessionPlayerStateRow>) => {
-    setTimeout(() => {
+    const id = setTimeout(() => {
       if (optimisticPlayerPatchesRef.current.get(playerId) === patch) {
         optimisticPlayerPatchesRef.current.delete(playerId)
       }
     }, 2500)
+    settleTimeoutsRef.current.push(id)
   }, [])
 
   const clearPlayerPatch = useCallback((playerId: string) => {
@@ -106,11 +108,12 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
   }, [])
 
   const settlePlayerRow = useCallback((playerId: string, row: SessionPlayerStateRow) => {
-    setTimeout(() => {
+    const id = setTimeout(() => {
       if (optimisticPlayerRowsRef.current.get(playerId) === row) {
         optimisticPlayerRowsRef.current.delete(playerId)
       }
     }, 2500)
+    settleTimeoutsRef.current.push(id)
   }, [])
 
   const clearPlayerRow = useCallback((playerId: string) => {
@@ -131,6 +134,8 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     void run()
     return () => {
       mounted = false
+      settleTimeoutsRef.current.forEach(clearTimeout)
+      settleTimeoutsRef.current = []
     }
   }, [loadLiveState])
 
