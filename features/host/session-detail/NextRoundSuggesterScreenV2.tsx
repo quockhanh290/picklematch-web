@@ -720,7 +720,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
                 justifyContent: 'center',
               }}
             >
-              <Text style={ctaTextStyle(theme.primary, 13)}>Hoàn tác: {selectionUndo.reason}</Text>
+              <Text style={ctaTextStyle(theme.primary, 13)}>Hoàn tác đánh đổi: {selectionUndo.reason}</Text>
             </TouchableOpacity>
           )}
 
@@ -1289,33 +1289,70 @@ function EngineExplainCard({
 
       {setupActions.length > 0 ? (
         <View style={{ marginTop: 8, gap: 6 }}>
-          {setupActions.map(action => (
-            <TouchableOpacity
-              key={action.type}
-              onPress={() => onApplyAction(action)}
-              style={{
-                minHeight: 38,
-                borderRadius: RADIUS.md,
-                backgroundColor: theme.surface,
-                borderWidth: BORDER.hairline,
-                borderColor: theme.outlineVariant,
-                paddingHorizontal: 12,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8,
-              }}
-            >
-              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurface, lineHeight: 16 }}>
-                {action.label}
-              </Text>
-              <Text style={ctaTextStyle(theme.primary, 11)}>Thử</Text>
-            </TouchableOpacity>
-          ))}
+          {setupActions.map(action => {
+            const impactLines = setupActionImpactLines(action)
+            return (
+              <TouchableOpacity
+                key={action.type}
+                onPress={() => onApplyAction(action)}
+                style={{
+                  minHeight: 38,
+                  borderRadius: RADIUS.md,
+                  backgroundColor: theme.surface,
+                  borderWidth: BORDER.hairline,
+                  borderColor: theme.outlineVariant,
+                  padding: 12,
+                  gap: 8,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, lineHeight: 16 }}>
+                    {action.label}
+                  </Text>
+                  <Text style={ctaTextStyle(theme.primary, 11)}>Đánh đổi</Text>
+                </View>
+                <View style={{ gap: 3 }}>
+                  {impactLines.map(line => (
+                    <Text key={line} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline, lineHeight: 15 }}>
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+                <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.primary, lineHeight: 14 }}>
+                  Có thể hoàn tác sau khi áp dụng.
+                </Text>
+              </TouchableOpacity>
+            )
+          })}
         </View>
       ) : null}
     </Card>
   )
+}
+
+function setupActionImpactLines(action: Extract<SuggestedRoundAction, { type: 'set_pvna_tolerance' | 'set_courts' }>): string[] {
+  const after = action.after
+  if (!after) return [action.detail]
+
+  const before = action.before
+  const repeatBefore = before.opponent_repeat_pairs + before.partner_repeat_pairs
+  const repeatAfter = after.opponent_repeat_pairs + after.partner_repeat_pairs
+  const lines = [
+    `Fairness dự kiến: ${before.fairness_total} -> ${after.fairness_total}`,
+    `Chênh PVNA vòng này: ${before.pvna_diff.toFixed(2)} -> ${after.pvna_diff.toFixed(2)}`,
+    `Lệch số trận: ${before.match_range} -> ${after.match_range}`,
+    `Tải lặp đối thủ tối đa: ${before.max_opponent_burden} -> ${after.max_opponent_burden}`,
+    `Cặp lặp tổng: ${repeatBefore} -> ${repeatAfter}`,
+  ]
+
+  if (before.max_opponent_pair !== after.max_opponent_pair) {
+    lines.push(`Một cặp đối thủ lặp nhiều nhất: ${before.max_opponent_pair} -> ${after.max_opponent_pair}`)
+  }
+  if (before.max_partner_pair !== after.max_partner_pair) {
+    lines.push(`Một cặp partner lặp nhiều nhất: ${before.max_partner_pair} -> ${after.max_partner_pair}`)
+  }
+
+  return lines
 }
 
 function improvementReasons(before: AlternativeAudit, after: AlternativeAudit): string[] {

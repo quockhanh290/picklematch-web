@@ -14,6 +14,7 @@ export type AlternativeAudit = {
   max_opponent_pair: number
   max_opponent_burden: number
   gender_rate: number
+  pvna_diff: number
 }
 
 export type SuggestedRoundAction =
@@ -71,6 +72,7 @@ export function auditAlternative(
     max_opponent_pair: Math.max(0, ...opponent.repeat_pairs.map(pair => pair.count)),
     max_opponent_burden: burden.max_repeated_opponents,
     gender_rate: gender.total_pref_opportunities === 0 ? 1 : gender.satisfaction_rate,
+    pvna_diff: alternative.stats.pvna_diff,
   }
 }
 
@@ -108,6 +110,7 @@ export function buildSuggestedRoundActions(input: {
 
   const { audits, pressure, setupPreviews } = input.cache
   const current = audits[input.selectedIndex] ?? audits[0]
+  const best = audits[0]
   const actions: SuggestedRoundAction[] = []
   const repeatRisk =
     pressure.repeat_risk === 'high' ||
@@ -137,34 +140,44 @@ export function buildSuggestedRoundActions(input: {
 
   if ((repeatRisk || rangeRisk) && input.pvnaTolerance <= 0.5) {
     const after = setupPreviews.pvnaTolerance08
-    actions.push({
-      type: 'set_pvna_tolerance',
-      label: 'Đánh đổi: Thử PVNA ±0.8',
-      detail: describeSetupTradeoff(
-        current,
+    if (
+      setupActionImprovesTarget(current, after, repeatRisk, rangeRisk) &&
+      setupActionIsWorthShowing(current, best, after)
+    ) {
+      actions.push({
+        type: 'set_pvna_tolerance',
+        label: `${setupActionPurpose(repeatRisk, rangeRisk)}: Thử PVNA ±0.8`,
+        detail: describeSetupTradeoff(
+          current,
+          after,
+          'Nới rộng dung sai (tolerance) để thuật toán có thêm tổ hợp hợp lệ. Đánh đổi: trình độ các trận có thể lệch hơn.',
+        ),
+        pvna_tolerance: 0.8,
+        before: current,
         after,
-        'Nới rộng dung sai (tolerance) để thuật toán có thêm tổ hợp hợp lệ. Đánh đổi: trình độ các trận có thể lệch hơn.',
-      ),
-      pvna_tolerance: 0.8,
-      before: current,
-      after: after ?? undefined,
-    })
+      })
+    }
   }
 
   if (repeatRisk && input.courtCount > 1) {
     const after = setupPreviews.courtsMinus1
-    actions.push({
-      type: 'set_courts',
-      label: `Đánh đổi: Giảm còn ${input.courtCount - 1} sân`,
-      detail: describeSetupTradeoff(
-        current,
+    if (
+      setupActionImprovesTarget(current, after, repeatRisk, false) &&
+      setupActionIsWorthShowing(current, best, after)
+    ) {
+      actions.push({
+        type: 'set_courts',
+        label: `Giảm lặp: Giảm còn ${input.courtCount - 1} sân`,
+        detail: describeSetupTradeoff(
+          current,
+          after,
+          'Giảm số sân vòng này để thêm người nghỉ và xoay vòng tổ hợp tốt hơn. Đánh đổi: ít người được chơi vòng này hơn.',
+        ),
+        courts: input.courtCount - 1,
+        before: current,
         after,
-        'Giảm số sân vòng này để thêm người nghỉ và xoay vòng tổ hợp tốt hơn. Đánh đổi: ít người được chơi vòng này hơn.',
-      ),
-      courts: input.courtCount - 1,
-      before: current,
-      after: after ?? undefined,
-    })
+      })
+    }
   }
 
   if (actions.length > 0) {
@@ -177,6 +190,44 @@ export function buildSuggestedRoundActions(input: {
   }
 
   return actions.slice(0, 4)
+}
+
+function setupActionPurpose(repeatRisk: boolean, rangeRisk: boolean): string {
+  if (repeatRisk && rangeRisk) return 'Giảm lặp/cân trận'
+  if (repeatRisk) return 'Giảm lặp'
+  return 'Cân số trận'
+}
+
+function setupActionImprovesTarget(
+  before: AlternativeAudit,
+  after: AlternativeAudit | null,
+  repeatRisk: boolean,
+  rangeRisk: boolean,
+): after is AlternativeAudit {
+  if (!after) return false
+  if (rangeRisk && after.match_range < before.match_range) return true
+  if (
+    repeatRisk &&
+    (
+      after.max_opponent_burden < before.max_opponent_burden ||
+      after.max_opponent_pair < before.max_opponent_pair ||
+      after.max_partner_pair < before.max_partner_pair ||
+      after.opponent_repeat_pairs < before.opponent_repeat_pairs ||
+      after.partner_repeat_pairs < before.partner_repeat_pairs
+    )
+  ) {
+    return true
+  }
+  return after.fairness_total > before.fairness_total + 2
+}
+
+function setupActionIsWorthShowing(
+  current: AlternativeAudit,
+  best: AlternativeAudit | undefined,
+  after: AlternativeAudit,
+): boolean {
+  if (!best || current.index === best.index) return true
+  return compareAudit(after, best) < 0
 }
 
 export function describeAlternativeDelta(before: AlternativeAudit, after: AlternativeAudit): string {
