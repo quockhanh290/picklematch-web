@@ -77,16 +77,17 @@ export function buildPairHistoryUpdates(
 
 export function commitCompletedRound(
   state: SessionState,
-  round: Pick<RoundRecord, 'round_no' | 'matches'>,
+  round: Pick<RoundRecord, 'round_no' | 'matches'> & Partial<Pick<RoundRecord, 'resting'>>,
   existingPairRows: SessionPairHistoryRow[] = [],
 ): CommitResult {
   const playedIds = getPlayedIds(round.matches)
+  const rosterIds = new Set([...playedIds, ...(round.resting ?? [])])
   const players = new Map<string, PlayerSessionState>()
 
   for (const [playerId, player] of state.players) {
     const next = clonePlayer(player)
 
-    if (next.checked_out_at === null) {
+    if (next.checked_out_at === null && rosterIds.has(playerId)) {
       if (playedIds.has(playerId)) {
         next.matches_played += 1
         next.last_played_round = round.round_no

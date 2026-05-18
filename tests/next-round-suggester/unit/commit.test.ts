@@ -10,6 +10,7 @@ describe('commitCompletedRound', () => {
     const result = commitCompletedRound(state, {
       round_no: 3,
       matches: [createMatch(['p1', 'p2'], ['p3', 'p4'])],
+      resting: ['p5'],
     })
 
     expect(result.players.get('p1')?.matches_played).toBe(1)
@@ -31,12 +32,34 @@ describe('commitCompletedRound', () => {
     const result = commitCompletedRound(state, {
       round_no: 1,
       matches: [createMatch(['p1', 'p2'], ['p3', 'p4'])],
+      resting: ['p5'],
     })
 
     expect(result.players.get('p1')?.consecutive_play).toBe(2)
     expect(result.players.get('p1')?.consecutive_rest).toBe(0)
     expect(result.players.get('p5')?.consecutive_play).toBe(0)
     expect(result.players.get('p5')?.consecutive_rest).toBe(2)
+  })
+
+  it('does not count absent players as resting when they are not in the round roster', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1'),
+        createPlayer('p2'),
+        createPlayer('p3'),
+        createPlayer('p4'),
+        createPlayer('late', { consecutive_rest: 2 }),
+      ],
+    })
+
+    const result = commitCompletedRound(state, {
+      round_no: 1,
+      matches: [createMatch(['p1', 'p2'], ['p3', 'p4'])],
+      resting: [],
+    })
+
+    expect(result.players.get('late')?.consecutive_rest).toBe(2)
+    expect(result.players.get('late')?.matches_played).toBe(0)
   })
 
   it('increments partner_counts for both partner directions in pair history rows', () => {

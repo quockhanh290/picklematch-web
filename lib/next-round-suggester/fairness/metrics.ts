@@ -360,9 +360,15 @@ export function computeRestFairness(state: SessionState): RestFairnessMetrics {
   const currentRestRun = new Map([...byPlayer.keys()].map((playerId) => [playerId, 0]))
 
   for (const round of [...state.rounds].sort((a, b) => a.round_no - b.round_no)) {
+    const roster = getRoundRoster(round)
     const resting = new Set(round.resting)
 
     for (const [playerId, metrics] of byPlayer) {
+      if (!roster.has(playerId)) {
+        currentRestRun.set(playerId, 0)
+        continue
+      }
+
       if (resting.has(playerId)) {
         const nextRun = (currentRestRun.get(playerId) ?? 0) + 1
         currentRestRun.set(playerId, nextRun)
@@ -378,6 +384,7 @@ export function computeRestFairness(state: SessionState): RestFairnessMetrics {
   for (const player of sortedPlayers(state)) {
     const metrics = byPlayer.get(player.player_id)
     if (!metrics) continue
+    if (player.checked_out_at !== null || player.opted_rest) continue
     metrics.max_consecutive_rest = Math.max(metrics.max_consecutive_rest, player.consecutive_rest)
   }
 

@@ -13,6 +13,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
   const [rows, setRows] = useState<LiveRows>({ playerRows: [], pairRows: [], roundRows: [] })
   const [error, setError] = useState<string | null>(null)
   const optimisticPlayerPatchesRef = useRef(new Map<string, Partial<SessionPlayerStateRow>>())
+  const optimisticPlayerRowsRef = useRef(new Map<string, SessionPlayerStateRow>())
 
   const loadLiveState = useCallback(async () => {
     setRefreshing(true)
@@ -42,8 +43,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
         return
       }
 
-      setRows({
-        playerRows: ((playerRes.data ?? []) as SessionPlayerStateRow[]).map(row => ({
+      const serverPlayerRows = ((playerRes.data ?? []) as SessionPlayerStateRow[]).map(row => ({
           ...row,
           ...(optimisticPlayerPatchesRef.current.get(row.player_id) ?? {}),
           players: {
@@ -56,7 +56,12 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
           session_players: {
             metadata: playersById.get(row.player_id)?.metadata ?? null,
           },
-        })),
+        }))
+      const serverPlayerIds = new Set(serverPlayerRows.map(row => row.player_id))
+      const optimisticRows = [...optimisticPlayerRowsRef.current.values()]
+        .filter(row => !serverPlayerIds.has(row.player_id))
+      setRows({
+        playerRows: [...serverPlayerRows, ...optimisticRows],
         pairRows: (pairRes.data ?? []) as SessionPairHistoryRow[],
         roundRows: ((roundRes.data ?? []) as RawRoundRow[]).map(normalizeRoundRow),
       })
@@ -75,6 +80,19 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     }))
   }, [])
 
+  const addPlayerRow = useCallback((row: SessionPlayerStateRow) => {
+    optimisticPlayerRowsRef.current.set(row.player_id, row)
+    setRows(current => {
+      const exists = current.playerRows.some(playerRow => playerRow.player_id === row.player_id)
+      return {
+        ...current,
+        playerRows: exists
+          ? current.playerRows.map(playerRow => playerRow.player_id === row.player_id ? { ...playerRow, ...row } : playerRow)
+          : [...current.playerRows, row],
+      }
+    })
+  }, [])
+
   const settlePlayerPatch = useCallback((playerId: string, patch: Partial<SessionPlayerStateRow>) => {
     setTimeout(() => {
       if (optimisticPlayerPatchesRef.current.get(playerId) === patch) {
@@ -85,6 +103,22 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
 
   const clearPlayerPatch = useCallback((playerId: string) => {
     optimisticPlayerPatchesRef.current.delete(playerId)
+  }, [])
+
+  const settlePlayerRow = useCallback((playerId: string, row: SessionPlayerStateRow) => {
+    setTimeout(() => {
+      if (optimisticPlayerRowsRef.current.get(playerId) === row) {
+        optimisticPlayerRowsRef.current.delete(playerId)
+      }
+    }, 2500)
+  }, [])
+
+  const clearPlayerRow = useCallback((playerId: string) => {
+    optimisticPlayerRowsRef.current.delete(playerId)
+    setRows(current => ({
+      ...current,
+      playerRows: current.playerRows.filter(row => row.player_id !== playerId),
+    }))
   }, [])
 
   useEffect(() => {
@@ -100,5 +134,5 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     }
   }, [loadLiveState])
 
-  return { clearPlayerPatch, error, loading, loadLiveState, patchPlayerRow, refreshing, rows, setError, settlePlayerPatch }
+  return { addPlayerRow, clearPlayerPatch, clearPlayerRow, error, loading, loadLiveState, patchPlayerRow, refreshing, rows, setError, settlePlayerPatch, settlePlayerRow }
 }

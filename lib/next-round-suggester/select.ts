@@ -90,7 +90,7 @@ export function pickPlayers(
     warnings.push('MUST_REST_FORCED_PLAY')
   }
   const selectedIds = new Set(selected.map((player) => player.player_id))
-  const resting = presentPlayers.filter((player) => !selectedIds.has(player.player_id))
+  const resting = presentPlayers.filter((player) => !selectedIds.has(player.player_id) && !player.opted_rest)
 
   return {
     selected,

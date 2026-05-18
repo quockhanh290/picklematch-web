@@ -21,15 +21,15 @@ export function HostCheckInScreen({ sessionId, players, onUpdated, onClose }: Pr
   
   const confirmedPlayers = useMemo(() => players.filter(p => p.status === 'confirmed'), [players])
 
-  const [statuses, setStatuses] = useState<Record<string, 'present' | 'no_show'>>(() => {
-    const s: Record<string, 'present' | 'no_show'> = {}
+  const [statuses, setStatuses] = useState<Record<string, 'present' | 'pending'>>(() => {
+    const s: Record<string, 'present' | 'pending'> = {}
     confirmedPlayers.forEach(p => {
-      s[p.player_id] = (p.check_in_status as any) || 'present'
+      s[p.player_id] = p.check_in_status === 'pending' || p.check_in_status === 'no_show' ? 'pending' : 'present'
     })
     return s
   })
 
-  const handleToggleStatus = (playerId: string, status: 'present' | 'no_show') => {
+  const handleToggleStatus = (playerId: string, status: 'present' | 'pending') => {
     setStatuses(prev => ({ ...prev, [playerId]: status }))
   }
 
@@ -81,7 +81,7 @@ export function HostCheckInScreen({ sessionId, players, onUpdated, onClose }: Pr
           confirmedPlayers.map(p => {
             const status = statuses[p.player_id]
             const isPresent = status === 'present'
-            const isNoShow = status === 'no_show'
+            const isPending = status === 'pending'
 
             return (
               <View key={p.player_id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: theme.outlineVariant }}>
@@ -112,7 +112,7 @@ export function HostCheckInScreen({ sessionId, players, onUpdated, onClose }: Pr
 
                   {/* No Show Button */}
                   <Pressable 
-                    onPress={() => handleToggleStatus(p.player_id, 'no_show')} 
+                    onPress={() => handleToggleStatus(p.player_id, 'pending')} 
                     style={({ pressed }) => ({
                       flexDirection: 'row', 
                       alignItems: 'center', 
@@ -120,14 +120,14 @@ export function HostCheckInScreen({ sessionId, players, onUpdated, onClose }: Pr
                       paddingHorizontal: 12, 
                       paddingVertical: 8, 
                       borderRadius: 8, 
-                      backgroundColor: isNoShow ? '#dc2626' : theme.surfaceVariant,
+                      backgroundColor: isPending ? '#FAEEDA' : theme.surfaceVariant,
                       opacity: pressed ? 0.8 : 1,
                       borderWidth: 1,
-                      borderColor: isNoShow ? '#dc2626' : theme.outlineVariant
+                      borderColor: isPending ? '#EF9F27' : theme.outlineVariant
                     })}
                   >
-                    <XCircle size={14} color={isNoShow ? '#fff' : theme.outline} />
-                    <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: isNoShow ? '#fff' : theme.outline, fontWeight: '700' }}>VẮNG</Text>
+                    <XCircle size={14} color={isPending ? '#854F0B' : theme.outline} />
+                    <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: isPending ? '#854F0B' : theme.outline, fontWeight: '700' }}>CHƯA TỚI</Text>
                   </Pressable>
                 </View>
               </View>

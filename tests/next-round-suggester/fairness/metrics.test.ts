@@ -200,6 +200,48 @@ describe('Rest Fairness', () => {
     expect(p1?.max_consecutive_rest).toBe(2)
     expect(p1?.rest_segments).toBe(2)
   })
+
+  it('does not carry stale consecutive rest after a player checks out', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1', {
+          checked_out_at: new Date('2026-05-14T12:30:00.000Z'),
+          consecutive_rest: 3,
+        }),
+        createPlayer('p2'),
+        createPlayer('p3'),
+        createPlayer('p4'),
+      ],
+    })
+    state.rounds = [makeRound(0, [])]
+
+    const metrics = computeRestFairness(state)
+    const p1 = metrics.per_player.find((player) => player.player_id === 'p1')
+
+    expect(p1?.max_consecutive_rest).toBe(0)
+    expect(metrics.violations.some((player) => player.player_id === 'p1')).toBe(false)
+  })
+
+  it('does not count active opt-out rest as an engine rest violation', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1', {
+          consecutive_rest: 2,
+          opted_rest: true,
+        }),
+        createPlayer('p2'),
+        createPlayer('p3'),
+        createPlayer('p4'),
+      ],
+    })
+    state.rounds = [makeRound(0, [])]
+
+    const metrics = computeRestFairness(state)
+    const p1 = metrics.per_player.find((player) => player.player_id === 'p1')
+
+    expect(p1?.max_consecutive_rest).toBe(0)
+    expect(metrics.violations.some((player) => player.player_id === 'p1')).toBe(false)
+  })
 })
 
 describe('Availability Pressure', () => {

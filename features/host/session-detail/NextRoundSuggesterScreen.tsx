@@ -187,7 +187,7 @@ function isRosterSyncEligible(player: ArrangementPlayer) {
 
 function isConfirmedNonNoShow(player: ArrangementPlayer) {
   if (player.status && player.status !== 'confirmed') return false
-  return player.checkInStatus !== 'no_show'
+  return player.checkInStatus !== 'no_show' && player.checkInStatus !== 'pending'
 }
 
 function withWeights(state: SessionState, weights: SessionState['config']['weights']): SessionState {

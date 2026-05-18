@@ -198,7 +198,7 @@ function makeAlternative(
 
   const selectedIds = new Set(selected.map((player) => player.player_id))
   const resting = allPresent
-    .filter((player) => !selectedIds.has(player.player_id))
+    .filter((player) => !selectedIds.has(player.player_id) && !player.opted_rest)
     .map((player) => player.player_id)
     .sort()
 

@@ -18,7 +18,7 @@ export type LiveRows = {
   roundRows: SessionRoundRow[]
 }
 
-export type SheetKey = 'settings' | 'swap' | 'fairness' | 'preview' | 'roster' | 'history' | 'more' | null
+export type SheetKey = 'settings' | 'swap' | 'fairness' | 'preview' | 'roster' | 'history' | 'late-arrivals' | 'more' | null
 
 export type RoundSelectionSnapshot = {
   selectedAlternative: number

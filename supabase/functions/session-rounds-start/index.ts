@@ -152,7 +152,7 @@ Deno.serve(async (request) => {
 
       const presentIds = new Set(
         [...state.players.values()]
-          .filter((player) => player.checked_out_at === null)
+          .filter((player) => player.checked_out_at === null && !player.opted_rest)
           .map((player) => player.player_id),
       )
 
@@ -161,7 +161,7 @@ Deno.serve(async (request) => {
       }
 
       resting = [...state.players.values()]
-        .filter((player) => player.checked_out_at === null && !playedIds.has(player.player_id))
+        .filter((player) => player.checked_out_at === null && !player.opted_rest && !playedIds.has(player.player_id))
         .map((player) => player.player_id)
         .sort()
 

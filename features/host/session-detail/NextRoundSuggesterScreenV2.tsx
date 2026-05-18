@@ -46,7 +46,7 @@ import type {
 } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
-import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds } from './next-round-v2/api'
+import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent } from './next-round-v2/api'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
 import { ChoiceRow, NavbarRightActions, StickyRoundCta } from './next-round-v2/controls'
@@ -54,6 +54,7 @@ import {
   BreakdownRow,
   GroupAuditBlock,
   HistorySheet as HistorySheetView,
+  LateArrivalsSheet as LateArrivalsSheetView,
   MoreSheet as MoreSheetView,
   RecapView as RecapViewModule,
   RepeatDetailsBlock,
@@ -64,6 +65,7 @@ import {
   ctaTextStyle,
   eyebrowStyle,
   formatNumber,
+  getPlayerPvna,
   getTeamPvna,
   playerName,
   repeatRiskLabel,
@@ -145,9 +147,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   const model = useNextRoundModel({ sessionId, players, courts })
   const {
     activeRound,
+    addPlayerRow,
     applySuggestedRoundAction,
     checkedInPlayers,
     clearPlayerPatch,
+    clearPlayerRow,
     completedRoundCount,
     completedRounds,
     courtCalculator,
@@ -196,6 +200,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     setSwapFromPlayerId,
     setTargetRounds,
     settlePlayerPatch,
+    settlePlayerRow,
     sheet,
     showEngineStats,
     state,
@@ -336,12 +341,25 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   }
 
   const toggleRest = async (playerId: string, optedRest: boolean) => {
-    await runAction(`rest-${playerId}`, async () => {
+    const optimisticPatch = { opted_rest: !optedRest }
+    patchPlayerRow(playerId, optimisticPatch)
+    setManualAlternative(null)
+    setSwapFromPlayerId(null)
+    setError(null)
+    try {
       await invokeLiveSessionFunction('session-request-rest', sessionId, {
         player_id: playerId,
         opted_rest: !optedRest,
       })
-    })
+      settlePlayerPatch(playerId, optimisticPatch)
+    } catch (err: any) {
+      clearPlayerPatch(playerId)
+      const safeMessage = toUserSafeActionError(err)
+      console.warn('[NextRoundSuggesterV2] rest toggle failed', err)
+      setError(safeMessage)
+      await loadLiveState()
+      Alert.alert('Lỗi', safeMessage)
+    }
   }
 
   const setGroupForPlayers = async (playerIds: string[]) => {
@@ -375,9 +393,75 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     setGroupSelection([])
   }
 
+  const addLateArrivalToRoster = async (playerId: string) => {
+    const player = playersById.get(playerId)
+    const optimisticRow: SessionPlayerStateRow = {
+      session_id: sessionId,
+      player_id: playerId,
+      group_id: null,
+      checked_in_at: new Date().toISOString(),
+      checked_out_at: null,
+      matches_played: 0,
+      last_played_round: -1,
+      consecutive_rest: 0,
+      consecutive_play: 0,
+      opted_rest: false,
+      players: {
+        pvna: getPlayerPvna(player) ?? 0,
+        elo: player?.elo,
+        gender: player?.gender,
+        partner_gender_pref: player?.metadata?.partner_gender_pref as string | null | undefined,
+        opponent_gender_pref: player?.metadata?.opponent_gender_pref as string | null | undefined,
+      },
+      session_players: {
+        metadata: player?.metadata ?? null,
+      },
+    }
+
+    addPlayerRow(optimisticRow)
+    setBusy(`late-${playerId}`)
+    setError(null)
+    try {
+      const [, checkinPayload] = await Promise.all([
+        markSessionPlayersPresent(sessionId, [playerId]),
+        invokeLiveSessionFunction('session-checkin', sessionId, { player_id: playerId }),
+      ])
+      const serverRow = checkinPayload?.player as SessionPlayerStateRow | null | undefined
+      if (serverRow) {
+        const hydratedRow: SessionPlayerStateRow = {
+          ...serverRow,
+          players: optimisticRow.players,
+          session_players: optimisticRow.session_players,
+        }
+        addPlayerRow(hydratedRow)
+        settlePlayerRow(playerId, hydratedRow)
+      } else {
+        settlePlayerRow(playerId, optimisticRow)
+      }
+    } catch (err: any) {
+      clearPlayerRow(playerId)
+      const safeMessage = toUserSafeActionError(err)
+      console.warn('[NextRoundSuggesterV2] late arrival failed', err)
+      setError(safeMessage)
+      await loadLiveState()
+      Alert.alert('Lỗi', safeMessage)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const startRound = async (alternative: SuggestionAlternative) => {
     await runAction('start', async () => {
       if (activeRound) throw new Error('Đang có vòng active. Hãy kết thúc vòng hiện tại trước.')
+      const unavailableIds = alternative.matches
+        .flatMap(match => [...match.team_a, ...match.team_b])
+        .filter(playerId => {
+          const player = state.players.get(playerId)
+          return !player || player.checked_out_at !== null || player.opted_rest
+        })
+      if (unavailableIds.length > 0) {
+        throw new Error('Manual matches must use checked-in players')
+      }
       await invokeLiveSessionFunction('session-rounds-start', sessionId, {
         suggestion_idx: selectedAlternative,
         manual: alternative.matches,
@@ -467,6 +551,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   const rosterTotalCount = rows.playerRows.length
   const checkedOutCount = rows.playerRows.filter(row => row.checked_out_at).length
   const requestedRestCount = rows.playerRows.filter(row => !row.checked_out_at && row.opted_rest).length
+  const livePlayerIds = new Set(rows.playerRows.map(row => String(row.player_id)))
+  const lateArrivalPlayers = players.filter(player => {
+    if (player.status && player.status !== 'confirmed') return false
+    const status = player.checkInStatus
+    return (status === 'pending' || status === 'no_show') && !livePlayerIds.has(String(player.id))
+  })
 
   const navbarRightSlot = <NavbarRightActions sessionId={sessionId} onRefresh={loadLiveState} refreshing={refreshing} />
 
@@ -515,6 +605,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
             onFairnessPress={() => setSheet('fairness')}
             onSettingsPress={() => setSheet('settings')}
           />
+
+          {lateArrivalPlayers.length > 0 ? (
+            <LateArrivalsCta count={lateArrivalPlayers.length} onPress={() => setSheet('late-arrivals')} />
+          ) : null}
 
           {targetReached && !activeRound ? (
             <Card style={{ marginTop: 14, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
@@ -714,6 +808,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         <HistorySheetView rounds={completedRounds} playersById={playersById} />
       </NextRoundSheet>
 
+      <NextRoundSheet visible={sheet === 'late-arrivals'} snap="50" onClose={() => setSheet(null)}>
+        <LateArrivalsSheetView players={lateArrivalPlayers} busy={busy} onAddPlayer={playerId => { void addLateArrivalToRoster(playerId) }} />
+      </NextRoundSheet>
+
       <NextRoundSheet visible={sheet === 'more'} snap="50" onClose={() => setSheet(null)}>
         <MoreSheetView
           onSyncRoster={syncRoster}
@@ -789,6 +887,38 @@ function SessionHeroCard({
         </View>
       </View>
     </LinearGradient>
+  )
+}
+
+function LateArrivalsCta({ count, onPress }: { count: number; onPress: () => void }) {
+  const theme = useAppTheme()
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.88}
+      style={{
+        marginTop: 12,
+        borderRadius: RADIUS.md,
+        backgroundColor: theme.warningBg,
+        borderWidth: BORDER.hairline,
+        borderColor: theme.warningStrong,
+        padding: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+      }}
+    >
+      <View style={{ width: 32, height: 32, borderRadius: RADIUS.full, backgroundColor: theme.surface, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.warningText }}>{count}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.warningText }}>Có người đến muộn</Text>
+        <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.warningText }}>
+          Thêm vào roster trước khi gợi ý vòng tiếp theo.
+        </Text>
+      </View>
+      <Text style={ctaTextStyle(theme.warningText, 11)}>Mở</Text>
+    </TouchableOpacity>
   )
 }
 

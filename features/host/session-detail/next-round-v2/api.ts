@@ -171,11 +171,24 @@ export async function loadLatestSyncablePlayerIds(
     .filter(row => row.check_in_status === 'present' || row.check_in_status === 'checked_in')
     .map(row => String(row.player_id))
   const activeIds = confirmedRows
-    .filter(row => row.check_in_status !== 'no_show')
+    .filter(row => row.check_in_status !== 'no_show' && row.check_in_status !== 'pending')
     .map(row => String(row.player_id))
 
   const preferredIds = presentIds.length > 0 ? presentIds : activeIds
   if (confirmedRows.length > 0) return [...new Set(preferredIds)]
 
   return [...new Set(localFallbackIds)]
+}
+
+export async function markSessionPlayersPresent(sessionId: string, playerIds: string[]) {
+  const uniqueIds = [...new Set(playerIds)].filter(Boolean)
+  if (uniqueIds.length === 0) return
+
+  const { error } = await supabase
+    .from('session_players')
+    .update({ check_in_status: 'present' })
+    .eq('session_id', sessionId)
+    .in('player_id', uniqueIds)
+
+  if (error) throw error
 }

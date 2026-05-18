@@ -381,7 +381,9 @@ export function HostSessionDetailScreen({
                     ...SHADOW.sm
                   }}
                 >
-                  <Text style={{ color: theme.dangerText, fontSize: 16, fontFamily: SCREEN_FONTS.headline, fontWeight: '700' }}>{STRINGS.common.cancel}</Text>
+                  <Text style={{ color: theme.onSurface, fontSize: 16, fontFamily: SCREEN_FONTS.headline, fontWeight: '700' }}>
+                    {STRINGS.common.cancel || 'Hủy'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}

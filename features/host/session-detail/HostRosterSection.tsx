@@ -207,14 +207,14 @@ export function HostRosterSection({
       )
     }
 
-    const confirmed = activePlayers.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show')
-    const noShows = activePlayers.filter(p => p.checkInStatus === 'no_show')
+    const confirmed = activePlayers.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show' && p.checkInStatus !== 'pending')
+    const noShows = activePlayers.filter(p => p.checkInStatus === 'no_show' || p.checkInStatus === 'pending')
     const waiting = activePlayers.filter(p => p.status === 'waiting')
 
-    const totalCount = activePlayers.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show').length
+    const totalCount = activePlayers.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show' && p.checkInStatus !== 'pending').length
     const femaleCount = activePlayers.filter(p => {
       const g = String(p.gender || '').toLowerCase()
-      return (g === 'female' || g === 'nữ') && p.status === 'confirmed' && p.checkInStatus !== 'no_show'
+      return (g === 'female' || g === 'nữ') && p.status === 'confirmed' && p.checkInStatus !== 'no_show' && p.checkInStatus !== 'pending'
     }).length
     const maleCount = totalCount - femaleCount
     const totalSkill = confirmed.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
@@ -530,15 +530,15 @@ export function HostRosterSection({
               </TouchableOpacity>
 
               <TouchableOpacity 
-                onPress={() => handleCheckInUpdate(player.id, 'no_show')}
+                onPress={() => handleCheckInUpdate(player.id, 'pending')}
                 activeOpacity={0.7}
                 style={{
                   paddingHorizontal: 12,
                   paddingVertical: 8,
                   borderRadius: 10,
-                  backgroundColor: checkInStatus === 'no_show' ? '#dc2626' : '#F5F5F0',
+                  backgroundColor: checkInStatus === 'pending' || checkInStatus === 'no_show' ? '#FAEEDA' : '#F5F5F0',
                   borderWidth: 1,
-                  borderColor: checkInStatus === 'no_show' ? '#dc2626' : '#E5E3DC',
+                  borderColor: checkInStatus === 'pending' || checkInStatus === 'no_show' ? '#EF9F27' : '#E5E3DC',
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: 6,
@@ -546,8 +546,8 @@ export function HostRosterSection({
                   justifyContent: 'center'
                 }}
               >
-                <XCircle size={14} color={checkInStatus === 'no_show' ? 'white' : '#7A8884'} />
-                <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: checkInStatus === 'no_show' ? 'white' : '#7A8884', fontWeight: '800' }}>VẮNG</Text>
+                <XCircle size={14} color={checkInStatus === 'pending' || checkInStatus === 'no_show' ? '#854F0B' : '#7A8884'} />
+                <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.headline, color: checkInStatus === 'pending' || checkInStatus === 'no_show' ? '#854F0B' : '#7A8884', fontWeight: '800' }}>CHƯA TỚI</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -635,7 +635,7 @@ export function HostRosterSection({
           flexDirection: 'row', alignItems: 'center',
           gap: 8, marginBottom: 8,
         }}>
-          <Text style={{ fontSize: 14 }}>🕐</Text>
+          <Text style={{ fontSize: 14, color: '#854F0B' }}>•</Text>
           <Text style={{
             fontSize: 12, fontWeight: '700', color: '#EF9F27',
             fontFamily: SCREEN_FONTS.label
@@ -661,17 +661,17 @@ export function HostRosterSection({
           flexDirection: 'row', alignItems: 'center',
           gap: 8, marginBottom: 8,
         }}>
-          <Text style={{ fontSize: 14 }}>❌</Text>
+          <Text style={{ fontSize: 14, color: '#854F0B' }}>•</Text>
           <Text style={{
-            fontSize: 12, fontWeight: '700', color: '#dc2626',
+            fontSize: 12, fontWeight: '700', color: '#854F0B',
             fontFamily: SCREEN_FONTS.label
-          }}>VẮNG MẶT (NO SHOW)</Text>
+          }}>CHƯA TỚI</Text>
           <View style={{
-            backgroundColor: '#fee2e2', paddingHorizontal: 7,
+            backgroundColor: '#FAEEDA', paddingHorizontal: 7,
             paddingVertical: 2, borderRadius: 999,
           }}>
             <Text style={{
-              fontSize: 10, fontWeight: '700', color: '#b91c1c',
+              fontSize: 10, fontWeight: '700', color: '#854F0B',
               fontFamily: SCREEN_FONTS.label
             }}>{noShows.length}</Text>
           </View>
@@ -986,7 +986,7 @@ export function HostRosterSection({
     )
   }
 
-  const handleCheckInUpdate = async (playerId: string, status: 'present' | 'no_show') => {
+  const handleCheckInUpdate = async (playerId: string, status: 'present' | 'no_show' | 'pending') => {
     if (!sessionId) return
     console.log('[CheckIn] Updating player:', playerId, 'to:', status)
     
