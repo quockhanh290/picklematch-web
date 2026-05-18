@@ -74,9 +74,31 @@ export function auditAlternative(
   }
 }
 
+export type SuggestedRoundActionsCache = {
+  audits: AlternativeAudit[]
+  pressure: ReturnType<typeof computeRepeatPressure>
+  setupPreviews: { pvnaTolerance08: AlternativeAudit | null; courtsMinus1: AlternativeAudit | null }
+}
+
+export function buildSuggestedRoundActionsCache(
+  state: SessionState,
+  alternatives: SuggestionAlternative[],
+  courtCount: number,
+): SuggestedRoundActionsCache {
+  return {
+    audits: alternatives.map((alt, i) => auditAlternative(state, alt, i)),
+    pressure: computeRepeatPressure(state),
+    setupPreviews: {
+      pvnaTolerance08: previewSetupChange({ state, pvnaTolerance: 0.8 }),
+      courtsMinus1: courtCount > 1 ? previewSetupChange({ state, courtCount: courtCount - 1 }) : null,
+    },
+  }
+}
+
 export function buildSuggestedRoundActions(input: {
   state: SessionState
   alternatives: SuggestionAlternative[]
+  cache: SuggestedRoundActionsCache
   selectedIndex: number
   pvnaTolerance: number
   courtCount: number
@@ -84,8 +106,7 @@ export function buildSuggestedRoundActions(input: {
   const selected = input.alternatives[input.selectedIndex] ?? input.alternatives[0]
   if (!selected) return []
 
-  const pressure = computeRepeatPressure(input.state)
-  const audits = input.alternatives.map((alternative, index) => auditAlternative(input.state, alternative, index))
+  const { audits, pressure, setupPreviews } = input.cache
   const current = audits[input.selectedIndex] ?? audits[0]
   const actions: SuggestedRoundAction[] = []
   const repeatRisk =
@@ -115,10 +136,7 @@ export function buildSuggestedRoundActions(input: {
   }
 
   if ((repeatRisk || rangeRisk) && input.pvnaTolerance <= 0.5) {
-    const after = previewSetupChange({
-      state: input.state,
-      pvnaTolerance: 0.8,
-    })
+    const after = setupPreviews.pvnaTolerance08
     actions.push({
       type: 'set_pvna_tolerance',
       label: 'Đánh đổi: Thử PVNA ±0.8',
@@ -134,10 +152,7 @@ export function buildSuggestedRoundActions(input: {
   }
 
   if (repeatRisk && input.courtCount > 1) {
-    const after = previewSetupChange({
-      state: input.state,
-      courtCount: input.courtCount - 1,
-    })
+    const after = setupPreviews.courtsMinus1
     actions.push({
       type: 'set_courts',
       label: `Đánh đổi: Giảm còn ${input.courtCount - 1} sân`,

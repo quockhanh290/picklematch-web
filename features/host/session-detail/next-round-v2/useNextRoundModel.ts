@@ -1,7 +1,7 @@
 import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
 
 import { calculateOptimalCourts, type CourtPreset } from '@/lib/court-calculator'
-import { buildSuggestedRoundActions, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
+import { buildSuggestedRoundActions, buildSuggestedRoundActionsCache, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import { buildMatchCountConsistencyRows, buildFairnessPreview, buildLatestFairnessAudit } from '@/lib/next-round-suggester/fairness/audit'
 import { applyFairnessAdjustment, correctForFairness } from '@/lib/next-round-suggester/fairness/corrector'
 import { buildGroupAliasMap, buildGroupSummaries } from '@/lib/next-round-suggester/fairness/group-audit'
@@ -144,24 +144,47 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const workingAlternative = manualAlternative ?? selected
   const hasManualSwapHardGuard = Boolean(workingAlternative?.warnings.includes('MANUAL_SWAP_HARD_GUARD'))
   const fairnessScore = useMemo(() => computeSessionFairness(state), [state])
-  const fairnessPreview = useMemo(
-    () => buildFairnessPreview(deferredState, workingAlternative),
-    [deferredState, workingAlternative],
-  )
-  const fairnessWarnings = useMemo(
-    () => buildFairnessWarningsForBanner(deferredState, workingAlternative),
-    [deferredState, workingAlternative],
-  )
   const fairnessAudit = useMemo(() => buildLatestFairnessAudit(state), [state])
+
+  // Pre-compute cho tất cả alternatives — chỉ chạy khi engine tạo suggestion mới,
+  // không chạy lại khi user chỉ đổi selectedAlternative.
+  const suggestedRoundActionsCache = useMemo(
+    () => buildSuggestedRoundActionsCache(deferredState, suggestion.alternatives, deferredCourtCount),
+    [deferredCourtCount, deferredState, suggestion.alternatives],
+  )
+  const alternativeFairnessPreviews = useMemo(
+    () => suggestion.alternatives.map(alt => buildFairnessPreview(deferredState, alt)),
+    [deferredState, suggestion.alternatives],
+  )
+  const alternativeFairnessWarnings = useMemo(
+    () => suggestion.alternatives.map(alt => buildFairnessWarningsForBanner(deferredState, alt)),
+    [deferredState, suggestion.alternatives],
+  )
+
+  // manualAlternative cần tính riêng vì không nằm trong suggestion.alternatives
+  const manualFairnessPreview = useMemo(
+    () => manualAlternative ? buildFairnessPreview(deferredState, manualAlternative) : null,
+    [deferredState, manualAlternative],
+  )
+  const manualFairnessWarnings = useMemo(
+    () => manualAlternative ? buildFairnessWarningsForBanner(deferredState, manualAlternative) : null,
+    [deferredState, manualAlternative],
+  )
+
+  // Đổi ALT chỉ là đổi index — không tính gì thêm
+  const fairnessPreview = manualFairnessPreview ?? alternativeFairnessPreviews[selectedAlternative] ?? alternativeFairnessPreviews[0] ?? null
+  const fairnessWarnings = manualFairnessWarnings ?? alternativeFairnessWarnings[selectedAlternative] ?? alternativeFairnessWarnings[0] ?? []
+
   const suggestedRoundActions = useMemo(
     () => buildSuggestedRoundActions({
       state: deferredState,
       alternatives: suggestion.alternatives,
+      cache: suggestedRoundActionsCache,
       selectedIndex: selectedAlternative,
       pvnaTolerance: deferredPvnaTolerance,
       courtCount: deferredCourtCount,
     }),
-    [deferredCourtCount, deferredPvnaTolerance, deferredState, selectedAlternative, suggestion.alternatives],
+    [deferredCourtCount, deferredPvnaTolerance, deferredState, selectedAlternative, suggestedRoundActionsCache, suggestion.alternatives],
   )
 
   const activeRound = useMemo(() => liveRows.rows.roundRows.find(row => row.status === 'active') ?? null, [liveRows.rows.roundRows])

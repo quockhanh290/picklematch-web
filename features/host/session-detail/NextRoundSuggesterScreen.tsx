@@ -6,7 +6,7 @@ import { AppLoading } from '@/components/design'
 import { RADIUS, SHADOW } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { calculateOptimalCourts, PRESETS, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
-import { buildSuggestedRoundActions, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
+import { buildSuggestedRoundActions, buildSuggestedRoundActionsCache, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import { mapRowsToSessionState } from '@/lib/next-round-suggester/state'
 import { suggestNextRound } from '@/lib/next-round-suggester/suggest'
 import { scoreMatch } from '@/lib/next-round-suggester/score'
@@ -412,15 +412,20 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     },
     [state, workingAlternative],
   )
+  const suggestedRoundActionsCache = useMemo(
+    () => buildSuggestedRoundActionsCache(state, suggestion.alternatives, courtCount),
+    [courtCount, state, suggestion.alternatives],
+  )
   const suggestedRoundActions = useMemo(
     () => buildSuggestedRoundActions({
       state,
       alternatives: suggestion.alternatives,
+      cache: suggestedRoundActionsCache,
       selectedIndex: selectedAlternative,
       pvnaTolerance,
       courtCount,
     }),
-    [courtCount, pvnaTolerance, selectedAlternative, state, suggestion.alternatives],
+    [courtCount, pvnaTolerance, selectedAlternative, state, suggestedRoundActionsCache, suggestion.alternatives],
   )
 
   const rememberRoundSelection = (reason: string) => {

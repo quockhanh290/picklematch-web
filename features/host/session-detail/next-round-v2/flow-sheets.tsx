@@ -162,20 +162,6 @@ function explainBreakdown(key: string, state: SessionState, playersById: Map<str
   return ''
 }
 
-function buildLowScoreReasons(state: SessionState, score: ReturnType<typeof sanitizeSummaryForHost>['fairness_score'], playersById: Map<string, ArrangementPlayer>) {
-  const entries = Object.entries(score.breakdown)
-    .map(([key, value]) => ({ key, value: Number(value), max: fairnessBreakdownMax(key) }))
-    .filter(item => item.value < item.max * 0.8)
-    .sort((a, b) => (a.value / a.max) - (b.value / b.max))
-    .slice(0, 3)
-
-  if (entries.length === 0) return []
-  return entries.map(item => ({
-    key: item.key,
-    label: fairnessBreakdownLabel(item.key),
-    text: explainBreakdown(item.key, state, playersById),
-  }))
-}
 
 function backToBackSummary(playRatio: number) {
   const pct = Math.round(playRatio * 100)
@@ -788,13 +774,28 @@ export function RecapView({
   onContinue: () => void
 }) {
   const theme = useAppTheme()
-  const partner = computePartnerDiversity(state)
-  const opponent = computeOpponentDiversity(state)
-  const burden = computeOpponentRepeatBurden(state)
-  const pressure = computeRepeatPressure(state)
-  const restByPlayer = new Map(computeRestFairness(state).per_player.map(player => [player.player_id, player]))
-  const maxMatchesForChart = Math.max(1, ...summary.per_player.map(item => item.matches_played))
-  const lowScoreReasons = buildLowScoreReasons(state, summary.fairness_score, playersById)
+  const maxMatchesForChart = useMemo(
+    () => Math.max(1, ...summary.per_player.map(item => item.matches_played)),
+    [summary.per_player],
+  )
+  const { partner, opponent, burden, pressure, restByPlayer, breakdownExplanations, lowScoreReasons } = useMemo(() => {
+    const p = computePartnerDiversity(state)
+    const o = computeOpponentDiversity(state)
+    const b = computeOpponentRepeatBurden(state)
+    const pr = computeRepeatPressure(state)
+    const restMap = new Map(computeRestFairness(state).per_player.map(player => [player.player_id, player]))
+    // explainBreakdown gọi computeAvailabilityMetrics + computeRepeatPressure nội bộ — tính 1 lần/key
+    const explanations = Object.fromEntries(
+      Object.keys(summary.fairness_score.breakdown).map(key => [key, explainBreakdown(key, state, playersById)]),
+    )
+    const reasons = Object.entries(summary.fairness_score.breakdown)
+      .map(([key, value]) => ({ key, value: Number(value), max: fairnessBreakdownMax(key) }))
+      .filter(item => item.value < item.max * 0.8)
+      .sort((a, b) => (a.value / a.max) - (b.value / b.max))
+      .slice(0, 3)
+      .map(item => ({ key: item.key, label: fairnessBreakdownLabel(item.key), text: explanations[item.key] ?? '' }))
+    return { partner: p, opponent: o, burden: b, pressure: pr, restByPlayer: restMap, breakdownExplanations: explanations, lowScoreReasons: reasons }
+  }, [state, summary.fairness_score, playersById])
   return (
     <ScrollView contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 48 }}>
       <LinearGradient colors={[theme.heroGradientStart, theme.primaryContainer]} style={{ borderRadius: RADIUS.lg, padding: 18, marginBottom: 14 }}>
@@ -811,7 +812,7 @@ export function RecapView({
           {summary.fairness_score.total}<Text style={{ fontSize: 18 }}>/100</Text>
         </Text>
         {Object.entries(summary.fairness_score.breakdown).map(([key, value]) => (
-          <BreakdownRow key={key} label={fairnessBreakdownLabel(key)} value={Number(value)} max={fairnessBreakdownMax(key)} detail={explainBreakdown(key, state, playersById)} />
+          <BreakdownRow key={key} label={fairnessBreakdownLabel(key)} value={Number(value)} max={fairnessBreakdownMax(key)} detail={breakdownExplanations[key] ?? ''} />
         ))}
       </Card>
       {lowScoreReasons.length > 0 ? (

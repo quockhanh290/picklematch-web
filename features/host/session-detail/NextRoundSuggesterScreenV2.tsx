@@ -16,6 +16,7 @@ import { BORDER, RADIUS, SPACING } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { PRESETS, type CourtCalculatorOutput, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
 import type { SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
+import type { AlternativeAudit } from '@/lib/next-round-suggester/alternatives'
 import { auditManualSwap, buildSwappedAlternative } from '@/lib/next-round-suggester/manual-swap'
 import { scoreMatch } from '@/lib/next-round-suggester/score'
 import { buildSessionStateFingerprint } from '@/lib/next-round-suggester/state-version'
@@ -543,28 +544,32 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     setSheet(null)
   }
 
-  const plannedPlayerCount = workingAlternative
+  const plannedPlayerCount = useMemo(() => workingAlternative
     ? new Set([
       ...workingAlternative.matches.flatMap(match => [...match.team_a, ...match.team_b]),
       ...workingAlternative.resting,
     ]).size
-    : presentCount
-  const activePlayerCount = activeRound
+    : presentCount, [workingAlternative, presentCount])
+  const activePlayerCount = useMemo(() => activeRound
     ? new Set([
       ...activeRound.matches.flatMap(match => [...match.team_a, ...match.team_b]),
       ...activeRound.resting,
     ]).size
-    : presentCount
+    : presentCount, [activeRound, presentCount])
   const heroPlayerCount = phase === 'active' ? activePlayerCount : plannedPlayerCount
-  const rosterTotalCount = rows.playerRows.length
-  const checkedOutCount = rows.playerRows.filter(row => row.checked_out_at).length
-  const requestedRestCount = rows.playerRows.filter(row => !row.checked_out_at && row.opted_rest).length
-  const livePlayerIds = new Set(rows.playerRows.map(row => String(row.player_id)))
-  const lateArrivalPlayers = players.filter(player => {
-    if (player.status && player.status !== 'confirmed') return false
-    const status = player.checkInStatus
-    return (status === 'pending' || status === 'no_show') && !livePlayerIds.has(String(player.id))
-  })
+  const { rosterTotalCount, checkedOutCount, requestedRestCount } = useMemo(() => ({
+    rosterTotalCount: rows.playerRows.length,
+    checkedOutCount: rows.playerRows.filter(row => Boolean(row.checked_out_at)).length,
+    requestedRestCount: rows.playerRows.filter(row => !row.checked_out_at && row.opted_rest).length,
+  }), [rows.playerRows])
+  const lateArrivalPlayers = useMemo(() => {
+    const livePlayerIds = new Set(rows.playerRows.map(row => String(row.player_id)))
+    return players.filter(player => {
+      if (player.status && player.status !== 'confirmed') return false
+      const status = player.checkInStatus
+      return (status === 'pending' || status === 'no_show') && !livePlayerIds.has(String(player.id))
+    })
+  }, [rows.playerRows, players])
 
   const navbarRightSlot = <NavbarRightActions sessionId={sessionId} onRefresh={loadLiveState} refreshing={refreshing} />
 
@@ -665,12 +670,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
                     onToggle={() => setShowEngineStats(value => !value)}
                     onApplyAction={applySuggestedRoundAction}
                   />
-                  <WarningsBlock
-                    warnings={fairnessWarnings}
-                    actions={suggestedRoundActions}
-                    onOpenSwap={() => setSheet('swap')}
-                    onApplyAction={applySuggestedRoundAction}
-                  />
                   <MatchList
                     title={`${workingAlternative.matches.length} trận · ${workingAlternative.matches.length * 4} người chơi`}
                     matches={workingAlternative.matches}
@@ -696,7 +695,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
 
           {phase === 'active' && activeRound && (
             <>
-              <WarningsBlock warnings={fairnessWarnings} actions={[]} onOpenSwap={() => setSheet('swap')} onApplyAction={applySuggestedRoundAction} />
               <MatchList
                 title={`${activeRound.matches.length} trận đang diễn ra`}
                 matches={activeRound.matches}
@@ -1213,41 +1211,44 @@ function EngineExplainCard({
   onApplyAction: (action: SuggestedRoundAction) => void
 }) {
   const theme = useAppTheme()
-  const primaryAction = actions.find(action => action.type !== 'accept_tradeoff')
+  const betterAltAction = actions.find((a): a is Extract<SuggestedRoundAction, { type: 'select_alternative' }> => a.type === 'select_alternative')
+  const setupActions = actions.filter((a): a is Extract<SuggestedRoundAction, { type: 'set_pvna_tolerance' | 'set_courts' }> => a.type === 'set_pvna_tolerance' || a.type === 'set_courts')
+  const comparisonReasons = betterAltAction?.after ? improvementReasons(betterAltAction.before, betterAltAction.after) : []
+
   return (
     <Card style={{ marginTop: 12, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-        <Sparkles size={18} color={theme.primary} />
-        <View style={{ flex: 1 }}>
-          <Text style={eyebrowStyle(theme.primary)}>Engine giải thích</Text>
-          <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 13, lineHeight: 19, color: theme.onSurface }}>
-            Engine đang chọn phương án có điểm ghép thấp nhất: cân PVNA, hạn chế lặp partner (đồng đội)/đối thủ, giữ nhịp nghỉ và tôn trọng group/sở thích khi có thể.
-          </Text>
-          {primaryAction ? (
-            <TouchableOpacity
-              onPress={() => onApplyAction(primaryAction)}
-              style={{
-                marginTop: 10,
-                minHeight: 40,
-                borderRadius: RADIUS.md,
-                backgroundColor: theme.surface,
-                borderWidth: BORDER.hairline,
-                borderColor: theme.outlineVariant,
-                paddingHorizontal: 12,
-                justifyContent: 'center',
-              }}
-            >
-              <Text style={ctaTextStyle(theme.primary, 12)}>{primaryAction.label}</Text>
-              <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline, marginTop: 2 }}>
-                {primaryAction.detail}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <Sparkles size={16} color={theme.primary} />
+        <Text style={eyebrowStyle(theme.primary)}>Engine giải thích</Text>
       </View>
-      <TouchableOpacity onPress={onToggle} style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Text style={ctaTextStyle(theme.primary, 12)}>Vì sao chọn ALT này</Text>
-        <ChevronDown size={14} color={theme.primary} />
+
+      {betterAltAction ? (
+        <>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.onSurface }}>
+            ALT {betterAltAction.alternative_index + 1} tốt hơn phương án đang chọn
+          </Text>
+          {comparisonReasons.length > 0 ? (
+            <View style={{ marginTop: 8, gap: 4 }}>
+              {comparisonReasons.map((reason, i) => (
+                <View key={i} style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline }}>·</Text>
+                  <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurface, lineHeight: 17 }}>
+                    {reason}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </>
+      ) : (
+        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, lineHeight: 19, color: theme.onSurface }}>
+          Đây là phương án tối ưu cho vòng này. Engine cân PVNA, hạn chế lặp partner/đối thủ, giữ nhịp nghỉ và tôn trọng group/sở thích.
+        </Text>
+      )}
+
+      <TouchableOpacity onPress={onToggle} style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Text style={ctaTextStyle(theme.outline, 11)}>Chi tiết điểm ghép</Text>
+        <ChevronDown size={14} color={theme.outline} />
       </TouchableOpacity>
       {expanded ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
@@ -1266,72 +1267,76 @@ function EngineExplainCard({
           ))}
         </View>
       ) : null}
-    </Card>
-  )
-}
 
-function WarningsBlock({
-  warnings,
-  actions,
-  onOpenSwap,
-  onApplyAction,
-}: {
-  warnings: FairnessWarning[]
-  actions: SuggestedRoundAction[]
-  onOpenSwap: () => void
-  onApplyAction: (action: SuggestedRoundAction) => void
-}) {
-  const theme = useAppTheme()
-  const warning = warnings[0]
-  const action = actions.find(item => item.type !== 'accept_tradeoff')
-  if (!warning && !action) return null
-  const tone = warning ? warningTone(theme, warning.severity) : warningTone(theme, 'info')
-  return (
-    <View style={{ marginTop: 12, backgroundColor: tone.bg, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: tone.border, padding: 12 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <AlertTriangle size={18} color={tone.text} />
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: tone.text }}>
-            {warning ? warningTitle(warning.type) : 'Có phương án thay thế'}
-          </Text>
-          <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: tone.text }}>
-            {warning?.message ?? action?.detail}
-          </Text>
-        </View>
+      {betterAltAction ? (
         <TouchableOpacity
-          onPress={action ? () => onApplyAction(action) : onOpenSwap}
-          style={{ minHeight: 36, borderRadius: RADIUS.md, backgroundColor: theme.surface, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
+          onPress={() => onApplyAction(betterAltAction)}
+          style={{
+            marginTop: 12,
+            minHeight: 42,
+            borderRadius: RADIUS.md,
+            backgroundColor: theme.primary,
+            paddingHorizontal: 12,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
         >
-          <Text style={ctaTextStyle(tone.text, 11)}>{action ? 'Áp dụng' : 'Mở swap'}</Text>
+          <Text style={ctaTextStyle(theme.surface, 13)}>
+            Chuyển sang ALT {betterAltAction.alternative_index + 1}
+          </Text>
         </TouchableOpacity>
-      </View>
-      {actions.length > 0 ? (
-        <View style={{ gap: 8, marginTop: 12 }}>
-          {actions.map((item, index) => (
+      ) : null}
+
+      {setupActions.length > 0 ? (
+        <View style={{ marginTop: 8, gap: 6 }}>
+          {setupActions.map(action => (
             <TouchableOpacity
-              key={`${item.type}-${index}`}
-              disabled={item.type === 'accept_tradeoff'}
-              onPress={() => onApplyAction(item)}
+              key={action.type}
+              onPress={() => onApplyAction(action)}
               style={{
+                minHeight: 38,
                 borderRadius: RADIUS.md,
-                backgroundColor: item.type === 'accept_tradeoff' ? theme.surfaceContainerLow : theme.surface,
+                backgroundColor: theme.surface,
                 borderWidth: BORDER.hairline,
-                borderColor: tone.border,
-                padding: 10,
-                opacity: item.type === 'accept_tradeoff' ? 0.75 : 1,
+                borderColor: theme.outlineVariant,
+                paddingHorizontal: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
               }}
             >
-              <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: tone.text }}>{item.label}</Text>
-              <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, lineHeight: 15, color: theme.outline }}>
-                {item.detail}
+              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurface, lineHeight: 16 }}>
+                {action.label}
               </Text>
+              <Text style={ctaTextStyle(theme.primary, 11)}>Thử</Text>
             </TouchableOpacity>
           ))}
         </View>
       ) : null}
-    </View>
+    </Card>
   )
 }
+
+function improvementReasons(before: AlternativeAudit, after: AlternativeAudit): string[] {
+  const reasons: string[] = []
+  if (after.match_range < before.match_range)
+    reasons.push(`Số trận đều hơn: lệch ${before.match_range}→${after.match_range}`)
+  if (after.max_opponent_burden < before.max_opponent_burden)
+    reasons.push(`Gặp lại đối thủ: tối đa ${before.max_opponent_burden}→${after.max_opponent_burden}`)
+  if (after.max_opponent_pair < before.max_opponent_pair)
+    reasons.push(`Lặp đối thủ: ${before.max_opponent_pair}→${after.max_opponent_pair} lần`)
+  if (after.max_partner_pair < before.max_partner_pair)
+    reasons.push(`Lặp đồng đội: ${before.max_partner_pair}→${after.max_partner_pair} lần`)
+  if (after.opponent_repeat_pairs < before.opponent_repeat_pairs)
+    reasons.push(`Cặp đối thủ lặp: ${before.opponent_repeat_pairs}→${after.opponent_repeat_pairs}`)
+  if (after.partner_repeat_pairs < before.partner_repeat_pairs)
+    reasons.push(`Cặp đồng đội lặp: ${before.partner_repeat_pairs}→${after.partner_repeat_pairs}`)
+  if (after.fairness_total > before.fairness_total + 2)
+    reasons.push(`Điểm fairness: ${before.fairness_total}→${after.fairness_total}`)
+  return reasons
+}
+
 function MatchList({
   title,
   matches,
@@ -1376,8 +1381,14 @@ function MatchTile({
   onPlayerPress: (playerId: string) => void
 }) {
   const theme = useAppTheme()
-  const diff = Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state))
-  const scored = match.stats && match.score != null ? { score: match.score, stats: match.stats } : scoreMatch(match.team_a, match.team_b, state)
+  const diff = useMemo(
+    () => Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state)),
+    [match.team_a, match.team_b, state],
+  )
+  const scored = useMemo(
+    () => match.stats && match.score != null ? { score: match.score, stats: match.stats } : scoreMatch(match.team_a, match.team_b, state),
+    [match, state],
+  )
   return (
     <Card style={{ padding: 12 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -1674,13 +1685,16 @@ function FairnessSheet({
   playersById: Map<string, ArrangementPlayer>
 }) {
   const theme = useAppTheme()
-  const match = computeMatchCountMetrics(state)
-  const partner = computePartnerDiversity(state)
-  const opponent = computeOpponentDiversity(state)
-  const rest = computeRestFairness(state)
-  const gender = computeGenderPrefSatisfaction(state)
-  const pressure = computeRepeatPressure(state)
-  const burden = computeOpponentRepeatBurden(state)
+  const metrics = useMemo(() => ({
+    match: computeMatchCountMetrics(state),
+    partner: computePartnerDiversity(state),
+    opponent: computeOpponentDiversity(state),
+    rest: computeRestFairness(state),
+    gender: computeGenderPrefSatisfaction(state),
+    pressure: computeRepeatPressure(state),
+    burden: computeOpponentRepeatBurden(state),
+  }), [state])
+  const { match, partner, opponent, rest, gender, pressure, burden } = metrics
   const rows = [
     ['Số trận', score.breakdown.match_count, 25, `Chênh số trận ${match.range} · Trung bình ${match.avg.toFixed(1)} trận/người`],
     ['Partner (đồng đội)', score.breakdown.partner_diversity, 20, `${partner.repeat_pairs.length} cặp lặp`],
