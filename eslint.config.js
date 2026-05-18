@@ -27,6 +27,7 @@ module.exports = defineConfig([
         ...globals.node,
         ...globals.jest,
         __DEV__: 'readonly',
+        RequestInit: 'readonly',
       },
     },
     plugins: {

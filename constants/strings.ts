@@ -869,7 +869,7 @@ export const STRINGS = {
       understand: 'Đã hiểu',
     },
   },
-  find_session: {
+  find_session_dialogs: {
     dialogs: {
       network_error: {
         title: 'Lỗi kết nối',

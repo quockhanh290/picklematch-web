@@ -19,7 +19,7 @@ import { STRINGS } from '@/constants/strings'
 
 export function HostEditProfileScreen() {
   const theme = useAppTheme()
-  const { userId } = useAuth()
+  const { userId, isLoading: authLoading } = useAuth()
   const insets = useSafeAreaInsets()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -31,9 +31,11 @@ export function HostEditProfileScreen() {
 
   useEffect(() => {
     void loadProfile()
-  }, [userId])
+  }, [authLoading, userId])
 
   async function loadProfile() {
+    if (authLoading) return
+
     if (!userId) {
       router.replace('/host/login')
       return

@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import { supabase } from '@/lib/supabase'
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL

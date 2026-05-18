@@ -572,7 +572,7 @@ export default function HostReviewCenterScreen() {
             setDialogConfig({
               title: 'Đã hủy kèo',
               message: 'Kèo của bạn đã được hủy.',
-              actions: [{ label: 'OK', onPress: () => router.replace('/(tabs)' as any) }],
+              actions: [{ label: 'OK', onPress: () => router.replace('/player-hub/my-sessions' as any) }],
             })
           },
         },

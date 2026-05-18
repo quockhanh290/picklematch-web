@@ -363,7 +363,7 @@ export function MySessionsScreen() {
                     </View>
                     <NextSessionCard 
                       session={item.session}
-                      onPress={(id) => router.push({ pathname: '/session/[id]', params: { id } } as any)}
+                      onPress={(id) => router.push({ pathname: '/player-hub/session/[id]', params: { id } } as any)}
                     />
                   </View>
                 )

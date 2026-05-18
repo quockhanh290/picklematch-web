@@ -41,7 +41,7 @@ export function HomeGreetingHeader({
   const isWeb = Platform.OS === 'web'
   const isHost = role === 'host'
 
-  const handlePhotoPress = onPhotoPress || (() => router.push(isWeb ? '/player-hub/profile' : '/(tabs)/profile' as any))
+  const handlePhotoPress = onPhotoPress || (() => router.push('/player-hub/profile' as any))
 
   return (
     <View

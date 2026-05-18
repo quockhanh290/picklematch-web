@@ -22,7 +22,8 @@ import {
   View, 
   ScrollView,
   Dimensions,
-  FlatList
+  FlatList,
+  Linking
 } from 'react-native'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, BORDER, SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
@@ -115,6 +116,16 @@ export default function CourtConfigScreen() {
   const hours_open = court?.hours_open || '06:00'
   const hours_close = court?.hours_close || '22:00'
   const isOpen = isCurrentlyOpen(hours_open, hours_close)
+  const handleCall = () => {
+    if (court?.phone) {
+      void Linking.openURL(`tel:${court.phone}`)
+    }
+  }
+  const handleOpenMaps = () => {
+    if (court?.google_maps_url) {
+      void Linking.openURL(court.google_maps_url)
+    }
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
@@ -208,11 +219,11 @@ export default function CourtConfigScreen() {
             </View>
 
             <View style={{ flexDirection: 'row', gap: 12, marginBottom: 32 }}>
-              <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceContainerLow, paddingVertical: 12, borderRadius: RADIUS.md, borderWidth: 1, borderColor: theme.outlineVariant }}>
+              <TouchableOpacity onPress={handleCall} disabled={!court?.phone} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceContainerLow, paddingVertical: 12, borderRadius: RADIUS.md, borderWidth: 1, borderColor: theme.outlineVariant, opacity: court?.phone ? 1 : 0.55 }}>
                 <Phone size={16} color={theme.primary} />
                 <Text style={{ marginLeft: 8, color: theme.onSurface, fontFamily: SCREEN_FONTS.headline, fontSize: 14 }}>GỌI ĐIỆN</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceContainerLow, paddingVertical: 12, borderRadius: RADIUS.md, borderWidth: 1, borderColor: theme.outlineVariant }}>
+              <TouchableOpacity onPress={handleOpenMaps} disabled={!court?.google_maps_url} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceContainerLow, paddingVertical: 12, borderRadius: RADIUS.md, borderWidth: 1, borderColor: theme.outlineVariant, opacity: court?.google_maps_url ? 1 : 0.55 }}>
                 <Navigation size={16} color={theme.primary} />
                 <Text style={{ marginLeft: 8, color: theme.onSurface, fontFamily: SCREEN_FONTS.headline, fontSize: 14 }}>CHỈ ĐƯỜNG</Text>
               </TouchableOpacity>

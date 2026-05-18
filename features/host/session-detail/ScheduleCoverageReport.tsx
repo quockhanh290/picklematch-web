@@ -428,8 +428,6 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
     }
   }, [minGamesPerPlayer, mode, playerById, playerIds, playerNameById, schedule, variant, quality])
 
-  if (schedule.length === 0 || players.length < 4) return null
-
   const visibleRows = useMemo(() => {
     let baseRows = (expanded || hideSummary) ? report.rows : report.rows.slice(0, 5)
     if (focusedPlayerId) {
@@ -442,6 +440,8 @@ export function ScheduleCoverageReport({ players, schedule, mode, minGamesPerPla
     }
     return baseRows
   }, [expanded, hideSummary, report.rows, focusedPlayerId])
+
+  if (schedule.length === 0 || players.length < 4) return null
 
   const hasWarnings = report.underTarget.length > 0 || report.repeatedPartners.length > 0 || report.repeatedOpponents.length > 0
   const scoreTone = report.overallScore >= 80

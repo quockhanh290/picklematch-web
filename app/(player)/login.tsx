@@ -75,7 +75,7 @@ export default function LoginScreen() {
   function nextRouteForPlayer(player: { onboarding_completed?: boolean; self_assessed_level?: any } | null) {
   if (!player) return '/profile-setup'
   if (!player.onboarding_completed || !player.self_assessed_level) return '/onboarding'
-  return '/(tabs)'
+  return '/player-hub/find-session'
 }
 
 async function sendOTP() {
@@ -172,16 +172,7 @@ async function verifyOTP() {
     const { data: player } = await supabase.from('players').select('*').eq('id', user.id).maybeSingle()
     await safeStorageSetItem('user_role', 'player')
     
-    if (Platform.OS === 'web') {
-      const next = nextRouteForPlayer(player)
-      if (next === '/(tabs)') {
-        router.replace('/player-hub/profile')
-      } else {
-        router.replace(next as any)
-      }
-    } else {
-      router.replace(nextRouteForPlayer(player) as any)
-    }
+    router.replace(nextRouteForPlayer(player) as any)
   } catch (err: any) {
     setDialogConfig({
       title: 'Lỗi',
@@ -529,7 +520,6 @@ const sanitizedPhone = phone.replace(/\D/g, '')
     </KeyboardAvoidingView>
   )
 }
-
 
 
 

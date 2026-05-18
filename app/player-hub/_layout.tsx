@@ -4,26 +4,28 @@ import { RADIUS, SPACING, SHADOW, BORDER } from '@/constants/screenLayout'
 import { Slot, useRouter, usePathname } from 'expo-router'
 import { View, Text, TouchableOpacity, Platform } from 'react-native'
 import { User, Search, LogOut, Home, CalendarDays } from 'lucide-react-native'
-import { WebContainer } from '@/components/design/WebContainer'
+import { AppDialog, type AppDialogConfig } from '@/components/design'
 import { supabase } from '@/lib/supabase'
 import { SessionNavContext } from '@/lib/navigation/SessionNavContext'
 import { AppNavContext } from '@/lib/navigation/AppNavContext'
+import { useState } from 'react'
 
 export default function PlayerHubLayout() {
   const theme = useAppTheme()
   const router = useRouter()
   const pathname = usePathname()
+  const [dialogConfig, setDialogConfig] = useState<AppDialogConfig | null>(null)
 
   const sessionNav = {
-    onOpenSession: (id: string) => router.push({ pathname: '/session/[id]', params: { id } } as any),
+    onOpenSession: (id: string) => router.push({ pathname: '/player-hub/session/[id]', params: { id } } as any),
     onEditSession: () => {},
     onViewMatchResult: () => {},
     onRateSession: () => {},
     onConfirmResult: () => {},
     onReviewSession: () => {},
-    onOpenPlayerProfile: (id: string) => router.push({ pathname: '/player/[id]', params: { id } } as any),
-    onOpenPlayer: (id: string) => router.push({ pathname: '/player/[id]', params: { id } } as any),
-    onOpenCourt: (id: string) => router.push({ pathname: '/court/[id]', params: { id } } as any),
+    onOpenPlayerProfile: () => {},
+    onOpenPlayer: () => {},
+    onOpenCourt: (id: string) => router.push({ pathname: '/player-hub/court/[id]', params: { id } } as any),
   }
 
   const navItems = [
@@ -34,7 +36,18 @@ export default function PlayerHubLayout() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
-    router.replace('/')
+    router.replace('/login')
+  }
+
+  const handleCreateSession = () => {
+    setDialogConfig({
+      title: 'Chuyển sang chế độ host',
+      message: 'Bạn cần vào chế độ host để tạo và quản lý kèo.',
+      actions: [
+        { label: 'Để sau', tone: 'secondary' },
+        { label: 'Tiếp tục', onPress: () => router.push('/host/create-session' as any) },
+      ],
+    })
   }
 
   if (Platform.OS !== 'web' && !__DEV__) {
@@ -43,7 +56,7 @@ export default function PlayerHubLayout() {
 
   const appNav = {
     onOpenProfile: () => router.push('/player-hub/profile'),
-    onCreateSession: () => router.push('/host/create-session'),
+    onCreateSession: handleCreateSession,
     onLogout: handleLogout,
   }
 
@@ -116,6 +129,11 @@ export default function PlayerHubLayout() {
               })}
             </View>
           </View>
+          <AppDialog
+            visible={Boolean(dialogConfig)}
+            config={dialogConfig}
+            onClose={() => setDialogConfig(null)}
+          />
         </View>
       </AppNavContext.Provider>
     </SessionNavContext.Provider>

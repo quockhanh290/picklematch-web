@@ -158,7 +158,7 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
         if (isWeb || userRole === 'host') {
           replaceIfNeeded('/host/dashboard')
         } else {
-          replaceIfNeeded('/(tabs)')
+          replaceIfNeeded('/player-hub/find-session')
         }
       } 
       // Cross-role protection

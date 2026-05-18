@@ -90,9 +90,9 @@ export function useFindSessionController() {
     } catch (error) {
       console.warn('[FindSession] fetchSessions failed:', error)
       setDialogConfig({
-        title: STRINGS.find_session.dialogs.network_error.title,
-        message: STRINGS.find_session.dialogs.network_error.message,
-        actions: [{ label: STRINGS.find_session.dialogs.network_error.understand }],
+        title: STRINGS.find_session_dialogs.dialogs.network_error.title,
+        message: STRINGS.find_session_dialogs.dialogs.network_error.message,
+        actions: [{ label: STRINGS.find_session_dialogs.dialogs.network_error.understand }],
       })
     } finally {
       setLoading(false)
@@ -160,9 +160,9 @@ export function useFindSessionController() {
       const { status } = await Location.requestForegroundPermissionsAsync()
       if (status !== 'granted') {
         setDialogConfig({
-          title: STRINGS.find_session.dialogs.permission_location.title,
-          message: STRINGS.find_session.dialogs.permission_location.message,
-          actions: [{ label: STRINGS.find_session.dialogs.permission_location.understand }],
+          title: STRINGS.find_session_dialogs.dialogs.permission_location.title,
+          message: STRINGS.find_session_dialogs.dialogs.permission_location.message,
+          actions: [{ label: STRINGS.find_session_dialogs.dialogs.permission_location.understand }],
         })
         return
       }
@@ -180,9 +180,9 @@ export function useFindSessionController() {
     } catch (error) {
       console.warn('[FindSession] nearby filter failed:', error)
       setDialogConfig({
-        title: STRINGS.find_session.dialogs.location_error.title,
-        message: STRINGS.find_session.dialogs.location_error.message,
-        actions: [{ label: STRINGS.find_session.dialogs.location_error.understand }],
+        title: STRINGS.find_session_dialogs.dialogs.location_error.title,
+        message: STRINGS.find_session_dialogs.dialogs.location_error.message,
+        actions: [{ label: STRINGS.find_session_dialogs.dialogs.location_error.understand }],
       })
     } finally {
       setLoading(false)
@@ -193,11 +193,11 @@ export function useFindSessionController() {
     async (enabled: boolean) => {
       if (!playerProfile?.id) {
         setDialogConfig({
-          title: STRINGS.find_session.dialogs.complete_profile.title,
-          message: STRINGS.find_session.dialogs.complete_profile.message,
+          title: STRINGS.find_session_dialogs.dialogs.complete_profile.title,
+          message: STRINGS.find_session_dialogs.dialogs.complete_profile.message,
           actions: [
-            { label: STRINGS.find_session.dialogs.complete_profile.cancel, tone: 'secondary' },
-            { label: STRINGS.find_session.dialogs.complete_profile.confirm, onPress: () => router.push('/edit-profile' as never) },
+            { label: STRINGS.find_session_dialogs.dialogs.complete_profile.cancel, tone: 'secondary' },
+            { label: STRINGS.find_session_dialogs.dialogs.complete_profile.confirm, onPress: () => router.push('/player-hub/edit-profile' as never) },
           ],
         })
         return

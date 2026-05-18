@@ -16,7 +16,7 @@ import TrophyRoomSection from '@/components/profile/TrophyRoom'
 import { getSkillLevelFromPlayer, getEloBandByLevelId } from '@/lib/skillAssessment'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
-import { router } from 'expo-router'
+import { router, usePathname } from 'expo-router'
 import {
     Calendar,
     AlertCircle,
@@ -148,6 +148,7 @@ export function ProfileScreen() {
   const isWeb = Platform.OS === 'web'
   const insets = useSafeAreaInsets()
   const theme = useAppTheme()
+  const pathname = usePathname()
   const [checking, setChecking] = useState(true)
   const [loggedIn, setLoggedIn] = useState(false)
   const [player, setPlayer] = useState<Player | null>(null)
@@ -219,7 +220,7 @@ export function ProfileScreen() {
             setAchievements([])
             setHistory([])
             setHostedSessionsCount(0)
-            router.replace('/(tabs)')
+            router.replace('/login' as any)
           },
         },
       ],
@@ -250,7 +251,7 @@ export function ProfileScreen() {
         />
         <View className="mt-6 gap-3 px-5">
           <AppButton label={STRINGS.profile.login_required.login_btn} onPress={() => router.push('/login' as any)} />
-          <AppButton label={STRINGS.common.back} onPress={() => router.replace('/(tabs)')} variant="secondary" />
+          <AppButton label={STRINGS.common.back} onPress={() => router.replace('/login' as any)} variant="secondary" />
         </View>
       </View>
     )
@@ -369,7 +370,7 @@ export function ProfileScreen() {
               </View>
 
               <TouchableOpacity 
-                onPress={() => router.push('/edit-profile' as any)}
+                onPress={() => router.push((pathname.startsWith('/player-hub') ? '/player-hub/edit-profile' : '/edit-profile') as any)}
                 style={{ 
                   width: 36, height: 36, borderRadius: 18, 
                   backgroundColor: theme.primary, borderWidth: 1, borderColor: 'white',

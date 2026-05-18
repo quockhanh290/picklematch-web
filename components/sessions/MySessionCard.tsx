@@ -131,7 +131,7 @@ export function MySessionCard({
 
   return (
     <Pressable
-      onPress={() => !isHistory && onOpenSession(item.id)}
+      onPress={() => onOpenSession(item.id)}
       style={{
         backgroundColor: theme.surface,
         borderRadius: RADIUS.lg,
@@ -293,7 +293,7 @@ export function MySessionCard({
           </View>
         </View>
 
-        {!isHistory && (
+        {(
           <TouchableOpacity
             onPress={() => onOpenSession(item.id)}
             style={{ 

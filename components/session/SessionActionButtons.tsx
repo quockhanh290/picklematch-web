@@ -501,12 +501,12 @@ const HostActions = ({
 
   // Case 1: Session ended without check-in -> Cancelled
   if (actualIsPastEnd && !checkInCompleted) {
-    return <SessionStatusBanner isCancelled={true} isAfterEnd={true} checkInCompleted={false} />
+    return <SessionStatusBanner isCancelled={true} isInvalidPlayerCount={false} hasJoined={true} isFinalized={false} isAfterEnd={true} checkInCompleted={false} theme={theme} />
   }
 
   // Case 2: Session ended with check-in but no matches -> Finished with warning
   if (actualIsPastEnd && checkInCompleted && matchesCount === 0) {
-    return <SessionStatusBanner isCancelled={false} isAfterEnd={true} checkInCompleted={true} matchesCount={0} />
+    return <SessionStatusBanner isCancelled={false} isInvalidPlayerCount={false} hasJoined={true} isFinalized={false} isAfterEnd={true} checkInCompleted={true} matchesCount={0} theme={theme} />
   }
 
   // Case 3: Session ended with data -> Finalized or Awaiting Results
@@ -977,7 +977,6 @@ export const SessionActionButtons: React.FC<SessionActionButtonsProps> = ({
             checkInCompleted={checkInCompleted}
             hideArrangementCta={hideArrangementCta}
             isCancelled={isCancelled}
-            isInvalidPlayerCount={isInvalidPlayerCount}
             theme={theme}
           />
         )

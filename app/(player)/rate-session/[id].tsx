@@ -498,7 +498,7 @@ export default function RateSessionScreen() {
     setDialogConfig({
       title: 'Đã gửi đánh giá',
       message: 'Đánh giá của bạn đang ở chế độ ẩn danh và sẽ chỉ hiển thị sau 24 giờ hoặc khi cả hai bên hoàn thành.',
-      actions: [{ label: 'Về trang chủ', onPress: () => router.replace('/(tabs)' as any) }],
+      actions: [{ label: 'Về trang chủ', onPress: () => router.replace('/player-hub/my-sessions' as any) }],
     })
   }
 
@@ -542,7 +542,7 @@ export default function RateSessionScreen() {
               : 'Bạn đã hoàn tất đánh giá cho tất cả người chơi trong kèo này.'}
           </Text>
           <View style={{ marginTop: 40 }}>
-            <AppButton label="Về trang chủ" onPress={() => router.replace('/(tabs)' as any)} variant="primary" />
+            <AppButton label="Về trang chủ" onPress={() => router.replace('/player-hub/my-sessions' as any)} variant="primary" />
           </View>
         </View>
         <AppDialog visible={Boolean(dialogConfig)} config={dialogConfig} onClose={() => setDialogConfig(null)} />

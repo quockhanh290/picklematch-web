@@ -32,7 +32,7 @@ export function useRoleSwitcher() {
     if (Platform.OS === 'web') {
       router.replace('/player-hub/profile' as any)
     } else {
-      router.replace('/(tabs)' as any)
+      router.replace('/player-hub/find-session' as any)
     }
   }
 

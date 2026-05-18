@@ -76,11 +76,7 @@ export default function DevLoginSection({
     await safeStorageSetItem('user_role', 'player')
     
     const next = nextRouteForPlayer(player)
-    if (Platform.OS === 'web' && next === '/(tabs)') {
-      router.replace('/player-hub/profile')
-    } else {
-      router.replace(next as any)
-    }
+    router.replace((next === '/(tabs)' ? '/player-hub/find-session' : next) as any)
   }
 
   return (
@@ -227,6 +223,5 @@ export default function DevLoginSection({
     </View>
   )
 }
-
 
 
