@@ -29,6 +29,7 @@ import { useAppTheme } from '@/lib/theme-context'
 
 import { Card, MiniAction, PlayerAvatar, SheetAction, SheetTitle } from './components'
 import { ctaTextStyle, eyebrowStyle, getPlayerPvna, playerName, repeatRiskLabel } from './helpers'
+import { PlayerQualityReport } from './player-quality-report'
 import type { MatchCountConsistencyRow } from '@/lib/next-round-suggester/fairness/audit'
 
 function fairnessBreakdownLabel(key: string) {
@@ -888,6 +889,7 @@ export function RecapView({
           </View>
         </Card>
       ) : null}
+      <PlayerQualityReport state={state} playersById={playersById} />
       <Card style={{ padding: 14, marginBottom: 14 }}>
         <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Số trận mỗi người</Text>
         <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 10, marginBottom: 12 }}>
