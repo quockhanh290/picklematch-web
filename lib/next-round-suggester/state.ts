@@ -183,7 +183,7 @@ export async function loadSessionState(
   sessionId: string,
   options: { courts?: number; pvnaTolerance?: number } = {},
 ): Promise<SessionState> {
-  const [playersResult, pairsResult, roundsResult] = await Promise.all([
+  const [playersResult, pairsResult, roundsResult, preferenceResult] = await Promise.all([
     supabase
       .from<SessionPlayerStateRow[]>('session_player_state')
       .select('*, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
@@ -199,29 +199,19 @@ export async function loadSessionState(
       .select('*')
       .eq('session_id', sessionId)
       .order('round_no', { ascending: true }),
+    supabase
+      .from<SessionPlayerPreferenceRow[]>('session_players')
+      .select('player_id, metadata, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
+      .eq('session_id', sessionId)
+      .order('player_id', { ascending: true }),
   ])
 
-  const error = playersResult.error ?? pairsResult.error ?? roundsResult.error
+  const error = playersResult.error ?? pairsResult.error ?? roundsResult.error ?? preferenceResult.error
   if (error) {
     throw new Error(error.message)
   }
 
-  const playerIds = (playersResult.data ?? []).map((row) => row.player_id)
-  let preferenceRows: SessionPlayerPreferenceRow[] = []
-
-  if (playerIds.length > 0) {
-    const preferenceResult = await supabase
-      .from<SessionPlayerPreferenceRow[]>('session_players')
-      .select('player_id, metadata, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
-      .eq('session_id', sessionId)
-      .order('player_id', { ascending: true })
-
-    if (preferenceResult.error) {
-      throw new Error(preferenceResult.error.message)
-    }
-
-    preferenceRows = preferenceResult.data ?? []
-  }
+  const preferenceRows: SessionPlayerPreferenceRow[] = preferenceResult.data ?? []
 
   return mapRowsToSessionState({
     sessionId,

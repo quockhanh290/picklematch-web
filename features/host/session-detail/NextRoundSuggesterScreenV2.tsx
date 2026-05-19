@@ -373,6 +373,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       await invokeLiveSessionFunction('session-rounds-start', sessionId, {
         suggestion_idx: selectedAlternative,
         manual: alternative.matches,
+        decision_mode: manualAlternative !== null ? 'host_manual_matches' : 'host_selected_alternative',
         expected_state_fingerprint: buildSessionStateFingerprint(state),
         courts: courtCount,
         pvna_tolerance: pvnaTolerance,
@@ -567,6 +568,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
                   <EngineExplainCard
                     alternative={workingAlternative}
                     actions={suggestedRoundActions}
+                    alternativeOrder={alternativeOrder}
                     expanded={showEngineStats}
                     onToggle={() => setShowEngineStats(value => !value)}
                     onApplyAction={applySuggestedRoundAction}
@@ -1138,6 +1140,7 @@ function describePreviewRow(row: FairnessPreview['rows'][number]) {
 function EngineExplainCard({
   alternative,
   actions,
+  alternativeOrder,
   expanded,
   onToggle,
   onApplyAction,
@@ -1145,6 +1148,7 @@ function EngineExplainCard({
 }: {
   alternative: SuggestionAlternative
   actions: SuggestedRoundAction[]
+  alternativeOrder: number[]
   expanded: boolean
   onToggle: () => void
   onApplyAction: (action: SuggestedRoundAction) => void
@@ -1154,6 +1158,7 @@ function EngineExplainCard({
   const betterAltAction = actions.find((a): a is Extract<SuggestedRoundAction, { type: 'select_alternative' }> => a.type === 'select_alternative')
   const setupActions = actions.filter((a): a is Extract<SuggestedRoundAction, { type: 'set_pvna_tolerance' | 'set_courts' }> => a.type === 'set_pvna_tolerance' || a.type === 'set_courts')
   const comparisonReasons = betterAltAction?.after ? improvementReasons(betterAltAction.before, betterAltAction.after) : []
+  const displayIndexOf = (originalIndex: number) => alternativeOrder.indexOf(originalIndex)
 
   return (
     <Card style={{ marginTop: 12, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
@@ -1165,7 +1170,7 @@ function EngineExplainCard({
       {betterAltAction ? (
         <>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.onSurface }}>
-            ALT {betterAltAction.alternative_index + 1} tốt hơn phương án đang chọn
+            ALT {displayIndexOf(betterAltAction.alternative_index) + 1} tốt hơn phương án đang chọn
           </Text>
           {comparisonReasons.length > 0 ? (
             <View style={{ marginTop: 8, gap: 4 }}>
@@ -1222,7 +1227,7 @@ function EngineExplainCard({
           }}
         >
           <Text style={ctaTextStyle(theme.surface, 13)}>
-            Chuyển sang ALT {betterAltAction.alternative_index + 1}
+            Chuyển sang ALT {displayIndexOf(betterAltAction.alternative_index) + 1}
           </Text>
         </TouchableOpacity>
       ) : null}

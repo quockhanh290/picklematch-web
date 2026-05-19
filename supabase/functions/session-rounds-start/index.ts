@@ -11,6 +11,11 @@ import {
   correctForFairness,
 } from '../../../lib/next-round-suggester/fairness/corrector.ts'
 import { computeSessionFairness } from '../../../lib/next-round-suggester/fairness/metrics.ts'
+
+function parseDecisionMode(value: unknown): 'host_selected_alternative' | 'host_manual_matches' | 'engine_suggestion' {
+  if (value === 'host_selected_alternative' || value === 'host_manual_matches') return value
+  return 'engine_suggestion'
+}
 import { insertSuggesterAuditEvent } from '../_shared/suggester-audit.ts'
 
 type ManualMatch = {
@@ -98,11 +103,14 @@ Deno.serve(async (request) => {
   if (auth.error) return auth.error
 
   try {
+    const t0 = Date.now()
     const body = await readJson(request)
+    const t1 = Date.now()
     const state = await loadSessionState(auth.supabase, sessionId, {
       courts: optionalNumber(body.courts),
       pvnaTolerance: optionalNumber(body.pvna_tolerance),
     })
+    const t2 = Date.now()
     if (state.rounds.some((round) => round.status === 'active')) {
       return jsonResponse({ ok: false, error: 'A round is already active' }, 409, request)
     }
@@ -110,6 +118,7 @@ Deno.serve(async (request) => {
     const adjustment = correctForFairness(state)
     const adjustedState = applyFairnessAdjustment(state, adjustment)
     const fairnessScoreBefore = computeSessionFairness(state).total
+    const t3 = Date.now()
 
     const manual = Array.isArray(body.manual) ? body.manual : null
     const suggestionIdx = typeof body.suggestion_idx === 'number' ? body.suggestion_idx : 0
@@ -165,13 +174,8 @@ Deno.serve(async (request) => {
         .map((player) => player.player_id)
         .sort()
 
-      const suggestion = suggestNextRound(adjustedState, {
-        tier_overrides: adjustment.tier_overrides,
-      })
-      const alternative = suggestion.alternatives[suggestionIdx]
-      decisionMode = alternative && matchesEqual(matches, alternative.matches)
-        ? 'host_selected_alternative'
-        : 'host_manual_matches'
+      // Client gửi decision_mode trực tiếp — bỏ server-side suggestNextRound chỉ để xác định mode
+      decisionMode = parseDecisionMode(body.decision_mode)
     } else {
       const suggestion = suggestNextRound(adjustedState, {
         tier_overrides: adjustment.tier_overrides,
@@ -185,6 +189,7 @@ Deno.serve(async (request) => {
       matches = alternative.matches
       resting = alternative.resting
     }
+    const t4 = Date.now()
 
     const { data, error } = await auth.supabase
       .from('session_rounds')
@@ -204,8 +209,8 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: 'Could not start round' }, 500, request)
     }
 
-    if (adjustment.applied_for_warnings.length > 0) {
-      const { error: adjustmentError } = await auth.supabase
+    const adjustmentInsert = adjustment.applied_for_warnings.length > 0
+      ? auth.supabase
         .from('suggester_adjustments')
         .insert({
           session_id: sessionId,
@@ -215,30 +220,46 @@ Deno.serve(async (request) => {
           tier_overrides: adjustment.tier_overrides,
           fairness_score_before: fairnessScoreBefore,
         })
+      : Promise.resolve({ error: null })
 
-      if (adjustmentError) {
-        console.error('session-rounds-start adjustment insert failed', adjustmentError)
-        return jsonResponse({ ok: false, error: 'Could not record fairness adjustment' }, 500, request)
-      }
+    const [{ error: adjustmentError }, auditError] = await Promise.all([
+      adjustmentInsert,
+      insertSuggesterAuditEvent(auth.supabase, {
+        session_id: sessionId,
+        round_no: state.current_round,
+        event_type: 'round_started',
+        event_source: decisionMode === 'engine_suggestion' ? 'engine' : 'host',
+        actor_id: auth.userId,
+        payload: {
+          decision_mode: decisionMode,
+          selected_alternative_index: suggestionIdx,
+          matches: compactMatches(matches),
+          resting,
+          fairness_score_before: fairnessScoreBefore,
+          adjustment_applied: adjustment.applied_for_warnings,
+          adjustment_config_changes: adjustment.config_changes,
+          adjustment_tier_overrides: adjustment.tier_overrides,
+          decision_context: decisionContext,
+        },
+      }),
+    ])
+
+    const t5 = Date.now()
+
+    if (adjustmentError) {
+      console.error('session-rounds-start adjustment insert failed', adjustmentError)
+      return jsonResponse({ ok: false, error: 'Could not record fairness adjustment' }, 500, request)
     }
 
-    const auditError = await insertSuggesterAuditEvent(auth.supabase, {
-      session_id: sessionId,
-      round_no: state.current_round,
-      event_type: 'round_started',
-      event_source: decisionMode === 'engine_suggestion' ? 'engine' : 'host',
-      actor_id: auth.userId,
-      payload: {
-        decision_mode: decisionMode,
-        selected_alternative_index: suggestionIdx,
-        matches: compactMatches(matches),
-        resting,
-        fairness_score_before: fairnessScoreBefore,
-        adjustment_applied: adjustment.applied_for_warnings,
-        adjustment_config_changes: adjustment.config_changes,
-        adjustment_tier_overrides: adjustment.tier_overrides,
-        decision_context: decisionContext,
-      },
+    console.log('[session-rounds-start] timing', {
+      readBody: t1 - t0,
+      loadSessionState: t2 - t1,
+      correctForFairness: t3 - t2,
+      matchResolution: t4 - t3,
+      dbWrites: t5 - t4,
+      total: t5 - t0,
+      players: state.players.size,
+      rounds: state.rounds.length,
     })
 
     return jsonResponse({ ok: true, round: data, adjustment, audit_error: auditError }, 200, request)
