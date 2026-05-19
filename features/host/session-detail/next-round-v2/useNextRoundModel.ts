@@ -1,7 +1,7 @@
 import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
 
 import { calculateOptimalCourts, type CourtPreset } from '@/lib/court-calculator'
-import { buildSuggestedRoundActions, buildSuggestedRoundActionsCache, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
+import { buildSuggestedRoundActions, buildSuggestedRoundActionsCache, sortAlternativesByAudit, type AlternativeAudit, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import { buildMatchCountConsistencyRows, buildFairnessPreview, buildLatestFairnessAudit } from '@/lib/next-round-suggester/fairness/audit'
 import { applyFairnessAdjustment, correctForFairness } from '@/lib/next-round-suggester/fairness/corrector'
 import { buildGroupAliasMap, buildGroupSummaries } from '@/lib/next-round-suggester/fairness/group-audit'
@@ -119,14 +119,41 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     },
   })), [enginePlayerRows, playersById])
 
+  // Refs giữ data hiện tại để rawState useMemo đọc khi fingerprint thay đổi
+  const enrichedPlayerRowsRef = useRef(enrichedPlayerRows)
+  const pairRowsRef = useRef(deferredRows.pairRows)
+  const roundRowsRef = useRef(deferredRows.roundRows)
+
+  // Fingerprint: chuỗi tóm tắt data thực sự, chỉ thay đổi khi DB trả về data mới.
+  // Nếu loadLiveState() trả về data giống hệt (foreground refresh không có gì mới),
+  // fingerprint giữ nguyên → rawState không rebuild → engine không chạy lại.
+  const rowsFingerprint = useMemo(() => {
+    enrichedPlayerRowsRef.current = enrichedPlayerRows
+    pairRowsRef.current = deferredRows.pairRows
+    roundRowsRef.current = deferredRows.roundRows
+
+    const players = enrichedPlayerRows
+      .map(r => `${r.player_id}|${r.matches_played}|${r.last_played_round}|${r.consecutive_play}|${r.consecutive_rest}|${r.opted_rest ? 1 : 0}|${r.checked_out_at ?? ''}|${r.group_id ?? ''}|${r.players?.pvna ?? 0}|${r.players?.gender ?? ''}|${r.players?.partner_gender_pref ?? ''}|${r.players?.opponent_gender_pref ?? ''}`)
+      .sort()
+      .join(';')
+    const pairs = deferredRows.pairRows
+      .map(r => `${r.player_a}|${r.player_b}|${r.partner_count}|${r.opponent_count}`)
+      .sort()
+      .join(';')
+    const rounds = deferredRows.roundRows
+      .map(r => `${r.round_no}|${r.status}|${JSON.stringify(r.matches)}|${JSON.stringify(r.resting ?? [])}`)
+      .join(';')
+    return `${players}__${pairs}__${rounds}`
+  }, [enrichedPlayerRows, deferredRows.pairRows, deferredRows.roundRows])
+
   const rawState = useMemo(() => mapRowsToSessionState({
     sessionId,
-    playerRows: enrichedPlayerRows,
-    pairRows: deferredRows.pairRows,
-    roundRows: deferredRows.roundRows,
+    playerRows: enrichedPlayerRowsRef.current,
+    pairRows: pairRowsRef.current,
+    roundRows: roundRowsRef.current,
     courts: engineCourtCount,
     pvnaTolerance,
-  }), [engineCourtCount, deferredRows.pairRows, deferredRows.roundRows, enrichedPlayerRows, pvnaTolerance, sessionId])
+  }), [rowsFingerprint, engineCourtCount, pvnaTolerance, sessionId])
 
   const baseWeights = useMemo(() => ({
     ...rawState.config.weights,
@@ -162,6 +189,10 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const suggestedRoundActionsCache = useMemo(
     () => buildSuggestedRoundActionsCache(deferredState, suggestion.alternatives, deferredCourtCount),
     [deferredCourtCount, deferredState, suggestion.alternatives],
+  )
+  const alternativeOrder = useMemo(
+    () => sortAlternativesByAudit(suggestedRoundActionsCache.audits),
+    [suggestedRoundActionsCache],
   )
   const alternativeFairnessPreviews = useMemo(
     () => suggestion.alternatives.map(alt => buildFairnessPreview(deferredState, alt)),
@@ -280,6 +311,8 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
 
   return {
     activeRound,
+    alternativeOrder,
+    alternativeAudits: suggestedRoundActionsCache.audits,
     applySuggestedRoundAction,
     checkedInPlayers,
     completedRoundCount,

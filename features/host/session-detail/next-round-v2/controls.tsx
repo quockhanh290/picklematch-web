@@ -54,16 +54,19 @@ export function StickyRoundCta({
   primaryLabel,
   onPrimary,
   disabled,
+  computing,
   onMore,
 }: {
   busy: string | null
   primaryLabel: string
   onPrimary: () => void
   disabled?: boolean
+  computing?: boolean
   onMore: () => void
 }) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
+  const isActionBusy = busy === 'start' || busy === 'end'
   return (
     <LinearGradient
       pointerEvents="box-none"
@@ -81,10 +84,17 @@ export function StickyRoundCta({
         <TouchableOpacity
           testID="nrv2-cta-primary"
           onPress={onPrimary}
-          disabled={disabled || busy === 'start' || busy === 'end'}
+          disabled={disabled || isActionBusy}
           style={{ flex: 1, height: 52, borderRadius: RADIUS.md, backgroundColor: disabled ? theme.outlineVariant : theme.primary, alignItems: 'center', justifyContent: 'center' }}
         >
-          {busy === 'start' || busy === 'end' ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary)}>{primaryLabel}</Text>}
+          {isActionBusy
+            ? <ActivityIndicator color={theme.onPrimary} />
+            : computing
+              ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator size="small" color={theme.onPrimary} />
+                  <Text style={ctaTextStyle(theme.onPrimary)}>Đang tính...</Text>
+                </View>
+              : <Text style={ctaTextStyle(theme.onPrimary)}>{primaryLabel}</Text>}
         </TouchableOpacity>
       </View>
     </LinearGradient>

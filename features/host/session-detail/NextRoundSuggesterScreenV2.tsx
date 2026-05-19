@@ -149,6 +149,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   const model = useNextRoundModel({ sessionId, players, courts })
   const {
     activeRound,
+    alternativeOrder,
+    alternativeAudits,
     addPlayerRow,
     applySuggestedRoundAction,
     checkedInPlayers,
@@ -549,6 +551,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
             <>
               <AlternativeTabs
                 alternatives={suggestion.alternatives}
+                audits={alternativeAudits}
+                alternativeOrder={alternativeOrder}
                 selectedIndex={selectedAlternative}
                 onSelect={selectAlternativeForRound}
                 onOpenHistory={() => setSheet('history')}
@@ -566,6 +570,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
                     expanded={showEngineStats}
                     onToggle={() => setShowEngineStats(value => !value)}
                     onApplyAction={applySuggestedRoundAction}
+                    currentFairness={fairnessScore.total}
                   />
                   <MatchList
                     title={`${workingAlternative.matches.length} trận · ${workingAlternative.matches.length * 4} người chơi`}
@@ -638,6 +643,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
             else if (workingAlternative) void startRound(workingAlternative)
           }}
           disabled={phase === 'plan' && (!workingAlternative || hasManualSwapHardGuard || suggestionIsUpdating)}
+          computing={phase === 'plan' && suggestionIsUpdating}
           onMore={() => setSheet('more')}
         />
       )}
@@ -851,8 +857,44 @@ function StatusChipRow({
   )
 }
 
+function auditDeltaLines(best: AlternativeAudit, current: AlternativeAudit): string[] {
+  type DeltaEntry = { label: string; delta: number; worse: boolean }
+  const entries: DeltaEntry[] = []
+
+  const opponentBurdenDelta = current.max_opponent_burden - best.max_opponent_burden
+  if (opponentBurdenDelta !== 0) {
+    entries.push({ label: `Lặp đối thủ ${opponentBurdenDelta > 0 ? '+' : ''}${opponentBurdenDelta}`, delta: Math.abs(opponentBurdenDelta), worse: opponentBurdenDelta > 0 })
+  }
+  const opponentPairDelta = current.opponent_repeat_pairs - best.opponent_repeat_pairs
+  if (opponentPairDelta !== 0) {
+    entries.push({ label: `Cặp đối thủ lặp ${opponentPairDelta > 0 ? '+' : ''}${opponentPairDelta}`, delta: Math.abs(opponentPairDelta), worse: opponentPairDelta > 0 })
+  }
+  const partnerPairDelta = current.partner_repeat_pairs - best.partner_repeat_pairs
+  if (partnerPairDelta !== 0) {
+    entries.push({ label: `Cặp partner lặp ${partnerPairDelta > 0 ? '+' : ''}${partnerPairDelta}`, delta: Math.abs(partnerPairDelta), worse: partnerPairDelta > 0 })
+  }
+  const matchRangeDelta = current.match_range - best.match_range
+  if (matchRangeDelta !== 0) {
+    entries.push({ label: `Lệch số trận ${matchRangeDelta > 0 ? '+' : ''}${matchRangeDelta}`, delta: Math.abs(matchRangeDelta), worse: matchRangeDelta > 0 })
+  }
+  const pvnaDelta = current.pvna_diff - best.pvna_diff
+  if (Math.abs(pvnaDelta) >= 0.3) {
+    entries.push({ label: `PVNA ${pvnaDelta > 0 ? '+' : ''}${pvnaDelta.toFixed(1)}`, delta: Math.abs(pvnaDelta), worse: pvnaDelta > 0 })
+  }
+
+  // 1 stat xấu nhất + 1 stat tốt nhất nếu có cả 2 chiều, ngược lại 2 stat lớn nhất
+  const worse = entries.filter(e => e.worse).sort((a, b) => b.delta - a.delta)
+  const better = entries.filter(e => !e.worse).sort((a, b) => b.delta - a.delta)
+  if (worse.length > 0 && better.length > 0) {
+    return [worse[0].label, better[0].label]
+  }
+  return entries.sort((a, b) => b.delta - a.delta).slice(0, 2).map(e => e.label)
+}
+
 function AlternativeTabs({
   alternatives,
+  audits,
+  alternativeOrder,
   selectedIndex,
   onSelect,
   onOpenHistory,
@@ -860,6 +902,8 @@ function AlternativeTabs({
   targetReachedLabel,
 }: {
   alternatives: SuggestionAlternative[]
+  audits: AlternativeAudit[]
+  alternativeOrder: number[]
   selectedIndex: number
   onSelect: (index: number) => void
   onOpenHistory: () => void
@@ -867,11 +911,12 @@ function AlternativeTabs({
   targetReachedLabel: string
 }) {
   const theme = useAppTheme()
-  const bestScore = alternatives[0]?.score ?? 0
+  const bestOriginalIndex = alternativeOrder[0] ?? 0
+  const bestAudit = audits[bestOriginalIndex]
   return (
     <View style={{ marginTop: 18 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <Text style={eyebrowStyle(theme.outline)}>3 phương án · Đề xuất</Text>
+        <Text style={eyebrowStyle(theme.outline)}>{alternatives.length} phương án · Đề xuất</Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <TouchableOpacity onPress={onOpenHistory}>
             <Text style={eyebrowStyle(theme.primary)}>{targetReachedLabel}</Text>
@@ -882,29 +927,44 @@ function AlternativeTabs({
         </View>
       </View>
       <View style={{ gap: 8 }}>
-        {alternatives.slice(0, 3).map((alternative, index) => {
-          const active = selectedIndex === index
-          const delta = alternative.score - bestScore
+        {alternativeOrder.slice(0, 3).map((originalIndex, displayIndex) => {
+          const alternative = alternatives[originalIndex]
+          const audit = audits[originalIndex]
+          if (!alternative || !audit) return null
+          const active = selectedIndex === originalIndex
+          const isBest = displayIndex === 0
+          const deltaLines = !isBest && bestAudit ? auditDeltaLines(bestAudit, audit) : []
+          const hasDelta = deltaLines.length > 0
           return (
             <TouchableOpacity
-              key={`alt-${index}`}
-              testID={`nrv2-alt-tab-${index}`}
-              onPress={() => onSelect(index)}
+              key={`alt-${originalIndex}`}
+              testID={`nrv2-alt-tab-${originalIndex}`}
+              onPress={() => onSelect(originalIndex)}
               activeOpacity={0.9}
               style={{
-                height: 44,
                 borderRadius: RADIUS.md,
                 borderWidth: BORDER.hairline,
                 borderColor: active ? theme.primary : theme.outlineVariant,
                 backgroundColor: active ? theme.primary : 'transparent',
                 paddingHorizontal: 12,
+                paddingVertical: hasDelta ? 8 : 0,
+                minHeight: 44,
                 flexDirection: 'row',
-                alignItems: 'center',
+                alignItems: hasDelta ? 'flex-start' : 'center',
                 justifyContent: 'space-between',
               }}
             >
-              <Text style={ctaTextStyle(active ? theme.onPrimary : theme.onSurface, 13)}>ALT {index + 1}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ flex: 1, justifyContent: 'center', paddingVertical: hasDelta ? 2 : 0 }}>
+                <Text style={ctaTextStyle(active ? theme.onPrimary : theme.onSurface, 13)}>
+                  ALT {displayIndex + 1}
+                </Text>
+                {hasDelta ? (
+                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: active ? 'rgba(255,255,255,0.72)' : theme.outline, marginTop: 2, lineHeight: 14 }}>
+                    {deltaLines.join(' · ')}
+                  </Text>
+                ) : null}
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: hasDelta ? 2 : 0 }}>
                 <View
                   style={{
                     borderRadius: RADIUS.full,
@@ -914,11 +974,11 @@ function AlternativeTabs({
                   }}
                 >
                   <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: active ? theme.onPrimary : theme.primary }}>
-                    {alternative.score.toFixed(1)}
+                    {audit.fairness_total}
                   </Text>
                 </View>
                 <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: active ? theme.onPrimary : theme.outline }}>
-                  {index === 0 ? 'Tốt nhất' : `+${delta.toFixed(1)}`}
+                  {isBest ? 'Tốt nhất' : `${(audit.fairness_total - (bestAudit?.fairness_total ?? 0)).toFixed(0)}`}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -1081,12 +1141,14 @@ function EngineExplainCard({
   expanded,
   onToggle,
   onApplyAction,
+  currentFairness,
 }: {
   alternative: SuggestionAlternative
   actions: SuggestedRoundAction[]
   expanded: boolean
   onToggle: () => void
   onApplyAction: (action: SuggestedRoundAction) => void
+  currentFairness: number
 }) {
   const theme = useAppTheme()
   const betterAltAction = actions.find((a): a is Extract<SuggestedRoundAction, { type: 'select_alternative' }> => a.type === 'select_alternative')
@@ -1168,7 +1230,7 @@ function EngineExplainCard({
       {setupActions.length > 0 ? (
         <View style={{ marginTop: 8, gap: 6 }}>
           {setupActions.map(action => {
-            const impactLines = setupActionImpactLines(action)
+            const impactLines = setupActionImpactLines(action, currentFairness)
             return (
               <TouchableOpacity
                 key={action.type}
@@ -1208,26 +1270,39 @@ function EngineExplainCard({
   )
 }
 
-function setupActionImpactLines(action: Extract<SuggestedRoundAction, { type: 'set_pvna_tolerance' | 'set_courts' }>): string[] {
+function setupActionImpactLines(
+  action: Extract<SuggestedRoundAction, { type: 'set_pvna_tolerance' | 'set_courts' }>,
+  currentFairness: number,
+): string[] {
   const after = action.after
   if (!after) return [action.detail]
 
   const before = action.before
+  const lines: string[] = []
+
+  // Fairness: hiện tại → sau vòng (không áp) vs sau vòng (áp dụng)
+  lines.push(`Fairness: ${currentFairness} → ${before.fairness_total} (không áp) / ${after.fairness_total} (áp dụng)`)
+
+  // Chỉ hiện các stats thực sự thay đổi khi áp đánh đổi
+  if (before.pvna_diff !== after.pvna_diff) {
+    lines.push(`Chênh PVNA vòng này: ${before.pvna_diff.toFixed(2)} → ${after.pvna_diff.toFixed(2)}`)
+  }
+  if (before.match_range !== after.match_range) {
+    lines.push(`Lệch số trận: ${before.match_range} → ${after.match_range}`)
+  }
+  if (before.max_opponent_burden !== after.max_opponent_burden) {
+    lines.push(`Tải lặp đối thủ tối đa: ${before.max_opponent_burden} → ${after.max_opponent_burden}`)
+  }
   const repeatBefore = before.opponent_repeat_pairs + before.partner_repeat_pairs
   const repeatAfter = after.opponent_repeat_pairs + after.partner_repeat_pairs
-  const lines = [
-    `Fairness dự kiến: ${before.fairness_total} -> ${after.fairness_total}`,
-    `Chênh PVNA vòng này: ${before.pvna_diff.toFixed(2)} -> ${after.pvna_diff.toFixed(2)}`,
-    `Lệch số trận: ${before.match_range} -> ${after.match_range}`,
-    `Tải lặp đối thủ tối đa: ${before.max_opponent_burden} -> ${after.max_opponent_burden}`,
-    `Cặp lặp tổng: ${repeatBefore} -> ${repeatAfter}`,
-  ]
-
+  if (repeatBefore !== repeatAfter) {
+    lines.push(`Cặp lặp tổng: ${repeatBefore} → ${repeatAfter}`)
+  }
   if (before.max_opponent_pair !== after.max_opponent_pair) {
-    lines.push(`Một cặp đối thủ lặp nhiều nhất: ${before.max_opponent_pair} -> ${after.max_opponent_pair}`)
+    lines.push(`Lặp đối thủ nhiều nhất: ${before.max_opponent_pair} → ${after.max_opponent_pair}`)
   }
   if (before.max_partner_pair !== after.max_partner_pair) {
-    lines.push(`Một cặp partner lặp nhiều nhất: ${before.max_partner_pair} -> ${after.max_partner_pair}`)
+    lines.push(`Lặp partner nhiều nhất: ${before.max_partner_pair} → ${after.max_partner_pair}`)
   }
 
   return lines

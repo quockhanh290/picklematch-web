@@ -122,10 +122,15 @@ export function buildSuggestedRoundActions(input: {
     current.partner_repeat_pairs >= 6
   const rangeRisk = current.match_range > 1
 
-  const better = audits
-    .filter(audit => audit.index !== current.index)
-    .filter(audit => isMeaningfullyBetterAlternative(current, audit))
-    .sort(compareAudit)[0]
+  // Globally best: sort toàn bộ audits, lấy top 1.
+  // Không so sánh relative với current để tránh cycle (A→B→C→A).
+  const globalBest = [...audits].sort(compareAudit)[0]
+  const better =
+    globalBest &&
+    globalBest.index !== current.index &&
+    isMeaningfullyBetterAlternative(current, globalBest)
+      ? globalBest
+      : undefined
 
   if (better) {
     actions.push({
@@ -255,7 +260,11 @@ function auditSortKey(audit: AlternativeAudit): number[] {
   ]
 }
 
-function compareAudit(a: AlternativeAudit, b: AlternativeAudit): number {
+export function sortAlternativesByAudit(audits: AlternativeAudit[]): number[] {
+  return [...audits].sort(compareAudit).map(a => a.index)
+}
+
+export function compareAudit(a: AlternativeAudit, b: AlternativeAudit): number {
   const left = auditSortKey(a)
   const right = auditSortKey(b)
   for (let index = 0; index < left.length; index += 1) {
