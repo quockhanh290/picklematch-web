@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useMemo, useState } from 'react'
-import { ActivityIndicator, FlatList, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { ChevronDown, History, UserMinus, UserPlus, Users, X, Zap } from 'lucide-react-native'
 
@@ -298,6 +298,7 @@ type RosterPlayerRowProps = {
   player: ArrangementPlayer | undefined
   expanded: boolean
   selectedForGroup: boolean
+  inActiveRound: boolean
   onExpand: (id: string | null) => void
   onToggleCheckout: (playerId: string, checkedOut: boolean) => void
   onToggleRest: (playerId: string, optedRest: boolean) => void
@@ -307,21 +308,25 @@ type RosterPlayerRowProps = {
 }
 
 const RosterPlayerRow = memo(function RosterPlayerRow({
-  row, player, expanded, selectedForGroup, onExpand,
+  row, player, expanded, selectedForGroup, inActiveRound, onExpand,
   onToggleCheckout, onToggleRest, onToggleGroupSelection, onClearGroup, onSwap,
 }: RosterPlayerRowProps) {
   const theme = useAppTheme()
   const playerId = row.player_id
   const checkedOut = Boolean(row.checked_out_at)
+  const resting = !checkedOut && row.opted_rest
   const name = player?.name ?? 'Người chơi'
+  const cardBg = checkedOut ? theme.surfaceContainerLow : resting ? theme.warningBg : undefined
+  const infoColor = resting ? theme.warningText : theme.outline
+  const infoSuffix = checkedOut ? 'đã check-out' : resting ? 'đang xin nghỉ' : `nghỉ liên tiếp ${row.consecutive_rest} lượt`
   return (
-    <Card style={{ borderRadius: RADIUS.md, overflow: 'hidden', borderColor: selectedForGroup ? theme.primary : theme.outlineVariant }}>
+    <Card style={{ borderRadius: RADIUS.md, overflow: 'hidden', borderColor: selectedForGroup ? theme.primary : theme.outlineVariant, ...(cardBg ? { backgroundColor: cardBg } : {}) }}>
       <TouchableOpacity testID={`nrv2-roster-player-${playerId}`} onPress={() => onExpand(expanded ? null : playerId)} style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <PlayerAvatar name={name} />
         <View style={{ flex: 1 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{name}</Text>
-          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-            PVNA {(getPlayerPvna(player) ?? 0).toFixed(2)} · {row.matches_played} trận · đang nghỉ liên tiếp {row.consecutive_rest} lượt
+          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: infoColor }}>
+            PVNA {(getPlayerPvna(player) ?? 0).toFixed(2)} · {row.matches_played} trận · {infoSuffix}
           </Text>
         </View>
         <ChevronDown size={16} color={theme.outline} />
@@ -329,10 +334,16 @@ const RosterPlayerRow = memo(function RosterPlayerRow({
       {expanded ? (
         <View style={{ borderTopWidth: BORDER.hairline, borderTopColor: theme.outlineVariant, padding: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           <MiniAction testID={`nrv2-roster-checkout-${playerId}`} label={checkedOut ? 'Check-in' : 'Check-out'} icon={checkedOut ? UserPlus : UserMinus} onPress={() => onToggleCheckout(playerId, checkedOut)} tone={checkedOut ? 'good' : 'danger'} />
-          <MiniAction testID={`nrv2-roster-rest-${playerId}`} label={row.opted_rest ? 'Bỏ nghỉ' : 'Xin nghỉ'} icon={History} onPress={() => onToggleRest(playerId, row.opted_rest)} tone="neutral" />
-          <MiniAction testID={`nrv2-roster-group-${playerId}`} label={selectedForGroup ? 'Bỏ chọn' : 'Chọn group'} icon={Users} onPress={() => onToggleGroupSelection(playerId)} tone={selectedForGroup ? 'good' : 'neutral'} />
-          {row.group_id ? <MiniAction label="Xóa group" icon={X} onPress={() => onClearGroup(playerId)} tone="neutral" /> : null}
-          <MiniAction label="Đổi người" icon={Zap} onPress={() => onSwap(playerId)} tone="good" />
+          {!checkedOut ? (
+            <MiniAction testID={`nrv2-roster-rest-${playerId}`} label={row.opted_rest ? 'Bỏ nghỉ' : 'Xin nghỉ'} icon={History} onPress={() => onToggleRest(playerId, row.opted_rest)} tone="neutral" />
+          ) : null}
+          {!checkedOut && !row.group_id ? (
+            <MiniAction testID={`nrv2-roster-group-${playerId}`} label={selectedForGroup ? 'Bỏ chọn' : 'Chọn group'} icon={Users} onPress={() => onToggleGroupSelection(playerId)} tone={selectedForGroup ? 'good' : 'neutral'} />
+          ) : null}
+          {!checkedOut && row.group_id ? (
+            <MiniAction label="Xóa khỏi nhóm" icon={X} onPress={() => onClearGroup(playerId)} tone="neutral" />
+          ) : null}
+          {inActiveRound ? <MiniAction label="Đổi người" icon={Zap} onPress={() => onSwap(playerId)} tone="good" /> : null}
         </View>
       ) : null}
     </Card>
@@ -343,6 +354,7 @@ export function RosterSheet({
   rows,
   playersById,
   busy,
+  activeRoundIds,
   onToggleCheckout,
   onToggleRest,
   onSwap,
@@ -358,6 +370,7 @@ export function RosterSheet({
   rows: SessionPlayerStateRow[]
   playersById: Map<string, ArrangementPlayer>
   busy: string | null
+  activeRoundIds?: Set<string>
   onToggleCheckout: (playerId: string, checkedOut: boolean) => void
   onToggleRest: (playerId: string, optedRest: boolean) => void
   onSwap: (playerId: string) => void
@@ -373,105 +386,152 @@ export function RosterSheet({
 }) {
   const theme = useAppTheme()
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null)
-  const activeRows = useMemo(() => rows.filter(row => !row.checked_out_at && !row.opted_rest), [rows])
-  const restingRows = useMemo(() => rows.filter(row => !row.checked_out_at && row.opted_rest), [rows])
-  const checkedOutRows = useMemo(() => rows.filter(row => Boolean(row.checked_out_at)), [rows])
   const groupSelectionSet = useMemo(() => new Set(groupSelection), [groupSelection])
-  const renderItem = useCallback(({ item: row }: { item: SessionPlayerStateRow }) => (
-    <RosterPlayerRow
-      row={row}
-      player={playersById.get(row.player_id)}
-      expanded={expandedPlayerId === row.player_id}
-      selectedForGroup={groupSelectionSet.has(row.player_id)}
-      onExpand={setExpandedPlayerId}
-      onToggleCheckout={onToggleCheckout}
-      onToggleRest={onToggleRest}
-      onToggleGroupSelection={onToggleGroupSelection}
-      onClearGroup={onClearGroup}
-      onSwap={onSwap}
-    />
-  ), [expandedPlayerId, groupSelectionSet, playersById, onToggleCheckout, onToggleRest, onToggleGroupSelection, onClearGroup, onSwap])
+
+  type FlatItem =
+    | { type: 'player'; row: SessionPlayerStateRow }
+    | { type: 'section-divider'; label: string; count: number }
+    | { type: 'group-header'; groupId: string; label: string; count: number }
+
+  const { playingRows, flatItems, activeCount, restingCount, checkedOutCount } = useMemo(() => {
+    const playing: SessionPlayerStateRow[] = []
+    const checkedOut: SessionPlayerStateRow[] = []
+    const resting: SessionPlayerStateRow[] = []
+    const ungrouped: SessionPlayerStateRow[] = []
+    const groupedMap = new Map<string, SessionPlayerStateRow[]>()
+
+    for (const row of rows) {
+      if (row.checked_out_at) {
+        checkedOut.push(row)
+      } else if (activeRoundIds?.has(row.player_id)) {
+        playing.push(row)
+      } else if (row.opted_rest) {
+        resting.push(row)
+      } else if (row.group_id) {
+        const arr = groupedMap.get(row.group_id) ?? []
+        arr.push(row)
+        groupedMap.set(row.group_id, arr)
+      } else {
+        ungrouped.push(row)
+      }
+    }
+
+    const groupedCount = [...groupedMap.values()].reduce((s, g) => s + g.length, 0)
+    const items: FlatItem[] = []
+
+    for (const row of ungrouped) items.push({ type: 'player', row })
+
+    for (const [groupId, groupRows] of groupedMap) {
+      const summary = groupSummaries.find(g => g.group_id === groupId)
+      const label = summary?.label ?? 'Nhóm'
+      items.push({ type: 'group-header', groupId, label, count: groupRows.length })
+      for (const row of groupRows) items.push({ type: 'player', row })
+    }
+
+    if (resting.length > 0) {
+      items.push({ type: 'section-divider', label: 'Xin nghỉ', count: resting.length })
+      for (const row of resting) items.push({ type: 'player', row })
+    }
+
+    if (checkedOut.length > 0) {
+      items.push({ type: 'section-divider', label: 'Đã check-out', count: checkedOut.length })
+      for (const row of checkedOut) items.push({ type: 'player', row })
+    }
+
+    return {
+      playingRows: playing,
+      flatItems: items,
+      activeCount: ungrouped.length + groupedCount + playing.length,
+      restingCount: resting.length,
+      checkedOutCount: checkedOut.length,
+    }
+  }, [rows, groupSummaries, activeRoundIds])
+
   return (
-    <FlatList
-      data={activeRows}
-      keyExtractor={row => row.player_id}
-      initialNumToRender={12}
-      maxToRenderPerBatch={12}
-      windowSize={7}
-      showsVerticalScrollIndicator={false}
-      ListHeaderComponent={(
-        <View>
-      <SheetTitle title="Người chơi" subtitle="Danh sách đang chơi tách riêng với người đã check-out / về sớm." />
+    <ScrollView showsVerticalScrollIndicator={false}>
+      <SheetTitle title="Người chơi" subtitle="Tap vào người chơi để xem thao tác: check-out, nghỉ, nhóm, đổi người." />
       <TouchableOpacity testID="nrv2-roster-sync" onPress={() => { void onRefreshRoster() }} style={{ height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
         <Text style={ctaTextStyle(theme.onPrimary, 13)}>Làm mới danh sách người chơi</Text>
       </TouchableOpacity>
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
         <View style={{ flex: 1, borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 10 }}>
           <Text style={eyebrowStyle(theme.primary)}>Đang trong roster</Text>
-          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.primary }}>{activeRows.length}</Text>
+          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.primary }}>{activeCount}</Text>
         </View>
         <View style={{ flex: 1, borderRadius: RADIUS.md, backgroundColor: theme.warningBg, padding: 10 }}>
           <Text style={eyebrowStyle(theme.warningText)}>Xin nghỉ</Text>
-          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.warningText }}>{restingRows.length}</Text>
+          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.warningText }}>{restingCount}</Text>
         </View>
         <View style={{ flex: 1, borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, padding: 10 }}>
           <Text style={eyebrowStyle(theme.outline)}>Đã check-out</Text>
-          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.outline }}>{checkedOutRows.length}</Text>
+          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.outline }}>{checkedOutCount}</Text>
         </View>
       </View>
-      {activeRows.length > 0 ? <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Đang trong roster</Text> : null}
+      {playingRows.length > 0 ? (
+        <View style={{ borderWidth: 1.5, borderColor: theme.primary, borderRadius: RADIUS.md, overflow: 'hidden', marginBottom: 12 }}>
+          <View style={{ backgroundColor: theme.primaryContainer, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: theme.heroLiveDot }} />
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.primary }}>Đang thi đấu · {playingRows.length}</Text>
+          </View>
+          <View style={{ padding: 8, gap: 8 }}>
+            {playingRows.map(row => (
+              <RosterPlayerRow
+                key={row.player_id}
+                row={row}
+                player={playersById.get(row.player_id)}
+                expanded={expandedPlayerId === row.player_id}
+                selectedForGroup={groupSelectionSet.has(row.player_id)}
+                inActiveRound={true}
+                onExpand={setExpandedPlayerId}
+                onToggleCheckout={onToggleCheckout}
+                onToggleRest={onToggleRest}
+                onToggleGroupSelection={onToggleGroupSelection}
+                onClearGroup={onClearGroup}
+                onSwap={onSwap}
+              />
+            ))}
+          </View>
         </View>
-      )}
-      ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
-      renderItem={renderItem}
-      ListFooterComponent={rows.length > 0 ? (
-        <View style={{ marginTop: 14, gap: 10 }}>
-          {restingRows.length > 0 ? (
-            <View style={{ gap: 8 }}>
-              <Text style={eyebrowStyle(theme.warningText)}>Đang xin nghỉ</Text>
-              {restingRows.map(row => {
-                const playerId = row.player_id
-                const player = playersById.get(playerId)
-                return (
-                  <Card key={`resting-${playerId}`} style={{ borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: theme.warningBg }}>
-                    <View style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <PlayerAvatar name={playerName(playerId, playersById)} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
-                        <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.warningText }}>
-                          PVNA {(getPlayerPvna(player) ?? 0).toFixed(2)} · {row.matches_played} trận · đang xin nghỉ
-                        </Text>
-                      </View>
-                      <MiniAction testID={`nrv2-roster-rest-${playerId}`} label="Bỏ nghỉ" icon={History} onPress={() => onToggleRest(playerId, true)} tone="good" />
-                    </View>
-                  </Card>
-                )
-              })}
+      ) : null}
+      {flatItems.map(item => {
+        if (item.type === 'section-divider') {
+          return (
+            <View key={`__divider_${item.label}__`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 4 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: theme.outlineVariant }} />
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.outline }}>{item.label} · {item.count}</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: theme.outlineVariant }} />
             </View>
-          ) : null}
-          {checkedOutRows.length > 0 ? (
-            <View style={{ gap: 8 }}>
-              <Text style={eyebrowStyle(theme.outline)}>Đã check-out / về sớm</Text>
-              {checkedOutRows.map(row => {
-                const playerId = row.player_id
-                const player = playersById.get(playerId)
-                return (
-                  <Card key={`checked-out-${playerId}`} style={{ borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: theme.surfaceContainerLow }}>
-                    <View style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <PlayerAvatar name={playerName(playerId, playersById)} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
-                        <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                          PVNA {(getPlayerPvna(player) ?? 0).toFixed(2)} · {row.matches_played} trận · đã check-out
-                        </Text>
-                      </View>
-                      <MiniAction testID={`nrv2-roster-checkout-${playerId}`} label="Check-in" icon={UserPlus} onPress={() => onToggleCheckout(playerId, true)} tone="good" />
-                    </View>
-                  </Card>
-                )
-              })}
+          )
+        }
+        if (item.type === 'group-header') {
+          return (
+            <View key={`__group_${item.groupId}__`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 4 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: theme.primaryContainer }} />
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.primary }}>{item.label} · {item.count} người</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: theme.primaryContainer }} />
             </View>
-          ) : null}
+          )
+        }
+        return (
+          <View key={item.row.player_id} style={{ marginBottom: 8 }}>
+            <RosterPlayerRow
+              row={item.row}
+              player={playersById.get(item.row.player_id)}
+              expanded={expandedPlayerId === item.row.player_id}
+              selectedForGroup={groupSelectionSet.has(item.row.player_id)}
+              inActiveRound={activeRoundIds?.has(item.row.player_id) ?? false}
+              onExpand={setExpandedPlayerId}
+              onToggleCheckout={onToggleCheckout}
+              onToggleRest={onToggleRest}
+              onToggleGroupSelection={onToggleGroupSelection}
+              onClearGroup={onClearGroup}
+              onSwap={onSwap}
+            />
+          </View>
+        )
+      })}
+      {rows.length > 0 ? (
+        <View style={{ marginTop: 6, gap: 10 }}>
           {groupSummaries.length > 0 ? (
             <View style={{ gap: 8 }}>
               <Text style={eyebrowStyle(theme.outline)}>Nhóm hiện tại</Text>
@@ -509,7 +569,7 @@ export function RosterSheet({
           </View>
         </View>
       ) : null}
-    />
+    </ScrollView>
   )
 }
 

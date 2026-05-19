@@ -6,6 +6,7 @@ export type SuggesterAuditEventType =
   | 'group_changed'
   | 'round_started'
   | 'round_ended'
+  | 'player_swapped_mid_round'
 
 export type SuggesterAuditEventSource = 'engine' | 'host' | 'system'
 

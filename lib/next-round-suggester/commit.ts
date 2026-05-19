@@ -87,18 +87,17 @@ export function commitCompletedRound(
   for (const [playerId, player] of state.players) {
     const next = clonePlayer(player)
 
-    if (next.checked_out_at === null && rosterIds.has(playerId)) {
-      if (playedIds.has(playerId)) {
-        next.matches_played += 1
-        next.last_played_round = round.round_no
-        next.consecutive_play += 1
-        next.consecutive_rest = 0
-        next.opted_rest = false
-      } else {
-        next.consecutive_rest += 1
-        next.consecutive_play = 0
-        next.opted_rest = false
-      }
+    if (playedIds.has(playerId)) {
+      // Count as played regardless of checkout status — player may have left mid-round.
+      next.matches_played += 1
+      next.last_played_round = round.round_no
+      next.consecutive_play += 1
+      next.consecutive_rest = 0
+      next.opted_rest = false
+    } else if (next.checked_out_at === null && rosterIds.has(playerId)) {
+      next.consecutive_rest += 1
+      next.consecutive_play = 0
+      next.opted_rest = false
     }
 
     players.set(playerId, next)

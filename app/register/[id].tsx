@@ -71,7 +71,8 @@ const validatePhone = (value: string) => {
 }
 
 export default function ZaloRegisterScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>()
+  const { id, drop_in } = useLocalSearchParams<{ id: string; drop_in?: string }>()
+  const isDropIn = drop_in === 'true'
   const { userId } = useAuth()
   const theme = useAppTheme()
 
@@ -317,6 +318,29 @@ export default function ZaloRegisterScreen() {
         return
       }
 
+      if (isDropIn && data?.player_id && id) {
+        try {
+          const { data: authData } = await supabase.auth.getSession()
+          const accessToken = authData.session?.access_token
+          if (accessToken) {
+            await fetch(
+              `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/session-checkin?session_id=${id}`,
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ player_id: data.player_id }),
+              },
+            )
+          }
+        } catch (e) {
+          console.warn('[ZaloRegister] Drop-in checkin failed', e)
+        }
+      }
+
       setRegStatus(data?.status || 'confirmed')
       setStatusMsg(STRINGS.register.saving_info)
       
@@ -346,6 +370,10 @@ export default function ZaloRegisterScreen() {
       }
 
       setStatusMsg(STRINGS.register.success)
+      if (isDropIn) {
+        router.back()
+        return
+      }
       setSuccess(true)
       void fetchSession()
     } catch (err: any) {

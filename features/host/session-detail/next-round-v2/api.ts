@@ -3,15 +3,15 @@ import { supabase } from '@/lib/supabase'
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
-const DEFAULT_FUNCTION_TIMEOUT_MS = 15_000
-const LONG_FUNCTION_TIMEOUT_MS = 25_000
+const DEFAULT_FUNCTION_TIMEOUT_MS = 25_000
+const LONG_FUNCTION_TIMEOUT_MS = 35_000
 const RETRYABLE_ERROR_MESSAGES = new Set([
   'Request timed out. Check your connection and try again.',
   'Temporary network issue. Please try again.',
 ])
 
 function timeoutForFunction(functionName: string) {
-  return functionName === 'session-rounds-start' || functionName === 'session-rounds-end'
+  return functionName === 'session-rounds-start' || functionName === 'session-rounds-end' || functionName === 'session-rounds-swap-player'
     ? LONG_FUNCTION_TIMEOUT_MS
     : DEFAULT_FUNCTION_TIMEOUT_MS
 }

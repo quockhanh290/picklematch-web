@@ -39,10 +39,10 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, error: 'Missing round number' }, 400)
   }
 
-  const auth = await requireHost(request, sessionId)
-  if (auth.error) return auth.error
-
   try {
+    const auth = await requireHost(request, sessionId)
+    if (auth.error) return auth.error
+
     const { data: round, error: roundError } = await auth.supabase
       .from('session_rounds')
       .select('*')
