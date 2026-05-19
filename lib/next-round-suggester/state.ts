@@ -25,14 +25,23 @@ export type QueryResult<T> = {
   error: { message: string } | null
 }
 
-type SupabaseQuery<T> = {
-  select: (columns: string) => SupabaseQuery<T>
-  eq: (column: string, value: string | number | boolean | null) => SupabaseQuery<T>
-  order: (column: string, options?: { ascending?: boolean }) => Promise<QueryResult<T>>
+export type LiveSessionSupabaseClient = {
+  from: <T = unknown>(table: string) => any
+  rpc?: any
 }
 
-export type LiveSessionSupabaseClient = {
-  from: <T = unknown>(table: string) => SupabaseQuery<T>
+type LoadSessionStateOptions = {
+  courts?: number
+  pvnaTolerance?: number
+  traceLabel?: string
+  useRpc?: boolean
+}
+
+type LiveSessionStateRpcPayload = {
+  playerRows?: SessionPlayerStateRow[]
+  pairRows?: SessionPairHistoryRow[]
+  roundRows?: SessionRoundRow[]
+  preferenceRows?: SessionPlayerPreferenceRow[]
 }
 
 function normalizeGender(value: unknown): 'M' | 'F' | null {
@@ -181,29 +190,88 @@ export function mapRowsToSessionState(input: {
 export async function loadSessionState(
   supabase: LiveSessionSupabaseClient,
   sessionId: string,
-  options: { courts?: number; pvnaTolerance?: number } = {},
+  options: LoadSessionStateOptions = {},
 ): Promise<SessionState> {
+  const startedAt = Date.now()
+  async function timedQuery<T>(query: Promise<QueryResult<T>>): Promise<QueryResult<T> & { elapsedMs: number }> {
+    const queryStartedAt = Date.now()
+    const result = await query
+    return {
+      ...result,
+      elapsedMs: Date.now() - queryStartedAt,
+    }
+  }
+
+  if (options.useRpc && typeof supabase.rpc === 'function') {
+    const rpcStartedAt = Date.now()
+    const rpcResult = await supabase.rpc('get_live_session_state', { p_session_id: sessionId }) as QueryResult<LiveSessionStateRpcPayload>
+    const rpcElapsedMs = Date.now() - rpcStartedAt
+
+    if (rpcResult.error) {
+      throw new Error(rpcResult.error.message)
+    }
+
+    const payload = rpcResult.data ?? {}
+    const playerRows = payload.playerRows ?? []
+    const pairRows = payload.pairRows ?? []
+    const roundRows = payload.roundRows ?? []
+    const preferenceRows = payload.preferenceRows ?? []
+    const mapStartedAt = Date.now()
+    const state = mapRowsToSessionState({
+      sessionId,
+      playerRows,
+      pairRows,
+      roundRows,
+      preferenceRows,
+      courts: options.courts,
+      pvnaTolerance: options.pvnaTolerance,
+    })
+
+    if (options.traceLabel) {
+      console.log(`[${options.traceLabel}] loadSessionState detail`, {
+        rpcQuery: rpcElapsedMs,
+        rpcState: true,
+        mapRows: Date.now() - mapStartedAt,
+        total: Date.now() - startedAt,
+        players: playerRows.length,
+        pairs: pairRows.length,
+        rounds: roundRows.length,
+        preferences: preferenceRows.length,
+      })
+    }
+
+    return state
+  }
+
   const [playersResult, pairsResult, roundsResult, preferenceResult] = await Promise.all([
-    supabase
-      .from<SessionPlayerStateRow[]>('session_player_state')
-      .select('*, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
-      .eq('session_id', sessionId)
-      .order('checked_in_at', { ascending: true }),
-    supabase
-      .from<SessionPairHistoryRow[]>('session_pair_history')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('player_a', { ascending: true }),
-    supabase
-      .from<SessionRoundRow[]>('session_rounds')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('round_no', { ascending: true }),
-    supabase
-      .from<SessionPlayerPreferenceRow[]>('session_players')
-      .select('player_id, metadata, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
-      .eq('session_id', sessionId)
-      .order('player_id', { ascending: true }),
+    timedQuery<SessionPlayerStateRow[]>(
+      supabase
+        .from<SessionPlayerStateRow[]>('session_player_state')
+        .select('session_id, player_id, group_id, checked_in_at, checked_out_at, matches_played, last_played_round, consecutive_rest, consecutive_play, opted_rest, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
+        .eq('session_id', sessionId)
+        .order('checked_in_at', { ascending: true }),
+    ),
+    timedQuery<SessionPairHistoryRow[]>(
+      supabase
+        .from<SessionPairHistoryRow[]>('session_pair_history')
+        .select('session_id, player_a, player_b, partner_count, opponent_count')
+        .eq('session_id', sessionId)
+        .order('player_a', { ascending: true }),
+    ),
+    timedQuery<SessionRoundRow[]>(
+      supabase
+        .from<SessionRoundRow[]>('session_rounds')
+        .select('id, session_id, round_no, status, matches, resting, started_at, ended_at')
+        .eq('session_id', sessionId)
+        .order('round_no', { ascending: true }),
+    ),
+    timedQuery<SessionPlayerPreferenceRow[]>(
+      supabase
+        .from<SessionPlayerPreferenceRow[]>('session_players')
+        .select('player_id, metadata, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
+        .eq('session_id', sessionId)
+        .order('player_id', { ascending: true }),
+    ),
   ])
 
   const error = playersResult.error ?? pairsResult.error ?? roundsResult.error ?? preferenceResult.error
@@ -212,8 +280,8 @@ export async function loadSessionState(
   }
 
   const preferenceRows: SessionPlayerPreferenceRow[] = preferenceResult.data ?? []
-
-  return mapRowsToSessionState({
+  const mapStartedAt = Date.now()
+  const state = mapRowsToSessionState({
     sessionId,
     playerRows: playersResult.data ?? [],
     pairRows: pairsResult.data ?? [],
@@ -222,6 +290,23 @@ export async function loadSessionState(
     courts: options.courts,
     pvnaTolerance: options.pvnaTolerance,
   })
+
+  if (options.traceLabel) {
+    console.log(`[${options.traceLabel}] loadSessionState detail`, {
+      playersQuery: playersResult.elapsedMs,
+      pairsQuery: pairsResult.elapsedMs,
+      roundsQuery: roundsResult.elapsedMs,
+      preferencesQuery: preferenceResult.elapsedMs,
+      mapRows: Date.now() - mapStartedAt,
+      total: Date.now() - startedAt,
+      players: playersResult.data?.length ?? 0,
+      pairs: pairsResult.data?.length ?? 0,
+      rounds: roundsResult.data?.length ?? 0,
+      preferences: preferenceRows.length,
+    })
+  }
+
+  return state
 }
 
 export function buildCheckInPatch(

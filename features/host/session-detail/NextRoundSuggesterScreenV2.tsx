@@ -45,6 +45,7 @@ import type {
   SessionPlayerStateRow,
   SessionState,
   SuggestionAlternative,
+  SuggestionResult,
 } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
@@ -164,6 +165,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     effectiveTargetRounds,
     error,
     fairnessAudit,
+    fairnessAdjustment,
     fairnessPreview,
     fairnessScore,
     fairnessWarnings,
@@ -565,6 +567,14 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
                   {fairnessPreview ? (
                     <FairnessPreviewCard preview={fairnessPreview} onPress={() => setSheet('preview')} />
                   ) : null}
+                  <EngineConstraintNotice
+                    state={state}
+                    suggestion={suggestion}
+                    courtCount={courtCount}
+                    tierOverrides={fairnessAdjustment.tier_overrides}
+                    onSetCourtCount={setCourtCount}
+                    onOpenSettings={() => setSheet('settings')}
+                  />
                   <EngineExplainCard
                     alternative={workingAlternative}
                     actions={suggestedRoundActions}
@@ -592,7 +602,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
                   ) : null}
                 </>
               ) : (
-                <EmptyPlanCard onSyncRoster={syncRoster} busy={busy === 'sync'} />
+                <EmptyPlanCard
+                  state={state}
+                  suggestion={suggestion}
+                  courtCount={courtCount}
+                  tierOverrides={fairnessAdjustment.tier_overrides}
+                  onSetCourtCount={setCourtCount}
+                  onOpenSettings={() => setSheet('settings')}
+                  onSyncRoster={syncRoster}
+                  busy={busy === 'sync'}
+                />
               )}
             </>
           )}
@@ -1464,21 +1483,194 @@ function RestingRow({ resting, playersById }: { resting: string[]; playersById: 
   )
 }
 
-function EmptyPlanCard({ onSyncRoster, busy }: { onSyncRoster: () => void; busy: boolean }) {
+const EMPTY_PLAN_TEXT = {
+  defaultTitle: 'Ch\u01b0a c\u00f3 g\u1ee3i \u00fd v\u00f2ng',
+  blockedTitle: 'Engine \u0111ang b\u1ecb k\u1eb9t r\u00e0ng bu\u1ed9c',
+  defaultBody: 'C\u1eadp nh\u1eadt danh s\u00e1ch ng\u01b0\u1eddi ch\u01a1i tr\u01b0\u1edbc, sau \u0111\u00f3 engine s\u1ebd t\u1ea1o ph\u01b0\u01a1ng \u00e1n cho v\u00f2ng k\u1ebf.',
+  capacityBody: (mustPlay: number, slots: number, courts: number) =>
+    `${mustPlay} ng\u01b0\u1eddi \u0111ang c\u1ea7n \u01b0u ti\u00ean ch\u01a1i, nh\u01b0ng ${courts} s\u00e2n ch\u1ec9 c\u00f3 ${slots} slot. N\u1ebfu b\u1eaft t\u1ea5t c\u1ea3 nh\u00f3m n\u00e0y c\u00f9ng ch\u01a1i th\u00ec kh\u00f4ng c\u00f3 t\u1ed5 h\u1ee3p h\u1ee3p l\u1ec7.`,
+  noMatchBody: 'Engine kh\u00f4ng t\u00ecm \u0111\u01b0\u1ee3c t\u1ed5 h\u1ee3p h\u1ee3p l\u1ec7 v\u1edbi roster v\u00e0 c\u00e0i \u0111\u1eb7t hi\u1ec7n t\u1ea1i.',
+  notEnoughBody: (eligible: number) =>
+    `Ch\u1ec9 c\u00f3 ${eligible} ng\u01b0\u1eddi c\u00f3 th\u1ec3 x\u1ebfp ch\u01a1i. C\u1ea7n t\u1ed1i thi\u1ec3u 4 ng\u01b0\u1eddi \u0111\u1ec3 t\u1ea1o 1 tr\u1eadn.`,
+  sectionTitle: 'C\u00e1ch x\u1eed l\u00fd',
+  increaseCourt: (courts: number) => `T\u0103ng l\u00ean ${courts} s\u00e2n n\u1ebfu mu\u1ed1n \u0111\u1ea3m b\u1ea3o nh\u00f3m \u01b0u ti\u00ean \u0111\u01b0\u1ee3c ch\u01a1i.`,
+  acceptRest: (resting: number) => `Gi\u1eef s\u1ed1 s\u00e2n hi\u1ec7n t\u1ea1i v\u00e0 ch\u1ea5p nh\u1eadn kho\u1ea3ng ${resting} ng\u01b0\u1eddi ngh\u1ec9 v\u00f2ng n\u00e0y.`,
+  openSettingsHint: 'M\u1edf c\u00e0i \u0111\u1eb7t \u0111\u1ec3 \u0111\u1ed5i s\u1ed1 s\u00e2n ho\u1eb7c n\u1edbi m\u1ee9c c\u00e2n PVNA.',
+  sync: 'C\u1eadp nh\u1eadt danh s\u00e1ch ng\u01b0\u1eddi ch\u01a1i',
+  settings: 'M\u1edf c\u00e0i \u0111\u1eb7t',
+  applyCourts: (courts: number) => `D\u00f9ng ${courts} s\u00e2n`,
+}
+
+function getEngineConstraintDiagnostic(
+  state: SessionState,
+  suggestion: SuggestionResult,
+  courtCount: number,
+  tierOverrides: Record<string, number>,
+) {
+  const eligiblePlayers = [...state.players.values()].filter(player => !player.checked_out_at && !player.opted_rest)
+  const eligibleCount = eligiblePlayers.length
+  const slots = Math.min(Math.max(1, courtCount) * 4, Math.floor(eligibleCount / 4) * 4)
+  const mustPlayIds = new Set(eligiblePlayers.filter(player => player.consecutive_rest >= 1).map(player => player.player_id))
+  for (const [playerId, tier] of Object.entries(tierOverrides)) {
+    if (tier === 0 && eligiblePlayers.some(player => player.player_id === playerId)) mustPlayIds.add(playerId)
+  }
+  const mustPlayCount = mustPlayIds.size
+  const hasCapacityWarning = suggestion.warnings.includes('MUST_PLAY_OVER_CAPACITY')
+  const hasNoMatchWarning = suggestion.warnings.includes('NO_VALID_MATCH')
+  const hasNotEnoughWarning = suggestion.warnings.includes('NOT_ENOUGH_PRESENT') || slots < 4
+  const requiredCourts = Math.max(courtCount + 1, Math.ceil(Math.max(4, mustPlayCount) / 4))
+  const restingCount = Math.max(0, eligibleCount - slots)
+  const isBlocked = hasCapacityWarning || hasNoMatchWarning || hasNotEnoughWarning
+  const body = hasCapacityWarning
+    ? EMPTY_PLAN_TEXT.capacityBody(mustPlayCount, slots, courtCount)
+    : hasNotEnoughWarning
+      ? EMPTY_PLAN_TEXT.notEnoughBody(eligibleCount)
+      : hasNoMatchWarning
+        ? EMPTY_PLAN_TEXT.noMatchBody
+        : EMPTY_PLAN_TEXT.defaultBody
+  const suggestions = hasCapacityWarning
+    ? [
+        EMPTY_PLAN_TEXT.increaseCourt(requiredCourts),
+        EMPTY_PLAN_TEXT.acceptRest(restingCount),
+        EMPTY_PLAN_TEXT.openSettingsHint,
+      ]
+    : hasNoMatchWarning
+      ? [EMPTY_PLAN_TEXT.openSettingsHint, EMPTY_PLAN_TEXT.acceptRest(restingCount)]
+      : []
+
+  return {
+    body,
+    hasCapacityWarning,
+    hasNoMatchWarning,
+    hasNotEnoughWarning,
+    isBlocked,
+    requiredCourts,
+    suggestions,
+  }
+}
+
+function EngineConstraintNotice({
+  state,
+  suggestion,
+  courtCount,
+  tierOverrides,
+  onSetCourtCount,
+  onOpenSettings,
+}: {
+  state: SessionState
+  suggestion: SuggestionResult
+  courtCount: number
+  tierOverrides: Record<string, number>
+  onSetCourtCount: (courts: number) => void
+  onOpenSettings: () => void
+}) {
   const theme = useAppTheme()
+  const diagnostic = getEngineConstraintDiagnostic(state, suggestion, courtCount, tierOverrides)
+  if (!diagnostic.isBlocked) return null
+
   return (
-    <Card style={{ marginTop: 16, padding: 18, alignItems: 'center' }}>
-      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>Chưa có gợi ý vòng</Text>
-      <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline, textAlign: 'center' }}>
-        Cập nhật danh sách người chơi trước, sau đó engine sẽ tạo phương án cho vòng kế.
+    <Card style={{ marginTop: 12, padding: 12, borderRadius: RADIUS.md, backgroundColor: theme.warningBg, borderColor: theme.warningStrong }}>
+      <Text style={eyebrowStyle(theme.warningText)}>{EMPTY_PLAN_TEXT.blockedTitle}</Text>
+      <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText }}>
+        {diagnostic.body}
       </Text>
+      {diagnostic.suggestions.length > 0 ? (
+        <View style={{ marginTop: 8, gap: 4 }}>
+          {diagnostic.suggestions.map((item, index) => (
+            <Text key={`engine-constraint-${index}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
+              {`\u2022 ${item}`}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+        {diagnostic.hasCapacityWarning && diagnostic.requiredCourts > courtCount ? (
+          <TouchableOpacity
+            onPress={() => onSetCourtCount(diagnostic.requiredCourts)}
+            style={{ flex: 1, minHeight: 38, borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={ctaTextStyle(theme.primary, 11)}>{EMPTY_PLAN_TEXT.applyCourts(diagnostic.requiredCourts)}</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity
+          onPress={onOpenSettings}
+          style={{ flex: 1, minHeight: 38, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Text style={ctaTextStyle(theme.primary, 11)}>{EMPTY_PLAN_TEXT.settings}</Text>
+        </TouchableOpacity>
+      </View>
+    </Card>
+  )
+}
+
+function EmptyPlanCard({
+  state,
+  suggestion,
+  courtCount,
+  tierOverrides,
+  onSetCourtCount,
+  onOpenSettings,
+  onSyncRoster,
+  busy,
+}: {
+  state: SessionState
+  suggestion: SuggestionResult
+  courtCount: number
+  tierOverrides: Record<string, number>
+  onSetCourtCount: (courts: number) => void
+  onOpenSettings: () => void
+  onSyncRoster: () => void
+  busy: boolean
+}) {
+  const theme = useAppTheme()
+  const diagnostic = getEngineConstraintDiagnostic(state, suggestion, courtCount, tierOverrides)
+
+  return (
+    <Card style={{ marginTop: 16, padding: 18, alignItems: 'stretch', borderColor: diagnostic.isBlocked ? theme.warningStrong : theme.outlineVariant }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: diagnostic.isBlocked ? theme.warningText : theme.onSurface, textAlign: 'center' }}>
+        {diagnostic.isBlocked ? EMPTY_PLAN_TEXT.blockedTitle : EMPTY_PLAN_TEXT.defaultTitle}
+      </Text>
+      <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: diagnostic.isBlocked ? theme.warningText : theme.outline, textAlign: 'center' }}>
+        {diagnostic.body}
+      </Text>
+
+      {diagnostic.suggestions.length > 0 ? (
+        <View style={{ marginTop: 14, borderRadius: RADIUS.md, backgroundColor: theme.warningBg, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, padding: 12 }}>
+          <Text style={eyebrowStyle(theme.warningText)}>{EMPTY_PLAN_TEXT.sectionTitle}</Text>
+          <View style={{ marginTop: 8, gap: 5 }}>
+            {diagnostic.suggestions.map((item, index) => (
+              <Text key={`empty-plan-suggestion-${index}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText }}>
+                {`\u2022 ${item}`}
+              </Text>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+        {diagnostic.hasCapacityWarning && diagnostic.requiredCourts > courtCount ? (
+          <TouchableOpacity
+            onPress={() => onSetCourtCount(diagnostic.requiredCourts)}
+            style={{ flex: 1, minHeight: 44, borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={ctaTextStyle(theme.primary, 12)}>{EMPTY_PLAN_TEXT.applyCourts(diagnostic.requiredCourts)}</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity
+          onPress={onOpenSettings}
+          style={{ flex: 1, minHeight: 44, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Text style={ctaTextStyle(theme.primary, 12)}>{EMPTY_PLAN_TEXT.settings}</Text>
+        </TouchableOpacity>
+      </View>
+
       <TouchableOpacity
         testID="nrv2-sync-btn"
         onPress={onSyncRoster}
         disabled={busy}
-        style={{ marginTop: 14, height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' }}
+        style={{ marginTop: 10, minHeight: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' }}
       >
-        {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Cập nhật danh sách người chơi</Text>}
+        {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>{EMPTY_PLAN_TEXT.sync}</Text>}
       </TouchableOpacity>
     </Card>
   )

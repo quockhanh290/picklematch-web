@@ -16,7 +16,6 @@ function parseDecisionMode(value: unknown): 'host_selected_alternative' | 'host_
   if (value === 'host_selected_alternative' || value === 'host_manual_matches') return value
   return 'engine_suggestion'
 }
-import { insertSuggesterAuditEvent } from '../_shared/suggester-audit.ts'
 
 type ManualMatch = {
   court_idx: number
@@ -109,6 +108,8 @@ Deno.serve(async (request) => {
     const state = await loadSessionState(auth.supabase, sessionId, {
       courts: optionalNumber(body.courts),
       pvnaTolerance: optionalNumber(body.pvna_tolerance),
+      traceLabel: 'session-rounds-start',
+      useRpc: true,
     })
     const t2 = Date.now()
     if (state.rounds.some((round) => round.status === 'active')) {
@@ -191,65 +192,40 @@ Deno.serve(async (request) => {
     }
     const t4 = Date.now()
 
+    const commitStartedAt = Date.now()
+    const auditPayload = {
+      decision_mode: decisionMode,
+      selected_alternative_index: suggestionIdx,
+      matches: compactMatches(matches),
+      resting,
+      fairness_score_before: fairnessScoreBefore,
+      adjustment_applied: adjustment.applied_for_warnings,
+      adjustment_config_changes: adjustment.config_changes,
+      adjustment_tier_overrides: adjustment.tier_overrides,
+      decision_context: decisionContext,
+    }
     const { data, error } = await auth.supabase
-      .from('session_rounds')
-      .insert({
-        session_id: sessionId,
-        round_no: state.current_round,
-        status: 'active',
-        matches,
-        resting,
-        started_at: new Date().toISOString(),
+      .rpc('start_live_session_round', {
+        p_session_id: sessionId,
+        p_round_no: state.current_round,
+        p_matches: matches,
+        p_resting: resting,
+        p_event_source: decisionMode === 'engine_suggestion' ? 'engine' : 'host',
+        p_actor_id: auth.userId,
+        p_audit_payload: auditPayload,
+        p_adjustment_warnings: adjustment.applied_for_warnings,
+        p_adjustment_config_changes: adjustment.config_changes,
+        p_adjustment_tier_overrides: adjustment.tier_overrides,
+        p_fairness_score_before: fairnessScoreBefore,
       })
-      .select('*')
-      .single()
+    const commitMs = Date.now() - commitStartedAt
 
     if (error) {
-      console.error('session-rounds-start insert failed', error)
+      console.error('session-rounds-start commit failed', error)
       return jsonResponse({ ok: false, error: 'Could not start round' }, 500, request)
     }
 
-    const adjustmentInsert = adjustment.applied_for_warnings.length > 0
-      ? auth.supabase
-        .from('suggester_adjustments')
-        .insert({
-          session_id: sessionId,
-          round_no: state.current_round,
-          triggered_by_warnings: adjustment.applied_for_warnings,
-          config_changes: adjustment.config_changes,
-          tier_overrides: adjustment.tier_overrides,
-          fairness_score_before: fairnessScoreBefore,
-        })
-      : Promise.resolve({ error: null })
-
-    const [{ error: adjustmentError }, auditError] = await Promise.all([
-      adjustmentInsert,
-      insertSuggesterAuditEvent(auth.supabase, {
-        session_id: sessionId,
-        round_no: state.current_round,
-        event_type: 'round_started',
-        event_source: decisionMode === 'engine_suggestion' ? 'engine' : 'host',
-        actor_id: auth.userId,
-        payload: {
-          decision_mode: decisionMode,
-          selected_alternative_index: suggestionIdx,
-          matches: compactMatches(matches),
-          resting,
-          fairness_score_before: fairnessScoreBefore,
-          adjustment_applied: adjustment.applied_for_warnings,
-          adjustment_config_changes: adjustment.config_changes,
-          adjustment_tier_overrides: adjustment.tier_overrides,
-          decision_context: decisionContext,
-        },
-      }),
-    ])
-
     const t5 = Date.now()
-
-    if (adjustmentError) {
-      console.error('session-rounds-start adjustment insert failed', adjustmentError)
-      return jsonResponse({ ok: false, error: 'Could not record fairness adjustment' }, 500, request)
-    }
 
     console.log('[session-rounds-start] timing', {
       readBody: t1 - t0,
@@ -257,12 +233,15 @@ Deno.serve(async (request) => {
       correctForFairness: t3 - t2,
       matchResolution: t4 - t3,
       dbWrites: t5 - t4,
+      dbWriteDetail: {
+        commitRound: commitMs,
+      },
       total: t5 - t0,
       players: state.players.size,
       rounds: state.rounds.length,
     })
 
-    return jsonResponse({ ok: true, round: data, adjustment, audit_error: auditError }, 200, request)
+    return jsonResponse({ ok: true, round: data, adjustment, audit_error: null }, 200, request)
   } catch (error) {
     console.error('session-rounds-start failed', error)
     return jsonResponse(

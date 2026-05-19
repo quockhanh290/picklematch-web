@@ -223,7 +223,8 @@ export function suggestNextRound(
   const tierOverrides = options.tier_overrides ?? {}
   const basePick = pickPlayers(state, Math.max(4, slots), tierOverrides)
   const warnings = [...basePick.warnings, ...detectGenderConflicts(eligiblePlayers)]
-  const requiredPlayerIds = warnings.includes('MUST_PLAY_OVER_CAPACITY')
+  const mustPlayOverCapacity = warnings.includes('MUST_PLAY_OVER_CAPACITY')
+  const requiredPlayerIds = mustPlayOverCapacity
     ? new Set<string>()
     : new Set(
         eligiblePlayers
@@ -231,9 +232,11 @@ export function suggestNextRound(
           .map((player) => player.player_id),
       )
 
-  for (const [playerId, tier] of Object.entries(tierOverrides)) {
-    if (tier === Tier.MUST_PLAY && eligiblePlayers.some((player) => player.player_id === playerId)) {
-      requiredPlayerIds.add(playerId)
+  if (!mustPlayOverCapacity) {
+    for (const [playerId, tier] of Object.entries(tierOverrides)) {
+      if (tier === Tier.MUST_PLAY && eligiblePlayers.some((player) => player.player_id === playerId)) {
+        requiredPlayerIds.add(playerId)
+      }
     }
   }
 

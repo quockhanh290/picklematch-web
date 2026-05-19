@@ -324,6 +324,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     courtPreset,
     effectiveTargetRounds,
     fairnessAudit,
+    fairnessAdjustment,
     fairnessPreview,
     fairnessScore,
     fairnessWarnings,
