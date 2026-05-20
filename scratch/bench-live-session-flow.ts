@@ -3,10 +3,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import WebSocket from 'ws'
 
 import { calculateOptimalCourts, type CourtPreset } from '../lib/court-calculator'
+import {
+  suggestNextRoundExperimental,
+  type ExperimentalDiagnostic,
+  type ExperimentalSuggestOptions,
+} from '../features/host/session-detail/next-round-benchmark/experimental-suggest'
 import { applyFairnessAdjustment, correctForFairness } from '../lib/next-round-suggester/fairness/corrector'
 import { loadSessionState } from '../lib/next-round-suggester/state'
 import { buildSessionStateFingerprint } from '../lib/next-round-suggester/state-version'
-import { suggestNextRound, type SuggestionDiagnostic } from '../lib/next-round-suggester/suggest'
 import type { SessionState, SuggestionAlternative, SuggestionResult } from '../lib/next-round-suggester/types'
 
 type Mode = 'status' | 'plan' | 'start' | 'end' | 'cycle'
@@ -15,6 +19,9 @@ type Args = {
   mode: Mode
   yes: boolean
   autoCheckIn: boolean
+  candidateMode: NonNullable<ExperimentalSuggestOptions['mode']>
+  candidateLimit: number
+  perStrategyLimit: number
   iterations: number
   delayMs: number
   courtsOverride: number | null
@@ -57,7 +64,7 @@ type PlanResult = {
     total: number
   }
   courtCalculator: ReturnType<typeof calculateOptimalCourts>
-  diagnostics: SuggestionDiagnostic
+  diagnostics: ExperimentalDiagnostic
 }
 
 type SupabaseAny = any
@@ -114,11 +121,18 @@ function parseArgs(): Args {
     throw new Error('--court-preset must be one of: relaxed, balanced, play_more')
   }
   const courts = getValue('--courts')
+  const candidateMode = (getValue('--candidate-mode') ?? 'cached-production') as NonNullable<ExperimentalSuggestOptions['mode']>
+  if (!['global', 'per-strategy', 'adaptive', 'strategy-stop', 'cached-production'].includes(candidateMode)) {
+    throw new Error('--candidate-mode must be global, per-strategy, adaptive, strategy-stop, or cached-production')
+  }
 
   return {
     mode,
     yes: args.includes('--yes'),
     autoCheckIn: !args.includes('--no-auto-check-in'),
+    candidateMode,
+    candidateLimit: Math.max(1, Number(getValue('--candidate-limit') ?? '28')),
+    perStrategyLimit: Math.max(1, Number(getValue('--per-strategy-limit') ?? '6')),
     iterations: Math.max(1, Number(getValue('--iterations') ?? '1')),
     delayMs: Math.max(0, Number(getValue('--delay-ms') ?? '600')),
     courtsOverride: courts === undefined ? null : Math.max(1, Number(courts)),
@@ -402,6 +416,7 @@ async function buildPlan(service: SupabaseAny, sessionId: string, args: Args, st
   const state = await loadSessionState(service as any, sessionId, {
     courts: courtSetup.courtCount,
     pvnaTolerance: args.pvnaTolerance,
+    traceLabel: 'bench-live-plan',
   })
   const loadSessionStateMs = performance.now() - loadStartedAt
 
@@ -411,15 +426,11 @@ async function buildPlan(service: SupabaseAny, sessionId: string, args: Args, st
   const correctForFairnessMs = performance.now() - fairnessStartedAt
 
   const suggestStartedAt = performance.now()
-  const diagnostics: SuggestionDiagnostic = {
-    strategies: {},
-    partition_count: 0,
-    max_iterations: 0,
-    exhaustive: false,
-  }
-  const suggestion = suggestNextRound(adjustedState, {
+  const suggestion = suggestNextRoundExperimental(adjustedState, {
     tier_overrides: adjustment.tier_overrides,
-    diagnostics,
+    mode: args.candidateMode,
+    candidateLimit: args.candidateLimit,
+    perStrategyLimit: args.perStrategyLimit,
   })
   const suggestNextRoundMs = performance.now() - suggestStartedAt
 
@@ -434,7 +445,7 @@ async function buildPlan(service: SupabaseAny, sessionId: string, args: Args, st
     alternative,
     courtCount: courtSetup.courtCount,
     courtCalculator: courtSetup.courtCalculator,
-    diagnostics,
+    diagnostics: suggestion.diagnostic,
     timings: {
       courtCalculator: courtSetup.ms,
       loadSessionState: loadSessionStateMs,
@@ -462,10 +473,14 @@ function printPlan(result: PlanResult) {
     resting: result.alternative.resting.length,
   })
   console.log('  engine diagnostics', {
-    partitionCount: result.diagnostics.partition_count,
-    maxIterationsPerPartition: result.diagnostics.max_iterations,
-    exhaustive: result.diagnostics.exhaustive,
-    strategies: result.diagnostics.strategies,
+    generated: result.diagnostics.generated,
+    duplicateCandidates: result.diagnostics.duplicateCandidates,
+    evaluatedCandidates: result.diagnostics.evaluatedCandidates,
+    acceptedCandidates: result.diagnostics.acceptedCandidates,
+    failedCandidates: result.diagnostics.failedCandidates,
+    partitionIterations: result.diagnostics.partitionIterations,
+    expandedTo: result.diagnostics.expandedTo,
+    expandedReasons: result.diagnostics.expandedReasons,
   })
 }
 
@@ -483,6 +498,11 @@ async function startRound(service: SupabaseAny, accessToken: string, sessionId: 
     decision_context: {
       benchmark: true,
       source: 'scratch/bench-live-session-flow.ts',
+      experimental_engine: {
+        candidate_mode: args.candidateMode,
+        candidate_limit: args.candidateLimit,
+        per_strategy_limit: args.perStrategyLimit,
+      },
     },
   })
 }
@@ -525,6 +545,10 @@ async function main() {
     mode: args.mode,
     iterations: args.iterations,
     autoCheckIn: args.autoCheckIn,
+    engine: 'experimental',
+    candidateMode: args.candidateMode,
+    candidateLimit: args.candidateLimit,
+    perStrategyLimit: args.perStrategyLimit,
     courts: courtSetup.courtCount,
     courtsOverride: args.courtsOverride,
     courtPreset: args.courtPreset,

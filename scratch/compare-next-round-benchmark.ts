@@ -128,7 +128,7 @@ function benchmarkState(
   state: SessionState,
   iterations: number,
   candidateLimit?: number,
-  candidateMode: 'global' | 'per-strategy' = 'global',
+  candidateMode: 'global' | 'per-strategy' | 'adaptive' | 'strategy-stop' | 'cached-production' = 'global',
   perStrategyLimit?: number,
 ) {
   const adjustment = correctForFairness(state)
@@ -247,6 +247,8 @@ function throughRoundSummary(roundReports: Array<{
       pvnaDelta: row.delta?.pvnaDiff,
       genderPenaltyDelta: row.delta?.genderPenalty,
       altDelta: row.delta?.alternatives,
+      expandedTo: (row.experimental.diagnostic as any)?.expandedTo,
+      expandedReasons: (row.experimental.diagnostic as any)?.expandedReasons,
     })),
   }
 }
@@ -289,10 +291,10 @@ async function main() {
   const sessionLimit = Math.max(1, Number(argValue('--sessions', '1')))
   const courts = Math.max(1, Number(argValue('--courts', '6')))
   const candidateLimit = Math.max(1, Number(argValue('--candidate-limit', '18')))
-  const candidateMode = argValue('--candidate-mode', 'global') as 'global' | 'per-strategy'
+  const candidateMode = argValue('--candidate-mode', 'global') as 'global' | 'per-strategy' | 'adaptive' | 'strategy-stop' | 'cached-production'
   const perStrategyLimit = Math.max(1, Number(argValue('--per-strategy-limit', '6')))
-  if (!['global', 'per-strategy'].includes(candidateMode)) {
-    throw new Error('--candidate-mode must be global or per-strategy')
+  if (!['global', 'per-strategy', 'adaptive', 'strategy-stop', 'cached-production'].includes(candidateMode)) {
+    throw new Error('--candidate-mode must be global, per-strategy, adaptive, strategy-stop, or cached-production')
   }
   const throughRounds = process.argv.includes('--through-rounds')
   const summaryOnly = process.argv.includes('--summary-only')
