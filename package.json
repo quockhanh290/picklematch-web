@@ -28,6 +28,7 @@
     "sim:stress": "jest tests/next-round-suggester/simulation/stress.test.ts --testTimeout=600000",
     "sim:full": "npm run sim:sanity && npm run sim:targets && npm run sim:ab && npm run sim:stress",
     "sim:report": "tsx scripts/run-simulation-report.ts",
+    "bench:live-session": "tsx scratch/bench-live-session-flow.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "lint:errors": "eslint . --ext .ts,.tsx,.js,.jsx --quiet",

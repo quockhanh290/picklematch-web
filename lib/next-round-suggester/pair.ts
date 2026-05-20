@@ -16,6 +16,17 @@ export type PartitioningResult = {
   relaxed_tolerance?: boolean
 }
 
+export type PartitioningDiagnostic = {
+  player_count: number
+  max_iterations: number
+  partition_count: number
+  exhaustive: boolean
+  strict_iterations: number
+  relaxed_iterations: number
+  found: boolean
+  relaxed_tolerance: boolean
+}
+
 const SPLIT_INDEXES: Array<[number, number, number, number]> = [
   [0, 1, 2, 3],
   [0, 2, 1, 3],
@@ -356,7 +367,7 @@ function defaultMaxIterations(playerCount: number): number {
 export function bestPartitioning(
   players: PlayerSessionState[],
   state: SessionState,
-  options: { maxIterations?: number } = {},
+  options: { maxIterations?: number; diagnostics?: (diagnostic: PartitioningDiagnostic) => void } = {},
 ): PartitioningResult | null {
   if (players.length < 4 || players.length % 4 !== 0) return null
 
@@ -367,7 +378,7 @@ export function bestPartitioning(
 
   function runSearch(
     searchOptions: { tolerance?: number; relaxedTolerance?: boolean } = {},
-  ): PartitioningResult | null {
+  ): { result: PartitioningResult | null; iterations: number } {
     let best: PartitioningResult | null = null
     let iterations = 0
 
@@ -399,7 +410,8 @@ export function bestPartitioning(
 
     walk(normalizedPlayers, [])
     const finalBest = best as PartitioningResult | null
-    return finalBest
+      return {
+        result: finalBest
       ? {
           matches: finalBest.matches,
           score: finalBest.score,
@@ -407,7 +419,9 @@ export function bestPartitioning(
           iterations,
           relaxed_tolerance: finalBest.relaxed_tolerance,
         }
-      : null
+          : null,
+        iterations,
+      }
   }
 
   consider(chunkIntoCourts(normalizedPlayers))
@@ -420,7 +434,8 @@ export function bestPartitioning(
   }
 
   const finalBest = best as PartitioningResult | null
-  return finalBest
+  return {
+    result: finalBest
     ? {
         matches: finalBest.matches,
         score: finalBest.score,
@@ -428,14 +443,39 @@ export function bestPartitioning(
         iterations,
         relaxed_tolerance: finalBest.relaxed_tolerance,
       }
-    : null
+      : null,
+    iterations,
+  }
   }
 
   const strict = runSearch()
-  if (strict) return strict
+  if (strict.result) {
+    options.diagnostics?.({
+      player_count: normalizedPlayers.length,
+      max_iterations: maxIterations,
+      partition_count: partitionCount,
+      exhaustive: canSearchExhaustively,
+      strict_iterations: strict.iterations,
+      relaxed_iterations: 0,
+      found: true,
+      relaxed_tolerance: false,
+    })
+    return strict.result
+  }
 
-  return runSearch({
+  const relaxed = runSearch({
     tolerance: Number.POSITIVE_INFINITY,
     relaxedTolerance: true,
   })
+  options.diagnostics?.({
+    player_count: normalizedPlayers.length,
+    max_iterations: maxIterations,
+    partition_count: partitionCount,
+    exhaustive: canSearchExhaustively,
+    strict_iterations: strict.iterations,
+    relaxed_iterations: relaxed.iterations,
+    found: Boolean(relaxed.result),
+    relaxed_tolerance: Boolean(relaxed.result),
+  })
+  return relaxed.result
 }

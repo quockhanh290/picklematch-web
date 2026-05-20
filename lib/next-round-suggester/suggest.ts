@@ -1,5 +1,5 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { bestPartitioning } from './pair.ts'
+import { bestPartitioning, type PartitioningDiagnostic } from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { getPresentPlayers, pickPlayers, sortPlayersForStrategy } from './select.ts'
 import type {
@@ -16,6 +16,23 @@ import { computeAvailabilityMetrics, computeProjectedOpponentRepeatBurden, compu
 
 export type SuggestNextRoundOptions = {
   tier_overrides?: Record<string, Tier>
+  diagnostics?: SuggestionDiagnostic
+}
+
+export type SuggestionDiagnostic = {
+  strategies: Record<string, {
+    candidates: number
+    evaluated: number
+    accepted: number
+    skipped_seen: number
+    skipped_required: number
+    partition_iterations: number
+    relaxed_partitions: number
+    failed_partitions: number
+  }>
+  partition_count: number
+  max_iterations: number
+  exhaustive: boolean
 }
 
 function combinationKey(players: PlayerSessionState[]): string {
@@ -189,8 +206,9 @@ function makeAlternative(
   allPresent: PlayerSessionState[],
   state: SessionState,
   warnings: string[],
+  diagnostics?: (diagnostic: PartitioningDiagnostic) => void,
 ): SuggestionAlternative | null {
-  const partition = bestPartitioning(selected, state)
+  const partition = bestPartitioning(selected, state, { diagnostics })
   if (!partition) return null
   const alternativeWarnings = partition.relaxed_tolerance
     ? [...warnings, 'PVNA_TOLERANCE_RELAXED']
@@ -254,6 +272,7 @@ export function suggestNextRound(
 
   const alternatives: SuggestionAlternative[] = []
   const seen = new Set<string>()
+  const diagnostics = options.diagnostics
   const strategies: Array<'fairness' | 'rest' | 'diversity' | 'group'> = [
     'fairness',
     'rest',
@@ -264,27 +283,56 @@ export function suggestNextRound(
   for (const strategy of strategies) {
     const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides)
     const candidates = getPriorityCandidates(sorted, slots, MAX_CANDIDATES_PER_STRATEGY)
+    if (diagnostics && !diagnostics.strategies[strategy]) {
+      diagnostics.strategies[strategy] = {
+        candidates: candidates.length,
+        evaluated: 0,
+        accepted: 0,
+        skipped_seen: 0,
+        skipped_required: 0,
+        partition_iterations: 0,
+        relaxed_partitions: 0,
+        failed_partitions: 0,
+      }
+    } else if (diagnostics) {
+      diagnostics.strategies[strategy].candidates = candidates.length
+    }
+    const strategyDiagnostics = diagnostics?.strategies[strategy]
     let acceptedForStrategy = 0
 
     for (const candidate of candidates) {
       if (acceptedForStrategy >= MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY) break
       const key = combinationKey(candidate.players)
-      if (seen.has(key)) continue
+      if (seen.has(key)) {
+        if (strategyDiagnostics) strategyDiagnostics.skipped_seen += 1
+        continue
+      }
       if (
         requiredPlayerIds.size > 0 &&
         ![...requiredPlayerIds].every((playerId) =>
           candidate.players.some((player) => player.player_id === playerId),
         )
       ) {
+        if (strategyDiagnostics) strategyDiagnostics.skipped_required += 1
         continue
       }
 
-      const alternative = makeAlternative(candidate.players, presentPlayers, state, warnings)
+      if (strategyDiagnostics) strategyDiagnostics.evaluated += 1
+      const alternative = makeAlternative(candidate.players, presentPlayers, state, warnings, (partitionDiagnostic) => {
+        if (!strategyDiagnostics) return
+        strategyDiagnostics.partition_iterations += partitionDiagnostic.strict_iterations + partitionDiagnostic.relaxed_iterations
+        strategyDiagnostics.relaxed_partitions += partitionDiagnostic.relaxed_tolerance ? 1 : 0
+        strategyDiagnostics.failed_partitions += partitionDiagnostic.found ? 0 : 1
+        diagnostics!.partition_count = partitionDiagnostic.partition_count
+        diagnostics!.max_iterations = partitionDiagnostic.max_iterations
+        diagnostics!.exhaustive = partitionDiagnostic.exhaustive
+      })
       if (!alternative) continue
 
       alternatives.push(alternative)
       seen.add(key)
       acceptedForStrategy += 1
+      if (strategyDiagnostics) strategyDiagnostics.accepted += 1
     }
   }
 
