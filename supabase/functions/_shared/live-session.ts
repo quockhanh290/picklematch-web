@@ -122,10 +122,17 @@ export function createServiceClient() {
   })
 }
 
-export async function requireHost(request: Request, sessionId: string) {
+export async function requireHost(request: Request, sessionId: string, traceLabel?: string) {
+  const startedAt = Date.now()
   const authorization = request.headers.get('Authorization')
 
   if (!authorization) {
+    if (traceLabel) {
+      console.warn(`[${traceLabel}] requireHost detail`, {
+        status: 'missing_authorization',
+        total: Date.now() - startedAt,
+      })
+    }
     return {
       error: jsonResponse({ ok: false, error: 'Missing Authorization header' }, 401, request),
       supabase: null,
@@ -133,11 +140,23 @@ export async function requireHost(request: Request, sessionId: string) {
     }
   }
 
+  const clientStartedAt = Date.now()
   const supabase = createServiceClient()
+  const createClientMs = Date.now() - clientStartedAt
   const token = authorization.replace(/^Bearer\s+/i, '')
+  const getUserStartedAt = Date.now()
   const { data: userData, error: userError } = await supabase.auth.getUser(token)
+  const getUserMs = Date.now() - getUserStartedAt
 
   if (userError || !userData.user) {
+    if (traceLabel) {
+      console.warn(`[${traceLabel}] requireHost detail`, {
+        status: 'invalid_access_token',
+        createClient: createClientMs,
+        getUser: getUserMs,
+        total: Date.now() - startedAt,
+      })
+    }
     return {
       error: jsonResponse({ ok: false, error: 'Invalid access token' }, 401, request),
       supabase: null,
@@ -146,13 +165,24 @@ export async function requireHost(request: Request, sessionId: string) {
   }
 
   const userId = userData.user.id
+  const sessionQueryStartedAt = Date.now()
   const { data: session, error: sessionError } = await supabase
     .from('sessions')
     .select('id, host_id')
     .eq('id', sessionId)
     .maybeSingle()
+  const sessionQueryMs = Date.now() - sessionQueryStartedAt
 
   if (sessionError) {
+    if (traceLabel) {
+      console.warn(`[${traceLabel}] requireHost detail`, {
+        status: 'session_query_error',
+        createClient: createClientMs,
+        getUser: getUserMs,
+        sessionQuery: sessionQueryMs,
+        total: Date.now() - startedAt,
+      })
+    }
     return {
       error: jsonResponse({ ok: false, error: 'Unable to verify host access' }, 500, request),
       supabase: null,
@@ -161,6 +191,15 @@ export async function requireHost(request: Request, sessionId: string) {
   }
 
   if (!session) {
+    if (traceLabel) {
+      console.warn(`[${traceLabel}] requireHost detail`, {
+        status: 'session_not_found',
+        createClient: createClientMs,
+        getUser: getUserMs,
+        sessionQuery: sessionQueryMs,
+        total: Date.now() - startedAt,
+      })
+    }
     return {
       error: jsonResponse({ ok: false, error: 'Session not found' }, 404, request),
       supabase: null,
@@ -169,11 +208,30 @@ export async function requireHost(request: Request, sessionId: string) {
   }
 
   if (session.host_id !== userId) {
+    if (traceLabel) {
+      console.warn(`[${traceLabel}] requireHost detail`, {
+        status: 'forbidden',
+        createClient: createClientMs,
+        getUser: getUserMs,
+        sessionQuery: sessionQueryMs,
+        total: Date.now() - startedAt,
+      })
+    }
     return {
       error: jsonResponse({ ok: false, error: 'Only the host can manage live session state' }, 403, request),
       supabase: null,
       userId: null,
     }
+  }
+
+  if (traceLabel) {
+    console.log(`[${traceLabel}] requireHost detail`, {
+      status: 'ok',
+      createClient: createClientMs,
+      getUser: getUserMs,
+      sessionQuery: sessionQueryMs,
+      total: Date.now() - startedAt,
+    })
   }
 
   return {

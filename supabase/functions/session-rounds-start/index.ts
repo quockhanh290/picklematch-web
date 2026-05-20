@@ -98,7 +98,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, error: 'Missing session id' }, 400, request)
   }
 
-  const auth = await requireHost(request, sessionId)
+  const auth = await requireHost(request, sessionId, 'session-rounds-start')
   if (auth.error) return auth.error
 
   try {
@@ -109,7 +109,6 @@ Deno.serve(async (request) => {
       courts: optionalNumber(body.courts),
       pvnaTolerance: optionalNumber(body.pvna_tolerance),
       traceLabel: 'session-rounds-start',
-      useRpc: true,
     })
     const t2 = Date.now()
     if (state.rounds.some((round) => round.status === 'active')) {

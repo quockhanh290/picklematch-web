@@ -27,21 +27,12 @@ export type QueryResult<T> = {
 
 export type LiveSessionSupabaseClient = {
   from: <T = unknown>(table: string) => any
-  rpc?: any
 }
 
 type LoadSessionStateOptions = {
   courts?: number
   pvnaTolerance?: number
   traceLabel?: string
-  useRpc?: boolean
-}
-
-type LiveSessionStateRpcPayload = {
-  playerRows?: SessionPlayerStateRow[]
-  pairRows?: SessionPairHistoryRow[]
-  roundRows?: SessionRoundRow[]
-  preferenceRows?: SessionPlayerPreferenceRow[]
 }
 
 function normalizeGender(value: unknown): 'M' | 'F' | null {
@@ -200,47 +191,6 @@ export async function loadSessionState(
       ...result,
       elapsedMs: Date.now() - queryStartedAt,
     }
-  }
-
-  if (options.useRpc && typeof supabase.rpc === 'function') {
-    const rpcStartedAt = Date.now()
-    const rpcResult = await supabase.rpc('get_live_session_state', { p_session_id: sessionId }) as QueryResult<LiveSessionStateRpcPayload>
-    const rpcElapsedMs = Date.now() - rpcStartedAt
-
-    if (rpcResult.error) {
-      throw new Error(rpcResult.error.message)
-    }
-
-    const payload = rpcResult.data ?? {}
-    const playerRows = payload.playerRows ?? []
-    const pairRows = payload.pairRows ?? []
-    const roundRows = payload.roundRows ?? []
-    const preferenceRows = payload.preferenceRows ?? []
-    const mapStartedAt = Date.now()
-    const state = mapRowsToSessionState({
-      sessionId,
-      playerRows,
-      pairRows,
-      roundRows,
-      preferenceRows,
-      courts: options.courts,
-      pvnaTolerance: options.pvnaTolerance,
-    })
-
-    if (options.traceLabel) {
-      console.log(`[${options.traceLabel}] loadSessionState detail`, {
-        rpcQuery: rpcElapsedMs,
-        rpcState: true,
-        mapRows: Date.now() - mapStartedAt,
-        total: Date.now() - startedAt,
-        players: playerRows.length,
-        pairs: pairRows.length,
-        rounds: roundRows.length,
-        preferences: preferenceRows.length,
-      })
-    }
-
-    return state
   }
 
   const [playersResult, pairsResult, roundsResult, preferenceResult] = await Promise.all([

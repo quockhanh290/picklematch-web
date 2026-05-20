@@ -13,6 +13,37 @@ export type CommitResult = {
   pairHistory: SessionPairHistoryRow[]
 }
 
+export function pairHistoryRowsFromState(state: SessionState): SessionPairHistoryRow[] {
+  const rows = new Map<string, SessionPairHistoryRow>()
+
+  function mergeCount(playerA: string, playerB: string, field: 'partner_count' | 'opponent_count', count: number) {
+    const [a, b] = normalizePairKey(playerA, playerB)
+    const key = `${a}:${b}`
+    const existing = rows.get(key) ?? {
+      session_id: state.session_id,
+      player_a: a,
+      player_b: b,
+      partner_count: 0,
+      opponent_count: 0,
+    }
+    existing[field] = Math.max(existing[field], count)
+    rows.set(key, existing)
+  }
+
+  for (const player of state.players.values()) {
+    for (const [partnerId, count] of player.partner_counts) {
+      mergeCount(player.player_id, partnerId, 'partner_count', count)
+    }
+    for (const [opponentId, count] of player.opponent_counts) {
+      mergeCount(player.player_id, opponentId, 'opponent_count', count)
+    }
+  }
+
+  return [...rows.values()].sort((left, right) =>
+    `${left.player_a}:${left.player_b}`.localeCompare(`${right.player_a}:${right.player_b}`),
+  )
+}
+
 function clonePlayer(player: PlayerSessionState): PlayerSessionState {
   return {
     ...player,
