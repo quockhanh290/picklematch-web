@@ -1,5 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
+import { bumpLiveStateVersion } from '../_shared/live-state-version.ts'
 import { insertSuggesterAuditEvent } from '../_shared/suggester-audit.ts'
 
 type Team = [string, string]
@@ -106,6 +107,12 @@ Deno.serve(async (request) => {
   if (checkoutResult.error) {
     console.error('swap checkout failed', checkoutResult.error)
     return jsonResponse({ ok: false, error: 'Could not check out swapped player' }, 500, request)
+  }
+
+  try {
+    await bumpLiveStateVersion(auth.supabase, sessionId)
+  } catch (versionError) {
+    return jsonResponse({ ok: false, error: versionError instanceof Error ? versionError.message : 'Could not bump live_state_version' }, 500, request)
   }
 
   await insertSuggesterAuditEvent(auth.supabase, {

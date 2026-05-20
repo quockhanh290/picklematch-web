@@ -43,7 +43,7 @@ export type ExperimentalSuggestionResult = SuggestionResult & {
 export type ExperimentalSuggestOptions = {
   tier_overrides?: Record<string, Tier>
   candidateLimit?: number
-  mode?: 'global' | 'per-strategy' | 'adaptive' | 'strategy-stop' | 'cached-production'
+  mode?: 'global' | 'cached-global' | 'per-strategy' | 'adaptive' | 'strategy-stop' | 'cached-production'
   perStrategyLimit?: number
 }
 
@@ -377,7 +377,7 @@ export function suggestNextRoundExperimental(
   const unique = new Map<string, Candidate>()
   const seen = new Set<string>()
   const alternatives: SuggestionAlternative[] = []
-  const partitioningCache = options.mode === 'cached-production'
+  const partitioningCache = options.mode === 'cached-production' || options.mode === 'cached-global'
     ? createCachedPartitioningRuntimeCache()
     : undefined
 
@@ -531,7 +531,15 @@ export function suggestNextRoundExperimental(
     }
 
     diagnostic.evaluatedCandidates += 1
-    const alternative = makeAlternative(candidate.players, presentPlayers, state, warnings, diagnostic)
+    const alternative = makeAlternative(
+      candidate.players,
+      presentPlayers,
+      state,
+      warnings,
+      diagnostic,
+      options.mode === 'cached-global',
+      partitioningCache,
+    )
     if (!alternative) continue
     alternatives.push(alternative)
     seen.add(candidate.key)

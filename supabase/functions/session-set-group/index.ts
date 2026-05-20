@@ -1,5 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
+import { bumpLiveStateVersion } from '../_shared/live-state-version.ts'
 import { insertSuggesterAuditEvent } from '../_shared/suggester-audit.ts'
 
 Deno.serve(async (request) => {
@@ -34,6 +35,14 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: error.message }, 500)
     }
 
+    if ((data ?? []).length > 0) {
+      try {
+        await bumpLiveStateVersion(auth.supabase, sessionId)
+      } catch (versionError) {
+        return jsonResponse({ ok: false, error: versionError instanceof Error ? versionError.message : 'Could not bump live_state_version' }, 500)
+      }
+    }
+
     const auditError = await insertSuggesterAuditEvent(auth.supabase, {
       session_id: sessionId,
       event_type: 'group_changed',
@@ -59,6 +68,14 @@ Deno.serve(async (request) => {
 
     if (error) {
       return jsonResponse({ ok: false, error: error.message }, 500)
+    }
+
+    if ((data ?? []).length > 0) {
+      try {
+        await bumpLiveStateVersion(auth.supabase, sessionId)
+      } catch (versionError) {
+        return jsonResponse({ ok: false, error: versionError instanceof Error ? versionError.message : 'Could not bump live_state_version' }, 500)
+      }
     }
 
     const auditError = await insertSuggesterAuditEvent(auth.supabase, {
@@ -94,6 +111,14 @@ Deno.serve(async (request) => {
 
   if (error) {
     return jsonResponse({ ok: false, error: error.message }, 500)
+  }
+
+  if ((data ?? []).length > 0) {
+    try {
+      await bumpLiveStateVersion(auth.supabase, sessionId)
+    } catch (versionError) {
+      return jsonResponse({ ok: false, error: versionError instanceof Error ? versionError.message : 'Could not bump live_state_version' }, 500)
+    }
   }
 
   const auditError = await insertSuggesterAuditEvent(auth.supabase, {
