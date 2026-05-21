@@ -159,7 +159,7 @@ export function useSessionDetail(id?: string, userId?: string | null, options: U
       total_ms: 0,
       measured_at: measuredAt,
     }
-    const timed = async <T,>(key: keyof Pick<SessionDetailTiming, 'session_detail_ms' | 'matches_ms' | 'viewer_profile_ms' | 'ratings_ms'>, action: () => Promise<T>) => {
+    const timed = async <T,>(key: keyof Pick<SessionDetailTiming, 'session_detail_ms' | 'matches_ms' | 'viewer_profile_ms' | 'ratings_ms'>, action: () => PromiseLike<T>) => {
       const stepStartedAt = Date.now()
       const result = await action()
       nextTiming[key] = Date.now() - stepStartedAt
@@ -200,11 +200,11 @@ export function useSessionDetail(id?: string, userId?: string | null, options: U
             .limit(1),
         ),
       ])
-      const { data: viewerData } = viewerRes
+      const { data: viewerData } = viewerRes as { data: ViewerPlayer | null }
       setViewerPlayer((viewerData as ViewerPlayer | null) ?? null)
 
       if (nextSession) {
-        nextSession.has_rated = (ratingsRes.data?.length ?? 0) > 0
+        nextSession.has_rated = (((ratingsRes as { data?: unknown[] | null }).data)?.length ?? 0) > 0
         setSession({ ...nextSession })
       }
     } else {

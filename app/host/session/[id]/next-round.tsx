@@ -35,7 +35,8 @@ export default function NextRoundRoute() {
     }
   }
 
-  const ownerDetails = session?.owner_sessions?.[0] || session?.owner_sessions || {}
+  const ownerSessions = session?.owner_sessions
+  const ownerDetails = Array.isArray(ownerSessions) ? ownerSessions[0] ?? {} : ownerSessions ?? {}
   const players = session ? buildArrangementPlayers({ ...session, owner_sessions: ownerDetails }) : []
   const subCourts = session?.sub_court_numbers || ownerDetails.sub_court_numbers || []
   const courts = Math.max(1, subCourts.length || ownerDetails.courts || ownerDetails.court_count || 1)

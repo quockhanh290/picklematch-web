@@ -35,7 +35,7 @@ function summary(values: number[]) {
   }
 }
 
-async function timed<T>(action: () => Promise<T>) {
+async function timed<T>(action: () => PromiseLike<T>) {
   const startedAt = Date.now()
   const result = await action()
   return { result, ms: Date.now() - startedAt }
