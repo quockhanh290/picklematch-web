@@ -21,7 +21,6 @@ export type SessionPlayer = {
     reliability_score?: number | null
     sessions_joined?: number | null
     no_show_count?: number | null
-    sessions_joined?: number | null
     no_show_count_total?: number | null
   } | null
   check_in_status?: 'present' | 'no_show' | 'pending' | null

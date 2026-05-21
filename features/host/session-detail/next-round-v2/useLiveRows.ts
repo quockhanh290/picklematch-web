@@ -81,6 +81,14 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
         setError('Live state changed while loading. Please refresh.')
         return
       }
+      if (!sessionRes?.data) {
+        setError('Could not load live state version.')
+        return
+      }
+
+      const liveStateVersion = typeof sessionRes.data.live_state_version === 'number'
+        ? sessionRes.data.live_state_version
+        : Number(sessionRes.data.live_state_version ?? 0)
 
       const serverPlayerRows = ((playerRes.data ?? []) as SessionPlayerStateRow[]).map(row => ({
           ...row,
@@ -103,9 +111,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
         playerRows: [...serverPlayerRows, ...optimisticRows],
         pairRows: (pairRes.data ?? []) as SessionPairHistoryRow[],
         roundRows: ((roundRes.data ?? []) as RawRoundRow[]).map(normalizeRoundRow),
-        liveStateVersion: typeof sessionRes.data?.live_state_version === 'number'
-          ? sessionRes.data.live_state_version
-          : Number(sessionRes.data?.live_state_version ?? 0),
+        liveStateVersion,
       })
     } finally {
       lastLoadStateMsRef.current = Date.now() - startedAt
