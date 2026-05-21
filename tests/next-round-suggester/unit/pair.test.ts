@@ -127,4 +127,5 @@ describe('bestPartitioning', () => {
 
     expect(cached).toEqual(uncached)
   })
+
 })

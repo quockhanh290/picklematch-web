@@ -10,6 +10,7 @@ import {
   computeSessionFairness,
 } from '../lib/next-round-suggester/fairness/metrics'
 import { suggestNextRound } from '../lib/next-round-suggester/suggest'
+import { suggestNextRoundExperimental } from '../features/host/session-detail/next-round-benchmark/experimental-suggest'
 import type {
   Match,
   PlayerSessionState,
@@ -227,6 +228,10 @@ function finalQuality(state: SessionState) {
 async function main() {
   const rounds = Math.max(1, Number(argValue('--rounds', '50')))
   const seeds = Math.max(1, Number(argValue('--seeds', '3')))
+  const cachedImpl = argValue('--cached-impl', 'production') as 'production' | 'experimental'
+  if (!['production', 'experimental'].includes(cachedImpl)) {
+    throw new Error('--cached-impl must be production or experimental')
+  }
   const summaryOnly = process.argv.includes('--summary-only')
   const rows: any[] = []
   const finalRows: any[] = []
@@ -257,9 +262,14 @@ async function main() {
         const cachedAdjustment = correctForFairness(cachedState)
         const cachedEffectiveState = applyFairnessAdjustment(cachedState, cachedAdjustment)
         const cachedStarted = now()
-        const cached = suggestNextRound(cachedEffectiveState, {
-          tier_overrides: cachedAdjustment.tier_overrides,
-        })
+        const cached = cachedImpl === 'experimental'
+          ? suggestNextRoundExperimental(cachedEffectiveState, {
+              tier_overrides: cachedAdjustment.tier_overrides,
+              mode: 'cached-production',
+            })
+          : suggestNextRound(cachedEffectiveState, {
+              tier_overrides: cachedAdjustment.tier_overrides,
+            })
         const cachedMs = now() - cachedStarted
 
         const baselineAlternative = baseline.alternatives[0]
@@ -303,7 +313,9 @@ async function main() {
   console.log(JSON.stringify({
     modes: {
       baseline: 'production-uncached',
-      cached: 'cached-production',
+      cached: cachedImpl === 'experimental'
+        ? 'experimental-cached-production-best-split'
+        : 'production-cached-best-split',
     },
     scenarios: SCENARIOS.map((item) => item.name),
     seeds,
