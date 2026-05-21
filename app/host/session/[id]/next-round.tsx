@@ -11,24 +11,47 @@ import { useAuth } from '@/lib/useAuth'
 import { useAppTheme } from '@/lib/theme-context'
 
 export default function NextRoundRoute() {
-  const { id, ui } = useLocalSearchParams<{ id: string; ui?: string }>()
+  const { id, ui, bootstrap } = useLocalSearchParams<{ id: string; ui?: string; bootstrap?: string }>()
   const { userId } = useAuth()
   const theme = useAppTheme()
-  const { loading, session } = useSessionDetail(id, userId)
+  const useFullBootstrap = bootstrap === 'full'
+  const routeStartedAtRef = React.useRef(Date.now())
+  const firstReadyMsRef = React.useRef<number | null>(null)
+  const { loading, session, lastTiming } = useSessionDetail(id, userId, {
+    includeMatches: useFullBootstrap,
+    includeViewerExtras: useFullBootstrap,
+    traceLabel: useFullBootstrap ? 'next-round-route-full' : 'next-round-route-light',
+  })
 
   if (loading) return <AppLoading fullScreen />
+  if (firstReadyMsRef.current === null) {
+    firstReadyMsRef.current = Date.now() - routeStartedAtRef.current
+    if (__DEV__) {
+      console.log('[next-round-route] bootstrap timing', {
+        route_bootstrap_ms: firstReadyMsRef.current,
+        bootstrap_variant: useFullBootstrap ? 'full' : 'light',
+        session_detail: lastTiming,
+      })
+    }
+  }
 
   const ownerDetails = session?.owner_sessions?.[0] || session?.owner_sessions || {}
   const players = session ? buildArrangementPlayers({ ...session, owner_sessions: ownerDetails }) : []
   const subCourts = session?.sub_court_numbers || ownerDetails.sub_court_numbers || []
   const courts = Math.max(1, subCourts.length || ownerDetails.courts || ownerDetails.court_count || 1)
+  const bootstrapTelemetry = {
+    optimization_variant: useFullBootstrap ? 'next-round-full-session-detail' : 'next-round-light-session-detail',
+    bootstrap_variant: useFullBootstrap ? 'full' : 'light',
+    route_bootstrap_ms: firstReadyMsRef.current,
+    session_detail: lastTiming,
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       {ui === 'v1' ? (
         <NextRoundSuggesterScreen sessionId={id!} players={players} courts={courts} />
       ) : (
-        <NextRoundSuggesterScreenV2 sessionId={id!} players={players} courts={courts} />
+        <NextRoundSuggesterScreenV2 sessionId={id!} players={players} courts={courts} bootstrapTelemetry={bootstrapTelemetry} />
       )}
     </View>
   )

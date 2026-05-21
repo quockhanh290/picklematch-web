@@ -51,7 +51,7 @@ import type {
 } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
-import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent } from './next-round-v2/api'
+import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent, prewarmLiveSessionVersionGuard } from './next-round-v2/api'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
 import { ChoiceRow, NavbarRightActions, StickyRoundCta } from './next-round-v2/controls'
@@ -148,7 +148,12 @@ function changedPairHistoryRows(beforeRows: SessionPairHistoryRow[], afterRows: 
   })
 }
 
-export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextRoundSuggesterV2Props) {
+function createClientRequestId(action: 'start' | 'end') {
+  const randomPart = Math.random().toString(36).slice(2, 10)
+  return `${action}_${Date.now().toString(36)}_${randomPart}`
+}
+
+export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstrapTelemetry = null }: NextRoundSuggesterV2Props) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
   const router = useRouter()
@@ -188,6 +193,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     matchCountConsistencyRows,
     phase,
     playersById,
+    planTelemetry,
     presentCount,
     pvnaTolerance,
     refreshing,
@@ -224,6 +230,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   } = model
 
   const lastBusRefreshRef = useRef(0)
+  const prewarmedVersionGuardRef = useRef<string | null>(null)
   React.useEffect(() => {
     refreshBus.register(() => {
       lastBusRefreshRef.current = Date.now()
@@ -237,6 +244,18 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     if (Date.now() - lastBusRefreshRef.current < 2000) return
     void loadLiveState()
   }, [loadLiveState]))
+
+  React.useEffect(() => {
+    if (loading || liveStateVersion === null || actionInFlightRef.current) return
+
+    const prewarmKey = `${sessionId}:${liveStateVersion}`
+    if (prewarmedVersionGuardRef.current === prewarmKey) return
+    prewarmedVersionGuardRef.current = prewarmKey
+
+    void prewarmLiveSessionVersionGuard(sessionId).catch((error) => {
+      if (__DEV__) console.warn('[NextRoundSuggesterV2] version guard prewarm failed', error)
+    })
+  }, [loading, liveStateVersion, sessionId])
 
   const openRoster = useCallback(() => {
     router.push({ pathname: '/host/session/[id]/roster', params: { id: sessionId } } as any)
@@ -383,13 +402,22 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       if (unavailableIds.length > 0) {
         throw new Error('Manual matches must use checked-in players')
       }
+      const clientRequestId = createClientRequestId('start')
       const startAuditPayload = {
+        client_request_id: clientRequestId,
         suggestion_idx: selectedAlternative,
         manual: alternative.matches,
         decision_mode: manualAlternative !== null ? 'host_manual_matches' : 'host_selected_alternative',
         expected_state_fingerprint: buildSessionStateFingerprint(state),
         courts: courtCount,
         pvna_tolerance: pvnaTolerance,
+        client_telemetry: {
+          bootstrap: bootstrapTelemetry,
+          ...planTelemetry,
+          measured_at: new Date().toISOString(),
+          live_state_version: liveStateVersion,
+          suggestion_updating: suggestionIsUpdating,
+        },
         decision_context: {
           selected_alternative_index: selectedAlternative,
           manual_swap_applied: manualAlternative !== null,
@@ -441,6 +469,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   const endActiveRound = async () => {
     await runAction('end', async () => {
       if (!activeRound) throw new Error('Không có vòng active.')
+      const clientRequestId = createClientRequestId('end')
       const validateCommitAudit = (commitAudit: any) => {
         const invalidDeltas = commitAudit?.deltas?.filter((row: any) =>
           row?.played ? row?.delta !== 1 : row?.delta !== 0
@@ -514,6 +543,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         pair_history: pairHistoryPayload,
         score_after: scoreAfter,
         audit_payload: {
+          client_request_id: clientRequestId,
           source: 'NextRoundSuggesterScreenV2',
           commit_audit: commitAudit,
         },

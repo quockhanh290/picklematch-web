@@ -61,8 +61,11 @@ Deno.serve(async (request) => {
   }
 
   const t0 = Date.now()
+  let clientRequestId: unknown = null
   try {
     const body = await readJson(request)
+    const auditPayload = body.audit_payload && typeof body.audit_payload === 'object' ? body.audit_payload : {}
+    clientRequestId = (auditPayload as Record<string, unknown>).client_request_id ?? null
     const t1 = Date.now()
     const roundNo = getRoundNo(request, body)
     const supabase = createUserClient(request)
@@ -76,7 +79,7 @@ Deno.serve(async (request) => {
       p_pair_history: Array.isArray(body.pair_history) ? body.pair_history : [],
       p_score_after: requiredNumber(body.score_after, 'score_after'),
       p_audit_payload: {
-        ...(body.audit_payload && typeof body.audit_payload === 'object' ? body.audit_payload : {}),
+        ...auditPayload,
         source: 'session-rounds-end-versioned',
       },
     })
@@ -84,6 +87,7 @@ Deno.serve(async (request) => {
 
     if (error) {
       console.error('[session-rounds-end-versioned] rpc failed', {
+        clientRequestId,
         error: error.message,
         total: Date.now() - t0,
       })
@@ -91,6 +95,7 @@ Deno.serve(async (request) => {
     }
 
     console.log('[session-rounds-end-versioned] timing', {
+      clientRequestId,
       readBody: t1 - t0,
       createClient: t2 - t1,
       rpc: t3 - t2,
@@ -101,6 +106,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: true, ...data }, 200, request)
   } catch (error) {
     console.error('[session-rounds-end-versioned] failed', {
+      clientRequestId,
       error: error instanceof Error ? error.message : 'Unknown error',
       total: Date.now() - t0,
     })

@@ -157,6 +157,13 @@ export async function invokeLiveSessionFunction(
   return payload
 }
 
+export async function prewarmLiveSessionVersionGuard(sessionId: string) {
+  const { error } = await supabase.rpc('get_live_session_version_guard', {
+    p_session_id: sessionId,
+  })
+  if (error) throw error
+}
+
 export async function loadLatestSyncablePlayerIds(
   sessionId: string,
   localFallbackIds: string[],

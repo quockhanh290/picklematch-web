@@ -17,11 +17,13 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     liveStateVersion: null,
   })
   const [error, setError] = useState<string | null>(null)
+  const lastLoadStateMsRef = useRef<number | null>(null)
   const optimisticPlayerPatchesRef = useRef(new Map<string, Partial<SessionPlayerStateRow>>())
   const optimisticPlayerRowsRef = useRef(new Map<string, SessionPlayerStateRow>())
   const settleTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   const loadLiveState = useCallback(async () => {
+    const startedAt = Date.now()
     setRefreshing(true)
     setError(null)
     try {
@@ -106,6 +108,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
           : Number(sessionRes.data?.live_state_version ?? 0),
       })
     } finally {
+      lastLoadStateMsRef.current = Date.now() - startedAt
       setRefreshing(false)
     }
   }, [playersById, sessionId])
@@ -178,5 +181,5 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     }
   }, [loadLiveState])
 
-  return { addPlayerRow, clearPlayerPatch, clearPlayerRow, error, loading, loadLiveState, patchPlayerRow, refreshing, rows, setError, settlePlayerPatch, settlePlayerRow }
+  return { addPlayerRow, clearPlayerPatch, clearPlayerRow, error, lastLoadStateMsRef, loading, loadLiveState, patchPlayerRow, refreshing, rows, setError, settlePlayerPatch, settlePlayerRow }
 }

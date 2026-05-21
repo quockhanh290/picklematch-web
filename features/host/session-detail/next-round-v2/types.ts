@@ -10,6 +10,7 @@ export type NextRoundSuggesterV2Props = {
   sessionId: string
   players: ArrangementPlayer[]
   courts: number
+  bootstrapTelemetry?: Record<string, unknown> | null
 }
 
 export type LiveRows = {

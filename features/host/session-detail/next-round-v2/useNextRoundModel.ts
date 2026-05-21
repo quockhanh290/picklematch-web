@@ -58,6 +58,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const [groupSelection, setGroupSelection] = useState<string[]>([])
   const [showEngineStats, setShowEngineStats] = useState(false)
   const [showSessionReport, setShowSessionReport] = useState(false)
+  const lastSuggestMsRef = useRef<number | null>(null)
 
   const confirmedPlayers = useMemo(
     () => players.filter(player => player.status === 'confirmed' || !player.status),
@@ -174,10 +175,12 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     || engineCourtCount !== courtCount
     || deferredPvnaTolerance !== pvnaTolerance
     || deferredRows !== liveRows.rows
-  const suggestion = useMemo(
-    () => suggestNextRound(deferredState, { tier_overrides: deferredTierOverrides }),
-    [deferredState, deferredTierOverrides],
-  )
+  const suggestion = useMemo(() => {
+    const startedAt = Date.now()
+    const result = suggestNextRound(deferredState, { tier_overrides: deferredTierOverrides })
+    lastSuggestMsRef.current = Date.now() - startedAt
+    return result
+  }, [deferredState, deferredTierOverrides])
   const selected = suggestion.alternatives[selectedAlternative] ?? suggestion.alternatives[0]
   const workingAlternative = manualAlternative ?? selected
   const hasManualSwapHardGuard = Boolean(workingAlternative?.warnings.includes('MANUAL_SWAP_HARD_GUARD'))
@@ -377,6 +380,13 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     error: liveRows.error,
     loadLiveState: liveRows.loadLiveState,
     liveStateVersion: deferredRows.liveStateVersion,
+    planTelemetry: {
+      load_state_ms: liveRows.lastLoadStateMsRef.current,
+      suggest_ms: lastSuggestMsRef.current,
+      total_plan_ms: liveRows.lastLoadStateMsRef.current !== null && lastSuggestMsRef.current !== null
+        ? liveRows.lastLoadStateMsRef.current + lastSuggestMsRef.current
+        : null,
+    },
     loading: liveRows.loading,
     refreshing: liveRows.refreshing,
     rememberRoundSelection,
