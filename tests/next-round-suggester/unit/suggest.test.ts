@@ -24,4 +24,29 @@ describe('suggestNextRound', () => {
     expect(result.alternatives.length).toBeGreaterThan(0)
     expect(result.alternatives[0].matches).toHaveLength(1)
   })
+
+  it('keeps suggestion quality equivalent with and without partition cache', () => {
+    const state = createState({
+      courts: 4,
+      players: createPlayers(20),
+    })
+
+    const cached = suggestNextRound(state)
+    const uncached = suggestNextRound(state, { partition_cache: false })
+
+    expect(cached.alternatives).toHaveLength(uncached.alternatives.length)
+    expect(cached.alternatives.map((alternative) => ({
+      matches: alternative.matches.length,
+      resting: alternative.resting.length,
+      score: alternative.score,
+      stats: alternative.stats,
+      warnings: alternative.warnings,
+    }))).toEqual(uncached.alternatives.map((alternative) => ({
+      matches: alternative.matches.length,
+      resting: alternative.resting.length,
+      score: alternative.score,
+      stats: alternative.stats,
+      warnings: alternative.warnings,
+    })))
+  })
 })

@@ -18,6 +18,7 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import { calculateOptimalCourts, PRESETS, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
 import type { SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import type { AlternativeAudit } from '@/lib/next-round-suggester/alternatives'
+import { commitCompletedRound, pairHistoryRowsFromState } from '@/lib/next-round-suggester/commit'
 import { auditManualSwap, buildSwappedAlternative } from '@/lib/next-round-suggester/manual-swap'
 import { scoreMatch } from '@/lib/next-round-suggester/score'
 import { buildSessionStateFingerprint } from '@/lib/next-round-suggester/state-version'
@@ -41,6 +42,7 @@ import {
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
 import type {
   Match,
+  SessionPairHistoryRow,
   SessionRoundRow,
   SessionPlayerStateRow,
   SessionState,
@@ -138,6 +140,14 @@ function toUserSafeActionError(error: unknown): string {
   return 'Thao tác thất bại. Vui lòng thử lại.'
 }
 
+function changedPairHistoryRows(beforeRows: SessionPairHistoryRow[], afterRows: SessionPairHistoryRow[]) {
+  const beforeByKey = new Map(beforeRows.map((row) => [`${row.player_a}:${row.player_b}`, row]))
+  return afterRows.filter((row) => {
+    const before = beforeByKey.get(`${row.player_a}:${row.player_b}`)
+    return !before || before.partner_count !== row.partner_count || before.opponent_count !== row.opponent_count
+  })
+}
+
 export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextRoundSuggesterV2Props) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
@@ -173,6 +183,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     hasManualSwapHardGuard,
     loadLiveState,
     loading,
+    liveStateVersion,
     manualAlternative,
     matchCountConsistencyRows,
     phase,
@@ -372,7 +383,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       if (unavailableIds.length > 0) {
         throw new Error('Manual matches must use checked-in players')
       }
-      await invokeLiveSessionFunction('session-rounds-start', sessionId, {
+      const startAuditPayload = {
         suggestion_idx: selectedAlternative,
         manual: alternative.matches,
         decision_mode: manualAlternative !== null ? 'host_manual_matches' : 'host_selected_alternative',
@@ -409,6 +420,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
             detail: action.detail,
           })),
         },
+      }
+      if (liveStateVersion === null) {
+        await invokeLiveSessionFunction('session-rounds-start', sessionId, startAuditPayload)
+        return
+      }
+      await invokeLiveSessionFunction('session-rounds-start-versioned', sessionId, {
+        expected_live_state_version: liveStateVersion,
+        round_no: state.current_round,
+        matches: alternative.matches,
+        resting: alternative.resting,
+        audit_payload: {
+          ...startAuditPayload,
+          source: 'NextRoundSuggesterScreenV2',
+        },
       })
     })
   }
@@ -416,14 +441,83 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   const endActiveRound = async () => {
     await runAction('end', async () => {
       if (!activeRound) throw new Error('Không có vòng active.')
-      const payload = await invokeLiveSessionFunction('session-rounds-end', sessionId, {}, { round_no: activeRound.round_no })
-      const invalidDeltas = payload?.commit_audit?.deltas?.filter((row: any) =>
-        row?.played ? row?.delta !== 1 : row?.delta !== 0
-      ) ?? []
-      if (invalidDeltas.length > 0) {
-        console.error('[NextRoundSuggesterV2] commit audit mismatch', invalidDeltas)
-        throw new Error('Round commit audit failed. Please refresh before continuing.')
+      const validateCommitAudit = (commitAudit: any) => {
+        const invalidDeltas = commitAudit?.deltas?.filter((row: any) =>
+          row?.played ? row?.delta !== 1 : row?.delta !== 0
+        ) ?? []
+        if (invalidDeltas.length > 0) {
+          console.error('[NextRoundSuggesterV2] commit audit mismatch', invalidDeltas)
+          throw new Error('Round commit audit failed. Please refresh before continuing.')
+        }
       }
+      if (liveStateVersion === null) {
+        const payload = await invokeLiveSessionFunction('session-rounds-end', sessionId, {}, { round_no: activeRound.round_no })
+        validateCommitAudit(payload?.commit_audit)
+        return
+      }
+      const existingPairs = pairHistoryRowsFromState(state)
+      const committed = commitCompletedRound(
+        state,
+        {
+          round_no: activeRound.round_no,
+          matches: activeRound.matches,
+          resting: activeRound.resting,
+        },
+        existingPairs,
+      )
+      const playedIds = new Set(activeRound.matches.flatMap(match => [...match.team_a, ...match.team_b]))
+      const commitAudit = {
+        deltas: [...committed.players.values()].map((player) => {
+          const before = state.players.get(player.player_id)
+          return {
+            player_id: player.player_id,
+            played: playedIds.has(player.player_id),
+            before: before?.matches_played ?? 0,
+            after: player.matches_played,
+            delta: player.matches_played - (before?.matches_played ?? 0),
+          }
+        }),
+      }
+      validateCommitAudit(commitAudit)
+      const playerStatePayload = [...committed.players.values()].map((player) => ({
+        player_id: player.player_id,
+        matches_played: player.matches_played,
+        last_played_round: player.last_played_round,
+        consecutive_rest: player.consecutive_rest,
+        consecutive_play: player.consecutive_play,
+        opted_rest: player.opted_rest,
+      }))
+      const pairHistoryPayload = changedPairHistoryRows(existingPairs, committed.pairHistory).map((row) => ({
+        player_a: row.player_a,
+        player_b: row.player_b,
+        partner_count: row.partner_count,
+        opponent_count: row.opponent_count,
+      }))
+      const scoreAfter = computeSessionFairness({
+        ...state,
+        current_round: Math.max(state.current_round, activeRound.round_no + 1),
+        players: committed.players,
+        rounds: state.rounds.map((round) =>
+          round.round_no === activeRound.round_no
+            ? {
+                ...round,
+                status: 'completed' as const,
+                ended_at: new Date(),
+              }
+            : round,
+        ),
+      }).total
+      await invokeLiveSessionFunction('session-rounds-end-versioned', sessionId, {
+        expected_live_state_version: liveStateVersion,
+        round_no: activeRound.round_no,
+        player_state: playerStatePayload,
+        pair_history: pairHistoryPayload,
+        score_after: scoreAfter,
+        audit_payload: {
+          source: 'NextRoundSuggesterScreenV2',
+          commit_audit: commitAudit,
+        },
+      }, { round_no: activeRound.round_no })
     })
   }
 

@@ -349,7 +349,7 @@ async function main() {
   if (!['global', 'cached-global', 'per-strategy', 'adaptive', 'strategy-stop', 'cached-production'].includes(candidateMode)) {
     throw new Error('--candidate-mode must be global, cached-global, per-strategy, adaptive, strategy-stop, or cached-production')
   }
-  const rows = []
+  const rows: any[] = []
 
   for (const template of SCENARIOS) {
     for (let seed = 1; seed <= seeds; seed += 1) {
@@ -369,6 +369,7 @@ async function main() {
         const baselineStarted = now()
         const baseline = suggestNextRound(adjustedState, {
           tier_overrides: adjustment.tier_overrides,
+          partition_cache: false,
         })
         const baselineMs = now() - baselineStarted
 

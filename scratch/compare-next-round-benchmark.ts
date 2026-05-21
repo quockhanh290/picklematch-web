@@ -151,6 +151,7 @@ function benchmarkState(
     baseline = suggestNextRound(adjustedState, {
       tier_overrides: adjustment.tier_overrides,
       diagnostics: baselineDiagnostic,
+      partition_cache: false,
     })
     baselineMs.push(now() - baselineStarted)
 

@@ -99,6 +99,39 @@ $synthetic = Run-JsonCommand @(
   genderWorse = $synthetic.summary.quality.genderPenaltyWorse
 } | Format-List
 
+Write-Host ""
+Write-Host "3) Suggest rolling simulation: 50 rounds, independent progression"
+$rolling = Run-JsonCommand @(
+  "scratch/compare-next-round-rolling.ts",
+  "--seeds", "3",
+  "--rounds", "50",
+  "--summary-only"
+)
+
+[pscustomobject]@{
+  label = $Label
+  scenario = "suggest-rolling-50-cached-production"
+  checkpoints = $rolling.summary.checkpoints
+  baselineAvgMs = $rolling.summary.timing.baseline.avg
+  cachedAvgMs = $rolling.summary.timing.cached.avg
+  cachedP95Ms = $rolling.summary.timing.cached.p95
+  speedupAvg = $rolling.summary.timing.speedupAvg
+  scoreBetter = $rolling.summary.quality.scoreBetter
+  scoreSame = $rolling.summary.quality.scoreSame
+  scoreWorse = $rolling.summary.quality.scoreWorse
+  worstScoreRegression = $rolling.summary.quality.worstScoreRegression
+  altRegressed = $rolling.summary.quality.alternativesRegressed
+  cachedMissing3Alt = $rolling.summary.quality.cachedMissing3Alt
+  matchRangeWorse = $rolling.summary.quality.matchRangeWorse
+  partnerWorse = $rolling.summary.quality.partnerRepeatsWorse
+  opponentWorse = $rolling.summary.quality.opponentRepeatsWorse
+  pvnaWorse = $rolling.summary.quality.pvnaWorse
+  groupBonusWorse = $rolling.summary.quality.groupBonusWorse
+  groupNewPairsWorse = $rolling.summary.quality.groupNewPairsWorse
+  genderWorse = $rolling.summary.quality.genderPenaltyWorse
+  sameTopAlternative = $rolling.summary.quality.sameTopAlternative
+} | Format-List
+
 if (-not $RunBackend) {
   Write-Host ""
   Write-Host "Backend scenarios skipped. Re-run with -RunBackend to mutate the test session."
@@ -106,7 +139,7 @@ if (-not $RunBackend) {
 }
 
 Write-Host ""
-Write-Host "3) Backend current production Edge Function path"
+Write-Host "4) Backend current production Edge Function path"
 & npx tsx scratch/bench-live-session-flow.ts `
   --mode cycle `
   --yes `
@@ -121,7 +154,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "4) Backend versioned experimental Edge Function path"
+Write-Host "5) Backend versioned experimental Edge Function path"
 & npx tsx scratch/bench-live-round-versioned-rpc.ts `
   --yes `
   --transport edge `

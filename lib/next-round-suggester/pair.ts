@@ -27,6 +27,21 @@ export type PartitioningDiagnostic = {
   relaxed_tolerance: boolean
 }
 
+type SplitCacheEntry = TeamSplitResult | null
+type Burden = { max: number; avg: number; overThreshold: number }
+
+export type PartitioningRuntimeCache = {
+  split: Map<string, SplitCacheEntry>
+  burden: Map<string, Burden>
+}
+
+export function createPartitioningRuntimeCache(): PartitioningRuntimeCache {
+  return {
+    split: new Map(),
+    burden: new Map(),
+  }
+}
+
 const SPLIT_INDEXES: Array<[number, number, number, number]> = [
   [0, 1, 2, 3],
   [0, 2, 1, 3],
@@ -71,6 +86,21 @@ const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
 const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
 const PARTITION_COUNT_CAP = 1_000_000_000
 
+function teamKey(team: Team) {
+  return [...team].sort().join(':')
+}
+
+function splitCacheKey(players: PlayerSessionState[], tolerance?: number) {
+  return `${players.map((player) => player.player_id).sort().join(':')}|${tolerance ?? 'strict'}`
+}
+
+function matchesKey(matches: Match[]) {
+  return matches
+    .map((match) => `${teamKey(match.team_a)}>${teamKey(match.team_b)}`)
+    .sort()
+    .join('|')
+}
+
 function addStats(a: MatchScore['stats'], b: MatchScore['stats']): MatchScore['stats'] {
   return {
     pvna_diff: a.pvna_diff + b.pvna_diff,
@@ -95,6 +125,7 @@ function evaluatePartition(
   groups: PlayerSessionState[][],
   state: SessionState,
   iteration: number,
+  cache?: PartitioningRuntimeCache,
   options: { tolerance?: number; relaxedTolerance?: boolean } = {},
 ): PartitioningResult | null {
   let score = 0
@@ -102,7 +133,7 @@ function evaluatePartition(
   const matches: Match[] = []
 
   for (let courtIdx = 0; courtIdx < groups.length; courtIdx += 1) {
-    const split = bestTeamSplitWithTolerance(groups[courtIdx], state, options.tolerance)
+    const split = bestTeamSplitWithTolerance(groups[courtIdx], state, options.tolerance, cache)
     if (!split) return null
 
     matches.push({
@@ -128,6 +159,7 @@ function shouldReplaceBestPartition(
   candidate: PartitioningResult,
   best: PartitioningResult | null,
   state: SessionState,
+  cache?: PartitioningRuntimeCache,
 ): boolean {
   if (!best) return true
 
@@ -135,8 +167,8 @@ function shouldReplaceBestPartition(
   if (scoreDiff < -BURDEN_TIE_BREAK_SCORE_WINDOW) return true
   if (scoreDiff > BURDEN_TIE_BREAK_SCORE_WINDOW) return false
 
-  const candidateOpponentBurden = getProjectedBurden(candidate.matches, state, 'opponent')
-  const bestOpponentBurden = getProjectedBurden(best.matches, state, 'opponent')
+  const candidateOpponentBurden = getProjectedBurden(candidate.matches, state, 'opponent', cache)
+  const bestOpponentBurden = getProjectedBurden(best.matches, state, 'opponent', cache)
   if (candidateOpponentBurden.overThreshold !== bestOpponentBurden.overThreshold) {
     return candidateOpponentBurden.overThreshold < bestOpponentBurden.overThreshold
   }
@@ -147,8 +179,8 @@ function shouldReplaceBestPartition(
     return candidateOpponentBurden.avg < bestOpponentBurden.avg
   }
 
-  const candidatePartnerBurden = getProjectedBurden(candidate.matches, state, 'partner')
-  const bestPartnerBurden = getProjectedBurden(best.matches, state, 'partner')
+  const candidatePartnerBurden = getProjectedBurden(candidate.matches, state, 'partner', cache)
+  const bestPartnerBurden = getProjectedBurden(best.matches, state, 'partner', cache)
   if (candidatePartnerBurden.overThreshold !== bestPartnerBurden.overThreshold) {
     return candidatePartnerBurden.overThreshold < bestPartnerBurden.overThreshold
   }
@@ -166,7 +198,12 @@ function getProjectedBurden(
   matches: Match[],
   state: SessionState,
   kind: 'partner' | 'opponent',
-): { max: number; avg: number; overThreshold: number } {
+  cache?: PartitioningRuntimeCache,
+): Burden {
+  const key = `${kind}|${matchesKey(matches)}`
+  const cached = cache?.burden.get(key)
+  if (cached) return cached
+
   const repeatedCounts = new Map<string, Set<string>>(
     [...state.players.keys()].map((playerId) => [playerId, new Set<string>()]),
   )
@@ -194,13 +231,16 @@ function getProjectedBurden(
   }
 
   const counts = [...repeatedCounts.values()].map((players) => players.size)
-  if (counts.length === 0) return { max: 0, avg: 0, overThreshold: 0 }
+  const result = counts.length === 0
+    ? { max: 0, avg: 0, overThreshold: 0 }
+    : {
+        max: Math.max(...counts),
+        avg: counts.reduce((sum, count) => sum + count, 0) / counts.length,
+        overThreshold: counts.filter((count) => count >= PROJECTED_REPEAT_BURDEN_THRESHOLD).length,
+      }
 
-  return {
-    max: Math.max(...counts),
-    avg: counts.reduce((sum, count) => sum + count, 0) / counts.length,
-    overThreshold: counts.filter((count) => count >= PROJECTED_REPEAT_BURDEN_THRESHOLD).length,
-  }
+  cache?.burden.set(key, result)
+  return result
 }
 
 function isProjectedBurdenRepeat(
@@ -227,8 +267,12 @@ function bestTeamSplitWithTolerance(
   players: PlayerSessionState[],
   state: SessionState,
   tolerance?: number,
+  cache?: PartitioningRuntimeCache,
 ): TeamSplitResult | null {
   if (players.length !== 4) return null
+
+  const key = splitCacheKey(players, tolerance)
+  if (cache?.split.has(key)) return cache.split.get(key) ?? null
 
   let best: TeamSplitResult | null = null
 
@@ -254,6 +298,7 @@ function bestTeamSplitWithTolerance(
     }
   }
 
+  cache?.split.set(key, best)
   return best
 }
 
@@ -367,7 +412,11 @@ function defaultMaxIterations(playerCount: number): number {
 export function bestPartitioning(
   players: PlayerSessionState[],
   state: SessionState,
-  options: { maxIterations?: number; diagnostics?: (diagnostic: PartitioningDiagnostic) => void } = {},
+  options: {
+    maxIterations?: number
+    diagnostics?: (diagnostic: PartitioningDiagnostic) => void
+    cache?: PartitioningRuntimeCache
+  } = {},
 ): PartitioningResult | null {
   if (players.length < 4 || players.length % 4 !== 0) return null
 
@@ -383,35 +432,59 @@ export function bestPartitioning(
     let iterations = 0
 
     function consider(groups: PlayerSessionState[][]) {
-    if (iterations >= maxIterations) return
-    iterations += 1
-    const result = evaluatePartition(groups, state, iterations, searchOptions)
-    if (!result) return
-    if (shouldReplaceBestPartition(result, best, state)) {
-      best = result
-    }
-  }
-
-  if (canSearchExhaustively) {
-    function walk(remaining: PlayerSessionState[], groups: PlayerSessionState[][]) {
       if (iterations >= maxIterations) return
-      if (remaining.length === 0) {
-        consider(groups)
-        return
-      }
-
-      const [anchor, ...rest] = remaining
-      for (const combo of getCombinations(rest, 3)) {
-        const comboIds = new Set(combo.map((player) => player.player_id))
-        const nextRemaining = rest.filter((player) => !comboIds.has(player.player_id))
-        walk(nextRemaining, [...groups, [anchor, ...combo]])
+      iterations += 1
+      const result = evaluatePartition(groups, state, iterations, options.cache, searchOptions)
+      if (!result) return
+      if (shouldReplaceBestPartition(result, best, state, options.cache)) {
+        best = result
       }
     }
 
-    walk(normalizedPlayers, [])
-    const finalBest = best as PartitioningResult | null
+    if (canSearchExhaustively) {
+      function walk(remaining: PlayerSessionState[], groups: PlayerSessionState[][]) {
+        if (iterations >= maxIterations) return
+        if (remaining.length === 0) {
+          consider(groups)
+          return
+        }
+
+        const [anchor, ...rest] = remaining
+        for (const combo of getCombinations(rest, 3)) {
+          const comboIds = new Set(combo.map((player) => player.player_id))
+          const nextRemaining = rest.filter((player) => !comboIds.has(player.player_id))
+          walk(nextRemaining, [...groups, [anchor, ...combo]])
+        }
+      }
+
+      walk(normalizedPlayers, [])
+      const finalBest = best as PartitioningResult | null
       return {
         result: finalBest
+          ? {
+              matches: finalBest.matches,
+              score: finalBest.score,
+              stats: finalBest.stats,
+              iterations,
+              relaxed_tolerance: finalBest.relaxed_tolerance,
+            }
+          : null,
+        iterations,
+      }
+    }
+
+    consider(chunkIntoCourts(normalizedPlayers))
+
+    const seedBase = hashString(
+      `${state.current_round}|${normalizedPlayers.map((player) => player.player_id).join(':')}|${historySignature(normalizedPlayers)}`,
+    )
+    while (iterations < maxIterations) {
+      consider(chunkIntoCourts(shuffled(normalizedPlayers, seedBase + iterations)))
+    }
+
+    const finalBest = best as PartitioningResult | null
+    return {
+      result: finalBest
       ? {
           matches: finalBest.matches,
           score: finalBest.score,
@@ -419,33 +492,9 @@ export function bestPartitioning(
           iterations,
           relaxed_tolerance: finalBest.relaxed_tolerance,
         }
-          : null,
-        iterations,
-      }
-  }
-
-  consider(chunkIntoCourts(normalizedPlayers))
-
-  const seedBase = hashString(
-    `${state.current_round}|${normalizedPlayers.map((player) => player.player_id).join(':')}|${historySignature(normalizedPlayers)}`,
-  )
-  while (iterations < maxIterations) {
-    consider(chunkIntoCourts(shuffled(normalizedPlayers, seedBase + iterations)))
-  }
-
-  const finalBest = best as PartitioningResult | null
-  return {
-    result: finalBest
-    ? {
-        matches: finalBest.matches,
-        score: finalBest.score,
-        stats: finalBest.stats,
-        iterations,
-        relaxed_tolerance: finalBest.relaxed_tolerance,
-      }
       : null,
-    iterations,
-  }
+      iterations,
+    }
   }
 
   const strict = runSearch()

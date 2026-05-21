@@ -143,8 +143,8 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     const rounds = deferredRows.roundRows
       .map(r => `${r.round_no}|${r.status}|${JSON.stringify(r.matches)}|${JSON.stringify(r.resting ?? [])}`)
       .join(';')
-    return `${players}__${pairs}__${rounds}`
-  }, [enrichedPlayerRows, deferredRows.pairRows, deferredRows.roundRows])
+    return `${deferredRows.liveStateVersion ?? 'noversion'}__${players}__${pairs}__${rounds}`
+  }, [enrichedPlayerRows, deferredRows.liveStateVersion, deferredRows.pairRows, deferredRows.roundRows])
 
   const rawState = useMemo(() => mapRowsToSessionState({
     sessionId,
@@ -229,7 +229,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     [deferredCourtCount, deferredPvnaTolerance, deferredState, selectedAlternative, suggestedRoundActionsCache, suggestion.alternatives],
   )
 
-  const activeRound = useMemo(() => liveRows.rows.roundRows.find(row => row.status === 'active') ?? null, [liveRows.rows.roundRows])
+  const activeRound = useMemo(() => state.rounds.find(row => row.status === 'active') ?? null, [state.rounds])
   const effectiveTargetRounds = targetRounds ?? courtCalculator.recommended.total_rounds
   const completedRounds = useMemo(
     () => liveRows.rows.roundRows.filter(row => row.status === 'completed').sort((a, b) => b.round_no - a.round_no),
@@ -376,6 +376,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     workingAlternative,
     error: liveRows.error,
     loadLiveState: liveRows.loadLiveState,
+    liveStateVersion: deferredRows.liveStateVersion,
     loading: liveRows.loading,
     refreshing: liveRows.refreshing,
     rememberRoundSelection,

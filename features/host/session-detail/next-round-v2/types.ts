@@ -16,6 +16,7 @@ export type LiveRows = {
   playerRows: SessionPlayerStateRow[]
   pairRows: SessionPairHistoryRow[]
   roundRows: SessionRoundRow[]
+  liveStateVersion: number | null
 }
 
 export type SheetKey = 'settings' | 'swap' | 'fairness' | 'preview' | 'roster' | 'history' | 'late-arrivals' | 'more' | null

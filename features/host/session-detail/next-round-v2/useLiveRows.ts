@@ -10,7 +10,12 @@ import type { LiveRows } from './types'
 export function useLiveRows(sessionId: string, playersById: Map<string, ArrangementPlayer>) {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [rows, setRows] = useState<LiveRows>({ playerRows: [], pairRows: [], roundRows: [] })
+  const [rows, setRows] = useState<LiveRows>({
+    playerRows: [],
+    pairRows: [],
+    roundRows: [],
+    liveStateVersion: null,
+  })
   const [error, setError] = useState<string | null>(null)
   const optimisticPlayerPatchesRef = useRef(new Map<string, Partial<SessionPlayerStateRow>>())
   const optimisticPlayerRowsRef = useRef(new Map<string, SessionPlayerStateRow>())
@@ -20,27 +25,58 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     setRefreshing(true)
     setError(null)
     try {
-      const [playerRes, pairRes, roundRes] = await Promise.all([
+      const loadVersion = () =>
         supabase
-          .from('session_player_state')
-          .select('*')
-          .eq('session_id', sessionId)
-          .order('checked_in_at', { ascending: true }),
-        supabase
-          .from('session_pair_history')
-          .select('*')
-          .eq('session_id', sessionId)
-          .order('player_a', { ascending: true }),
-        supabase
-          .from('session_rounds')
-          .select('*')
-          .eq('session_id', sessionId)
-          .order('round_no', { ascending: true }),
-      ])
+          .from('sessions')
+          .select('live_state_version')
+          .eq('id', sessionId)
+          .single()
 
-      const nextError = playerRes.error ?? pairRes.error ?? roundRes.error
+      let sessionRes: Awaited<ReturnType<typeof loadVersion>> | null = null
+      let playerRes: any = null
+      let pairRes: any = null
+      let roundRes: any = null
+      let versionStable = false
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const beforeRes = await loadVersion()
+        if (beforeRes.error) {
+          sessionRes = beforeRes
+          break
+        }
+        const [nextPlayerRes, nextPairRes, nextRoundRes, afterRes] = await Promise.all([
+          supabase
+            .from('session_player_state')
+            .select('*')
+            .eq('session_id', sessionId)
+            .order('checked_in_at', { ascending: true }),
+          supabase
+            .from('session_pair_history')
+            .select('*')
+            .eq('session_id', sessionId)
+            .order('player_a', { ascending: true }),
+          supabase
+            .from('session_rounds')
+            .select('*')
+            .eq('session_id', sessionId)
+            .order('round_no', { ascending: true }),
+          loadVersion(),
+        ])
+        sessionRes = afterRes
+        playerRes = nextPlayerRes
+        pairRes = nextPairRes
+        roundRes = nextRoundRes
+        versionStable = !afterRes.error && beforeRes.data?.live_state_version === afterRes.data?.live_state_version
+        if (afterRes.error || versionStable) break
+      }
+
+      const nextError = sessionRes?.error ?? playerRes?.error ?? pairRes?.error ?? roundRes?.error
       if (nextError) {
         setError(nextError.message)
+        return
+      }
+      if (!versionStable) {
+        setError('Live state changed while loading. Please refresh.')
         return
       }
 
@@ -65,6 +101,9 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
         playerRows: [...serverPlayerRows, ...optimisticRows],
         pairRows: (pairRes.data ?? []) as SessionPairHistoryRow[],
         roundRows: ((roundRes.data ?? []) as RawRoundRow[]).map(normalizeRoundRow),
+        liveStateVersion: typeof sessionRes.data?.live_state_version === 'number'
+          ? sessionRes.data.live_state_version
+          : Number(sessionRes.data?.live_state_version ?? 0),
       })
     } finally {
       setRefreshing(false)

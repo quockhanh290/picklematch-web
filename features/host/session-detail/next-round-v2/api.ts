@@ -11,7 +11,11 @@ const RETRYABLE_ERROR_MESSAGES = new Set([
 ])
 
 function timeoutForFunction(functionName: string) {
-  return functionName === 'session-rounds-start' || functionName === 'session-rounds-end' || functionName === 'session-rounds-swap-player'
+  return functionName === 'session-rounds-start'
+    || functionName === 'session-rounds-end'
+    || functionName === 'session-rounds-start-versioned'
+    || functionName === 'session-rounds-end-versioned'
+    || functionName === 'session-rounds-swap-player'
     ? LONG_FUNCTION_TIMEOUT_MS
     : DEFAULT_FUNCTION_TIMEOUT_MS
 }

@@ -1,4 +1,8 @@
-import { bestPartitioning, bestTeamSplit } from '../../../lib/next-round-suggester/pair'
+import {
+  bestPartitioning,
+  bestTeamSplit,
+  createPartitioningRuntimeCache,
+} from '../../../lib/next-round-suggester/pair'
 import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
 
 describe('bestTeamSplit', () => {
@@ -110,5 +114,17 @@ describe('bestPartitioning', () => {
     const players = [createPlayer('p1'), createPlayer('p2'), createPlayer('p3')]
 
     expect(bestPartitioning(players, createState({ players }))).toBeNull()
+  })
+
+  it('returns the same partition with and without runtime cache', () => {
+    const players = Array.from({ length: 16 }, (_, index) =>
+      createPlayer(`p${String(index + 1).padStart(2, '0')}`, { pvna: 3.0 + index * 0.03 }),
+    )
+    const state = createState({ players, courts: 4 })
+
+    const uncached = bestPartitioning(players, state)
+    const cached = bestPartitioning(players, state, { cache: createPartitioningRuntimeCache() })
+
+    expect(cached).toEqual(uncached)
   })
 })

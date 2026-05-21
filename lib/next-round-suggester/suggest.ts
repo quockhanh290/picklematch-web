@@ -1,5 +1,10 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { bestPartitioning, type PartitioningDiagnostic } from './pair.ts'
+import {
+  bestPartitioning,
+  createPartitioningRuntimeCache,
+  type PartitioningDiagnostic,
+  type PartitioningRuntimeCache,
+} from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { getPresentPlayers, pickPlayers, sortPlayersForStrategy } from './select.ts'
 import type {
@@ -17,6 +22,7 @@ import { computeAvailabilityMetrics, computeProjectedOpponentRepeatBurden, compu
 export type SuggestNextRoundOptions = {
   tier_overrides?: Record<string, Tier>
   diagnostics?: SuggestionDiagnostic
+  partition_cache?: boolean
 }
 
 export type SuggestionDiagnostic = {
@@ -207,8 +213,9 @@ function makeAlternative(
   state: SessionState,
   warnings: string[],
   diagnostics?: (diagnostic: PartitioningDiagnostic) => void,
+  partitioningCache?: PartitioningRuntimeCache,
 ): SuggestionAlternative | null {
-  const partition = bestPartitioning(selected, state, { diagnostics })
+  const partition = bestPartitioning(selected, state, { diagnostics, cache: partitioningCache })
   if (!partition) return null
   const alternativeWarnings = partition.relaxed_tolerance
     ? [...warnings, 'PVNA_TOLERANCE_RELAXED']
@@ -273,6 +280,9 @@ export function suggestNextRound(
   const alternatives: SuggestionAlternative[] = []
   const seen = new Set<string>()
   const diagnostics = options.diagnostics
+  const partitioningCache = options.partition_cache === false
+    ? undefined
+    : createPartitioningRuntimeCache()
   const strategies: Array<'fairness' | 'rest' | 'diversity' | 'group'> = [
     'fairness',
     'rest',
@@ -318,15 +328,22 @@ export function suggestNextRound(
       }
 
       if (strategyDiagnostics) strategyDiagnostics.evaluated += 1
-      const alternative = makeAlternative(candidate.players, presentPlayers, state, warnings, (partitionDiagnostic) => {
-        if (!strategyDiagnostics) return
-        strategyDiagnostics.partition_iterations += partitionDiagnostic.strict_iterations + partitionDiagnostic.relaxed_iterations
-        strategyDiagnostics.relaxed_partitions += partitionDiagnostic.relaxed_tolerance ? 1 : 0
-        strategyDiagnostics.failed_partitions += partitionDiagnostic.found ? 0 : 1
-        diagnostics!.partition_count = partitionDiagnostic.partition_count
-        diagnostics!.max_iterations = partitionDiagnostic.max_iterations
-        diagnostics!.exhaustive = partitionDiagnostic.exhaustive
-      })
+      const alternative = makeAlternative(
+        candidate.players,
+        presentPlayers,
+        state,
+        warnings,
+        (partitionDiagnostic) => {
+          if (!strategyDiagnostics) return
+          strategyDiagnostics.partition_iterations += partitionDiagnostic.strict_iterations + partitionDiagnostic.relaxed_iterations
+          strategyDiagnostics.relaxed_partitions += partitionDiagnostic.relaxed_tolerance ? 1 : 0
+          strategyDiagnostics.failed_partitions += partitionDiagnostic.found ? 0 : 1
+          diagnostics!.partition_count = partitionDiagnostic.partition_count
+          diagnostics!.max_iterations = partitionDiagnostic.max_iterations
+          diagnostics!.exhaustive = partitionDiagnostic.exhaustive
+        },
+        partitioningCache,
+      )
       if (!alternative) continue
 
       alternatives.push(alternative)
