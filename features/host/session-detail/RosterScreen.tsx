@@ -38,6 +38,7 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
   const [swapTarget, setSwapTarget] = useState<string | null>(null)
 
   const checkoutBatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const liveStateRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingCheckoutTargetsRef = useRef(new Map<string, boolean>())
   const pendingCheckoutPatchesRef = useRef(new Map<string, Partial<SessionPlayerStateRow>>())
 
@@ -45,7 +46,7 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     () => new Map(players.map(p => [String(p.id), p])),
     [players],
   )
-  const { rows, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState, loading, refreshing } = useLiveRows(sessionId, playersById)
+  const { rows, applyLiveStateVersion, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState, loading, refreshing } = useLiveRows(sessionId, playersById)
 
   const rowsRef = useRef(rows)
   rowsRef.current = rows
@@ -68,8 +69,21 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
       .sort((a, b) => Math.abs((a.players?.pvna ?? 3.0) - outPvna) - Math.abs((b.players?.pvna ?? 3.0) - outPvna))
   }, [swapTarget, rows.playerRows, activeRoundMatchIds])
 
+  const applyMutationVersion = useCallback((payload: any) => {
+    applyLiveStateVersion(payload?.live_state_version)
+  }, [applyLiveStateVersion])
+
+  const scheduleLiveStateRefresh = useCallback((delayMs = 450) => {
+    if (liveStateRefreshTimerRef.current) clearTimeout(liveStateRefreshTimerRef.current)
+    liveStateRefreshTimerRef.current = setTimeout(() => {
+      liveStateRefreshTimerRef.current = null
+      void loadLiveState()
+    }, delayMs)
+  }, [loadLiveState])
+
   useEffect(() => () => {
     if (checkoutBatchTimerRef.current) clearTimeout(checkoutBatchTimerRef.current)
+    if (liveStateRefreshTimerRef.current) clearTimeout(liveStateRefreshTimerRef.current)
   }, [])
 
   const flushPendingCheckout = useCallback(async () => {
@@ -83,12 +97,19 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     const checkinIds = [...targets.entries()].filter(([, out]) => !out).map(([id]) => id)
 
     try {
-      if (checkoutIds.length > 0) await invokeLiveSessionFunction('session-checkout', sessionId, { player_ids: checkoutIds })
-      if (checkinIds.length > 0) await invokeLiveSessionFunction('session-checkin', sessionId, { player_ids: checkinIds })
+      if (checkoutIds.length > 0) {
+        const payload = await invokeLiveSessionFunction('session-checkout', sessionId, { player_ids: checkoutIds })
+        applyMutationVersion(payload)
+      }
+      if (checkinIds.length > 0) {
+        const payload = await invokeLiveSessionFunction('session-checkin', sessionId, { player_ids: checkinIds })
+        applyMutationVersion(payload)
+      }
       targets.forEach((_, playerId) => {
         const patch = patches.get(playerId)
         if (patch) settlePlayerPatch(playerId, patch)
       })
+      scheduleLiveStateRefresh()
     } catch (err) {
       targets.forEach((_, playerId) => clearPlayerPatch(playerId))
       if (!isTimeoutError(err)) {
@@ -98,7 +119,7 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
       }
       await loadLiveState()
     }
-  }, [sessionId, settlePlayerPatch, clearPlayerPatch, loadLiveState])
+  }, [sessionId, applyMutationVersion, settlePlayerPatch, clearPlayerPatch, scheduleLiveStateRefresh, loadLiveState])
 
   const scheduleCheckoutFlush = useCallback(() => {
     if (checkoutBatchTimerRef.current) clearTimeout(checkoutBatchTimerRef.current)
@@ -140,7 +161,8 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     setBusy(`swap-${outPlayerId}`)
     setError(null)
     try {
-      await invokeLiveSessionFunction('session-rounds-swap-player', sessionId, { out_player_id: outPlayerId, in_player_id: inPlayerId })
+      const payload = await invokeLiveSessionFunction('session-rounds-swap-player', sessionId, { out_player_id: outPlayerId, in_player_id: inPlayerId })
+      applyMutationVersion(payload)
     } catch (err) {
       if (!isTimeoutError(err)) {
         setError(toUserSafeError(err))
@@ -149,21 +171,23 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
       await loadLiveState()
       setBusy(null)
     }
-  }, [swapTarget, sessionId, loadLiveState])
+  }, [swapTarget, sessionId, applyMutationVersion, loadLiveState])
 
   const toggleRest = useCallback(async (playerId: string, optedRest: boolean) => {
     const patch: Partial<SessionPlayerStateRow> = { opted_rest: !optedRest }
     patchPlayerRow(playerId, patch)
     setError(null)
     try {
-      await invokeLiveSessionFunction('session-request-rest', sessionId, { player_id: playerId, opted_rest: !optedRest })
+      const payload = await invokeLiveSessionFunction('session-request-rest', sessionId, { player_id: playerId, opted_rest: !optedRest })
+      applyMutationVersion(payload)
       settlePlayerPatch(playerId, patch)
+      scheduleLiveStateRefresh()
     } catch (err) {
       clearPlayerPatch(playerId)
       if (!isTimeoutError(err)) setError(toUserSafeError(err))
       await loadLiveState()
     }
-  }, [sessionId, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState])
+  }, [sessionId, applyMutationVersion, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, scheduleLiveStateRefresh, loadLiveState])
 
   const setGroupForPlayers = useCallback(async (playerIds: string[]) => {
     if (playerIds.length < 2) return
@@ -172,8 +196,10 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     playerIds.forEach(id => patchPlayerRow(id, patch))
     setBusy(`group-${playerIds.join('-')}`)
     try {
-      await invokeLiveSessionFunction('session-set-group', sessionId, { player_ids: playerIds })
+      const payload = await invokeLiveSessionFunction('session-set-group', sessionId, { player_ids: playerIds })
+      applyMutationVersion(payload)
       playerIds.forEach(id => settlePlayerPatch(id, patch))
+      scheduleLiveStateRefresh()
     } catch (err) {
       playerIds.forEach(id => clearPlayerPatch(id))
       if (!isTimeoutError(err)) setError(toUserSafeError(err))
@@ -181,20 +207,22 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     } finally {
       setBusy(null)
     }
-  }, [sessionId, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState])
+  }, [sessionId, applyMutationVersion, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, scheduleLiveStateRefresh, loadLiveState])
 
   const clearGroup = useCallback(async (playerId: string) => {
     const patch: Partial<SessionPlayerStateRow> = { group_id: null }
     patchPlayerRow(playerId, patch)
     try {
-      await invokeLiveSessionFunction('session-set-group', sessionId, { clear_player_id: playerId })
+      const payload = await invokeLiveSessionFunction('session-set-group', sessionId, { clear_player_id: playerId })
+      applyMutationVersion(payload)
       settlePlayerPatch(playerId, patch)
+      scheduleLiveStateRefresh()
     } catch (err) {
       clearPlayerPatch(playerId)
       if (!isTimeoutError(err)) setError(toUserSafeError(err))
       await loadLiveState()
     }
-  }, [sessionId, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState])
+  }, [sessionId, applyMutationVersion, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, scheduleLiveStateRefresh, loadLiveState])
 
   const clearWholeGroup = useCallback(async (groupId: string) => {
     const groupPlayerIds = rowsRef.current.playerRows.filter(r => r.group_id === groupId).map(r => r.player_id)
@@ -202,8 +230,10 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     groupPlayerIds.forEach(id => patchPlayerRow(id, patch))
     setBusy(`group-clear-${groupId}`)
     try {
-      await invokeLiveSessionFunction('session-set-group', sessionId, { clear_group_id: groupId })
+      const payload = await invokeLiveSessionFunction('session-set-group', sessionId, { clear_group_id: groupId })
+      applyMutationVersion(payload)
       groupPlayerIds.forEach(id => settlePlayerPatch(id, patch))
+      scheduleLiveStateRefresh()
     } catch (err) {
       groupPlayerIds.forEach(id => clearPlayerPatch(id))
       if (!isTimeoutError(err)) setError(toUserSafeError(err))
@@ -211,7 +241,7 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     } finally {
       setBusy(null)
     }
-  }, [sessionId, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState])
+  }, [sessionId, applyMutationVersion, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, scheduleLiveStateRefresh, loadLiveState])
 
   const createGroupFromSelection = useCallback(async () => {
     if (groupSelection.length < 2) return

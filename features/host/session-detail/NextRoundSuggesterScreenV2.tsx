@@ -168,6 +168,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     alternativeOrder,
     alternativeAudits,
     addPlayerRow,
+    applyLiveStateVersion,
     applySuggestedRoundAction,
     checkedInPlayers,
     clearPlayerRow,
@@ -366,6 +367,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         invokeLiveSessionFunction('session-checkin', sessionId, { player_id: playerId }),
       ])
       const serverRow = checkinPayload?.player as SessionPlayerStateRow | null | undefined
+      applyLiveStateVersion(checkinPayload?.live_state_version)
       if (serverRow) {
         const hydratedRow: SessionPlayerStateRow = {
           ...serverRow,

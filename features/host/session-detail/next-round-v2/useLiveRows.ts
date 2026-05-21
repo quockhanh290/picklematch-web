@@ -129,6 +129,17 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     }))
   }, [])
 
+  const applyLiveStateVersion = useCallback((version: unknown) => {
+    const numericVersion = typeof version === 'number' ? version : Number(version)
+    if (!Number.isFinite(numericVersion)) return
+    setRows(current => ({
+      ...current,
+      liveStateVersion: current.liveStateVersion === null
+        ? numericVersion
+        : Math.max(current.liveStateVersion, numericVersion),
+    }))
+  }, [])
+
   const addPlayerRow = useCallback((row: SessionPlayerStateRow) => {
     optimisticPlayerRowsRef.current.set(row.player_id, row)
     setRows(current => {
@@ -187,5 +198,5 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     }
   }, [loadLiveState])
 
-  return { addPlayerRow, clearPlayerPatch, clearPlayerRow, error, lastLoadStateMsRef, loading, loadLiveState, patchPlayerRow, refreshing, rows, setError, settlePlayerPatch, settlePlayerRow }
+  return { addPlayerRow, applyLiveStateVersion, clearPlayerPatch, clearPlayerRow, error, lastLoadStateMsRef, loading, loadLiveState, patchPlayerRow, refreshing, rows, setError, settlePlayerPatch, settlePlayerRow }
 }

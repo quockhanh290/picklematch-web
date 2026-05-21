@@ -122,6 +122,31 @@ export function createServiceClient() {
   })
 }
 
+export function createUserClient(request: Request) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+  const authorization = request.headers.get('Authorization')
+
+  if (!supabaseUrl || !anonKey) {
+    throw new Error('Missing Supabase public configuration')
+  }
+  if (!authorization) {
+    throw new Error('Missing Authorization header')
+  }
+
+  return createClient(supabaseUrl, anonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+    global: {
+      headers: {
+        Authorization: authorization,
+      },
+    },
+  })
+}
+
 export async function requireHost(request: Request, sessionId: string, traceLabel?: string) {
   const startedAt = Date.now()
   const authorization = request.headers.get('Authorization')

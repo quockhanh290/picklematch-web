@@ -344,6 +344,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     reportState,
     rows: liveRows.rows,
     addPlayerRow: liveRows.addPlayerRow,
+    applyLiveStateVersion: liveRows.applyLiveStateVersion,
     clearPlayerPatch: liveRows.clearPlayerPatch,
     clearPlayerRow: liveRows.clearPlayerRow,
     patchPlayerRow: liveRows.patchPlayerRow,
