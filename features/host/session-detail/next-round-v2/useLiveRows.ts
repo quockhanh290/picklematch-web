@@ -7,6 +7,10 @@ import { supabase } from '@/lib/supabase'
 import { getPlayerPvna, normalizeRoundRow, type RawRoundRow } from './helpers'
 import type { LiveRows } from './types'
 
+type LoadLiveStateOptions = {
+  silent?: boolean
+}
+
 export function useLiveRows(sessionId: string, playersById: Map<string, ArrangementPlayer>) {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -22,10 +26,11 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
   const optimisticPlayerRowsRef = useRef(new Map<string, SessionPlayerStateRow>())
   const settleTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
-  const loadLiveState = useCallback(async () => {
+  const loadLiveState = useCallback(async (options: LoadLiveStateOptions = {}): Promise<LiveRows | null> => {
+    const silent = options.silent === true
     const startedAt = Date.now()
     setRefreshing(true)
-    setError(null)
+    if (!silent) setError(null)
     try {
       const loadVersion = () =>
         supabase
@@ -74,16 +79,28 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
 
       const nextError = sessionRes?.error ?? playerRes?.error ?? pairRes?.error ?? roundRes?.error
       if (nextError) {
-        setError(nextError.message)
-        return
+        if (silent) {
+          if (__DEV__) console.warn('[useLiveRows] silent live state reload failed', nextError)
+        } else {
+          setError(nextError.message)
+        }
+        return null
       }
       if (!versionStable) {
-        setError('Live state changed while loading. Please refresh.')
-        return
+        if (silent) {
+          if (__DEV__) console.warn('[useLiveRows] silent live state reload saw unstable version')
+        } else {
+          setError('Live state changed while loading. Please refresh.')
+        }
+        return null
       }
       if (!sessionRes?.data) {
-        setError('Could not load live state version.')
-        return
+        if (silent) {
+          if (__DEV__) console.warn('[useLiveRows] silent live state reload missing version row')
+        } else {
+          setError('Could not load live state version.')
+        }
+        return null
       }
 
       const liveStateVersion = typeof sessionRes.data.live_state_version === 'number'
@@ -107,12 +124,14 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
       const serverPlayerIds = new Set(serverPlayerRows.map(row => row.player_id))
       const optimisticRows = [...optimisticPlayerRowsRef.current.values()]
         .filter(row => !serverPlayerIds.has(row.player_id))
-      setRows({
+      const nextRows = {
         playerRows: [...serverPlayerRows, ...optimisticRows],
         pairRows: (pairRes.data ?? []) as SessionPairHistoryRow[],
         roundRows: ((roundRes.data ?? []) as RawRoundRow[]).map(normalizeRoundRow),
         liveStateVersion,
-      })
+      }
+      setRows(nextRows)
+      return nextRows
     } finally {
       lastLoadStateMsRef.current = Date.now() - startedAt
       setRefreshing(false)
@@ -138,6 +157,89 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
         ? numericVersion
         : Math.max(current.liveStateVersion, numericVersion),
     }))
+  }, [sessionId])
+
+  const applyStartedRound = useCallback((round: RawRoundRow | null | undefined, version: unknown) => {
+    if (!round) {
+      applyLiveStateVersion(version)
+      return
+    }
+    const nextRound = normalizeRoundRow(round)
+    const numericVersion = typeof version === 'number' ? version : Number(version)
+    setRows(current => {
+      const roundRows = current.roundRows.some(row => row.round_no === nextRound.round_no)
+        ? current.roundRows.map(row => row.round_no === nextRound.round_no ? nextRound : row)
+        : [...current.roundRows, nextRound]
+      return {
+        ...current,
+        roundRows: roundRows.sort((left, right) => left.round_no - right.round_no),
+        liveStateVersion: Number.isFinite(numericVersion)
+          ? current.liveStateVersion === null
+            ? numericVersion
+            : Math.max(current.liveStateVersion, numericVersion)
+          : current.liveStateVersion,
+      }
+    })
+  }, [applyLiveStateVersion])
+
+  const applyEndedRound = useCallback((
+    roundNo: number,
+    round: RawRoundRow | null | undefined,
+    playerStateRows: Partial<SessionPlayerStateRow>[],
+    pairHistoryRows: Array<Pick<SessionPairHistoryRow, 'player_a' | 'player_b' | 'partner_count' | 'opponent_count'>>,
+    version: unknown,
+  ) => {
+    const nextRound = round ? normalizeRoundRow(round) : null
+    const playerPatchById = new Map(
+      playerStateRows
+        .filter(row => typeof row.player_id === 'string')
+        .map(row => [String(row.player_id), row]),
+    )
+    const pairRowsByKey = new Map<string, Partial<SessionPairHistoryRow>>(
+      pairHistoryRows.map(row => [`${row.player_a}:${row.player_b}`, row]),
+    )
+    const numericVersion = typeof version === 'number' ? version : Number(version)
+
+    setRows(current => {
+      const existingPairRows = new Map(current.pairRows.map(row => [`${row.player_a}:${row.player_b}`, row]))
+      for (const [key, row] of pairRowsByKey) {
+        const existing = existingPairRows.get(key)
+        existingPairRows.set(key, {
+          ...(existing ?? {
+            session_id: sessionId,
+            player_a: row.player_a ?? '',
+            player_b: row.player_b ?? '',
+            partner_count: 0,
+            opponent_count: 0,
+          }),
+          ...row,
+        })
+      }
+
+      return {
+        ...current,
+        playerRows: current.playerRows.map(row => ({
+          ...row,
+          ...(playerPatchById.get(row.player_id) ?? {}),
+        })),
+        pairRows: [...existingPairRows.values()].sort((left, right) =>
+          `${left.player_a}:${left.player_b}`.localeCompare(`${right.player_a}:${right.player_b}`),
+        ),
+        roundRows: current.roundRows.map(row => {
+          if (row.round_no !== roundNo) return row
+          return nextRound ?? {
+            ...row,
+            status: 'completed',
+            ended_at: new Date().toISOString(),
+          }
+        }),
+        liveStateVersion: Number.isFinite(numericVersion)
+          ? current.liveStateVersion === null
+            ? numericVersion
+            : Math.max(current.liveStateVersion, numericVersion)
+          : current.liveStateVersion,
+      }
+    })
   }, [])
 
   const addPlayerRow = useCallback((row: SessionPlayerStateRow) => {
@@ -198,5 +300,5 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     }
   }, [loadLiveState])
 
-  return { addPlayerRow, applyLiveStateVersion, clearPlayerPatch, clearPlayerRow, error, lastLoadStateMsRef, loading, loadLiveState, patchPlayerRow, refreshing, rows, setError, settlePlayerPatch, settlePlayerRow }
+  return { addPlayerRow, applyEndedRound, applyLiveStateVersion, applyStartedRound, clearPlayerPatch, clearPlayerRow, error, lastLoadStateMsRef, loading, loadLiveState, patchPlayerRow, refreshing, rows, setError, settlePlayerPatch, settlePlayerRow }
 }

@@ -153,6 +153,17 @@ function createClientRequestId(action: 'start' | 'end') {
   return `${action}_${Date.now().toString(36)}_${randomPart}`
 }
 
+type ActionResult = {
+  reload?: boolean
+  reconcileAfterMs?: number
+  reconcile?: {
+    action: 'start' | 'end'
+    expectedLiveStateVersion?: number | null
+    expectedRoundNo?: number | null
+    expectedRoundStatus?: 'active' | 'completed'
+  }
+}
+
 export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstrapTelemetry = null }: NextRoundSuggesterV2Props) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
@@ -162,13 +173,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   const actionInFlightRef = useRef(false)
   const autoSyncAttemptedRef = useRef(false)
   const lateArrivalInFlightRef = useRef(new Set<string>())
+  const reconcileTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const model = useNextRoundModel({ sessionId, players, courts })
   const {
     activeRound,
     alternativeOrder,
     alternativeAudits,
     addPlayerRow,
+    applyEndedRound,
     applyLiveStateVersion,
+    applyStartedRound,
     applySuggestedRoundAction,
     checkedInPlayers,
     clearPlayerRow,
@@ -232,6 +246,53 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
 
   const lastBusRefreshRef = useRef(0)
   const prewarmedVersionGuardRef = useRef<string | null>(null)
+  React.useEffect(() => () => {
+    reconcileTimeoutsRef.current.forEach(clearTimeout)
+    reconcileTimeoutsRef.current = []
+  }, [])
+
+  const scheduleReconcile = useCallback((result: ActionResult) => {
+    if (!result.reconcile) return
+    const delayMs = result.reconcileAfterMs ?? 600
+    const expected = result.reconcile
+    const timeoutId = setTimeout(() => {
+      void loadLiveState({ silent: true }).then((serverRows) => {
+        if (!serverRows) return
+        const mismatches: Record<string, unknown> = {}
+        if (
+          expected.expectedLiveStateVersion != null
+          && Number.isFinite(expected.expectedLiveStateVersion)
+          && serverRows.liveStateVersion !== expected.expectedLiveStateVersion
+        ) {
+          mismatches.live_state_version = {
+            expected: expected.expectedLiveStateVersion,
+            actual: serverRows.liveStateVersion,
+          }
+        }
+        if (expected.expectedRoundNo != null && Number.isFinite(expected.expectedRoundNo) && expected.expectedRoundStatus) {
+          const serverRound = serverRows.roundRows.find(round => round.round_no === expected.expectedRoundNo)
+          if (!serverRound || serverRound.status !== expected.expectedRoundStatus) {
+            mismatches.round = {
+              round_no: expected.expectedRoundNo,
+              expected_status: expected.expectedRoundStatus,
+              actual_status: serverRound?.status ?? null,
+            }
+          }
+        }
+        if (Object.keys(mismatches).length > 0) {
+          console.warn('[NextRoundSuggesterV2] background reconcile mismatch', {
+            action: expected.action,
+            sessionId,
+            ...mismatches,
+          })
+        }
+      }).catch((error) => {
+        if (__DEV__) console.warn('[NextRoundSuggesterV2] background reconcile failed', error)
+      })
+    }, delayMs)
+    reconcileTimeoutsRef.current.push(timeoutId)
+  }, [loadLiveState, sessionId])
+
   React.useEffect(() => {
     refreshBus.register(() => {
       lastBusRefreshRef.current = Date.now()
@@ -262,14 +323,19 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     router.push({ pathname: '/host/session/[id]/roster', params: { id: sessionId } } as any)
   }, [router, sessionId])
 
-  const runAction = useCallback(async (key: string, action: () => Promise<void>) => {
+  const runAction = useCallback(async (key: string, action: () => Promise<ActionResult | void>) => {
     if (actionInFlightRef.current) return
     actionInFlightRef.current = true
     setBusy(key)
     setError(null)
     try {
-      await action()
-      await loadLiveState()
+      const result = await action()
+      if (result?.reload !== false) {
+        await loadLiveState()
+      }
+      if (result?.reload === false) {
+        scheduleReconcile(result)
+      }
     } catch (err: any) {
       const safeMessage = toUserSafeActionError(err)
       console.warn('[NextRoundSuggesterV2] action failed', err)
@@ -290,7 +356,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       actionInFlightRef.current = false
       setBusy(null)
     }
-  }, [loadLiveState])
+  }, [loadLiveState, scheduleReconcile])
 
   const syncRoster = useCallback(async () => {
     await runAction('sync', async () => {
@@ -455,7 +521,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         await invokeLiveSessionFunction('session-rounds-start', sessionId, startAuditPayload)
         return
       }
-      await invokeLiveSessionFunction('session-rounds-start-versioned', sessionId, {
+      const payload = await invokeLiveSessionFunction('session-rounds-start-versioned', sessionId, {
         expected_live_state_version: liveStateVersion,
         round_no: state.current_round,
         matches: alternative.matches,
@@ -465,6 +531,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           source: 'NextRoundSuggesterScreenV2',
         },
       })
+      applyStartedRound(payload?.round, payload?.live_state_version)
+      return {
+        reload: false,
+        reconcileAfterMs: 600,
+        reconcile: {
+          action: 'start',
+          expectedLiveStateVersion: Number(payload?.live_state_version),
+          expectedRoundNo: Number(payload?.round?.round_no ?? state.current_round),
+          expectedRoundStatus: 'active',
+        },
+      }
     })
   }
 
@@ -538,7 +615,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
             : round,
         ),
       }).total
-      await invokeLiveSessionFunction('session-rounds-end-versioned', sessionId, {
+      const payload = await invokeLiveSessionFunction('session-rounds-end-versioned', sessionId, {
         expected_live_state_version: liveStateVersion,
         round_no: activeRound.round_no,
         player_state: playerStatePayload,
@@ -550,6 +627,23 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           commit_audit: commitAudit,
         },
       }, { round_no: activeRound.round_no })
+      const changedPlayerState = Array.isArray(payload?.changed_player_state) && payload.changed_player_state.length > 0
+        ? payload.changed_player_state
+        : playerStatePayload
+      const changedPairHistory = Array.isArray(payload?.changed_pair_history) && payload.changed_pair_history.length > 0
+        ? payload.changed_pair_history
+        : pairHistoryPayload
+      applyEndedRound(activeRound.round_no, payload?.round, changedPlayerState, changedPairHistory, payload?.live_state_version)
+      return {
+        reload: false,
+        reconcileAfterMs: 600,
+        reconcile: {
+          action: 'end',
+          expectedLiveStateVersion: Number(payload?.live_state_version),
+          expectedRoundNo: activeRound.round_no,
+          expectedRoundStatus: 'completed',
+        },
+      }
     })
   }
 
