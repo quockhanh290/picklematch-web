@@ -684,6 +684,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     checkedOutCount: rows.playerRows.filter(row => Boolean(row.checked_out_at)).length,
     requestedRestCount: rows.playerRows.filter(row => !row.checked_out_at && row.opted_rest).length,
   }), [rows.playerRows])
+  const planningInProgress = phase === 'plan' && !workingAlternative && (
+    suggestionIsUpdating
+    || busy === 'sync'
+    || (rows.playerRows.length === 0 && checkedInPlayers.length > 0 && !autoSyncAttemptedRef.current)
+  )
   const lateArrivalPlayers = useMemo(() => {
     const livePlayerIds = new Set(rows.playerRows.map(row => String(row.player_id)))
     return players.filter(player => {
@@ -821,6 +826,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                     </View>
                   ) : null}
                 </>
+              ) : planningInProgress ? (
+                <PlanningRoundCard syncingRoster={busy === 'sync'} />
               ) : (
                 <EmptyPlanCard
                   state={state}
@@ -1403,7 +1410,7 @@ function EngineExplainCard({
     <Card style={{ marginTop: 12, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <Sparkles size={16} color={theme.primary} />
-        <Text style={eyebrowStyle(theme.primary)}>Engine giải thích</Text>
+        <Text style={eyebrowStyle(theme.primary)}>Lý do gợi ý</Text>
       </View>
 
       {betterAltAction ? (
@@ -1426,7 +1433,7 @@ function EngineExplainCard({
         </>
       ) : (
         <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, lineHeight: 19, color: theme.onSurface }}>
-          Đây là phương án tối ưu cho vòng này. Engine cân PVNA, hạn chế lặp partner/đối thủ, giữ nhịp nghỉ và tôn trọng group/sở thích.
+          Đây là phương án tốt nhất cho vòng này: cân PVNA, hạn chế lặp partner/đối thủ, giữ nhịp nghỉ và tôn trọng group/sở thích.
         </Text>
       )}
 
@@ -1705,14 +1712,14 @@ function RestingRow({ resting, playersById }: { resting: string[]; playersById: 
 
 const EMPTY_PLAN_TEXT = {
   defaultTitle: 'Ch\u01b0a c\u00f3 g\u1ee3i \u00fd v\u00f2ng',
-  blockedTitle: 'Engine \u0111ang b\u1ecb k\u1eb9t r\u00e0ng bu\u1ed9c',
-  defaultBody: 'C\u1eadp nh\u1eadt danh s\u00e1ch ng\u01b0\u1eddi ch\u01a1i tr\u01b0\u1edbc, sau \u0111\u00f3 engine s\u1ebd t\u1ea1o ph\u01b0\u01a1ng \u00e1n cho v\u00f2ng k\u1ebf.',
+  blockedTitle: 'Ch\u01b0a x\u1ebfp \u0111\u01b0\u1ee3c v\u00f2ng',
+  defaultBody: 'C\u1eadp nh\u1eadt danh s\u00e1ch ng\u01b0\u1eddi ch\u01a1i tr\u01b0\u1edbc, sau \u0111\u00f3 h\u1ec7 th\u1ed1ng s\u1ebd t\u1ea1o ph\u01b0\u01a1ng \u00e1n cho v\u00f2ng k\u1ebf.',
   capacityBody: (mustPlay: number, slots: number, courts: number) =>
-    `${mustPlay} ng\u01b0\u1eddi \u0111ang c\u1ea7n \u01b0u ti\u00ean ch\u01a1i, nh\u01b0ng ${courts} s\u00e2n ch\u1ec9 c\u00f3 ${slots} slot. N\u1ebfu b\u1eaft t\u1ea5t c\u1ea3 nh\u00f3m n\u00e0y c\u00f9ng ch\u01a1i th\u00ec kh\u00f4ng c\u00f3 t\u1ed5 h\u1ee3p h\u1ee3p l\u1ec7.`,
-  noMatchBody: 'Engine kh\u00f4ng t\u00ecm \u0111\u01b0\u1ee3c t\u1ed5 h\u1ee3p h\u1ee3p l\u1ec7 v\u1edbi roster v\u00e0 c\u00e0i \u0111\u1eb7t hi\u1ec7n t\u1ea1i.',
+    `${mustPlay} ng\u01b0\u1eddi \u0111ang c\u1ea7n \u01b0u ti\u00ean ch\u01a1i, nh\u01b0ng ${courts} s\u00e2n ch\u1ec9 c\u00f3 ${slots} slot. N\u1ebfu b\u1eaft t\u1ea5t c\u1ea3 nh\u00f3m n\u00e0y c\u00f9ng ch\u01a1i th\u00ec ch\u01b0a c\u00f3 c\u00e1ch x\u1ebfp h\u1ee3p l\u1ec7.`,
+  noMatchBody: 'Ch\u01b0a t\u00ecm \u0111\u01b0\u1ee3c ph\u01b0\u01a1ng \u00e1n ph\u00f9 h\u1ee3p v\u1edbi danh s\u00e1ch ng\u01b0\u1eddi ch\u01a1i v\u00e0 c\u00e0i \u0111\u1eb7t hi\u1ec7n t\u1ea1i.',
   notEnoughBody: (eligible: number) =>
     `Ch\u1ec9 c\u00f3 ${eligible} ng\u01b0\u1eddi c\u00f3 th\u1ec3 x\u1ebfp ch\u01a1i. C\u1ea7n t\u1ed1i thi\u1ec3u 4 ng\u01b0\u1eddi \u0111\u1ec3 t\u1ea1o 1 tr\u1eadn.`,
-  sectionTitle: 'C\u00e1ch x\u1eed l\u00fd',
+  sectionTitle: 'G\u1ee3i \u00fd x\u1eed l\u00fd',
   increaseCourt: (courts: number) => `T\u0103ng l\u00ean ${courts} s\u00e2n n\u1ebfu mu\u1ed1n \u0111\u1ea3m b\u1ea3o nh\u00f3m \u01b0u ti\u00ean \u0111\u01b0\u1ee3c ch\u01a1i.`,
   acceptRest: (resting: number) => `Gi\u1eef s\u1ed1 s\u00e2n hi\u1ec7n t\u1ea1i v\u00e0 ch\u1ea5p nh\u1eadn kho\u1ea3ng ${resting} ng\u01b0\u1eddi ngh\u1ec9 v\u00f2ng n\u00e0y.`,
   openSettingsHint: 'M\u1edf c\u00e0i \u0111\u1eb7t \u0111\u1ec3 \u0111\u1ed5i s\u1ed1 s\u00e2n ho\u1eb7c n\u1edbi m\u1ee9c c\u00e2n PVNA.',
@@ -1819,6 +1826,23 @@ function EngineConstraintNotice({
           <Text style={ctaTextStyle(theme.primary, 11)}>{EMPTY_PLAN_TEXT.settings}</Text>
         </TouchableOpacity>
       </View>
+    </Card>
+  )
+}
+
+function PlanningRoundCard({ syncingRoster }: { syncingRoster: boolean }) {
+  const theme = useAppTheme()
+  return (
+    <Card style={{ marginTop: 16, padding: 18, alignItems: 'center', borderColor: theme.outlineVariant }}>
+      <ActivityIndicator color={theme.primary} />
+      <Text style={{ marginTop: 12, fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface, textAlign: 'center' }}>
+        Đang sắp xếp lịch trận đấu
+      </Text>
+      <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.outline, textAlign: 'center' }}>
+        {syncingRoster
+          ? 'Đang cập nhật danh sách người chơi vừa điểm danh, sau đó sẽ tạo vòng đầu tiên.'
+          : 'Đang tính phương án phù hợp với danh sách người chơi và số sân hiện tại.'}
+      </Text>
     </Card>
   )
 }
@@ -1954,7 +1978,7 @@ function SettingsSheet({
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <Zap size={18} color={theme.heroCountdownText} />
           <View style={{ flex: 1 }}>
-            <Text style={eyebrowStyle(theme.heroCountdownText)}>Engine khuyến nghị</Text>
+            <Text style={eyebrowStyle(theme.heroCountdownText)}>Gợi ý setup</Text>
             <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
               Giữ setup gần gợi ý sân, chỉ mở dung sai PVNA khi áp lực lặp partner/đối thủ tăng.
             </Text>
