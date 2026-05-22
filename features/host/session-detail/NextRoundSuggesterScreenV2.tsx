@@ -51,15 +51,7 @@ import type {
 } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
-import {
-  completeVersionedRoundDirectRpc,
-  invokeLiveSessionFunction,
-  loadLatestSyncablePlayerIds,
-  markSessionPlayersPresent,
-  prewarmLiveSessionVersionGuard,
-  shouldUseDirectVersionedRoundRpc,
-  startVersionedRoundDirectRpc,
-} from './next-round-v2/api'
+import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent, prewarmLiveSessionVersionGuard } from './next-round-v2/api'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
 import { ChoiceRow, NavbarRightActions, StickyRoundCta } from './next-round-v2/controls'
@@ -529,21 +521,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         await invokeLiveSessionFunction('session-rounds-start', sessionId, startAuditPayload)
         return
       }
-      const startPayload = {
+      const payload = await invokeLiveSessionFunction('session-rounds-start-versioned', sessionId, {
         expected_live_state_version: liveStateVersion,
         round_no: state.current_round,
         matches: alternative.matches,
         resting: alternative.resting,
         audit_payload: {
           ...startAuditPayload,
-          source: shouldUseDirectVersionedRoundRpc()
-            ? 'NextRoundSuggesterScreenV2:direct-rpc'
-            : 'NextRoundSuggesterScreenV2',
+          source: 'NextRoundSuggesterScreenV2',
         },
-      }
-      const payload = shouldUseDirectVersionedRoundRpc()
-        ? await startVersionedRoundDirectRpc(sessionId, startPayload)
-        : await invokeLiveSessionFunction('session-rounds-start-versioned', sessionId, startPayload)
+      })
       applyStartedRound(payload?.round, payload?.live_state_version)
       return {
         reload: false,
@@ -628,7 +615,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
             : round,
         ),
       }).total
-      const endPayload = {
+      const payload = await invokeLiveSessionFunction('session-rounds-end-versioned', sessionId, {
         expected_live_state_version: liveStateVersion,
         round_no: activeRound.round_no,
         player_state: playerStatePayload,
@@ -636,15 +623,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         score_after: scoreAfter,
         audit_payload: {
           client_request_id: clientRequestId,
-          source: shouldUseDirectVersionedRoundRpc()
-            ? 'NextRoundSuggesterScreenV2:direct-rpc'
-            : 'NextRoundSuggesterScreenV2',
+          source: 'NextRoundSuggesterScreenV2',
           commit_audit: commitAudit,
         },
-      }
-      const payload = shouldUseDirectVersionedRoundRpc()
-        ? await completeVersionedRoundDirectRpc(sessionId, endPayload)
-        : await invokeLiveSessionFunction('session-rounds-end-versioned', sessionId, endPayload, { round_no: activeRound.round_no })
+      }, { round_no: activeRound.round_no })
       const changedPlayerState = Array.isArray(payload?.changed_player_state) && payload.changed_player_state.length > 0
         ? payload.changed_player_state
         : playerStatePayload

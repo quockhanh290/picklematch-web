@@ -3,7 +3,6 @@ import { supabase } from '@/lib/supabase'
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
-const versionedRoundTransport = process.env.EXPO_PUBLIC_NEXT_ROUND_VERSIONED_TRANSPORT
 const DEFAULT_FUNCTION_TIMEOUT_MS = 25_000
 const LONG_FUNCTION_TIMEOUT_MS = 35_000
 const RETRYABLE_ERROR_MESSAGES = new Set([
@@ -156,56 +155,6 @@ export async function invokeLiveSessionFunction(
   }
 
   return payload
-}
-
-export function shouldUseDirectVersionedRoundRpc() {
-  return versionedRoundTransport === 'rpc'
-}
-
-export async function startVersionedRoundDirectRpc(
-  sessionId: string,
-  payload: {
-    expected_live_state_version: number
-    round_no: number
-    matches: unknown[]
-    resting: unknown[]
-    audit_payload?: Record<string, unknown>
-  },
-) {
-  const { data, error } = await supabase.rpc('start_live_session_round_versioned', {
-    p_session_id: sessionId,
-    p_expected_live_state_version: payload.expected_live_state_version,
-    p_round_no: payload.round_no,
-    p_matches: payload.matches,
-    p_resting: payload.resting,
-    p_audit_payload: payload.audit_payload ?? {},
-  })
-  if (error) throw error
-  return data
-}
-
-export async function completeVersionedRoundDirectRpc(
-  sessionId: string,
-  payload: {
-    expected_live_state_version: number
-    round_no: number
-    player_state: unknown[]
-    pair_history: unknown[]
-    score_after: number
-    audit_payload?: Record<string, unknown>
-  },
-) {
-  const { data, error } = await supabase.rpc('complete_live_session_round_versioned', {
-    p_session_id: sessionId,
-    p_expected_live_state_version: payload.expected_live_state_version,
-    p_round_no: payload.round_no,
-    p_player_state: payload.player_state,
-    p_pair_history: payload.pair_history,
-    p_score_after: payload.score_after,
-    p_audit_payload: payload.audit_payload ?? {},
-  })
-  if (error) throw error
-  return data
 }
 
 export async function prewarmLiveSessionVersionGuard(sessionId: string) {
