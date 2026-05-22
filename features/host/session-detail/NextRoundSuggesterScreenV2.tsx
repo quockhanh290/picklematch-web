@@ -162,7 +162,6 @@ function changedPairHistoryRows(beforeRows: SessionPairHistoryRow[], afterRows: 
 
 function buildProjectedStateAfterLiveMatch(state: SessionState, match: SessionLiveMatchRow): SessionState {
   const playedIds = new Set([...match.team_a, ...match.team_b])
-  const restingIds = new Set((match.resting ?? []).filter(playerId => !playedIds.has(playerId)))
   const players = new Map(state.players)
 
   players.forEach((player, playerId) => {
@@ -176,13 +175,6 @@ function buildProjectedStateAfterLiveMatch(state: SessionState, match: SessionLi
         opted_rest: false,
       })
       return
-    }
-    if (restingIds.has(playerId) && player.checked_out_at === null && !player.opted_rest) {
-      players.set(playerId, {
-        ...player,
-        consecutive_play: 0,
-        consecutive_rest: player.consecutive_rest + 1,
-      })
     }
   })
 
@@ -703,7 +695,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   }, [runRosterMutation, sessionId])
 
   const buildSuggestedMatchPayloads = useCallback((count: number, options: BuildSuggestedMatchOptions = {}) => {
-    const suggestionState = options.stateOverride ?? state
+    let suggestionState = options.stateOverride ?? state
     const liveMatchRows = options.liveMatchRowsOverride ?? rows.liveMatchRows
     const payloads: Array<Pick<SessionLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting'>> = []
     const busyIds = new Set(
@@ -711,36 +703,19 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         .filter(match => match.status === 'live')
         .flatMap(match => [...match.team_a, ...match.team_b]),
     )
-    const hasStartedLiveMatchFlow = liveMatchRows.some(match => match.status === 'live' || match.status === 'completed')
-    const isInitialBatch = count > 1 && !hasStartedLiveMatchFlow
-    if (isInitialBatch) {
-      const initialSuggestion = suggestNextRound({
-        ...suggestionState,
-        config: {
-          ...suggestionState.config,
-          courts: count,
-        },
-      }, {
-        tier_overrides: fairnessAdjustment.tier_overrides,
-      })
-      const sourceAlternative = initialSuggestion.alternatives[0]
-      const assignedIds = new Set(sourceAlternative?.matches.flatMap(match => [...match.team_a, ...match.team_b]) ?? [])
-      const batchResting = (sourceAlternative?.resting ?? []).filter(playerId => !assignedIds.has(playerId))
-      return (sourceAlternative?.matches ?? [])
-        .slice(0, count)
-        .filter(match => ![...match.team_a, ...match.team_b].some(playerId => busyIds.has(playerId)))
-        .map((match, index) => ({
-          court_idx: match.court_idx,
-          team_a: match.team_a,
-          team_b: match.team_b,
-          resting: index === 0 ? batchResting : [],
-        }))
-    }
+    const usedCourtIdxs = new Set(
+      liveMatchRows
+        .filter(match => match.status === 'live' && match.court_idx !== null && match.court_idx !== undefined)
+        .map(match => Number(match.court_idx)),
+    )
+    const courtCapacity = Math.max(1, Math.floor(suggestionState.config.courts || courtCount || 1))
     for (let index = 0; index < count; index += 1) {
+      const courtIdx = options.courtIdx ?? Array.from({ length: courtCapacity }, (_, idx) => idx)
+        .find(idx => !usedCourtIdxs.has(idx)) ?? index
       const result = suggestNextMatch(suggestionState, {
         tier_overrides: fairnessAdjustment.tier_overrides,
         busy_player_ids: busyIds,
-        court_idx: options.courtIdx ?? index,
+        court_idx: courtIdx,
       })
       const alternative = result.alternatives[0]
       const match = alternative?.matches[0]
@@ -753,9 +728,25 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       })
       match.team_a.forEach(playerId => busyIds.add(playerId))
       match.team_b.forEach(playerId => busyIds.add(playerId))
+      usedCourtIdxs.add(match.court_idx)
+      suggestionState = buildProjectedStateAfterLiveMatch(suggestionState, {
+        id: `preview-projected-${index}`,
+        session_id: sessionId,
+        sequence_no: index,
+        court_idx: match.court_idx,
+        status: 'completed',
+        team_a: match.team_a,
+        team_b: match.team_b,
+        resting: alternative.resting,
+        score_a: 0,
+        score_b: 0,
+        suggested_at: new Date().toISOString(),
+        started_at: null,
+        ended_at: null,
+      })
     }
     return payloads
-  }, [fairnessAdjustment.tier_overrides, rows.liveMatchRows, state])
+  }, [courtCount, fairnessAdjustment.tier_overrides, rows.liveMatchRows, sessionId, state])
 
   const startLiveMatch = async (match: SessionLiveMatchRow) => {
     await runAction(`start-match-${match.id}`, async () => {
@@ -1205,25 +1196,19 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     }),
     [busyLiveMatchPlayerIds, fairnessAdjustment.tier_overrides, state],
   )
-  const initialBatchCourtCount = Math.max(
-    1,
-    courtCount,
-    courtCalculator.recommended.courts,
-    suggestion.alternatives[0]?.matches.length ?? 0,
-  )
-  const isInitialLiveMatchBatch = completedLiveMatches.length === 0 && activeLiveMatches.length === 0
+  const queueCourtCount = Math.max(1, Math.floor(courtCount || 1))
+  const suggestedQueueCount = Math.max(0, queueCourtCount - activeLiveMatches.length)
   const suggestedLiveMatches = useMemo(() => {
-    const initialMatches = workingAlternative?.matches ?? suggestion.alternatives[0]?.matches ?? []
-    const payloads = isInitialLiveMatchBatch && initialMatches.length > 0
-      ? initialMatches.slice(0, initialBatchCourtCount).map((match, index) => ({
-        court_idx: match.court_idx,
-        team_a: match.team_a,
-        team_b: match.team_b,
-        resting: index === 0 ? workingAlternative?.resting ?? suggestion.alternatives[0]?.resting ?? [] : [],
-      }))
-      : buildSuggestedMatchPayloads(isInitialLiveMatchBatch ? initialBatchCourtCount : 1, {
-        liveMatchRowsOverride: effectiveLiveMatchRows,
-      })
+    const payloads = buildSuggestedMatchPayloads(suggestedQueueCount, {
+      liveMatchRowsOverride: effectiveLiveMatchRows,
+      stateOverride: {
+        ...state,
+        config: {
+          ...state.config,
+          courts: queueCourtCount,
+        },
+      },
+    })
     return payloads.map((match, index): SessionLiveMatchRow => ({
       id: `preview-${match.court_idx ?? index}-${match.team_a.join('-')}-${match.team_b.join('-')}`,
       session_id: sessionId,
@@ -1242,11 +1227,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   }, [
     buildSuggestedMatchPayloads,
     effectiveLiveMatchRows,
-    initialBatchCourtCount,
-    isInitialLiveMatchBatch,
+    queueCourtCount,
     sessionId,
-    suggestion.alternatives,
-    workingAlternative,
+    state,
+    suggestedQueueCount,
   ])
   const heroPlayerCount = phase === 'active' ? activePlayerCount : plannedPlayerCount
   const { rosterTotalCount, checkedOutCount, requestedRestCount } = useMemo(() => ({
@@ -1326,7 +1310,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
               <LiveMatchBoard
                 liveMatches={activeLiveMatches}
                 suggestedMatches={suggestedLiveMatches}
-                roundSize={initialBatchCourtCount}
+                roundSize={queueCourtCount}
                 scores={liveScores}
                 busy={busy}
                 state={state}
