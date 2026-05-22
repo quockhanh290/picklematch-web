@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { SessionPairHistoryRow, SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
+import type { SessionLiveMatchRow, SessionPairHistoryRow, SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 
@@ -18,6 +18,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     playerRows: [],
     pairRows: [],
     roundRows: [],
+    liveMatchRows: [],
     liveStateVersion: null,
   })
   const [error, setError] = useState<string | null>(null)
@@ -43,6 +44,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
       let playerRes: any = null
       let pairRes: any = null
       let roundRes: any = null
+      let liveMatchRes: any = null
       let versionStable = false
 
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -51,7 +53,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
           sessionRes = beforeRes
           break
         }
-        const [nextPlayerRes, nextPairRes, nextRoundRes, afterRes] = await Promise.all([
+        const [nextPlayerRes, nextPairRes, nextRoundRes, nextLiveMatchRes, afterRes] = await Promise.all([
           supabase
             .from('session_player_state')
             .select('*')
@@ -67,17 +69,23 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
             .select('*')
             .eq('session_id', sessionId)
             .order('round_no', { ascending: true }),
+          supabase
+            .from('session_live_matches')
+            .select('*')
+            .eq('session_id', sessionId)
+            .order('sequence_no', { ascending: true }),
           loadVersion(),
         ])
         sessionRes = afterRes
         playerRes = nextPlayerRes
         pairRes = nextPairRes
         roundRes = nextRoundRes
+        liveMatchRes = nextLiveMatchRes
         versionStable = !afterRes.error && beforeRes.data?.live_state_version === afterRes.data?.live_state_version
         if (afterRes.error || versionStable) break
       }
 
-      const nextError = sessionRes?.error ?? playerRes?.error ?? pairRes?.error ?? roundRes?.error
+      const nextError = sessionRes?.error ?? playerRes?.error ?? pairRes?.error ?? roundRes?.error ?? liveMatchRes?.error
       if (nextError) {
         if (silent) {
           if (__DEV__) console.warn('[useLiveRows] silent live state reload failed', nextError)
@@ -128,6 +136,14 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
         playerRows: [...serverPlayerRows, ...optimisticRows],
         pairRows: (pairRes.data ?? []) as SessionPairHistoryRow[],
         roundRows: ((roundRes.data ?? []) as RawRoundRow[]).map(normalizeRoundRow),
+        liveMatchRows: ((liveMatchRes.data ?? []) as SessionLiveMatchRow[]).map(row => ({
+          ...row,
+          team_a: row.team_a,
+          team_b: row.team_b,
+          resting: row.resting ?? [],
+          score_a: row.score_a ?? 0,
+          score_b: row.score_b ?? 0,
+        })),
         liveStateVersion,
       }
       setRows(nextRows)
@@ -233,6 +249,7 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
             ended_at: new Date().toISOString(),
           }
         }),
+        liveMatchRows: current.liveMatchRows,
         liveStateVersion: Number.isFinite(numericVersion)
           ? current.liveStateVersion === null
             ? numericVersion
@@ -241,6 +258,85 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
       }
     })
   }, [])
+
+  const applyLiveMatches = useCallback((matches: SessionLiveMatchRow[], version: unknown) => {
+    const numericVersion = typeof version === 'number' ? version : Number(version)
+    setRows(current => {
+      const byId = new Map(current.liveMatchRows.map(row => [row.id, row]))
+      for (const match of matches) {
+        byId.set(match.id, {
+          ...match,
+          resting: match.resting ?? [],
+          score_a: match.score_a ?? 0,
+          score_b: match.score_b ?? 0,
+        })
+      }
+      return {
+        ...current,
+        liveMatchRows: [...byId.values()].sort((left, right) => left.sequence_no - right.sequence_no),
+        liveStateVersion: Number.isFinite(numericVersion)
+          ? current.liveStateVersion === null
+            ? numericVersion
+            : Math.max(current.liveStateVersion, numericVersion)
+          : current.liveStateVersion,
+      }
+    })
+  }, [])
+
+  const applyCompletedLiveMatch = useCallback((
+    match: SessionLiveMatchRow,
+    playerStateRows: Partial<SessionPlayerStateRow>[],
+    pairHistoryRows: Array<Pick<SessionPairHistoryRow, 'player_a' | 'player_b' | 'partner_count' | 'opponent_count'>>,
+    version: unknown,
+  ) => {
+    const playerPatchById = new Map(
+      playerStateRows
+        .filter(row => typeof row.player_id === 'string')
+        .map(row => [String(row.player_id), row]),
+    )
+    const pairRowsByKey = new Map<string, Partial<SessionPairHistoryRow>>(
+      pairHistoryRows.map(row => [`${row.player_a}:${row.player_b}`, row]),
+    )
+    const numericVersion = typeof version === 'number' ? version : Number(version)
+
+    setRows(current => {
+      const existingPairRows = new Map(current.pairRows.map(row => [`${row.player_a}:${row.player_b}`, row]))
+      for (const [key, row] of pairRowsByKey) {
+        const existing = existingPairRows.get(key)
+        existingPairRows.set(key, {
+          ...(existing ?? {
+            session_id: sessionId,
+            player_a: row.player_a ?? '',
+            player_b: row.player_b ?? '',
+            partner_count: 0,
+            opponent_count: 0,
+          }),
+          ...row,
+        })
+      }
+
+      const liveMatchRows = current.liveMatchRows.some(row => row.id === match.id)
+        ? current.liveMatchRows.map(row => row.id === match.id ? match : row)
+        : [...current.liveMatchRows, match]
+
+      return {
+        ...current,
+        playerRows: current.playerRows.map(row => ({
+          ...row,
+          ...(playerPatchById.get(row.player_id) ?? {}),
+        })),
+        pairRows: [...existingPairRows.values()].sort((left, right) =>
+          `${left.player_a}:${left.player_b}`.localeCompare(`${right.player_a}:${right.player_b}`),
+        ),
+        liveMatchRows: liveMatchRows.sort((left, right) => left.sequence_no - right.sequence_no),
+        liveStateVersion: Number.isFinite(numericVersion)
+          ? current.liveStateVersion === null
+            ? numericVersion
+            : Math.max(current.liveStateVersion, numericVersion)
+          : current.liveStateVersion,
+      }
+    })
+  }, [sessionId])
 
   const addPlayerRow = useCallback((row: SessionPlayerStateRow) => {
     optimisticPlayerRowsRef.current.set(row.player_id, row)
@@ -300,5 +396,5 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
     }
   }, [loadLiveState])
 
-  return { addPlayerRow, applyEndedRound, applyLiveStateVersion, applyStartedRound, clearPlayerPatch, clearPlayerRow, error, lastLoadStateMsRef, loading, loadLiveState, patchPlayerRow, refreshing, rows, setError, settlePlayerPatch, settlePlayerRow }
+  return { addPlayerRow, applyCompletedLiveMatch, applyEndedRound, applyLiveMatches, applyLiveStateVersion, applyStartedRound, clearPlayerPatch, clearPlayerRow, error, lastLoadStateMsRef, loading, loadLiveState, patchPlayerRow, refreshing, rows, setError, settlePlayerPatch, settlePlayerRow }
 }

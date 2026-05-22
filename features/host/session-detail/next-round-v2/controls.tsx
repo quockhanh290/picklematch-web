@@ -66,7 +66,12 @@ export function StickyRoundCta({
 }) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
-  const isActionBusy = busy === 'start' || busy === 'end'
+  const isActionBusy = busy === 'start'
+    || busy === 'end'
+    || busy === 'suggest-match'
+    || Boolean(busy?.startsWith('start-match-'))
+    || Boolean(busy?.startsWith('complete-match-'))
+    || Boolean(busy?.startsWith('cancel-match-'))
   return (
     <LinearGradient
       pointerEvents="box-none"

@@ -25,6 +25,11 @@ export type SuggestNextRoundOptions = {
   partition_cache?: boolean
 }
 
+export type SuggestNextMatchOptions = SuggestNextRoundOptions & {
+  busy_player_ids?: Iterable<string>
+  court_idx?: number
+}
+
 export type SuggestionDiagnostic = {
   strategies: Record<string, {
     candidates: number
@@ -409,6 +414,42 @@ export function suggestNextRound(
     alternatives: alternatives.slice(0, 3),
     warnings,
     should_end: false,
+  }
+}
+
+export function suggestNextMatch(
+  state: SessionState,
+  options: SuggestNextMatchOptions = {},
+): SuggestionResult {
+  const busyIds = new Set([...(options.busy_player_ids ?? [])].map(String))
+  const now = new Date()
+  const players = new Map(
+    [...state.players.entries()].map(([playerId, player]) => [
+      playerId,
+      busyIds.has(playerId)
+        ? { ...player, checked_out_at: player.checked_out_at ?? now, opted_rest: false }
+        : player,
+    ]),
+  )
+  const matchState: SessionState = {
+    ...state,
+    config: {
+      ...state.config,
+      courts: 1,
+    },
+    players,
+  }
+  const result = suggestNextRound(matchState, options)
+  const courtIdx = Math.max(0, Math.floor(options.court_idx ?? 0))
+  return {
+    ...result,
+    alternatives: result.alternatives.map(alternative => ({
+      ...alternative,
+      matches: alternative.matches.slice(0, 1).map(match => ({
+        ...match,
+        court_idx: courtIdx,
+      })),
+    })).filter(alternative => alternative.matches.length > 0),
   }
 }
 

@@ -1,5 +1,6 @@
 export type SessionStatus = 'waiting' | 'active' | 'paused' | 'ended'
 export type RoundStatus = 'proposed' | 'active' | 'completed'
+export type LiveMatchStatus = 'suggested' | 'live' | 'completed' | 'cancelled'
 export type Gender = 'M' | 'F' | null
 export type GenderPreference = 'any' | 'M' | 'F'
 
@@ -131,6 +132,24 @@ export type SessionRoundRow = {
   resting: string[]
   started_at: string | null
   ended_at: string | null
+}
+
+export type SessionLiveMatchRow = {
+  id: string
+  session_id: string
+  sequence_no: number
+  court_idx: number | null
+  status: LiveMatchStatus
+  team_a: Team
+  team_b: Team
+  resting: string[]
+  score_a: number
+  score_b: number
+  suggested_at: string
+  started_at: string | null
+  ended_at: string | null
+  created_at?: string
+  updated_at?: string
 }
 
 export type HostCheckInRequest = {

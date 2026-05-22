@@ -1,5 +1,6 @@
 import type {
   SessionPairHistoryRow,
+  SessionLiveMatchRow,
   SessionPlayerStateRow,
   SessionRoundRow,
   SuggestionAlternative,
@@ -17,6 +18,7 @@ export type LiveRows = {
   playerRows: SessionPlayerStateRow[]
   pairRows: SessionPairHistoryRow[]
   roundRows: SessionRoundRow[]
+  liveMatchRows: SessionLiveMatchRow[]
   liveStateVersion: number | null
 }
 

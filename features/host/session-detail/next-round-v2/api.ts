@@ -16,6 +16,10 @@ function timeoutForFunction(functionName: string) {
     || functionName === 'session-rounds-start-versioned'
     || functionName === 'session-rounds-end-versioned'
     || functionName === 'session-rounds-swap-player'
+    || functionName === 'session-live-matches-create'
+    || functionName === 'session-live-matches-start'
+    || functionName === 'session-live-matches-complete'
+    || functionName === 'session-live-matches-cancel'
     ? LONG_FUNCTION_TIMEOUT_MS
     : DEFAULT_FUNCTION_TIMEOUT_MS
 }

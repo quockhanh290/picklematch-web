@@ -1,5 +1,5 @@
 import { Tier } from '../../../lib/next-round-suggester/classify'
-import { suggestNextRound } from '../../../lib/next-round-suggester/suggest'
+import { suggestNextMatch, suggestNextRound } from '../../../lib/next-round-suggester/suggest'
 import { createPlayers, createState } from '../helpers/factories'
 
 describe('suggestNextRound', () => {
@@ -48,5 +48,26 @@ describe('suggestNextRound', () => {
       stats: alternative.stats,
       warnings: alternative.warnings,
     })))
+  })
+
+  it('suggests one next match while excluding busy players', () => {
+    const state = createState({
+      courts: 4,
+      players: createPlayers(12),
+    })
+
+    const result = suggestNextMatch(state, {
+      busy_player_ids: ['p01', 'p02', 'p03', 'p04'],
+      court_idx: 2,
+    })
+
+    expect(result.alternatives.length).toBeGreaterThan(0)
+    expect(result.alternatives[0].matches).toHaveLength(1)
+    expect(result.alternatives[0].matches[0].court_idx).toBe(2)
+    const selectedIds = new Set([
+      ...result.alternatives[0].matches[0].team_a,
+      ...result.alternatives[0].matches[0].team_b,
+    ])
+    expect([...selectedIds].some(id => ['p01', 'p02', 'p03', 'p04'].includes(id))).toBe(false)
   })
 })

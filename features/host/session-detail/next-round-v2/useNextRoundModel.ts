@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 
 import { calculateOptimalCourts, type CourtPreset } from '@/lib/court-calculator'
 import { buildSuggestedRoundActions, buildSuggestedRoundActionsCache, sortAlternativesByAudit, type AlternativeAudit, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
@@ -21,6 +21,7 @@ import {
 import { buildFairnessWarningsForBanner } from './fairness-warnings'
 import type { NextRoundSuggesterV2Props, RoundSelectionSnapshot, SheetKey } from './types'
 import { useLiveRows } from './useLiveRows'
+import { safeStorageGetItem, safeStorageSetItem } from '@/lib/storage'
 
 function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): SuggestionAlternative | null {
   if (!alternative) return null
@@ -44,6 +45,20 @@ function normalizeCourtCount(value: number) {
   return Math.max(1, Math.floor(value || 1))
 }
 
+const SETTINGS_STORAGE_PREFIX = 'next-round-v2-settings'
+
+type PersistedSettings = {
+  courtCountOverride?: number | null
+  courtPreset?: CourtPreset
+  courtDurationMin?: number
+  pvnaTolerance?: number
+  targetRounds?: number | null
+}
+
+function readNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
 export function useNextRoundModel({ sessionId, players, courts }: NextRoundSuggesterV2Props) {
   const [selectedAlternative, setSelectedAlternative] = useState(0)
   const [manualAlternative, setManualAlternative] = useState<SuggestionAlternative | null>(null)
@@ -55,10 +70,52 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const [courtPreset, setCourtPreset] = useState<CourtPreset>('balanced')
   const [courtDurationMin, setCourtDurationMin] = useState(120)
   const [targetRounds, setTargetRounds] = useState<number | null>(null)
+  const [settingsHydrated, setSettingsHydrated] = useState(false)
   const [groupSelection, setGroupSelection] = useState<string[]>([])
   const [showEngineStats, setShowEngineStats] = useState(false)
   const [showSessionReport, setShowSessionReport] = useState(false)
   const lastSuggestMsRef = useRef<number | null>(null)
+  const settingsStorageKey = `${SETTINGS_STORAGE_PREFIX}:${sessionId}`
+
+  useEffect(() => {
+    let cancelled = false
+    setSettingsHydrated(false)
+    void safeStorageGetItem(settingsStorageKey).then((raw) => {
+      if (cancelled) return
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as PersistedSettings
+          const savedCourts = readNumber(parsed.courtCountOverride)
+          const savedDuration = readNumber(parsed.courtDurationMin)
+          const savedTolerance = readNumber(parsed.pvnaTolerance)
+          const savedTarget = readNumber(parsed.targetRounds)
+          if (savedCourts !== null) setCourtCountOverride(normalizeCourtCount(savedCourts))
+          if (parsed.courtPreset === 'balanced' || parsed.courtPreset === 'play_more' || parsed.courtPreset === 'relaxed') {
+            setCourtPreset(parsed.courtPreset)
+          }
+          if (savedDuration !== null) setCourtDurationMin(Math.max(15, Math.floor(savedDuration)))
+          if (savedTolerance !== null) setPvnaTolerance(savedTolerance)
+          if (savedTarget !== null) setTargetRounds(Math.max(1, Math.floor(savedTarget)))
+        } catch {
+          // Ignore stale/bad local settings and fall back to calculator defaults.
+        }
+      }
+      setSettingsHydrated(true)
+    })
+    return () => { cancelled = true }
+  }, [settingsStorageKey])
+
+  useEffect(() => {
+    if (!settingsHydrated) return
+    const payload: PersistedSettings = {
+      courtCountOverride,
+      courtPreset,
+      courtDurationMin,
+      pvnaTolerance,
+      targetRounds,
+    }
+    void safeStorageSetItem(settingsStorageKey, JSON.stringify(payload))
+  }, [courtCountOverride, courtDurationMin, courtPreset, pvnaTolerance, settingsHydrated, settingsStorageKey, targetRounds])
 
   const confirmedPlayers = useMemo(
     () => players.filter(player => player.status === 'confirmed' || !player.status),
@@ -124,6 +181,27 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const enrichedPlayerRowsRef = useRef(enrichedPlayerRows)
   const pairRowsRef = useRef(deferredRows.pairRows)
   const roundRowsRef = useRef(deferredRows.roundRows)
+  const stateRoundRows = useMemo(() => {
+    const legacyRows = deferredRows.roundRows
+    const baseRoundNo = legacyRows.reduce((max, row) => Math.max(max, row.round_no), -1) + 1
+    const liveCompletedRows = deferredRows.liveMatchRows
+      .filter(match => match.status === 'completed')
+      .map((match, index) => ({
+        id: match.id,
+        session_id: match.session_id,
+        round_no: baseRoundNo + index,
+        status: 'completed' as const,
+        matches: [{
+          court_idx: match.court_idx ?? 0,
+          team_a: match.team_a,
+          team_b: match.team_b,
+        }],
+        resting: match.resting ?? [],
+        started_at: match.started_at,
+        ended_at: match.ended_at,
+      }))
+    return [...legacyRows, ...liveCompletedRows]
+  }, [deferredRows.liveMatchRows, deferredRows.roundRows])
 
   // Fingerprint: chuỗi tóm tắt data thực sự, chỉ thay đổi khi DB trả về data mới.
   // Nếu loadLiveState() trả về data giống hệt (foreground refresh không có gì mới),
@@ -131,7 +209,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const rowsFingerprint = useMemo(() => {
     enrichedPlayerRowsRef.current = enrichedPlayerRows
     pairRowsRef.current = deferredRows.pairRows
-    roundRowsRef.current = deferredRows.roundRows
+    roundRowsRef.current = stateRoundRows
 
     const players = enrichedPlayerRows
       .map(r => `${r.player_id}|${r.matches_played}|${r.last_played_round}|${r.consecutive_play}|${r.consecutive_rest}|${r.opted_rest ? 1 : 0}|${r.checked_out_at ?? ''}|${r.group_id ?? ''}|${r.players?.pvna ?? 0}|${r.players?.gender ?? ''}|${r.players?.partner_gender_pref ?? ''}|${r.players?.opponent_gender_pref ?? ''}`)
@@ -141,11 +219,14 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
       .map(r => `${r.player_a}|${r.player_b}|${r.partner_count}|${r.opponent_count}`)
       .sort()
       .join(';')
-    const rounds = deferredRows.roundRows
+    const rounds = stateRoundRows
       .map(r => `${r.round_no}|${r.status}|${JSON.stringify(r.matches)}|${JSON.stringify(r.resting ?? [])}`)
       .join(';')
-    return `${deferredRows.liveStateVersion ?? 'noversion'}__${players}__${pairs}__${rounds}`
-  }, [enrichedPlayerRows, deferredRows.liveStateVersion, deferredRows.pairRows, deferredRows.roundRows])
+    const liveMatches = deferredRows.liveMatchRows
+      .map(r => `${r.id}|${r.sequence_no}|${r.status}|${r.score_a}|${r.score_b}|${JSON.stringify(r.team_a)}|${JSON.stringify(r.team_b)}|${JSON.stringify(r.resting ?? [])}`)
+      .join(';')
+    return `${deferredRows.liveStateVersion ?? 'noversion'}__${players}__${pairs}__${rounds}__${liveMatches}`
+  }, [enrichedPlayerRows, deferredRows.liveStateVersion, deferredRows.liveMatchRows, deferredRows.pairRows, stateRoundRows])
 
   const rawState = useMemo(() => mapRowsToSessionState({
     sessionId,
@@ -235,11 +316,13 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const activeRound = useMemo(() => state.rounds.find(row => row.status === 'active') ?? null, [state.rounds])
   const effectiveTargetRounds = targetRounds ?? courtCalculator.recommended.total_rounds
   const completedRounds = useMemo(
-    () => liveRows.rows.roundRows.filter(row => row.status === 'completed').sort((a, b) => b.round_no - a.round_no),
-    [liveRows.rows.roundRows],
+    () => stateRoundRows.filter(row => row.status === 'completed').sort((a, b) => b.round_no - a.round_no),
+    [stateRoundRows],
   )
   const completedRoundCount = completedRounds.length
-  const targetReached = effectiveTargetRounds > 0 && completedRoundCount >= effectiveTargetRounds
+  const targetReached = effectiveTargetRounds > 0
+    && presentRows.length > 0
+    && presentRows.every(row => row.matches_played >= effectiveTargetRounds)
   const reportState = useMemo(
     () => (completedRoundCount > 0 ? rebuildStateThroughRound(state, completedRounds[0].round_no) : state),
     [completedRoundCount, completedRounds, state],
@@ -344,7 +427,9 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     reportState,
     rows: liveRows.rows,
     addPlayerRow: liveRows.addPlayerRow,
+    applyCompletedLiveMatch: liveRows.applyCompletedLiveMatch,
     applyEndedRound: liveRows.applyEndedRound,
+    applyLiveMatches: liveRows.applyLiveMatches,
     applyLiveStateVersion: liveRows.applyLiveStateVersion,
     applyStartedRound: liveRows.applyStartedRound,
     clearPlayerPatch: liveRows.clearPlayerPatch,
@@ -354,6 +439,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     selectedAlternative,
     selectionUndo,
     sessionSummary,
+    settingsHydrated,
     setCourtCount,
     setCourtDurationMin,
     setCourtPreset,
