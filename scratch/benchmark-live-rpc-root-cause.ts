@@ -4,6 +4,7 @@ import WebSocket from 'ws'
 
 type SupabaseAny = any
 type Mode = 'rest-rpc' | 'round-rpc' | 'round-edge'
+type RpcTiming = Record<string, number>
 
 type Plan = {
   sessionId: string
@@ -23,6 +24,8 @@ type Row = {
   startMs: number
   endMs: number
   totalMs: number
+  startRpcTiming?: RpcTiming
+  endRpcTiming?: RpcTiming
 }
 
 function loadLocalEnv() {
@@ -68,6 +71,44 @@ function summary(values: number[]) {
     p95: Math.round(percentile(95)),
     max: Math.round(sorted[sorted.length - 1]),
     avg: Math.round(sum / sorted.length),
+  }
+}
+
+function asRpcTiming(value: unknown): RpcTiming | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
+function timingSummary(rows: Row[], key: 'startRpcTiming' | 'endRpcTiming') {
+  const stageNames = new Set<string>()
+  for (const row of rows) {
+    const timing = row[key]
+    if (!timing) continue
+    for (const stageName of Object.keys(timing)) stageNames.add(stageName)
+  }
+
+  const result: Record<string, ReturnType<typeof summary>> = {}
+  for (const stageName of [...stageNames].sort()) {
+    result[stageName] = summary(rows.flatMap((row) => {
+      const value = row[key]?.[stageName]
+      return typeof value === 'number' ? [value] : []
+    }))
+  }
+  return Object.keys(result).length > 0 ? result : null
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (!error || typeof error !== 'object') return String(error)
+  const record = error as Record<string, unknown>
+  const message = record.message ?? record.error_description ?? record.error
+  if (typeof message === 'string') return message
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
   }
 }
 
@@ -226,7 +267,7 @@ async function runRestRpc(client: SupabaseAny, sessionId: string): Promise<Row> 
     restMs = now() - restStarted
     return { sessionId, ok: true, planMs: 0, restMs, startMs: 0, endMs: 0, totalMs: now() - startedAt }
   } catch (error) {
-    return { sessionId, ok: false, error: error instanceof Error ? error.message : String(error), planMs: 0, restMs, startMs: 0, endMs: 0, totalMs: now() - startedAt }
+    return { sessionId, ok: false, error: errorMessage(error), planMs: 0, restMs, startMs: 0, endMs: 0, totalMs: now() - startedAt }
   }
 }
 
@@ -247,8 +288,9 @@ async function runRoundRpc(client: SupabaseAny, plan: Plan): Promise<Row> {
     startMs = now() - startStarted
     const startRow = Array.isArray(start) ? start[0] : start
     const versionAfterStart = Number(startRow?.live_state_version ?? plan.expectedVersion + 1)
+    const startRpcTiming = asRpcTiming(startRow?.rpc_timing_ms)
     const endStarted = now()
-    await rpc(client, 'complete_live_session_round_versioned', {
+    const end = await rpc(client, 'complete_live_session_round_versioned', {
       p_session_id: plan.sessionId,
       p_expected_live_state_version: versionAfterStart,
       p_round_no: plan.roundNo,
@@ -258,9 +300,11 @@ async function runRoundRpc(client: SupabaseAny, plan: Plan): Promise<Row> {
       p_audit_payload: { benchmark: true, source: 'scratch/benchmark-live-rpc-root-cause.ts', transport: 'rpc' },
     })
     endMs = now() - endStarted
-    return { sessionId: plan.sessionId, ok: true, planMs: plan.planMs, restMs: 0, startMs, endMs, totalMs: now() - startedAt }
+    const endRow = Array.isArray(end) ? end[0] : end
+    const endRpcTiming = asRpcTiming(endRow?.rpc_timing_ms)
+    return { sessionId: plan.sessionId, ok: true, planMs: plan.planMs, restMs: 0, startMs, endMs, totalMs: now() - startedAt, startRpcTiming, endRpcTiming }
   } catch (error) {
-    return { sessionId: plan.sessionId, ok: false, error: error instanceof Error ? error.message : String(error), planMs: plan.planMs, restMs: 0, startMs, endMs, totalMs: now() - startedAt }
+    return { sessionId: plan.sessionId, ok: false, error: errorMessage(error), planMs: plan.planMs, restMs: 0, startMs, endMs, totalMs: now() - startedAt }
   }
 }
 
@@ -280,8 +324,9 @@ async function runRoundEdge(accessToken: string, plan: Plan): Promise<Row> {
     startMs = now() - startStarted
     const versionAfterStart = Number(start.live_state_version)
     const roundNo = Number(start.round?.round_no ?? plan.roundNo)
+    const startRpcTiming = asRpcTiming(start.rpc_timing_ms)
     const endStarted = now()
-    await invokeFunction('session-rounds-end-versioned', accessToken, plan.sessionId, {
+    const end = await invokeFunction('session-rounds-end-versioned', accessToken, plan.sessionId, {
       expected_live_state_version: versionAfterStart,
       round_no: roundNo,
       player_state: [],
@@ -290,9 +335,10 @@ async function runRoundEdge(accessToken: string, plan: Plan): Promise<Row> {
       audit_payload: { benchmark: true, source: 'scratch/benchmark-live-rpc-root-cause.ts', transport: 'edge' },
     }, { round_no: roundNo })
     endMs = now() - endStarted
-    return { sessionId: plan.sessionId, ok: true, planMs: plan.planMs, restMs: 0, startMs, endMs, totalMs: now() - startedAt }
+    const endRpcTiming = asRpcTiming(end.rpc_timing_ms)
+    return { sessionId: plan.sessionId, ok: true, planMs: plan.planMs, restMs: 0, startMs, endMs, totalMs: now() - startedAt, startRpcTiming, endRpcTiming }
   } catch (error) {
-    return { sessionId: plan.sessionId, ok: false, error: error instanceof Error ? error.message : String(error), planMs: plan.planMs, restMs: 0, startMs, endMs, totalMs: now() - startedAt }
+    return { sessionId: plan.sessionId, ok: false, error: errorMessage(error), planMs: plan.planMs, restMs: 0, startMs, endMs, totalMs: now() - startedAt }
   }
 }
 
@@ -332,6 +378,8 @@ async function main() {
       rest: summary(okRows.map((row) => row.restMs)),
       start: summary(okRows.map((row) => row.startMs)),
       end: summary(okRows.map((row) => row.endMs)),
+      startRpcTiming: timingSummary(okRows, 'startRpcTiming'),
+      endRpcTiming: timingSummary(okRows, 'endRpcTiming'),
     },
     failures: rows.filter((row) => !row.ok).slice(0, 10).map((row) => ({ sessionId: row.sessionId, error: row.error })),
   }

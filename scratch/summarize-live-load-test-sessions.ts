@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
+import WebSocket from 'ws'
 
 function loadLocalEnv() {
   if (!existsSync('.env')) return
@@ -25,6 +26,7 @@ async function main() {
   if (!ANON_KEY) throw new Error('Missing Supabase anon key')
   const authClient = createClient(SUPABASE_URL, ANON_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
+    realtime: { transport: WebSocket as any },
   })
   const { data: auth, error: authError } = await authClient.auth.signInWithPassword({
     email: HOST_EMAIL,
@@ -37,6 +39,7 @@ async function main() {
   const client = createClient(SUPABASE_URL, ANON_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { Authorization: `Bearer ${token}` } },
+    realtime: { transport: WebSocket as any },
   })
 
   const { data: ownerSessions, error: ownerSessionsError } = await client
