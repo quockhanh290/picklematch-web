@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Minus,
   Plus,
+  Repeat2,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -2731,8 +2732,16 @@ function getRepeatDetailLines(
   state: SessionState,
   playersById: Map<string, ArrangementPlayer>,
 ) {
+  type RepeatPairDetail = {
+    playerA: string
+    playerB: string
+    currentCount: number
+    projectedCount: number
+  }
   const pairLines: string[] = []
   const sentenceLines: string[] = []
+  const partnerPairs: RepeatPairDetail[] = []
+  const opponentPairs: RepeatPairDetail[] = []
   const playerRepeatMap = new Map<string, { partners: string[]; opponents: string[] }>()
   const describePair = (playerA: string, playerB: string) =>
     `${playerName(playerA, playersById)} và ${playerName(playerB, playersById)}`
@@ -2755,6 +2764,7 @@ function getRepeatDetailLines(
     const currentCount = state.players.get(team[0])?.partner_counts.get(team[1]) ?? 0
     const projectedCount = currentCount + 1
     if (projectedCount >= 2) {
+      partnerPairs.push({ playerA: team[0], playerB: team[1], currentCount, projectedCount })
       sentenceLines.push(repeatSentence(team[0], team[1], currentCount, projectedCount, 'partner'))
       pairLines.push(`Partner: ${describePair(team[0], team[1])} (${projectedCount} lần)`)
     }
@@ -2765,6 +2775,7 @@ function getRepeatDetailLines(
       const currentCount = state.players.get(playerA)?.opponent_counts.get(playerB) ?? 0
       const projectedCount = currentCount + 1
       if (projectedCount >= 2) {
+        opponentPairs.push({ playerA, playerB, currentCount, projectedCount })
         sentenceLines.push(repeatSentence(playerA, playerB, currentCount, projectedCount, 'opponent'))
         pairLines.push(`Đối thủ: ${describePair(playerA, playerB)} (${projectedCount} lần)`)
       }
@@ -2787,6 +2798,8 @@ function getRepeatDetailLines(
   return {
     pairLines: sentenceLines.slice(0, 4),
     playerLines: [],
+    partnerPairs,
+    opponentPairs,
     hiddenCount: Math.max(0, sentenceLines.length - 4),
   }
 }
@@ -2867,10 +2880,12 @@ function SuggestedLiveMatchCard({
   }, [selectedChoiceId])
   const startDisabled = busy || (requiresRepeatApproval && !repeatTradeoffApproved)
   return (
-    <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-      <MatchTile match={toMatch(activeMatch)} state={state} pvnaTolerance={pvnaTolerance} playersById={playersById} onPlayerPress={onPlayerPress} />
+    <View style={{ borderRadius: RADIUS.lg, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, overflow: 'hidden', ...LAYOUT_SHADOW.sm }}>
+      <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
+        <MatchTile match={toMatch(activeMatch)} state={state} pvnaTolerance={pvnaTolerance} playersById={playersById} onPlayerPress={onPlayerPress} embedded showSwapBadges />
+      </View>
       {tradeoffChoices.length > 1 ? (
-        <View style={{ marginTop: 12, gap: 8 }}>
+        <View style={{ paddingHorizontal: 14, paddingBottom: 12, gap: 8 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.outline, fontWeight: '900', textTransform: 'uppercase' }}>
             Chọn đánh đổi
           </Text>
@@ -2913,7 +2928,7 @@ function SuggestedLiveMatchCard({
         </View>
       ) : null}
       {requiresRepeatApproval ? (
-        <View style={{ marginTop: 12, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, backgroundColor: theme.warningBg, padding: 12, gap: 10 }}>
+        <View style={{ marginHorizontal: 14, marginBottom: 12, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, backgroundColor: theme.warningBg, padding: 12, gap: 10 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
             <AlertTriangle size={16} color={theme.warningText} />
             <View style={{ flex: 1, gap: 3 }}>
@@ -2989,13 +3004,15 @@ function SuggestedLiveMatchCard({
           ) : null}
         </View>
       ) : null}
-      <TouchableOpacity
-        onPress={() => onStart(activeMatch)}
-        disabled={startDisabled}
-        style={{ marginTop: 12, height: 42, borderRadius: RADIUS.md, backgroundColor: startDisabled ? theme.outlineVariant : theme.primary, alignItems: 'center', justifyContent: 'center' }}
-      >
-        {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Bắt đầu trận</Text>}
-      </TouchableOpacity>
+      <View style={{ backgroundColor: theme.surfaceContainerLow, borderTopWidth: BORDER.hairline, borderTopColor: theme.outlineVariant, padding: 14 }}>
+        <TouchableOpacity
+          onPress={() => onStart(activeMatch)}
+          disabled={startDisabled}
+          style={{ height: 44, borderRadius: RADIUS.md, backgroundColor: startDisabled ? theme.outlineVariant : theme.primary, alignItems: 'center', justifyContent: 'center', ...LAYOUT_SHADOW.xs }}
+        >
+          {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Bắt đầu trận</Text>}
+        </TouchableOpacity>
+      </View>
       <TouchableOpacity
         onPress={() => {}}
         disabled
@@ -3257,12 +3274,16 @@ function MatchTile({
   pvnaTolerance,
   playersById,
   onPlayerPress,
+  embedded = false,
+  showSwapBadges = false,
 }: {
   match: Match
   state: SessionState
   pvnaTolerance?: number
   playersById: Map<string, ArrangementPlayer>
   onPlayerPress: (playerId: string) => void
+  embedded?: boolean
+  showSwapBadges?: boolean
 }) {
   const theme = useAppTheme()
   const diff = useMemo(
@@ -3288,8 +3309,17 @@ function MatchTile({
     () => getRepeatDetailLines(match, state, playersById),
     [match, playersById, state],
   )
-  return (
-    <Card style={{ padding: 12 }}>
+  const [repeatExpanded, setRepeatExpanded] = useState(false)
+  const maxRepeatPair = Math.max(
+    repeatCap.max_partner_pair_count,
+    repeatCap.max_opponent_pair_count,
+  )
+  const partnerRepeatOver = repeatCap.max_partner_pair_count > MAX_PROJECTED_PARTNER_PAIR_COUNT
+  const opponentRepeatOver = repeatCap.max_opponent_pair_count > MAX_PROJECTED_OPPONENT_PAIR_COUNT
+  const repeatVisualLevel = repeatCapExceeded ? 3 : maxRepeatPair >= 2 ? 2 : maxRepeatPair > 0 ? 1 : 0
+  const repeatIndicatorColor = repeatCapExceeded ? theme.warningText : repeatVisualLevel >= 2 ? theme.primary : theme.outline
+  const content = (
+    <>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ borderRadius: RADIUS.xs, backgroundColor: theme.secondaryContainer, paddingHorizontal: 8, paddingVertical: 5 }}>
@@ -3304,11 +3334,11 @@ function MatchTile({
         </View>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <TeamBlock team={match.team_a} state={state} playersById={playersById} onPlayerPress={onPlayerPress} align="left" />
+        <TeamBlock team={match.team_a} state={state} playersById={playersById} onPlayerPress={onPlayerPress} align="left" showSwapBadges={showSwapBadges} />
         <View style={{ width: 30, height: 26, borderRadius: RADIUS.xs, backgroundColor: theme.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={ctaTextStyle(theme.outline, 10)}>VS</Text>
         </View>
-        <TeamBlock team={match.team_b} state={state} playersById={playersById} onPlayerPress={onPlayerPress} align="right" />
+        <TeamBlock team={match.team_b} state={state} playersById={playersById} onPlayerPress={onPlayerPress} align="right" showSwapBadges={showSwapBadges} />
       </View>
       <Text style={{ display: 'none', marginTop: 10, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: repeatCapExceeded ? theme.warningText : theme.outline }}>
         Điểm ghép {Number.isFinite(scored.score) ? scored.score.toFixed(1) : '-'} · Partner lặp {scored.stats.partner_repeats} · Đối thủ lặp {scored.stats.opponent_repeats}
@@ -3317,20 +3347,148 @@ function MatchTile({
         Max sau trận: partner {repeatCap.maxPartner}/{MAX_PROJECTED_PARTNER_PAIR_COUNT} · đối thủ {repeatCap.maxOpponent}/{MAX_PROJECTED_OPPONENT_PAIR_COUNT}
       </Text>
       {repeatDetails.pairLines.length > 0 ? (
-        <View style={{ marginTop: 6, gap: 2 }}>
-          {repeatDetails.pairLines.map(line => (
+        <RepeatCompactSummary
+          expanded={repeatExpanded}
+          onToggle={() => setRepeatExpanded(value => !value)}
+          partnerCount={repeatCap.max_partner_pair_count}
+          opponentCount={repeatCap.max_opponent_pair_count}
+          partnerPairs={repeatDetails.partnerPairs}
+          opponentPairs={repeatDetails.opponentPairs}
+          playersById={playersById}
+          exceeded={repeatCapExceeded}
+        />
+      ) : null}
+      {false && repeatDetails.pairLines.length > 0 ? (
+        <Pressable
+          onPress={() => setRepeatExpanded(value => !value)}
+          style={{
+            marginTop: 12,
+            borderRadius: RADIUS.sm,
+            borderWidth: BORDER.hairline,
+            borderColor: repeatCapExceeded ? theme.warningStrong : theme.outlineVariant,
+            backgroundColor: repeatCapExceeded ? theme.warningBg : theme.surfaceContainerLow,
+            paddingHorizontal: 10,
+            paddingVertical: 8,
+            gap: 6,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <View style={{ display: 'none', flexDirection: 'row', alignItems: 'flex-end', gap: 3 }}>
+                {[1, 2, 3].map(level => (
+                  <View
+                    key={level}
+                    style={{
+                      width: 5,
+                      height: 5 + level * 4,
+                      borderRadius: RADIUS.full,
+                      backgroundColor: repeatVisualLevel >= level ? repeatIndicatorColor : theme.outlineVariant,
+                    }}
+                  />
+                ))}
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10.5, color: repeatCapExceeded ? theme.warningText : theme.outline, fontWeight: '900', textTransform: 'uppercase' }}>
+                  Lặp cặp
+                </Text>
+                <Text numberOfLines={1} style={{ display: 'none', marginTop: 1, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: repeatCapExceeded ? theme.warningText : theme.outline }}>
+                  Partner {repeatCap.max_partner_pair_count}/{MAX_PROJECTED_PARTNER_PAIR_COUNT} · Đối thủ {repeatCap.max_opponent_pair_count}/{MAX_PROJECTED_OPPONENT_PAIR_COUNT}
+                </Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ borderRadius: RADIUS.full, backgroundColor: theme.surface, paddingHorizontal: 7, paddingVertical: 2, borderWidth: BORDER.hairline, borderColor: repeatCapExceeded ? theme.warningStrong : theme.outlineVariant }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9.5, color: repeatCapExceeded ? theme.warningText : theme.outline, fontWeight: '800' }}>
+                  {repeatCapExceeded ? 'Vượt cap' : 'Trong cap'}
+                </Text>
+              </View>
+              <ChevronDown
+                size={15}
+                color={repeatCapExceeded ? theme.warningText : theme.outline}
+                style={{ transform: [{ rotate: repeatExpanded ? '180deg' : '0deg' }] }}
+              />
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1, borderRadius: RADIUS.sm, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: partnerRepeatOver ? theme.warningStrong : theme.outlineVariant, paddingHorizontal: 9, paddingVertical: 7 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ width: 22, height: 22, borderRadius: RADIUS.full, backgroundColor: partnerRepeatOver ? theme.warningBg : theme.secondaryContainer, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 12, lineHeight: 16 }}>🤝</Text>
+                  </View>
+                  <Text numberOfLines={1} style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, lineHeight: 16, color: partnerRepeatOver ? theme.warningText : theme.outline, textTransform: 'uppercase' }}>
+                    Partner
+                  </Text>
+                </View>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, lineHeight: 22, color: partnerRepeatOver ? theme.warningText : theme.onSurface }}>
+                  {repeatCap.max_partner_pair_count}
+                </Text>
+              </View>
+            </View>
+            <View style={{ flex: 1, borderRadius: RADIUS.sm, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: opponentRepeatOver ? theme.warningStrong : theme.outlineVariant, paddingHorizontal: 9, paddingVertical: 7 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ width: 22, height: 22, borderRadius: RADIUS.full, backgroundColor: opponentRepeatOver ? theme.warningBg : theme.secondaryContainer, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 12, lineHeight: 16 }}>⚔️</Text>
+                  </View>
+                  <Text numberOfLines={1} style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, lineHeight: 16, color: opponentRepeatOver ? theme.warningText : theme.outline, textTransform: 'uppercase' }}>
+                    Đối thủ
+                  </Text>
+                </View>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, lineHeight: 22, color: opponentRepeatOver ? theme.warningText : theme.onSurface }}>
+                  {repeatCap.max_opponent_pair_count}
+                </Text>
+              </View>
+            </View>
+          </View>
+          {repeatExpanded ? (
+            <RepeatExpandedConnectionVisual
+              partnerPairs={repeatDetails.partnerPairs}
+              opponentPairs={repeatDetails.opponentPairs}
+              playersById={playersById}
+            />
+          ) : null}
+        </Pressable>
+      ) : null}
+      {false && repeatDetails.pairLines.length > 0 ? (
+        <View
+          style={{
+            marginTop: 12,
+            borderRadius: RADIUS.sm,
+            borderWidth: BORDER.hairline,
+            borderColor: repeatCapExceeded ? theme.warningStrong : theme.outlineVariant,
+            backgroundColor: repeatCapExceeded ? theme.warningBg : theme.surfaceContainerLow,
+            paddingHorizontal: 10,
+            paddingVertical: 8,
+            gap: 5,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <AlertTriangle size={13} color={repeatCapExceeded ? theme.warningText : theme.outline} />
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10.5, color: repeatCapExceeded ? theme.warningText : theme.outline, fontWeight: '900', textTransform: 'uppercase' }}>
+                Lặp cặp
+              </Text>
+            </View>
+            <View style={{ borderRadius: RADIUS.full, backgroundColor: theme.surface, paddingHorizontal: 7, paddingVertical: 2, borderWidth: BORDER.hairline, borderColor: repeatCapExceeded ? theme.warningStrong : theme.outlineVariant }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9.5, color: repeatCapExceeded ? theme.warningText : theme.outline, fontWeight: '800' }}>
+                {repeatCapExceeded ? 'Vượt cap' : 'Trong cap'}
+              </Text>
+            </View>
+          </View>
+          {repeatDetails.pairLines.slice(0, 2).map(line => (
             <Text key={line} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10.5, lineHeight: 14, color: repeatCapExceeded ? theme.warningText : theme.outline }}>
               {line}
             </Text>
           ))}
           {repeatDetails.hiddenCount > 0 ? (
-            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10.5, lineHeight: 14, color: theme.outline }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10.5, lineHeight: 14, color: repeatCapExceeded ? theme.warningText : theme.outline, fontWeight: '800' }}>
               +{repeatDetails.hiddenCount} cặp khác
             </Text>
           ) : null}
         </View>
       ) : null}
-      {repeatDetails.playerLines.length > 0 ? (
+      {repeatExpanded && repeatDetails.playerLines.length > 0 ? (
         <View style={{ marginTop: 5, gap: 2 }}>
           {repeatDetails.playerLines.map(line => (
             <Text key={line} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10.5, lineHeight: 14, color: repeatCapExceeded ? theme.warningText : theme.outline }}>
@@ -3339,7 +3497,355 @@ function MatchTile({
           ))}
         </View>
       ) : null}
-    </Card>
+    </>
+  )
+  if (embedded) {
+    return <View>{content}</View>
+  }
+  return <Card style={{ padding: 12 }}>{content}</Card>
+}
+
+type RepeatVisualPair = {
+  playerA: string
+  playerB: string
+  currentCount: number
+  projectedCount: number
+}
+
+function RepeatCompactSummary({
+  expanded,
+  onToggle,
+  partnerCount,
+  opponentCount,
+  partnerPairs,
+  opponentPairs,
+  playersById,
+  exceeded,
+}: {
+  expanded: boolean
+  onToggle: () => void
+  partnerCount: number
+  opponentCount: number
+  partnerPairs: RepeatVisualPair[]
+  opponentPairs: RepeatVisualPair[]
+  playersById: Map<string, ArrangementPlayer>
+  exceeded: boolean
+}) {
+  const theme = useAppTheme()
+  const visiblePartnerPairs = partnerPairs.filter(pair => pair.currentCount > 0)
+  const visibleOpponentPairs = opponentPairs.filter(pair => pair.currentCount > 0)
+  const textColor = theme.warningText
+  return (
+    <View style={{ marginTop: 10 }}>
+      <Pressable onPress={onToggle} style={{ minHeight: 34, borderRadius: RADIUS.sm, backgroundColor: theme.warningBg, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <RepeatSummaryChip icon="🤝" label="Partner" count={partnerCount} strong={partnerCount > MAX_PROJECTED_PARTNER_PAIR_COUNT} />
+        <RepeatSummaryChip icon="⚔️" label="Đối thủ" count={opponentCount} strong={opponentCount > MAX_PROJECTED_OPPONENT_PAIR_COUNT} />
+        <ChevronDown size={15} color={textColor} style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }} />
+      </Pressable>
+      {expanded ? (
+        <View style={{ paddingHorizontal: 10, paddingTop: 8, gap: 6 }}>
+          {[...visiblePartnerPairs.map(pair => ({ icon: '🤝', pair })), ...visibleOpponentPairs.map(pair => ({ icon: '⚔️', pair }))].map((item, index) => (
+            <React.Fragment key={`${item.icon}-${item.pair.playerA}-${item.pair.playerB}`}>
+              {index > 0 ? <View style={{ height: BORDER.hairline, backgroundColor: theme.outlineVariant }} /> : null}
+              <RepeatInlineDetail icon={item.icon} pair={item.pair} playersById={playersById} />
+            </React.Fragment>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  )
+}
+
+function RepeatSummaryChip({
+  icon,
+  label,
+  count,
+  strong,
+}: {
+  icon: string
+  label: string
+  count: number
+  strong: boolean
+}) {
+  const theme = useAppTheme()
+  const color = strong ? theme.warningStrong : theme.warningText
+  return (
+    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <Text style={{ fontSize: 12, lineHeight: 16 }}>{icon}</Text>
+      <Text numberOfLines={1} style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 12, lineHeight: 15, color, textTransform: 'uppercase' }}>
+        {label}
+      </Text>
+      <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 17, lineHeight: 19, color }}>
+        {count}
+      </Text>
+    </View>
+  )
+}
+
+function RepeatInlineDetail({
+  icon,
+  pair,
+  playersById,
+}: {
+  icon: string
+  pair: RepeatVisualPair
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  const over = pair.projectedCount > 2
+  const color = over ? theme.warningText : theme.onSurface
+  return (
+    <View style={{ minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+      <Text style={{ width: 18, fontSize: 12, lineHeight: 16 }}>{icon}</Text>
+      <Text numberOfLines={1} style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 16, color }}>
+        {playerName(pair.playerA, playersById)} · {playerName(pair.playerB, playersById)}
+      </Text>
+      <Text style={{ minWidth: 24, textAlign: 'right', fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 12, lineHeight: 14, color: over ? theme.warningStrong : theme.warningText }}>
+        ×{pair.projectedCount}
+      </Text>
+    </View>
+  )
+}
+
+function RepeatExpandedVisual({
+  partnerPairs,
+  opponentPairs,
+  playersById,
+}: {
+  partnerPairs: RepeatVisualPair[]
+  opponentPairs: RepeatVisualPair[]
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  const countTone = (count: number) => {
+    if (count > 2) return { bg: theme.warningBg, fg: theme.warningText, border: theme.warningStrong }
+    if (count === 2) return { bg: theme.rescueSoft, fg: theme.rescueAccent, border: theme.rescueAccent }
+    return { bg: theme.successBg, fg: theme.successText, border: theme.secondaryContainer }
+  }
+  return (
+    <View style={{ marginTop: 3, gap: 8 }}>
+      {partnerPairs.length > 0 ? (
+        <View style={{ gap: 5 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, lineHeight: 15, color: theme.outline, textTransform: 'uppercase' }}>
+            Partner
+          </Text>
+          <View style={{ borderRadius: RADIUS.sm, overflow: 'hidden', borderWidth: BORDER.hairline, borderColor: theme.outlineVariant }}>
+            {partnerPairs.map((pair, index) => {
+              const tone = countTone(pair.projectedCount)
+              return (
+                <View
+                  key={`partner-${pair.playerA}-${pair.playerB}`}
+                  style={{
+                    minHeight: 52,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: tone.bg,
+                    borderTopWidth: index === 0 ? 0 : BORDER.hairline,
+                    borderTopColor: theme.outlineVariant,
+                  }}
+                >
+                  <RepeatPlayerCell playerId={pair.playerA} playersById={playersById} align="left" />
+                  <View style={{ width: 74, alignItems: 'center', justifyContent: 'center', borderLeftWidth: BORDER.hairline, borderRightWidth: BORDER.hairline, borderColor: theme.outlineVariant }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 21, lineHeight: 23, color: tone.fg }}>
+                      {pair.projectedCount}
+                    </Text>
+                    <Text style={{ marginTop: -1, fontFamily: SCREEN_FONTS.headline, fontSize: 10.5, lineHeight: 12, color: theme.outline, textTransform: 'uppercase' }}>
+                      partner
+                    </Text>
+                  </View>
+                  <RepeatPlayerCell playerId={pair.playerB} playersById={playersById} align="right" />
+                </View>
+              )
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      {opponentPairs.length > 0 ? (
+        <View style={{ gap: 5 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, lineHeight: 15, color: theme.outline, textTransform: 'uppercase' }}>
+            Đối thủ
+          </Text>
+          <View style={{ gap: 6 }}>
+            {opponentPairs.map(pair => {
+              const tone = countTone(pair.projectedCount)
+              return (
+                <View
+                  key={`opponent-${pair.playerA}-${pair.playerB}`}
+                  style={{
+                    minHeight: 42,
+                    borderRadius: RADIUS.sm,
+                    backgroundColor: tone.bg,
+                    borderWidth: BORDER.hairline,
+                    borderColor: tone.border,
+                    paddingHorizontal: 10,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <RepeatInlinePlayer playerId={pair.playerA} playersById={playersById} />
+                  <Text style={{ flex: 1, textAlign: 'center', fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: theme.outline, textTransform: 'uppercase' }}>
+                    vs
+                  </Text>
+                  <RepeatInlinePlayer playerId={pair.playerB} playersById={playersById} reverse />
+                  <Text style={{ minWidth: 24, textAlign: 'right', fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 15, color: tone.fg }}>
+                    ×{pair.projectedCount}
+                  </Text>
+                </View>
+              )
+            })}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  )
+}
+
+function RepeatPlayerCell({
+  playerId,
+  playersById,
+  align,
+}: {
+  playerId: string
+  playersById: Map<string, ArrangementPlayer>
+  align: 'left' | 'right'
+}) {
+  const theme = useAppTheme()
+  const name = playerName(playerId, playersById)
+  return (
+    <View style={{ flex: 1, alignItems: align === 'right' ? 'flex-end' : 'flex-start', paddingHorizontal: 10, gap: 3 }}>
+      <PlayerAvatar name={name} size={30} />
+      <Text numberOfLines={1} style={{ maxWidth: '100%', fontFamily: SCREEN_FONTS.headline, fontSize: 12, lineHeight: 14, color: theme.onSurface }}>
+        {name}
+      </Text>
+    </View>
+  )
+}
+
+function RepeatInlinePlayer({
+  playerId,
+  playersById,
+  reverse = false,
+}: {
+  playerId: string
+  playersById: Map<string, ArrangementPlayer>
+  reverse?: boolean
+}) {
+  const theme = useAppTheme()
+  const name = playerName(playerId, playersById)
+  return (
+    <View style={{ minWidth: 78, flexDirection: reverse ? 'row-reverse' : 'row', alignItems: 'center', gap: 6 }}>
+      <PlayerAvatar name={name} size={28} />
+      <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 13, lineHeight: 15, color: theme.onSurface }}>
+        {name}
+      </Text>
+    </View>
+  )
+}
+
+function RepeatExpandedConnectionVisual({
+  partnerPairs,
+  opponentPairs,
+  playersById,
+}: {
+  partnerPairs: RepeatVisualPair[]
+  opponentPairs: RepeatVisualPair[]
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  const visiblePartnerPairs = partnerPairs.filter(pair => pair.currentCount > 0)
+  const visibleOpponentPairs = opponentPairs.filter(pair => pair.currentCount > 0)
+  return (
+    <View style={{ marginTop: 3, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 8, gap: 8 }}>
+      {visiblePartnerPairs.length > 0 ? (
+        <RepeatConnectionSection
+          title="PARTNER"
+          pairs={visiblePartnerPairs}
+          playersById={playersById}
+        />
+      ) : null}
+      {visibleOpponentPairs.length > 0 ? (
+        <>
+          {visiblePartnerPairs.length > 0 ? <View style={{ height: BORDER.hairline, backgroundColor: theme.outlineVariant }} /> : null}
+          <RepeatConnectionSection
+            title={"\u0110\u1ed0I TH\u1ee6"}
+            pairs={visibleOpponentPairs}
+            playersById={playersById}
+          />
+        </>
+      ) : null}
+    </View>
+  )
+}
+
+function RepeatConnectionSection({
+  title,
+  pairs,
+  playersById,
+}: {
+  title: string
+  pairs: RepeatVisualPair[]
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  return (
+    <View style={{ gap: 5 }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, lineHeight: 13, color: theme.outline, textTransform: 'uppercase' }}>
+        {title}
+      </Text>
+      <View style={{ gap: 5 }}>
+        {pairs.map(pair => (
+          <RepeatConnectionRow
+            key={`${title}-${pair.playerA}-${pair.playerB}`}
+            pair={pair}
+            playersById={playersById}
+          />
+        ))}
+      </View>
+    </View>
+  )
+}
+
+function RepeatConnectionRow({
+  pair,
+  playersById,
+}: {
+  pair: RepeatVisualPair
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  const leftName = playerName(pair.playerA, playersById)
+  const rightName = playerName(pair.playerB, playersById)
+  const over = pair.projectedCount > 2
+  const tone = over
+    ? { bg: theme.dangerBg, fg: theme.dangerText, line: theme.dangerText, badgeBg: theme.dangerBg }
+    : { bg: theme.surfaceContainerLow, fg: theme.rescueAccent, line: theme.rescueAccent, badgeBg: theme.warningBg }
+  return (
+    <View style={{ minHeight: 50, borderRadius: RADIUS.sm, backgroundColor: tone.bg, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, gap: 8 }}>
+      <RepeatConnectionPlayer name={leftName} />
+      <View style={{ flex: 1, minWidth: 0, height: 20, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, height: BORDER.hairline, backgroundColor: tone.line }} />
+        <View style={{ borderRadius: RADIUS.full, backgroundColor: tone.badgeBg, paddingHorizontal: 6, paddingVertical: 1 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 11, lineHeight: 13, color: tone.fg }}>
+            *{pair.projectedCount}
+          </Text>
+        </View>
+      </View>
+      <RepeatConnectionPlayer name={rightName} />
+    </View>
+  )
+}
+
+function RepeatConnectionPlayer({ name }: { name: string }) {
+  const theme = useAppTheme()
+  return (
+    <View style={{ width: 36, alignItems: 'center', gap: 2 }}>
+      <PlayerAvatar name={name} size={26} />
+      <Text numberOfLines={1} style={{ maxWidth: 44, fontFamily: SCREEN_FONTS.headline, fontSize: 10, lineHeight: 12, color: theme.outline }}>
+        {name}
+      </Text>
+    </View>
   )
 }
 
@@ -3349,28 +3855,49 @@ function TeamBlock({
   playersById,
   onPlayerPress,
   align,
+  showSwapBadges = false,
 }: {
   team: [string, string]
   state: SessionState
   playersById: Map<string, ArrangementPlayer>
   onPlayerPress: (playerId: string) => void
   align: 'left' | 'right'
+  showSwapBadges?: boolean
 }) {
   const theme = useAppTheme()
   const names = team.map(id => playerName(id, playersById))
   return (
-    <View style={{ flex: 1, alignItems: align === 'right' ? 'flex-end' : 'flex-start' }}>
-      <View style={{ flexDirection: align === 'right' ? 'row-reverse' : 'row', marginBottom: 6 }}>
+    <View style={{ flex: 1, alignItems: showSwapBadges ? 'center' : align === 'right' ? 'flex-end' : 'flex-start' }}>
+      <View style={{ flexDirection: showSwapBadges ? 'row' : align === 'right' ? 'row-reverse' : 'row', marginBottom: 8, gap: showSwapBadges ? 10 : 0, justifyContent: showSwapBadges ? 'center' : 'flex-start' }}>
         {team.map((id, index) => (
-          <TouchableOpacity key={id} onPress={() => onPlayerPress(id)} style={{ marginLeft: align === 'right' ? 0 : index === 0 ? 0 : -8, marginRight: align === 'right' && index > 0 ? -8 : 0 }}>
-            <PlayerAvatar name={playerName(id, playersById)} />
+          <TouchableOpacity
+            key={id}
+            onPress={() => onPlayerPress(id)}
+            activeOpacity={0.76}
+            style={{
+              marginLeft: showSwapBadges || align === 'right' ? 0 : index === 0 ? 0 : -8,
+              marginRight: showSwapBadges ? 0 : align === 'right' && index > 0 ? -8 : 0,
+              position: 'relative',
+            }}
+          >
+            <PlayerAvatar name={playerName(id, playersById)} size={showSwapBadges ? 44 : 30} />
+            {showSwapBadges ? (
+              <View style={{ position: 'absolute', right: -3, bottom: -3, width: 18, height: 18, borderRadius: 9, backgroundColor: theme.primary, borderWidth: 2, borderColor: theme.surface, alignItems: 'center', justifyContent: 'center' }}>
+                <Repeat2 size={10} color={theme.onPrimary} strokeWidth={3} />
+              </View>
+            ) : null}
           </TouchableOpacity>
         ))}
       </View>
-      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: theme.onSurface, textAlign: align }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: theme.onSurface, textAlign: showSwapBadges ? 'center' : align }}>
         {names.join(' · ')}
       </Text>
-      <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
+      <View style={{ marginTop: 5, borderRadius: RADIUS.full, backgroundColor: theme.secondaryContainer, paddingHorizontal: 8, paddingVertical: 3, alignSelf: showSwapBadges ? 'center' : align === 'right' ? 'flex-end' : 'flex-start' }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10.5, color: theme.primary, fontWeight: '900' }}>
+          PVNA {getTeamPvna(team, state).toFixed(2)}
+        </Text>
+      </View>
+      <Text style={{ display: 'none', marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
         Tổng PVNA {getTeamPvna(team, state).toFixed(2)}
       </Text>
     </View>

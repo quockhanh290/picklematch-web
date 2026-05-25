@@ -28,22 +28,37 @@ export function Card({ children, style }: { children: React.ReactNode; style?: a
   )
 }
 
+const AVATAR_COLORS = [
+  { bg: '#EDE4FE', text: '#5B2D9E' },
+  { bg: '#E1F5EE', text: '#0F6E56' },
+  { bg: '#FAEEDA', text: '#854F0B' },
+  { bg: '#FAECE7', text: '#993C1D' },
+  { bg: '#F1EFE8', text: '#7A8884' },
+]
+
+function avatarColorForName(name: string) {
+  const safeName = name || ''
+  const hash = safeName.split('').reduce((total, char) => total + char.charCodeAt(0), 0)
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+}
+
 export function PlayerAvatar({ name, size = 30 }: { name: string; size?: number }) {
   const theme = useAppTheme()
+  const avatarColor = avatarColorForName(name)
   return (
     <View
       style={{
         width: size,
         height: size,
         borderRadius: RADIUS.full,
-        backgroundColor: theme.secondaryContainer,
+        backgroundColor: avatarColor.bg,
         borderWidth: BORDER.hairline,
         borderColor: theme.outlineVariant,
         alignItems: 'center',
         justifyContent: 'center',
       }}
     >
-      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: Math.max(10, size * 0.34), color: theme.primary }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: Math.max(10, size * 0.34), color: avatarColor.text }}>
         {initials(name)}
       </Text>
     </View>

@@ -35,7 +35,59 @@ export function getTeamPvna(team: [string, string], state: SessionState) {
   return team.reduce((sum, id) => sum + (state.players.get(id)?.pvna ?? 3.0), 0)
 }
 
+const TEST_PLAYER_DISPLAY_NAMES = [
+  'Minh Anh',
+  'Gia Bao',
+  'Thanh Lam',
+  'Quoc Huy',
+  'Ngoc Linh',
+  'Duy Khang',
+  'Hoang Nam',
+  'Tue Minh',
+  'Bao Chau',
+  'Khanh Vy',
+  'Anh Khoa',
+  'Nhat Minh',
+  'Thien An',
+  'Phuong Nhi',
+  'Duc Huy',
+  'Lan Anh',
+  'Huu Phuc',
+  'Mai Chi',
+  'Gia Han',
+  'Minh Quan',
+  'Tuan Kiet',
+  'Ha Linh',
+  'Quang Minh',
+  'Bao Ngoc',
+  'Thanh Phong',
+  'Kim Anh',
+  'Gia Khue',
+  'Nam Phuong',
+  'Hoai An',
+  'Dinh Khoa',
+  'My Linh',
+  'Phuc An',
+  'Dang Khoa',
+  'Nhu Y',
+  'Viet Anh',
+  'Minh Thu',
+  'Hai Dang',
+  'Tu Anh',
+  'Quynh Nhu',
+  'Bao Long',
+]
+
+function displayNameForTestPlayer(name: string) {
+  const match = /^P(\d+)$/.exec(name.trim())
+  if (!match) return name
+  const index = Math.max(0, Number(match[1]) - 1) % TEST_PLAYER_DISPLAY_NAMES.length
+  return TEST_PLAYER_DISPLAY_NAMES[index]
+}
+
 export function playerName(playerId: string, playersById: Map<string, ArrangementPlayer>) {
+  const name = playersById.get(playerId)?.name
+  if (name) return displayNameForTestPlayer(name)
   return playersById.get(playerId)?.name ?? 'Người chơi'
 }
 
