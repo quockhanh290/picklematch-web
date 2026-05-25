@@ -22,6 +22,7 @@ import { buildFairnessWarningsForBanner } from './fairness-warnings'
 import type { NextRoundSuggesterV2Props, RoundSelectionSnapshot, SheetKey } from './types'
 import { useLiveRows } from './useLiveRows'
 import { safeStorageGetItem, safeStorageSetItem } from '@/lib/storage'
+import { loadNextRoundSessionSettings, saveNextRoundSessionSettings, type PersistedNextRoundSettings } from './api'
 
 function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): SuggestionAlternative | null {
   if (!alternative) return null
@@ -67,6 +68,10 @@ function readNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+function isCourtPreset(value: unknown): value is CourtPreset {
+  return value === 'balanced' || value === 'play_more' || value === 'relaxed'
+}
+
 export function useNextRoundModel({ sessionId, players, courts }: NextRoundSuggesterV2Props) {
   const [selectedAlternative, setSelectedAlternative] = useState(0)
   const [manualAlternative, setManualAlternative] = useState<SuggestionAlternative | null>(null)
@@ -85,37 +90,54 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const lastSuggestMsRef = useRef<number | null>(null)
   const settingsStorageKey = `${SETTINGS_STORAGE_PREFIX}:${sessionId}`
 
+  const applyPersistedSettings = useCallback((settings: Partial<PersistedSettings | PersistedNextRoundSettings>) => {
+    const savedCourts = readNumber(settings.courtCountOverride)
+    const savedDuration = readNumber(settings.courtDurationMin)
+    const savedTolerance = readNumber(settings.pvnaTolerance)
+    const savedTarget = readNumber(settings.targetRounds)
+    if (savedCourts !== null) setCourtCountOverride(normalizeCourtCount(savedCourts))
+    else if ('courtCountOverride' in settings && settings.courtCountOverride === null) setCourtCountOverride(null)
+    if (isCourtPreset(settings.courtPreset)) setCourtPreset(settings.courtPreset)
+    if (savedDuration !== null) setCourtDurationMin(Math.max(15, Math.floor(savedDuration)))
+    if (savedTolerance !== null) setPvnaTolerance(savedTolerance)
+    if (savedTarget !== null) setTargetRounds(Math.max(1, Math.floor(savedTarget)))
+    else if ('targetRounds' in settings && settings.targetRounds === null) setTargetRounds(null)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     setSettingsHydrated(false)
-    void safeStorageGetItem(settingsStorageKey).then((raw) => {
+    setCourtCountOverride(null)
+    setCourtPreset('balanced')
+    setCourtDurationMin(120)
+    setPvnaTolerance(0.5)
+    setTargetRounds(null)
+    void (async () => {
+      const raw = await safeStorageGetItem(settingsStorageKey)
       if (cancelled) return
       if (raw) {
         try {
           const parsed = JSON.parse(raw) as PersistedSettings
-          const savedCourts = readNumber(parsed.courtCountOverride)
-          const savedDuration = readNumber(parsed.courtDurationMin)
-          const savedTolerance = readNumber(parsed.pvnaTolerance)
-          const savedTarget = readNumber(parsed.targetRounds)
-          if (savedCourts !== null) setCourtCountOverride(normalizeCourtCount(savedCourts))
-          if (parsed.courtPreset === 'balanced' || parsed.courtPreset === 'play_more' || parsed.courtPreset === 'relaxed') {
-            setCourtPreset(parsed.courtPreset)
-          }
-          if (savedDuration !== null) setCourtDurationMin(Math.max(15, Math.floor(savedDuration)))
-          if (savedTolerance !== null) setPvnaTolerance(savedTolerance)
-          if (savedTarget !== null) setTargetRounds(Math.max(1, Math.floor(savedTarget)))
+          applyPersistedSettings(parsed)
         } catch {
           // Ignore stale/bad local settings and fall back to calculator defaults.
         }
       }
+      try {
+        const dbSettings = await loadNextRoundSessionSettings(sessionId)
+        if (!cancelled && dbSettings) applyPersistedSettings(dbSettings)
+      } catch (error) {
+        if (__DEV__) console.warn('[NextRoundV2] could not load DB settings', error)
+      }
+      if (cancelled) return
       setSettingsHydrated(true)
-    })
+    })()
     return () => { cancelled = true }
-  }, [settingsStorageKey])
+  }, [applyPersistedSettings, sessionId, settingsStorageKey])
 
   useEffect(() => {
     if (!settingsHydrated) return
-    const payload: PersistedSettings = {
+    const payload: PersistedNextRoundSettings = {
       courtCountOverride,
       courtPreset,
       courtDurationMin,
@@ -123,7 +145,10 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
       targetRounds,
     }
     void safeStorageSetItem(settingsStorageKey, JSON.stringify(payload))
-  }, [courtCountOverride, courtDurationMin, courtPreset, pvnaTolerance, settingsHydrated, settingsStorageKey, targetRounds])
+    void saveNextRoundSessionSettings(sessionId, payload).catch((error) => {
+      if (__DEV__) console.warn('[NextRoundV2] could not save DB settings', error)
+    })
+  }, [courtCountOverride, courtDurationMin, courtPreset, pvnaTolerance, sessionId, settingsHydrated, settingsStorageKey, targetRounds])
 
   const confirmedPlayers = useMemo(
     () => players.filter(player => player.status === 'confirmed' || !player.status),
@@ -225,6 +250,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
 
     const liveRoundRows = [...byRound.entries()]
       .sort(([a], [b]) => a - b)
+      .filter(([, matches]) => matches.length >= engineCourtCount)
       .map(([, matches], index) => {
         const playedIds = new Set(matches.flatMap(m => [...m.team_a, ...m.team_b]))
         const roundStartedAt = matches.map(m => m.started_at).filter(Boolean).sort()[0]

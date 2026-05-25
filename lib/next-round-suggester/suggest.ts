@@ -486,8 +486,8 @@ export function suggestNextRound(
 
   collectAlternatives(false, false)
   if (alternatives.length === 0) {
-    collectAlternatives(true, false)
     collectAlternatives(false, true)
+    collectAlternatives(true, false)
     collectAlternatives(true, true)
   }
 
@@ -751,13 +751,13 @@ function suggestNextMatchExhaustiveFallback(
     }
   }
   if (alternatives.length === 0) {
-    evaluateStage(true, false)
     evaluateStage(false, true)
+    evaluateStage(true, false)
     evaluateStage(true, true)
   }
   if (alternatives.length === 0 && requiredPlayerIds.size > 0) {
-    evaluateStage(true, false, false)
     evaluateStage(false, true, false)
+    evaluateStage(true, false, false)
     if (alternatives.length === 0) {
       evaluateStage(true, true, false)
     }

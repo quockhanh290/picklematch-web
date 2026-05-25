@@ -10,6 +10,14 @@ const RETRYABLE_ERROR_MESSAGES = new Set([
   'Temporary network issue. Please try again.',
 ])
 
+export type PersistedNextRoundSettings = {
+  courtCountOverride: number | null
+  courtPreset: 'balanced' | 'play_more' | 'relaxed'
+  courtDurationMin: number
+  pvnaTolerance: number
+  targetRounds: number | null
+}
+
 function timeoutForFunction(functionName: string) {
   return functionName === 'session-rounds-start'
     || functionName === 'session-rounds-end'
@@ -258,6 +266,50 @@ export async function repairLiveSessionPlayerStateFromRounds(sessionId: string) 
   })
   if (error) throw error
   return data
+}
+
+export async function loadNextRoundSessionSettings(sessionId: string): Promise<PersistedNextRoundSettings | null> {
+  const { data, error } = await supabase
+    .from('session_next_round_settings')
+    .select('court_count_override, court_preset, court_duration_min, pvna_tolerance, target_rounds')
+    .eq('session_id', sessionId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) return null
+
+  return {
+    courtCountOverride: data.court_count_override === null || data.court_count_override === undefined
+      ? null
+      : Number(data.court_count_override),
+    courtPreset: data.court_preset,
+    courtDurationMin: Number(data.court_duration_min),
+    pvnaTolerance: Number(data.pvna_tolerance),
+    targetRounds: data.target_rounds === null || data.target_rounds === undefined
+      ? null
+      : Number(data.target_rounds),
+  }
+}
+
+export async function saveNextRoundSessionSettings(
+  sessionId: string,
+  settings: PersistedNextRoundSettings,
+) {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const updatedBy = sessionData.session?.user.id ?? null
+  const { error } = await supabase
+    .from('session_next_round_settings')
+    .upsert({
+      session_id: sessionId,
+      court_count_override: settings.courtCountOverride,
+      court_preset: settings.courtPreset,
+      court_duration_min: settings.courtDurationMin,
+      pvna_tolerance: settings.pvnaTolerance,
+      target_rounds: settings.targetRounds,
+      updated_by: updatedBy,
+    }, { onConflict: 'session_id' })
+
+  if (error) throw error
 }
 
 export async function markSessionPlayersPresent(sessionId: string, playerIds: string[]) {

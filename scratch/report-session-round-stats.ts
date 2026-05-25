@@ -64,12 +64,18 @@ async function main() {
   })
   if (signInError) throw signInError
 
-  const [roundRes, playerRes, pairRes] = await Promise.all([
+  const [roundRes, liveMatchRes, playerRes, pairRes] = await Promise.all([
     client
       .from('session_rounds')
       .select('round_no, status, matches, resting')
       .eq('session_id', sessionId)
       .order('round_no', { ascending: true }),
+    client
+      .from('session_live_matches')
+      .select('sequence_no, round_no, court_idx, status, team_a, team_b, resting')
+      .eq('session_id', sessionId)
+      .neq('status', 'cancelled')
+      .order('sequence_no', { ascending: true }),
     client
       .from('session_player_state')
       .select('player_id, players(name, pvna)')
@@ -80,15 +86,37 @@ async function main() {
       .eq('session_id', sessionId),
   ])
   if (roundRes.error) throw roundRes.error
+  if (liveMatchRes.error) throw liveMatchRes.error
   if (playerRes.error) throw playerRes.error
   if (pairRes.error) throw pairRes.error
 
-  const rounds = ((roundRes.data ?? []) as any[]).map((row): RoundRow => ({
+  let rounds = ((roundRes.data ?? []) as any[]).map((row): RoundRow => ({
     round_no: Number(row.round_no),
     status: String(row.status),
     matches: row.matches ?? [],
     resting: row.resting ?? [],
   }))
+  if (rounds.length === 0) {
+    const liveRows = (liveMatchRes.data ?? []) as any[]
+    const inferredCourtCount = Math.max(1, ...liveRows.map(row => Number(row.court_idx ?? 0) + 1))
+    const byRound = new Map<number, RoundRow>()
+    liveRows.forEach((row, index) => {
+      const roundNo = Number(row.round_no ?? Math.floor(index / inferredCourtCount))
+      const round = byRound.get(roundNo) ?? {
+        round_no: roundNo,
+        status: 'completed',
+        matches: [],
+        resting: [],
+      }
+      round.matches.push({
+        court_idx: Number(row.court_idx ?? round.matches.length),
+        team_a: row.team_a,
+        team_b: row.team_b,
+      })
+      byRound.set(roundNo, round)
+    })
+    rounds = [...byRound.values()].sort((a, b) => a.round_no - b.round_no)
+  }
   const players = new Map<string, PlayerRow>()
   for (const row of (playerRes.data ?? []) as any[]) {
     players.set(String(row.player_id), {

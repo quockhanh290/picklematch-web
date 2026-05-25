@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
 
 import { calculateOptimalCourts, type CourtPreset } from '../lib/court-calculator'
-import { correctForFairness } from '../lib/next-round-suggester/fairness/corrector'
+import { applyFairnessAdjustment, correctForFairness } from '../lib/next-round-suggester/fairness/corrector'
 import { bestPartitioning } from '../lib/next-round-suggester/pair'
 import { suggestNextMatch } from '../lib/next-round-suggester/suggest'
 import { mapRowsToSessionState } from '../lib/next-round-suggester/state'
@@ -11,8 +11,8 @@ import type { Match, SessionPlayerPreferenceRow, SessionPlayerStateRow, SessionS
 
 type PlayerName = { name: string; pvna: number }
 
-const sessionId = process.argv[2]
-if (!sessionId) throw new Error('Usage: tsx scratch/simulate-next-match-session.ts <session-id>')
+const requestedSessionId = process.argv[2]
+if (!requestedSessionId) throw new Error('Usage: tsx scratch/simulate-next-match-session.ts <session-id|latest> --rounds=8')
 const recomputePerMatch = process.argv.includes('--recompute-per-match')
 
 function argValue(name: string, fallback: string) {
@@ -23,9 +23,12 @@ function argValue(name: string, fallback: string) {
   return index >= 0 ? process.argv[index + 1] ?? fallback : fallback
 }
 
-const courtPreset = argValue('--court-preset', 'balanced') as CourtPreset
-const sessionDurationMin = Math.max(1, Number(argValue('--session-duration-min', '120')))
+const courtPresetArg = argValue('--court-preset', '')
+const sessionDurationMinArg = argValue('--session-duration-min', '')
 const matchDurationMin = Math.max(1, Number(argValue('--match-duration-min', '15')))
+const roundsToSimulate = Math.max(1, Number(argValue('--rounds', '10')))
+const courtCountArg = argValue('--courts', '')
+const pvnaToleranceArg = argValue('--pvna-tolerance', '')
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL
 const anon = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
@@ -141,6 +144,32 @@ async function main() {
   })
   if (signIn.error) throw signIn.error
 
+  let sessionId = requestedSessionId
+  if (requestedSessionId === 'latest') {
+    const latestRes = await client
+      .from('sessions')
+      .select('id, created_at')
+      .eq('host_id', signIn.data.user!.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (latestRes.error) throw latestRes.error
+    if (!latestRes.data?.id) throw new Error('No latest session found')
+    sessionId = String(latestRes.data.id)
+  }
+
+  const settingsRes = await client
+    .from('session_next_round_settings')
+    .select('court_count_override, court_preset, court_duration_min, pvna_tolerance, target_rounds')
+    .eq('session_id', sessionId)
+    .maybeSingle()
+  if (settingsRes.error && settingsRes.error.code !== 'PGRST116') throw settingsRes.error
+  const dbSettings = settingsRes.data as any | null
+  const courtPreset = (courtPresetArg || dbSettings?.court_preset || 'balanced') as CourtPreset
+  const sessionDurationMin = Math.max(1, Number(sessionDurationMinArg || dbSettings?.court_duration_min || 120))
+  const dbCourtCountOverride = dbSettings?.court_count_override == null ? null : Number(dbSettings.court_count_override)
+  const pvnaTolerance = Number(pvnaToleranceArg || dbSettings?.pvna_tolerance || 0.5)
+
   const [playersRes, preferenceRes, namesRes] = await Promise.all([
     client
       .from('session_player_state')
@@ -175,7 +204,7 @@ async function main() {
     match_duration_min: matchDurationMin,
     preset: courtPreset,
   })
-  const courtCount = courtCalculator.recommended.courts
+  const courtCount = Math.max(1, Number(courtCountArg || dbCourtCountOverride || courtCalculator.recommended.courts))
 
   let state = mapRowsToSessionState({
     sessionId,
@@ -192,12 +221,12 @@ async function main() {
     roundRows: [],
     preferenceRows: (preferenceRes.data ?? []) as SessionPlayerPreferenceRow[],
     courts: courtCount,
-    pvnaTolerance: 0.5,
+    pvnaTolerance,
   })
 
   const rounds: Array<{ roundNo: number; matches: Match[]; resting: string[]; warnings: string[]; tradeoffs: number }> = []
   const allPlayerIds = [...state.players.keys()]
-  for (let roundNo = 0; roundNo < 10; roundNo += 1) {
+  for (let roundNo = 0; roundNo < roundsToSimulate; roundNo += 1) {
     const busy = new Set<string>()
     const matches: Match[] = []
     const warnings: string[] = []
@@ -212,7 +241,8 @@ async function main() {
           ])),
         })
         : correctForFairness(state)
-      const result = suggestNextMatch(state, {
+      const adjustedState = applyFairnessAdjustment(state, adjustment)
+      const result = suggestNextMatch(adjustedState, {
         court_idx: courtIdx,
         busy_player_ids: busy,
         tier_overrides: adjustment.tier_overrides,
@@ -335,6 +365,15 @@ async function main() {
 
   console.log(JSON.stringify({
     sessionId,
+    setup: {
+      sourceSessionArg: requestedSessionId,
+      dbSettings,
+      courtCount,
+      courtPreset,
+      sessionDurationMin,
+      matchDurationMin,
+      pvnaTolerance,
+    },
     mode: recomputePerMatch ? 'next-match-recompute-per-match-local-simulation' : 'next-match-current-queue-local-simulation',
     courtCalculator: {
       playerCount,

@@ -133,6 +133,36 @@ function warningTitle(type: string) {
   return type.replace(/_/g, ' ')
 }
 
+function autoPvnaReasonDetails(
+  warningTypes: string[],
+  warnings: FairnessWarning[],
+  state: SessionState,
+  playersById: Map<string, ArrangementPlayer>,
+) {
+  const warningTypeSet = new Set(warningTypes)
+  return warnings
+    .filter(warning => warningTypeSet.has(warning.type))
+    .flatMap(warning => {
+      const lines = [warning.message]
+      if (warning.type === 'rest_violation' && warning.affected_players.length > 0) {
+        const players = warning.affected_players.slice(0, 6).map(playerId => {
+          const consecutiveRest = state.players.get(playerId)?.consecutive_rest ?? 0
+          return `${playerName(playerId, playersById)} ${consecutiveRest} vòng`
+        })
+        const hiddenCount = Math.max(0, warning.affected_players.length - players.length)
+        lines.push(`Đang ưu tiên kéo vào sân: ${players.join(', ')}${hiddenCount > 0 ? ` +${hiddenCount} người` : ''}.`)
+      } else if (warning.affected_players.length > 0) {
+        const players = warning.affected_players.slice(0, 6).map(playerId => playerName(playerId, playersById))
+        const hiddenCount = Math.max(0, warning.affected_players.length - players.length)
+        lines.push(`Ảnh hưởng: ${players.join(', ')}${hiddenCount > 0 ? ` +${hiddenCount} người` : ''}.`)
+      }
+      lines.push(warning.suggested_action)
+      return lines
+    })
+    .filter((line, index, lines) => line.length > 0 && lines.indexOf(line) === index)
+    .slice(0, 4)
+}
+
 function warningTone(theme: ReturnType<typeof useAppTheme>, severity: FairnessWarning['severity'] | 'ok') {
   if (severity === 'critical') return { bg: theme.dangerBg, border: theme.dangerText, text: theme.dangerText }
   if (severity === 'warning') return { bg: theme.warningBg, border: theme.warningStrong, text: theme.warningText }
@@ -275,6 +305,10 @@ type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   warnings?: string[]
   tradeoffs?: SuggestionTradeoff[]
   approval_required?: boolean
+  configured_pvna_tolerance?: number
+  effective_pvna_tolerance?: number
+  fairness_reasons?: string[]
+  fairness_reason_details?: string[]
 }
 
 export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstrapTelemetry = null }: NextRoundSuggesterV2Props) {
@@ -661,7 +695,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     let projectMs = 0
     let suggestionState = options.stateOverride ?? state
     const liveMatchRows = options.liveMatchRowsOverride ?? rows.liveMatchRows
-    const payloads: Array<Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'warnings' | 'tradeoffs' | 'approval_required'>> = []
+    const payloads: Array<Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details'>> = []
     const baseBusyIds = new Set(
       liveMatchRows
         .filter(match =>
@@ -687,8 +721,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     const countableMatches = liveMatchRows
       .filter(match => match.status !== 'cancelled')
       .sort((left, right) => left.sequence_no - right.sequence_no)
+    const logicalRoundByMatchId = new Map<string, number>()
     countableMatches.forEach((match, matchIndex) => {
       const roundNo = Math.floor(matchIndex / courtCapacity)
+      logicalRoundByMatchId.set(match.id, match.round_no ?? roundNo)
       roundCounts.set(roundNo, (roundCounts.get(roundNo) ?? 0) + 1)
       if (match.court_idx !== null && match.court_idx !== undefined) {
         const courtIdxs = courtIdxsByRound.get(roundNo) ?? new Set<number>()
@@ -704,6 +740,18 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       match.team_b.forEach(playerId => playerIds.add(playerId))
       playerIdsByRound.set(roundNo, playerIds)
     })
+    const projectedExistingMatches = countableMatches.filter(match =>
+      match.status === 'live'
+      || match.status === 'suggested'
+      || completingLiveMatchIds.has(match.id),
+    )
+    for (const match of projectedExistingMatches) {
+      suggestionState = buildProjectedStateAfterLiveMatch(
+        suggestionState,
+        match,
+        logicalRoundByMatchId.get(match.id) ?? match.round_no ?? match.sequence_no,
+      )
+    }
     const getInitialRoundCourtIdxs = (roundNo: number) => {
       const existingRoundCourtIdxs = courtIdxsByRound.get(roundNo)
       return new Set([
@@ -739,6 +787,25 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       const alternative = result.alternatives[0]
       const match = alternative?.matches[0]
       if (!alternative || !match) break
+      const configuredPvnaTolerance = pvnaTolerance
+      const effectivePvnaTolerance = suggestionState.config.pvna_tolerance
+      const pvnaDiff = match.stats?.pvna_diff ?? 0
+      const displayPvnaOverBy = Math.max(0, pvnaDiff - configuredPvnaTolerance)
+      const hasEnginePvnaTradeoff = alternative.tradeoffs?.some(tradeoff => tradeoff.type === 'pvna_tolerance_relaxed') ?? false
+      const shouldSurfaceAutoPvnaTradeoff = displayPvnaOverBy > 0 && effectivePvnaTolerance > configuredPvnaTolerance && !hasEnginePvnaTradeoff
+      const visibleTradeoffs = shouldSurfaceAutoPvnaTradeoff
+        ? [
+            ...(alternative.tradeoffs ?? []),
+            {
+              type: 'pvna_tolerance_relaxed' as const,
+              severity: displayPvnaOverBy,
+              over_by: displayPvnaOverBy,
+            },
+          ]
+        : alternative.tradeoffs
+      const visibleWarnings = shouldSurfaceAutoPvnaTradeoff
+        ? [...new Set([...alternative.warnings, 'PVNA_TOLERANCE_RELAXED'])]
+        : alternative.warnings
       if (__DEV__ && match.stats && match.stats.pvna_diff > 0.5) {
         const labels = (team: [string, string]) => team.map(playerId => playersById.get(playerId)?.name ?? playerId.slice(0, 8)).join('+')
         console.log('[NextRoundSuggesterV2] risky suggested match alternatives', {
@@ -748,6 +815,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           courtCapacity,
           liveRows: liveMatchRows.length,
           countableMatches: countableMatches.length,
+          projectedExistingMatches: projectedExistingMatches.length,
           busyIds: [...busyIds].map(playerId => playersById.get(playerId)?.name ?? playerId.slice(0, 8)),
           tierOverrides: Object.keys(fairnessAdjustment.tier_overrides).map(playerId => playersById.get(playerId)?.name ?? playerId.slice(0, 8)),
           selected: `${labels(match.team_a)} vs ${labels(match.team_b)}`,
@@ -771,9 +839,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         team_b: match.team_b,
         resting: alternative.resting,
         round_no: projectedRoundNo,
-        warnings: alternative.warnings,
-        tradeoffs: alternative.tradeoffs,
-        approval_required: alternative.approval_required,
+        warnings: visibleWarnings,
+        tradeoffs: visibleTradeoffs,
+        approval_required: alternative.approval_required || shouldSurfaceAutoPvnaTradeoff,
+        configured_pvna_tolerance: configuredPvnaTolerance,
+        effective_pvna_tolerance: effectivePvnaTolerance,
+        fairness_reasons: shouldSurfaceAutoPvnaTradeoff
+          ? fairnessAdjustment.applied_for_warnings.map(warningTitle)
+          : [],
+        fairness_reason_details: shouldSurfaceAutoPvnaTradeoff
+          ? autoPvnaReasonDetails(fairnessAdjustment.applied_for_warnings, fairnessWarnings, suggestionState, playersById)
+          : [],
       })
       match.team_a.forEach(playerId => busyIds.add(playerId))
       match.team_b.forEach(playerId => busyIds.add(playerId))
@@ -806,6 +882,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         requested: count,
         built: payloads.length,
         liveRows: liveMatchRows.length,
+        projectedExistingMatches: projectedExistingMatches.length,
         courtCapacity,
         roundNo: projectedRoundNo,
         suggestMs: Math.round(suggestMs),
@@ -814,7 +891,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       })
     }
     return payloads
-  }, [completingLiveMatchIds, courtCount, fairnessAdjustment.tier_overrides, rows.liveMatchRows, sessionId, state])
+  }, [completingLiveMatchIds, courtCount, fairnessAdjustment.applied_for_warnings, fairnessAdjustment.tier_overrides, fairnessWarnings, playersById, pvnaTolerance, rows.liveMatchRows, sessionId, state])
 
   const startLiveMatch = async (match: SessionLiveMatchRow) => {
     const startT0 = nowMs()
@@ -1363,6 +1440,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       warnings: match.warnings,
       tradeoffs: match.tradeoffs,
       approval_required: match.approval_required,
+      configured_pvna_tolerance: match.configured_pvna_tolerance,
+      effective_pvna_tolerance: match.effective_pvna_tolerance,
+      fairness_reasons: match.fairness_reasons,
+      fairness_reason_details: match.fairness_reason_details,
     }))
   }, [
     buildSuggestedMatchPayloads,
@@ -2566,6 +2647,11 @@ function SuggestedLiveMatchCard({
   const requiresRepeatApproval = match.approval_required || pvnaCapExceeded || match.warnings?.includes('REPEAT_CAP_RELAXED') || match.warnings?.includes('PVNA_TOLERANCE_RELAXED') || false
   const repeatTradeoff = match.tradeoffs?.find(tradeoff => tradeoff.type === 'repeat_cap_relaxed')
   const pvnaTradeoff = match.tradeoffs?.find(tradeoff => tradeoff.type === 'pvna_tolerance_relaxed')
+  const effectivePvnaTolerance = match.effective_pvna_tolerance ?? state.config.pvna_tolerance
+  const configuredPvnaTolerance = match.configured_pvna_tolerance ?? pvnaTolerance
+  const autoPvnaRelaxed = effectivePvnaTolerance > configuredPvnaTolerance && Boolean(pvnaTradeoff)
+  const fairnessReasonText = match.fairness_reasons?.length ? match.fairness_reasons.join(', ') : null
+  const fairnessReasonDetails = match.fairness_reason_details ?? []
   const hasPvnaTradeoff = pvnaCapExceeded || Boolean(pvnaTradeoff)
   const hasRepeatTradeoff = Boolean(repeatTradeoff)
   const approvalSummary = hasPvnaTradeoff && hasRepeatTradeoff
@@ -2610,6 +2696,19 @@ function SuggestedLiveMatchCard({
                 <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
                   PVNA vượt tolerance {formatNumber(pvnaOverBy, 2)}
                 </Text>
+              ) : null}
+              {autoPvnaRelaxed ? (
+                <View style={{ gap: 3 }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
+                    Engine đang nới PVNA lên {formatNumber(effectivePvnaTolerance, 2)}
+                    {fairnessReasonText ? ` vì ${fairnessReasonText}` : ''}
+                  </Text>
+                  {fairnessReasonDetails.map((line, index) => (
+                    <Text key={`${line}-${index}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
+                      {line}
+                    </Text>
+                  ))}
+                </View>
               ) : null}
               {repeatTradeoff ? (
                 <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
