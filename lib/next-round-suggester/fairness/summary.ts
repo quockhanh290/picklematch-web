@@ -65,7 +65,7 @@ export function buildSessionSummary(state: SessionState): SessionSummary {
   }
 }
 
-function computeFairnessEvolution(state: SessionState): { round: number; score: number }[] {
+export function computeFairnessEvolution(state: SessionState): { round: number; score: number }[] {
   const sortedRounds = state.rounds
     .filter((round) => round.status === 'completed' || round.status === 'active')
     .sort((a, b) => a.round_no - b.round_no)
@@ -89,6 +89,53 @@ function computeFairnessEvolution(state: SessionState): { round: number; score: 
       round: round.round_no,
       score: computeSessionFairness(snapshotState).total,
     })
+  }
+
+  return evolution
+}
+
+export function computeFairnessEvolutionPerMatch(
+  state: SessionState,
+): { match_no: number; round_no: number; score: number }[] {
+  const sortedRounds = state.rounds
+    .filter((round) => round.status === 'completed' || round.status === 'active')
+    .sort((a, b) => a.round_no - b.round_no)
+  const snapshotPlayers = new Map<string, PlayerSessionState>()
+  const snapshotRounds: RoundRecord[] = []
+  const evolution: { match_no: number; round_no: number; score: number }[] = []
+  let matchNo = 0
+
+  for (const round of sortedRounds) {
+    ensureRoundPlayers(snapshotPlayers, state, round)
+
+    const sortedMatches = [...round.matches].sort((a, b) => a.court_idx - b.court_idx)
+
+    for (let i = 0; i < sortedMatches.length; i += 1) {
+      const isLastMatch = i === sortedMatches.length - 1
+      applyMatchToSnapshot(snapshotPlayers, sortedMatches[i], isLastMatch ? round.resting : [])
+
+      if (isLastMatch) {
+        snapshotRounds.push({
+          ...round,
+          matches: sortedMatches,
+        })
+      }
+
+      const snapshotState: SessionState = {
+        ...state,
+        current_round: round.round_no + 1,
+        players: clonePlayers(snapshotPlayers),
+        rounds: [...snapshotRounds],
+      }
+
+      evolution.push({
+        match_no: matchNo,
+        round_no: round.round_no,
+        score: computeSessionFairness(snapshotState).total,
+      })
+
+      matchNo += 1
+    }
   }
 
   return evolution
@@ -190,6 +237,35 @@ function applyRoundToSnapshot(players: Map<string, PlayerSessionState>, round: R
     incrementPair(players, match.team_b[0], match.team_b[1], 'partner_counts')
     incrementOpponentPairs(players, match)
   }
+}
+
+function applyMatchToSnapshot(
+  players: Map<string, PlayerSessionState>,
+  match: Match,
+  resting: string[],
+) {
+  const playedIds = new Set([...match.team_a, ...match.team_b])
+
+  for (const playerId of playedIds) {
+    const player = players.get(playerId)
+    if (!player) continue
+
+    player.matches_played += 1
+    player.consecutive_play += 1
+    player.consecutive_rest = 0
+  }
+
+  for (const playerId of resting) {
+    const player = players.get(playerId)
+    if (!player || playedIds.has(playerId)) continue
+
+    player.consecutive_rest += 1
+    player.consecutive_play = 0
+  }
+
+  incrementPair(players, match.team_a[0], match.team_a[1], 'partner_counts')
+  incrementPair(players, match.team_b[0], match.team_b[1], 'partner_counts')
+  incrementOpponentPairs(players, match)
 }
 
 function incrementOpponentPairs(players: Map<string, PlayerSessionState>, match: Match) {

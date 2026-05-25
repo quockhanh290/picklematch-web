@@ -32,7 +32,7 @@ export function initials(name: string) {
 }
 
 export function getTeamPvna(team: [string, string], state: SessionState) {
-  return team.reduce((sum, id) => sum + (state.players.get(id)?.pvna ?? 3.0), 0) / 2
+  return team.reduce((sum, id) => sum + (state.players.get(id)?.pvna ?? 3.0), 0)
 }
 
 export function playerName(playerId: string, playersById: Map<string, ArrangementPlayer>) {

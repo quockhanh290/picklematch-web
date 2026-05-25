@@ -28,10 +28,14 @@ Deno.serve(async (request) => {
   if (!sessionId) return jsonResponse({ ok: false, error: 'Missing session id' }, 400, request)
 
   const t0 = Date.now()
+  let clientRequestId: unknown = null
   try {
     const body = await readJson(request)
     const auditPayload = body.audit_payload && typeof body.audit_payload === 'object' ? body.audit_payload : {}
+    clientRequestId = (auditPayload as Record<string, unknown>).client_request_id ?? null
+    const t1 = Date.now()
     const supabase = createUserClient(request)
+    const t2 = Date.now()
     const { data, error } = await supabase.rpc('create_live_session_matches_versioned', {
       p_session_id: sessionId,
       p_expected_live_state_version: requiredNumber(body.expected_live_state_version, 'expected_live_state_version'),
@@ -41,10 +45,29 @@ Deno.serve(async (request) => {
         source: 'session-live-matches-create',
       },
     })
-    if (error) return jsonResponse({ ok: false, error: error.message }, 409, request)
-    console.log('[session-live-matches-create] timing', { total: Date.now() - t0 })
+    const t3 = Date.now()
+    if (error) {
+      console.error('[session-live-matches-create] rpc failed', {
+        clientRequestId,
+        error: error.message,
+        total: Date.now() - t0,
+      })
+      return jsonResponse({ ok: false, error: error.message }, 409, request)
+    }
+    console.log('[session-live-matches-create] timing', {
+      clientRequestId,
+      readBody: t1 - t0,
+      createClient: t2 - t1,
+      rpc: t3 - t2,
+      total: t3 - t0,
+    })
     return jsonResponse({ ok: true, ...data }, 200, request)
   } catch (error) {
+    console.error('[session-live-matches-create] failed', {
+      clientRequestId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      total: Date.now() - t0,
+    })
     return jsonResponse(
       { ok: false, error: error instanceof Error ? error.message : 'Could not create live matches' },
       500,

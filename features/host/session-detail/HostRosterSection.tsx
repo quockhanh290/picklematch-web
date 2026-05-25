@@ -760,8 +760,8 @@ export function HostRosterSection({
             {teamKeys.map(teamId => {
               const teamPlayers = groups[teamId]
               const teamSkill = teamPlayers.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
-              const teamAvg = teamPlayers.length > 0 ? teamSkill / teamPlayers.length : 0
-              const diff = teamAvg - avgSkill
+              const targetTeamSkill = teamPlayers.length * avgSkill
+              const diff = teamSkill - targetTeamSkill
               
               const stripColor = '#0F6E56'
 

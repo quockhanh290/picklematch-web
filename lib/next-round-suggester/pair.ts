@@ -1,5 +1,5 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { scoreMatch } from './score.ts'
+import { hasRepeatOverflow, scoreMatch } from './score.ts'
 import type { Match, MatchScore, PlayerSessionState, SessionState, Team } from './types'
 
 export type TeamSplitResult = {
@@ -14,6 +14,7 @@ export type PartitioningResult = {
   stats: MatchScore['stats']
   iterations: number
   relaxed_tolerance?: boolean
+  repeat_overflow?: boolean
 }
 
 export type PartitioningDiagnostic = {
@@ -85,6 +86,7 @@ const SAMPLED_MAX_ITER_4_PLUS_COURTS = 3000
 const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
 const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
 const PARTITION_COUNT_CAP = 1_000_000_000
+const MIN_SOFT_PVNA_TOLERANCE = 1.0
 
 function teamKey(team: Team) {
   return [...team].sort().join(':')
@@ -126,14 +128,18 @@ function evaluatePartition(
   state: SessionState,
   iteration: number,
   cache?: PartitioningRuntimeCache,
-  options: { tolerance?: number; relaxedTolerance?: boolean } = {},
+  options: { tolerance?: number; relaxedTolerance?: boolean; allowRepeatOverflow?: boolean } = {},
 ): PartitioningResult | null {
   let score = 0
   let stats = zeroStats()
   const matches: Match[] = []
+  let repeatOverflow = false
 
   for (let courtIdx = 0; courtIdx < groups.length; courtIdx += 1) {
-    const split = bestTeamSplitWithTolerance(groups[courtIdx], state, options.tolerance, cache)
+    const split = bestTeamSplitWithTolerance(groups[courtIdx], state, {
+      tolerance: options.tolerance,
+      allowRepeatOverflow: options.allowRepeatOverflow,
+    }, cache)
     if (!split) return null
 
     matches.push({
@@ -142,6 +148,7 @@ function evaluatePartition(
       score: split.score,
       stats: split.stats,
     })
+    repeatOverflow = repeatOverflow || hasRepeatOverflow(split.match.team_a, split.match.team_b, state)
     score += split.score
     stats = addStats(stats, split.stats)
   }
@@ -152,6 +159,7 @@ function evaluatePartition(
     stats,
     iterations: iteration,
     relaxed_tolerance: options.relaxedTolerance,
+    repeat_overflow: repeatOverflow,
   }
 }
 
@@ -266,12 +274,12 @@ function isProjectedBurdenRepeat(
 function bestTeamSplitWithTolerance(
   players: PlayerSessionState[],
   state: SessionState,
-  tolerance?: number,
+  options: { tolerance?: number; allowRepeatOverflow?: boolean } = {},
   cache?: PartitioningRuntimeCache,
 ): TeamSplitResult | null {
   if (players.length !== 4) return null
 
-  const key = splitCacheKey(players, tolerance)
+  const key = `${splitCacheKey(players, options.tolerance)}|repeat:${options.allowRepeatOverflow ? 'open' : 'cap'}`
   if (cache?.split.has(key)) return cache.split.get(key) ?? null
 
   let best: TeamSplitResult | null = null
@@ -279,7 +287,10 @@ function bestTeamSplitWithTolerance(
   for (const [a1, a2, b1, b2] of SPLIT_INDEXES) {
     const teamA: Team = [players[a1].player_id, players[a2].player_id]
     const teamB: Team = [players[b1].player_id, players[b2].player_id]
-    const scored = scoreMatch(teamA, teamB, state, tolerance === undefined ? {} : { tolerance })
+    const scored = scoreMatch(teamA, teamB, state, {
+      ...(options.tolerance === undefined ? {} : { tolerance: options.tolerance }),
+      allowRepeatOverflow: options.allowRepeatOverflow,
+    })
 
     if (!Number.isFinite(scored.score)) continue
 
@@ -409,6 +420,11 @@ function defaultMaxIterations(playerCount: number): number {
   return SAMPLED_MAX_ITER_4_PLUS_COURTS
 }
 
+function getSoftPvnaTolerance(state: SessionState): number {
+  const strictTolerance = state.config.pvna_tolerance
+  return Math.max(MIN_SOFT_PVNA_TOLERANCE, strictTolerance * 2)
+}
+
 export function bestPartitioning(
   players: PlayerSessionState[],
   state: SessionState,
@@ -416,6 +432,8 @@ export function bestPartitioning(
     maxIterations?: number
     diagnostics?: (diagnostic: PartitioningDiagnostic) => void
     cache?: PartitioningRuntimeCache
+    allowRelaxedTolerance?: boolean
+    allowRepeatOverflow?: boolean
   } = {},
 ): PartitioningResult | null {
   if (players.length < 4 || players.length % 4 !== 0) return null
@@ -434,7 +452,10 @@ export function bestPartitioning(
     function consider(groups: PlayerSessionState[][]) {
       if (iterations >= maxIterations) return
       iterations += 1
-      const result = evaluatePartition(groups, state, iterations, options.cache, searchOptions)
+      const result = evaluatePartition(groups, state, iterations, options.cache, {
+        ...searchOptions,
+        allowRepeatOverflow: options.allowRepeatOverflow,
+      })
       if (!result) return
       if (shouldReplaceBestPartition(result, best, state, options.cache)) {
         best = result
@@ -467,6 +488,7 @@ export function bestPartitioning(
               stats: finalBest.stats,
               iterations,
               relaxed_tolerance: finalBest.relaxed_tolerance,
+              repeat_overflow: finalBest.repeat_overflow,
             }
           : null,
         iterations,
@@ -491,6 +513,7 @@ export function bestPartitioning(
           stats: finalBest.stats,
           iterations,
           relaxed_tolerance: finalBest.relaxed_tolerance,
+          repeat_overflow: finalBest.repeat_overflow,
         }
       : null,
       iterations,
@@ -512,7 +535,43 @@ export function bestPartitioning(
     return strict.result
   }
 
-  const relaxed = runSearch({
+  if (options.allowRelaxedTolerance === false) {
+    options.diagnostics?.({
+      player_count: normalizedPlayers.length,
+      max_iterations: maxIterations,
+      partition_count: partitionCount,
+      exhaustive: canSearchExhaustively,
+      strict_iterations: strict.iterations,
+      relaxed_iterations: 0,
+      found: false,
+      relaxed_tolerance: false,
+    })
+    return null
+  }
+
+  const softTolerance = getSoftPvnaTolerance(state)
+  const shouldTrySoftTolerance = softTolerance > state.config.pvna_tolerance
+  const soft = shouldTrySoftTolerance
+    ? runSearch({
+        tolerance: softTolerance,
+        relaxedTolerance: true,
+      })
+    : { result: null, iterations: 0 }
+  if (soft.result) {
+    options.diagnostics?.({
+      player_count: normalizedPlayers.length,
+      max_iterations: maxIterations,
+      partition_count: partitionCount,
+      exhaustive: canSearchExhaustively,
+      strict_iterations: strict.iterations,
+      relaxed_iterations: soft.iterations,
+      found: true,
+      relaxed_tolerance: true,
+    })
+    return soft.result
+  }
+
+  const open = runSearch({
     tolerance: Number.POSITIVE_INFINITY,
     relaxedTolerance: true,
   })
@@ -522,9 +581,9 @@ export function bestPartitioning(
     partition_count: partitionCount,
     exhaustive: canSearchExhaustively,
     strict_iterations: strict.iterations,
-    relaxed_iterations: relaxed.iterations,
-    found: Boolean(relaxed.result),
-    relaxed_tolerance: Boolean(relaxed.result),
+    relaxed_iterations: soft.iterations + open.iterations,
+    found: Boolean(open.result),
+    relaxed_tolerance: Boolean(open.result),
   })
-  return relaxed.result
+  return open.result
 }

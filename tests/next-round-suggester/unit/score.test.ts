@@ -2,7 +2,7 @@ import { genderPenalty, scoreMatch } from '../../../lib/next-round-suggester/sco
 import { createPlayer, createState, setOpponentRepeats, setPartnerRepeats } from '../helpers/factories'
 
 describe('scoreMatch', () => {
-  it('scores empty history as PVNA diff / 0.5', () => {
+  it('scores empty history as total-team PVNA diff', () => {
     const state = createState({
       players: [
         createPlayer('p1', { pvna: 3.75 }),
@@ -23,7 +23,9 @@ describe('scoreMatch', () => {
     setPartnerRepeats(p1, p2, 2)
     setPartnerRepeats(p3, p4, 1)
 
-    const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], createState({ players: [p1, p2, p3, p4] }))
+    const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], createState({ players: [p1, p2, p3, p4] }), {
+      allowRepeatOverflow: true,
+    })
 
     expect(result.stats.partner_repeats).toBe(3)
     expect(result.score).toBe(9)
@@ -39,7 +41,9 @@ describe('scoreMatch', () => {
     setOpponentRepeats(p2, p3, 1)
     setOpponentRepeats(p2, p4, 1)
 
-    const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], createState({ players: [p1, p2, p3, p4] }))
+    const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], createState({ players: [p1, p2, p3, p4] }), {
+      allowRepeatOverflow: true,
+    })
 
     expect(result.stats.opponent_repeats).toBe(4)
     expect(result.score).toBe(6)
@@ -93,9 +97,55 @@ describe('scoreMatch', () => {
     setPartnerRepeats(p1, p2, 1)
     setOpponentRepeats(p1, p3, 1)
 
-    const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], createState({ players: [p1, p2, p3, p4] }))
+    const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], createState({ players: [p1, p2, p3, p4] }), {
+      allowRepeatOverflow: true,
+    })
 
     expect(result.score).toBe(0.5 + 3 + 1.5 + 4)
+  })
+
+  it('allows a second partner meeting by default', () => {
+    const p1 = createPlayer('p1')
+    const p2 = createPlayer('p2')
+    const p3 = createPlayer('p3')
+    const p4 = createPlayer('p4')
+    setPartnerRepeats(p1, p2, 1)
+
+    expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], createState({ players: [p1, p2, p3, p4] })).score).toBe(3)
+  })
+
+  it('rejects a third partner meeting by default', () => {
+    const p1 = createPlayer('p1')
+    const p2 = createPlayer('p2')
+    const p3 = createPlayer('p3')
+    const p4 = createPlayer('p4')
+    setPartnerRepeats(p1, p2, 2)
+
+    expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], createState({ players: [p1, p2, p3, p4] })).score).toBe(Infinity)
+  })
+
+  it('rejects a third opponent meeting by default', () => {
+    const p1 = createPlayer('p1')
+    const p2 = createPlayer('p2')
+    const p3 = createPlayer('p3')
+    const p4 = createPlayer('p4')
+    setOpponentRepeats(p1, p3, 2)
+
+    expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], createState({ players: [p1, p2, p3, p4] })).score).toBe(Infinity)
+  })
+
+  it('rejects opponent repeat overflow per player even when each pair stays under cap', () => {
+    const p1 = createPlayer('p1')
+    const p2 = createPlayer('p2')
+    const p3 = createPlayer('p3')
+    const p4 = createPlayer('p4')
+    const p5 = createPlayer('p5')
+    const p6 = createPlayer('p6')
+    setOpponentRepeats(p1, p5, 2)
+    setOpponentRepeats(p1, p6, 2)
+    setOpponentRepeats(p1, p3, 1)
+
+    expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], createState({ players: [p1, p2, p3, p4, p5, p6] })).score).toBe(Infinity)
   })
 
   it('discounts partner gender preference mismatch by 50% for same-group partners', () => {
@@ -127,6 +177,34 @@ describe('scoreMatch', () => {
     })
 
     expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], state).score).toBe(Infinity)
+  })
+
+  it('uses total team PVNA and enforces tolerance directly', () => {
+    const withinTolerance = createState({
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('p1', { pvna: 3.5 }),
+        createPlayer('p2', { pvna: 3.5 }),
+        createPlayer('p3', { pvna: 3.25 }),
+        createPlayer('p4', { pvna: 3.25 }),
+      ],
+    })
+    const overTolerance = createState({
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('p1', { pvna: 3.5 }),
+        createPlayer('p2', { pvna: 3.5 }),
+        createPlayer('p3', { pvna: 3.2 }),
+        createPlayer('p4', { pvna: 3.2 }),
+      ],
+    })
+
+    const accepted = scoreMatch(['p1', 'p2'], ['p3', 'p4'], withinTolerance)
+    const rejected = scoreMatch(['p1', 'p2'], ['p3', 'p4'], overTolerance)
+
+    expect(accepted.stats.pvna_diff).toBe(0.5)
+    expect(accepted.score).toBe(0.5)
+    expect(rejected.score).toBe(Infinity)
   })
 
   it('returns Infinity when intra-team PVNA gap is over 300', () => {

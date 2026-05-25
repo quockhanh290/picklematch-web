@@ -41,6 +41,18 @@ export type MatchCountConsistencyRow = {
   player_id: string
   live: number
   replay: number
+  live_consecutive_rest: number
+  replay_consecutive_rest: number
+  live_consecutive_play: number
+  replay_consecutive_play: number
+  live_partner_total: number
+  replay_partner_total: number
+  live_opponent_total: number
+  replay_opponent_total: number
+}
+
+function totalCounts(counts: Map<string, number> | undefined): number {
+  return [...(counts?.values() ?? [])].reduce((sum, count) => sum + count, 0)
 }
 
 export function buildFairnessPreview(
@@ -82,11 +94,35 @@ export function buildMatchCountConsistencyRows(
       player_id: playerId,
       live: liveState.players.get(playerId)?.matches_played ?? 0,
       replay: replayState.players.get(playerId)?.matches_played ?? 0,
+      live_consecutive_rest: liveState.players.get(playerId)?.consecutive_rest ?? 0,
+      replay_consecutive_rest: replayState.players.get(playerId)?.consecutive_rest ?? 0,
+      live_consecutive_play: liveState.players.get(playerId)?.consecutive_play ?? 0,
+      replay_consecutive_play: replayState.players.get(playerId)?.consecutive_play ?? 0,
+      live_partner_total: totalCounts(liveState.players.get(playerId)?.partner_counts),
+      replay_partner_total: totalCounts(replayState.players.get(playerId)?.partner_counts),
+      live_opponent_total: totalCounts(liveState.players.get(playerId)?.opponent_counts),
+      replay_opponent_total: totalCounts(replayState.players.get(playerId)?.opponent_counts),
     }))
-    .filter((row) => row.live !== row.replay)
+    .filter((row) => (
+      row.live !== row.replay ||
+      row.live_consecutive_rest !== row.replay_consecutive_rest ||
+      row.live_consecutive_play !== row.replay_consecutive_play ||
+      row.live_partner_total !== row.replay_partner_total ||
+      row.live_opponent_total !== row.replay_opponent_total
+    ))
     .sort((a, b) => {
-      const diffA = Math.abs(a.live - a.replay)
-      const diffB = Math.abs(b.live - b.replay)
+      const diffA =
+        Math.abs(a.live - a.replay) +
+        Math.abs(a.live_consecutive_rest - a.replay_consecutive_rest) +
+        Math.abs(a.live_consecutive_play - a.replay_consecutive_play) +
+        Math.abs(a.live_partner_total - a.replay_partner_total) +
+        Math.abs(a.live_opponent_total - a.replay_opponent_total)
+      const diffB =
+        Math.abs(b.live - b.replay) +
+        Math.abs(b.live_consecutive_rest - b.replay_consecutive_rest) +
+        Math.abs(b.live_consecutive_play - b.replay_consecutive_play) +
+        Math.abs(b.live_partner_total - b.replay_partner_total) +
+        Math.abs(b.live_opponent_total - b.replay_opponent_total)
       if (diffA !== diffB) return diffB - diffA
       return a.player_id.localeCompare(b.player_id)
     })

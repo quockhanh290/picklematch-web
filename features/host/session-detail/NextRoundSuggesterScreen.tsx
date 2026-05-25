@@ -107,7 +107,7 @@ function getPlayerPvna(player?: ArrangementPlayer | null) {
 }
 
 function getTeamPvna(team: [string, string], state: SessionState) {
-  return team.reduce((sum, id) => sum + (state.players.get(id)?.pvna ?? 3.0), 0) / 2
+  return team.reduce((sum, id) => sum + (state.players.get(id)?.pvna ?? 3.0), 0)
 }
 
 function getMatchLabel(match: Match, playersById: Map<string, ArrangementPlayer>) {
@@ -1626,7 +1626,7 @@ function SessionFairnessSummaryCard({
           <View style={{ gap: 4 }}>
             {matchCountConsistencyRows.slice(0, 8).map(row => (
               <Text key={`mismatch-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B91C1C', fontWeight: '700' }}>
-                • {playerName(row.player_id, playersById)}: live {row.live}, replay {row.replay}
+                • {playerName(row.player_id, playersById)}: trận {row.live}/{row.replay} · nghỉ {row.live_consecutive_rest}/{row.replay_consecutive_rest} · đánh liền {row.live_consecutive_play}/{row.replay_consecutive_play} · partner {row.live_partner_total}/{row.replay_partner_total} · đối thủ {row.live_opponent_total}/{row.replay_opponent_total}
               </Text>
             ))}
           </View>

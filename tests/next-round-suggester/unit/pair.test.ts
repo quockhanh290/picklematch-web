@@ -108,6 +108,7 @@ describe('bestPartitioning', () => {
 
     expect(result?.matches).toHaveLength(1)
     expect(result?.relaxed_tolerance).toBe(true)
+    expect(result?.stats.pvna_diff).toBeLessThanOrEqual(1.0)
   })
 
   it('skips court creation when fewer than four players are present', () => {

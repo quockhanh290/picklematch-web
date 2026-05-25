@@ -47,6 +47,19 @@ describe('Match Count Metrics', () => {
 
     expect(metrics.per_player[0].matches_played).toBe(0)
   })
+
+  it('excludes opted-rest players from match count range', () => {
+    const metrics = computeMatchCountMetrics(createState({
+      players: [
+        createPlayer('p1', { matches_played: 2 }),
+        createPlayer('p2', { matches_played: 2 }),
+        createPlayer('p3', { matches_played: 0, opted_rest: true }),
+      ],
+    }))
+
+    expect(metrics.range).toBe(0)
+    expect(metrics.per_player.map(player => player.player_id)).toEqual(['p1', 'p2'])
+  })
 })
 
 describe('Partner Diversity', () => {

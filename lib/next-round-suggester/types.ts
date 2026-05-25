@@ -138,6 +138,7 @@ export type SessionLiveMatchRow = {
   id: string
   session_id: string
   sequence_no: number
+  round_no: number | null
   court_idx: number | null
   status: LiveMatchStatus
   team_a: Team
@@ -171,9 +172,19 @@ export type SuggestionAlternative = {
   resting: string[]
   score: number
   warnings: string[]
+  tradeoffs?: SuggestionTradeoff[]
+  approval_required?: boolean
   stats: MatchStats
   runtime_ms?: number
   iterations?: number
+}
+
+export type SuggestionTradeoff = {
+  type: 'pvna_tolerance_relaxed' | 'repeat_cap_relaxed'
+  severity: number
+  over_by?: number
+  affected_pairs?: number
+  affected_players?: number
 }
 
 export type SuggestionResult = {

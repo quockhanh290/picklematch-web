@@ -297,6 +297,7 @@ export function SwapSheet({
 type RosterPlayerRowProps = {
   row: SessionPlayerStateRow
   player: ArrangementPlayer | undefined
+  consecutiveRest: number
   expanded: boolean
   selectedForGroup: boolean
   inActiveRound: boolean
@@ -309,7 +310,7 @@ type RosterPlayerRowProps = {
 }
 
 const RosterPlayerRow = memo(function RosterPlayerRow({
-  row, player, expanded, selectedForGroup, inActiveRound, onExpand,
+  row, player, consecutiveRest, expanded, selectedForGroup, inActiveRound, onExpand,
   onToggleCheckout, onToggleRest, onToggleGroupSelection, onClearGroup, onSwap,
 }: RosterPlayerRowProps) {
   const theme = useAppTheme()
@@ -319,7 +320,7 @@ const RosterPlayerRow = memo(function RosterPlayerRow({
   const name = player?.name ?? 'Người chơi'
   const cardBg = checkedOut ? theme.surfaceContainerLow : resting ? theme.warningBg : undefined
   const infoColor = resting ? theme.warningText : theme.outline
-  const infoSuffix = checkedOut ? 'đã check-out' : resting ? 'đang xin nghỉ' : `nghỉ liên tiếp ${row.consecutive_rest} lượt`
+  const infoSuffix = checkedOut ? 'đã check-out' : resting ? 'đang xin nghỉ' : `nghỉ liên tiếp ${consecutiveRest} lượt`
   return (
     <Card style={{ borderRadius: RADIUS.md, overflow: 'hidden', borderColor: selectedForGroup ? theme.primary : theme.outlineVariant, ...(cardBg ? { backgroundColor: cardBg } : {}) }}>
       <TouchableOpacity testID={`nrv2-roster-player-${playerId}`} onPress={() => onExpand(expanded ? null : playerId)} style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -356,6 +357,7 @@ export function RosterSheet({
   playersById,
   busy,
   activeRoundIds,
+  consecutiveRestByPlayer,
   onToggleCheckout,
   onToggleRest,
   onSwap,
@@ -372,6 +374,7 @@ export function RosterSheet({
   playersById: Map<string, ArrangementPlayer>
   busy: string | null
   activeRoundIds?: Set<string>
+  consecutiveRestByPlayer?: Map<string, number>
   onToggleCheckout: (playerId: string, checkedOut: boolean) => void
   onToggleRest: (playerId: string, optedRest: boolean) => void
   onSwap: (playerId: string) => void
@@ -480,6 +483,7 @@ export function RosterSheet({
                 key={row.player_id}
                 row={row}
                 player={playersById.get(row.player_id)}
+                consecutiveRest={consecutiveRestByPlayer?.get(row.player_id) ?? row.consecutive_rest ?? 0}
                 expanded={expandedPlayerId === row.player_id}
                 selectedForGroup={groupSelectionSet.has(row.player_id)}
                 inActiveRound={true}
@@ -518,6 +522,7 @@ export function RosterSheet({
             <RosterPlayerRow
               row={item.row}
               player={playersById.get(item.row.player_id)}
+              consecutiveRest={consecutiveRestByPlayer?.get(item.row.player_id) ?? item.row.consecutive_rest ?? 0}
               expanded={expandedPlayerId === item.row.player_id}
               selectedForGroup={groupSelectionSet.has(item.row.player_id)}
               inActiveRound={activeRoundIds?.has(item.row.player_id) ?? false}
@@ -939,7 +944,7 @@ export function RecapView({
           <View style={{ marginTop: 8, gap: 4 }}>
             {matchCountConsistencyRows.slice(0, 8).map(row => (
               <Text key={`mismatch-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.dangerText }}>
-                {playerName(row.player_id, playersById)}: live {row.live}, replay {row.replay}
+                {playerName(row.player_id, playersById)}: trận {row.live}/{row.replay} · nghỉ {row.live_consecutive_rest}/{row.replay_consecutive_rest} · đánh liền {row.live_consecutive_play}/{row.replay_consecutive_play} · partner {row.live_partner_total}/{row.replay_partner_total} · đối thủ {row.live_opponent_total}/{row.replay_opponent_total}
               </Text>
             ))}
           </View>

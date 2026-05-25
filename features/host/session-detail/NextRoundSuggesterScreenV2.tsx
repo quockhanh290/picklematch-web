@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, AppState, Dimensions, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
-import { useFocusEffect } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
@@ -11,6 +11,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  TrendingUp,
   Zap,
 } from 'lucide-react-native'
 
@@ -22,7 +23,14 @@ import type { SuggestedRoundAction } from '@/lib/next-round-suggester/alternativ
 import type { AlternativeAudit } from '@/lib/next-round-suggester/alternatives'
 import { commitCompletedRound, pairHistoryRowsFromState } from '@/lib/next-round-suggester/commit'
 import { auditManualSwap, buildSwappedAlternative } from '@/lib/next-round-suggester/manual-swap'
-import { scoreMatch } from '@/lib/next-round-suggester/score'
+import {
+  MAX_PROJECTED_OPPONENT_PAIR_COUNT,
+  MAX_PROJECTED_PARTNER_PAIR_COUNT,
+  MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER,
+  MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER,
+  getProjectedRepeatSummary,
+  scoreMatch,
+} from '@/lib/next-round-suggester/score'
 import { suggestNextMatch, suggestNextRound } from '@/lib/next-round-suggester/suggest'
 import { buildSessionStateFingerprint } from '@/lib/next-round-suggester/state-version'
 import type { FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
@@ -32,6 +40,7 @@ import {
   type FairnessPreview,
 } from '@/lib/next-round-suggester/fairness/audit'
 import type { GroupSummary } from '@/lib/next-round-suggester/fairness/group-audit'
+import { computeFairnessEvolution } from '@/lib/next-round-suggester/fairness/summary'
 import {
   computeGenderPrefSatisfaction,
   computeMatchCountMetrics,
@@ -52,6 +61,7 @@ import type {
   SessionState,
   SuggestionAlternative,
   SuggestionResult,
+  SuggestionTradeoff,
 } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
@@ -68,7 +78,6 @@ import {
   MoreSheet as MoreSheetView,
   RecapView as RecapViewModule,
   RepeatDetailsBlock,
-  RosterSheet as RosterSheetView,
   SwapSheet as SwapSheetView,
 } from './next-round-v2/flow-sheets'
 import {
@@ -160,16 +169,21 @@ function changedPairHistoryRows(beforeRows: SessionPairHistoryRow[], afterRows: 
   })
 }
 
-function buildProjectedStateAfterLiveMatch(state: SessionState, match: SessionLiveMatchRow): SessionState {
+function buildProjectedStateAfterLiveMatch(
+  state: SessionState,
+  match: SessionLiveMatchRow,
+  roundNo?: number,
+): SessionState {
   const playedIds = new Set([...match.team_a, ...match.team_b])
   const players = new Map(state.players)
+  const effectiveRoundNo = roundNo ?? match.round_no ?? match.sequence_no
 
   players.forEach((player, playerId) => {
     if (playedIds.has(playerId)) {
       players.set(playerId, {
         ...player,
         matches_played: player.matches_played + 1,
-        last_played_round: match.sequence_no,
+        last_played_round: effectiveRoundNo,
         consecutive_play: player.consecutive_play + 1,
         consecutive_rest: 0,
         opted_rest: false,
@@ -205,26 +219,30 @@ function buildProjectedStateAfterLiveMatch(state: SessionState, match: SessionLi
     }
   }
 
-  return {
-    ...state,
-    players,
-    rounds: [
-      ...state.rounds,
-      {
-        session_id: state.session_id,
-        round_no: match.sequence_no,
-        status: 'completed',
-        matches: [{
-          court_idx: match.court_idx ?? 0,
-          team_a: match.team_a,
-          team_b: match.team_b,
-        }],
-        resting: match.resting ?? [],
-        started_at: match.started_at ? new Date(match.started_at) : null,
-        ended_at: new Date(),
-      },
-    ],
+  const newMatch = {
+    court_idx: match.court_idx ?? 0,
+    team_a: match.team_a,
+    team_b: match.team_b,
   }
+  const existingRound = state.rounds.find(r => r.round_no === effectiveRoundNo)
+  const rounds = existingRound
+    ? state.rounds.map(r =>
+        r.round_no === effectiveRoundNo ? { ...r, matches: [...r.matches, newMatch] } : r,
+      )
+    : [
+        ...state.rounds,
+        {
+          session_id: state.session_id,
+          round_no: effectiveRoundNo,
+          status: 'completed' as const,
+          matches: [newMatch],
+          resting: [],
+          started_at: match.started_at ? new Date(match.started_at) : null,
+          ended_at: new Date(),
+        },
+      ]
+
+  return { ...state, players, rounds }
 }
 
 function nowMs() {
@@ -253,6 +271,12 @@ type BuildSuggestedMatchOptions = {
   liveMatchRowsOverride?: SessionLiveMatchRow[]
 }
 
+type SuggestedLiveMatchRow = SessionLiveMatchRow & {
+  warnings?: string[]
+  tradeoffs?: SuggestionTradeoff[]
+  approval_required?: boolean
+}
+
 export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstrapTelemetry = null }: NextRoundSuggesterV2Props) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
@@ -261,6 +285,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   const actionInFlightRef = useRef(false)
   const autoSyncAttemptedRef = useRef(false)
   const completingCleanupTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const completingMatchExpectedPlayedRef = useRef(new Map<string, { playerIds: string[]; expectedPlayed: number }>())
   const lateArrivalInFlightRef = useRef(new Set<string>())
   const reconcileTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const model = useNextRoundModel({ sessionId, players, courts })
@@ -294,8 +319,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     fairnessPreview,
     fairnessScore,
     fairnessWarnings,
-    groupAliases,
-    groupSelection,
     groupSummaries,
     hasManualSwapHardGuard,
     loadLiveState,
@@ -305,7 +328,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     matchCountConsistencyRows,
     phase,
     playersById,
-    patchPlayerRow,
     planTelemetry,
     presentCount,
     pvnaTolerance,
@@ -322,7 +344,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     setCourtDurationMin,
     setCourtPreset,
     setError,
-    setGroupSelection,
     setManualAlternative,
     setPvnaTolerance,
     setSheet,
@@ -331,7 +352,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     setSwapFromPlayerId,
     setTargetRounds,
     settlePlayerRow,
-    settlePlayerPatch,
     sheet,
     showEngineStats,
     state,
@@ -341,18 +361,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     swapFromPlayerId,
     targetReached,
     targetRounds,
-    toggleGroupSelection,
     undoRoundSelection,
     workingAlternative,
   } = model
 
   const lastBusRefreshRef = useRef(0)
-  const liveStateVersionRef = useRef<number | null>(liveStateVersion)
+  const liveStateVersionRef = useRef<number | null>(rows.liveStateVersion ?? null)
   const prewarmedVersionGuardRef = useRef<string | null>(null)
 
   React.useEffect(() => {
-    liveStateVersionRef.current = liveStateVersion
-  }, [liveStateVersion])
+    liveStateVersionRef.current = rows.liveStateVersion ?? null
+  }, [rows.liveStateVersion])
   React.useEffect(() => {
     setOptimisticLiveMatches(current => {
       if (current.length === 0) return current
@@ -367,6 +386,29 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     completingCleanupTimeoutsRef.current.forEach(clearTimeout)
     completingCleanupTimeoutsRef.current = []
   }, [])
+
+  // Xóa completing match khỏi busyIds khi state (deferred) đã phản ánh đủ matches_played mới.
+  React.useEffect(() => {
+    const pending = completingMatchExpectedPlayedRef.current
+    if (pending.size === 0) return
+    const toRemove: string[] = []
+    for (const [matchId, { playerIds, expectedPlayed }] of pending) {
+      const player = state.players.get(playerIds[0])
+      if (player && player.matches_played >= expectedPlayed) {
+        toRemove.push(matchId)
+      }
+    }
+    if (toRemove.length === 0) return
+    for (const id of toRemove) pending.delete(id)
+    setCompletingLiveMatchIds(current => {
+      const next = new Set(current)
+      let changed = false
+      for (const id of toRemove) {
+        if (next.has(id)) { next.delete(id); changed = true }
+      }
+      return changed ? next : current
+    })
+  }, [state])
 
   React.useEffect(() => {
     const activeScores = rows.liveMatchRows
@@ -463,8 +505,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   }, [loading, liveStateVersion, sessionId])
 
   const openRoster = useCallback(() => {
-    setSheet('roster')
-  }, [setSheet])
+    router.push({ pathname: '/host/session/[id]/roster', params: { id: sessionId } } as any)
+  }, [sessionId])
 
   const runAction = useCallback(async (key: string, action: () => Promise<ActionResult | void>) => {
     if (actionInFlightRef.current) {
@@ -605,135 +647,140 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     }
   }
 
-  const hydratePlayerStateRow = useCallback((row: SessionPlayerStateRow): SessionPlayerStateRow => {
-    const player = playersById.get(row.player_id)
-    return {
-      ...row,
-      players: {
-        ...row.players,
-        pvna: getPlayerPvna(player) ?? row.players?.pvna ?? 0,
-        elo: row.players?.elo ?? player?.elo,
-        gender: player?.gender ?? row.players?.gender,
-        partner_gender_pref: (player?.metadata?.partner_gender_pref as string | null | undefined) ?? row.players?.partner_gender_pref,
-        opponent_gender_pref: (player?.metadata?.opponent_gender_pref as string | null | undefined) ?? row.players?.opponent_gender_pref,
-      },
-      session_players: {
-        metadata: player?.metadata ?? row.session_players?.metadata ?? null,
-      },
-    }
-  }, [playersById])
-
-  const applyRosterMutationPayload = useCallback((payload: any) => {
-    const rowsToApply = Array.isArray(payload?.players)
-      ? payload.players
-      : payload?.player
-        ? [payload.player]
-        : []
-    for (const rawRow of rowsToApply) {
-      if (!rawRow?.player_id) continue
-      const row = hydratePlayerStateRow(rawRow as SessionPlayerStateRow)
-      patchPlayerRow(row.player_id, row)
-      settlePlayerPatch(row.player_id, row)
-    }
-    if (Array.isArray(payload?.cancelled_matches) && payload.cancelled_matches.length > 0) {
-      applyLiveMatches(payload.cancelled_matches, payload.live_state_version)
-    } else {
-      applyLiveStateVersion(payload?.live_state_version)
-    }
-  }, [applyLiveMatches, applyLiveStateVersion, hydratePlayerStateRow, patchPlayerRow, settlePlayerPatch])
-
-  const runRosterMutation = useCallback(async (
-    key: string,
-    mutate: () => Promise<any>,
-  ) => {
-    await runAction(key, async () => {
-      const payload = await mutate()
-      applyRosterMutationPayload(payload)
-      setSheet(null)
-      return {
-        reload: false,
-        reconcileAfterMs: 600,
-      }
-    })
-  }, [applyRosterMutationPayload, runAction, setSheet])
-
-  const toggleRosterCheckout = useCallback(async (playerId: string, checkedOut: boolean) => {
-    await runRosterMutation(
-      `checkout-${playerId}`,
-      () => invokeLiveSessionFunction(checkedOut ? 'session-checkin' : 'session-checkout', sessionId, { player_id: playerId }),
-    )
-  }, [runRosterMutation, sessionId])
-
-  const toggleRosterRest = useCallback(async (playerId: string, optedRest: boolean) => {
-    await runRosterMutation(
-      `rest-${playerId}`,
-      () => invokeLiveSessionFunction('session-request-rest', sessionId, { player_id: playerId, opted_rest: !optedRest }),
-    )
-  }, [runRosterMutation, sessionId])
-
-  const createRosterGroup = useCallback(async () => {
-    if (groupSelection.length < 2) return
-    await runRosterMutation(
-      'group-create',
-      () => invokeLiveSessionFunction('session-set-group', sessionId, { player_ids: groupSelection }),
-    )
-    setGroupSelection([])
-  }, [groupSelection, runRosterMutation, sessionId, setGroupSelection])
-
-  const clearRosterGroupForPlayer = useCallback(async (playerId: string) => {
-    await runRosterMutation(
-      `group-clear-player-${playerId}`,
-      () => invokeLiveSessionFunction('session-set-group', sessionId, { clear_player_id: playerId }),
-    )
-  }, [runRosterMutation, sessionId])
-
-  const clearWholeRosterGroup = useCallback(async (groupId: string) => {
-    await runRosterMutation(
-      `group-clear-${groupId}`,
-      () => invokeLiveSessionFunction('session-set-group', sessionId, { clear_group_id: groupId }),
-    )
-  }, [runRosterMutation, sessionId])
-
   const buildSuggestedMatchPayloads = useCallback((count: number, options: BuildSuggestedMatchOptions = {}) => {
+    const buildT0 = nowMs()
+    let suggestMs = 0
+    let projectMs = 0
     let suggestionState = options.stateOverride ?? state
     const liveMatchRows = options.liveMatchRowsOverride ?? rows.liveMatchRows
-    const payloads: Array<Pick<SessionLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting'>> = []
-    const busyIds = new Set(
+    const payloads: Array<Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'warnings' | 'tradeoffs' | 'approval_required'>> = []
+    const baseBusyIds = new Set(
       liveMatchRows
-        .filter(match => match.status === 'live')
+        .filter(match =>
+          match.status === 'live'
+          || match.status === 'suggested'
+          || completingLiveMatchIds.has(match.id),
+        )
         .flatMap(match => [...match.team_a, ...match.team_b]),
     )
-    const usedCourtIdxs = new Set(
+    const liveCourtIdxs = new Set(
       liveMatchRows
-        .filter(match => match.status === 'live' && match.court_idx !== null && match.court_idx !== undefined)
+        .filter(match =>
+          match.status === 'live'
+          && !completingLiveMatchIds.has(match.id)
+          && match.court_idx !== null
+          && match.court_idx !== undefined,
+        )
         .map(match => Number(match.court_idx)),
     )
     const courtCapacity = Math.max(1, Math.floor(suggestionState.config.courts || courtCount || 1))
+    const roundCounts = new Map<number, number>()
+    const courtIdxsByRound = new Map<number, Set<number>>()
+    const countableMatches = liveMatchRows
+      .filter(match => match.status !== 'cancelled')
+      .sort((left, right) => left.sequence_no - right.sequence_no)
+    countableMatches.forEach((match, matchIndex) => {
+      const roundNo = Math.floor(matchIndex / courtCapacity)
+      roundCounts.set(roundNo, (roundCounts.get(roundNo) ?? 0) + 1)
+      if (match.court_idx !== null && match.court_idx !== undefined) {
+        const courtIdxs = courtIdxsByRound.get(roundNo) ?? new Set<number>()
+        courtIdxs.add(Number(match.court_idx))
+        courtIdxsByRound.set(roundNo, courtIdxs)
+      }
+    })
+    const playerIdsByRound = new Map<number, Set<string>>()
+    countableMatches.forEach((match, matchIndex) => {
+      const roundNo = Math.floor(matchIndex / courtCapacity)
+      const playerIds = playerIdsByRound.get(roundNo) ?? new Set<string>()
+      match.team_a.forEach(playerId => playerIds.add(playerId))
+      match.team_b.forEach(playerId => playerIds.add(playerId))
+      playerIdsByRound.set(roundNo, playerIds)
+    })
+    const getInitialRoundCourtIdxs = (roundNo: number) => {
+      const existingRoundCourtIdxs = courtIdxsByRound.get(roundNo)
+      return new Set([
+        ...liveCourtIdxs,
+        ...(existingRoundCourtIdxs ?? []),
+      ])
+    }
+    const queuedCourtIdxs = new Set(liveCourtIdxs)
+    let projectedRoundNo = Math.floor(countableMatches.length / courtCapacity)
+    let projectedRoundMatchCount = countableMatches.length % courtCapacity
+    let roundCourtIdxs = getInitialRoundCourtIdxs(projectedRoundNo)
+    let roundBusyIds = new Set(playerIdsByRound.get(projectedRoundNo) ?? [])
     for (let index = 0; index < count; index += 1) {
-      const courtIdx = options.courtIdx ?? Array.from({ length: courtCapacity }, (_, idx) => idx)
-        .find(idx => !usedCourtIdxs.has(idx)) ?? index
+      if (projectedRoundMatchCount >= courtCapacity) {
+        projectedRoundNo += 1
+        projectedRoundMatchCount = 0
+        roundCourtIdxs = getInitialRoundCourtIdxs(projectedRoundNo)
+        roundBusyIds = new Set(playerIdsByRound.get(projectedRoundNo) ?? [])
+      }
+      const nextCourtIdx = Array.from({ length: courtCapacity }, (_, idx) => idx)
+        .find(idx => !queuedCourtIdxs.has(idx) && !roundCourtIdxs.has(idx))
+      const courtIdx = options.courtIdx ?? nextCourtIdx
+      if (courtIdx === undefined) break
+      const suggestT0 = nowMs()
+      const busyIds = new Set([...baseBusyIds, ...roundBusyIds])
       const result = suggestNextMatch(suggestionState, {
         tier_overrides: fairnessAdjustment.tier_overrides,
         busy_player_ids: busyIds,
         court_idx: courtIdx,
+        max_alternatives: __DEV__ ? 8 : undefined,
       })
+      suggestMs += nowMs() - suggestT0
       const alternative = result.alternatives[0]
       const match = alternative?.matches[0]
       if (!alternative || !match) break
+      if (__DEV__ && match.stats && match.stats.pvna_diff > 0.5) {
+        const labels = (team: [string, string]) => team.map(playerId => playersById.get(playerId)?.name ?? playerId.slice(0, 8)).join('+')
+        console.log('[NextRoundSuggesterV2] risky suggested match alternatives', {
+          sessionId,
+          courtIdx,
+          projectedRoundNo,
+          courtCapacity,
+          liveRows: liveMatchRows.length,
+          countableMatches: countableMatches.length,
+          busyIds: [...busyIds].map(playerId => playersById.get(playerId)?.name ?? playerId.slice(0, 8)),
+          tierOverrides: Object.keys(fairnessAdjustment.tier_overrides).map(playerId => playersById.get(playerId)?.name ?? playerId.slice(0, 8)),
+          selected: `${labels(match.team_a)} vs ${labels(match.team_b)}`,
+          alternatives: result.alternatives.slice(0, 8).map((alt, rank) => {
+            const altMatch = alt.matches[0]
+            return {
+              rank: rank + 1,
+              match: altMatch ? `${labels(altMatch.team_a)} vs ${labels(altMatch.team_b)}` : null,
+              pvnaDiff: altMatch?.stats?.pvna_diff,
+              score: alt.score,
+              warnings: alt.warnings,
+              tradeoffs: alt.tradeoffs,
+              approvalRequired: alt.approval_required,
+            }
+          }),
+        })
+      }
       payloads.push({
-        court_idx: match.court_idx,
+        court_idx: courtIdx,
         team_a: match.team_a,
         team_b: match.team_b,
         resting: alternative.resting,
+        round_no: projectedRoundNo,
+        warnings: alternative.warnings,
+        tradeoffs: alternative.tradeoffs,
+        approval_required: alternative.approval_required,
       })
       match.team_a.forEach(playerId => busyIds.add(playerId))
       match.team_b.forEach(playerId => busyIds.add(playerId))
-      usedCourtIdxs.add(match.court_idx)
+      match.team_a.forEach(playerId => roundBusyIds.add(playerId))
+      match.team_b.forEach(playerId => roundBusyIds.add(playerId))
+      roundCourtIdxs.add(courtIdx)
+      queuedCourtIdxs.add(courtIdx)
+      projectedRoundMatchCount += 1
+      const projectT0 = nowMs()
       suggestionState = buildProjectedStateAfterLiveMatch(suggestionState, {
         id: `preview-projected-${index}`,
         session_id: sessionId,
         sequence_no: index,
-        court_idx: match.court_idx,
+        round_no: projectedRoundNo,
+        court_idx: courtIdx,
         status: 'completed',
         team_a: match.team_a,
         team_b: match.team_b,
@@ -743,16 +790,39 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         suggested_at: new Date().toISOString(),
         started_at: null,
         ended_at: null,
+      }, projectedRoundNo)
+      projectMs += nowMs() - projectT0
+    }
+    if (count > 0) {
+      console.log('[NextRoundSuggesterV2] build suggested matches timing', {
+        requested: count,
+        built: payloads.length,
+        liveRows: liveMatchRows.length,
+        courtCapacity,
+        roundNo: projectedRoundNo,
+        suggestMs: Math.round(suggestMs),
+        projectMs: Math.round(projectMs),
+        totalMs: Math.round(nowMs() - buildT0),
       })
     }
     return payloads
-  }, [courtCount, fairnessAdjustment.tier_overrides, rows.liveMatchRows, sessionId, state])
+  }, [completingLiveMatchIds, courtCount, fairnessAdjustment.tier_overrides, rows.liveMatchRows, sessionId, state])
 
   const startLiveMatch = async (match: SessionLiveMatchRow) => {
+    const startT0 = nowMs()
+    console.log('[NextRoundSuggesterV2] start live match press', {
+      matchId: match.id,
+      version: liveStateVersionRef.current,
+      courtIdx: match.court_idx,
+      roundNo: match.round_no,
+      status: match.status,
+    })
     await runAction(`start-match-${match.id}`, async () => {
+      const actionT0 = nowMs()
       const expectedVersion = liveStateVersionRef.current
       if (expectedVersion === null) throw new Error('Session changed')
-      const { data: payload, error: rpcError } = await supabase.rpc('start_live_session_match_from_payload_versioned', {
+      const payloadBuildT0 = nowMs()
+      const rpcPayload = {
         p_session_id: sessionId,
         p_expected_live_state_version: expectedVersion,
         p_match: {
@@ -760,21 +830,45 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           team_a: match.team_a,
           team_b: match.team_b,
           resting: match.resting ?? [],
+          round_no: match.round_no ?? -1,
         },
         p_audit_payload: {
           client_request_id: createClientRequestId('match'),
           source: 'client-preview-start-live-match',
           preview_id: match.id,
         },
+      }
+      const payloadBuildMs = nowMs() - payloadBuildT0
+      const rpcT0 = nowMs()
+      const { data: payload, error: rpcError } = await supabase.rpc('start_live_session_match_from_payload_versioned', {
+        ...rpcPayload,
       })
       if (rpcError) throw rpcError
+      const rpcMs = nowMs() - rpcT0
+      const optimisticT0 = nowMs()
       if (payload.match) {
         setOptimisticLiveMatches(current => [
           ...current.filter(row => row.id !== payload.match.id),
           payload.match,
         ])
       }
+      const optimisticMs = nowMs() - optimisticT0
+      const applyT0 = nowMs()
       applyLiveMatches(payload.match ? [payload.match] : [], payload.live_state_version)
+      const applyMs = nowMs() - applyT0
+      console.log('[NextRoundSuggesterV2] start live match timing', {
+        matchId: match.id,
+        courtIdx: match.court_idx,
+        roundNo: match.round_no,
+        expectedVersion,
+        nextVersion: payload?.live_state_version,
+        payloadBuildMs: Math.round(payloadBuildMs),
+        rpcMs: Math.round(rpcMs),
+        optimisticMs: Math.round(optimisticMs),
+        applyMs: Math.round(applyMs),
+        actionMs: Math.round(nowMs() - actionT0),
+        totalMs: Math.round(nowMs() - startT0),
+      })
       return {
         reload: false,
         reconcileAfterMs: 600,
@@ -792,14 +886,19 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       status: match.status,
     })
     setCompletingLiveMatchIds(current => new Set(current).add(match.id))
+    const playerIds = [...match.team_a, ...match.team_b]
+    const expectedPlayed = (state.players.get(match.team_a[0])?.matches_played ?? 0) + 1
+    completingMatchExpectedPlayedRef.current.set(match.id, { playerIds, expectedPlayed })
     const score = liveScores[match.id] ?? { a: match.score_a ?? 0, b: match.score_b ?? 0 }
     let didComplete = false
     await runAction(`complete-match-${match.id}`, async () => {
       const actionT0 = nowMs()
       const expectedVersion = liveStateVersionRef.current
       if (expectedVersion === null) throw new Error('Session changed')
-      const targetT0 = nowMs()
+      const projectT0 = nowMs()
       const projectedState = buildProjectedStateAfterLiveMatch(state, match)
+      const projectMs = nowMs() - projectT0
+      const targetT0 = nowMs()
       const targetReachedAfterMatch = effectiveTargetRounds > 0
         && [...projectedState.players.values()]
           .filter(player => player.checked_out_at === null)
@@ -841,6 +940,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         status: payload?.match?.status,
         liveStateVersion: payload?.live_state_version,
         targetReachedAfterMatch,
+        projectMs: Math.round(projectMs),
         fairnessMs: Math.round(fairnessMs),
         rpcMs: Math.round(rpcMs),
         sincePressMs: Math.round(nowMs() - completeT0),
@@ -863,6 +963,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         expectedVersion,
         nextVersion: payload.live_state_version,
         targetReachedAfterMatch,
+        projectMs: Math.round(projectMs),
         fairnessMs: Math.round(fairnessMs),
         rpcMs: Math.round(rpcMs),
         applyMs: Math.round(applyMs),
@@ -876,6 +977,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       }
     })
     if (!didComplete) {
+      completingMatchExpectedPlayedRef.current.delete(match.id)
       setCompletingLiveMatchIds(current => {
         const next = new Set(current)
         next.delete(match.id)
@@ -895,18 +997,33 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   }
 
   const cancelLiveMatch = async (match: SessionLiveMatchRow) => {
+    const cancelT0 = nowMs()
     await runAction(`cancel-match-${match.id}`, async () => {
       const expectedVersion = liveStateVersionRef.current
       if (expectedVersion === null) throw new Error('Session changed')
-      const payload = await invokeLiveSessionFunction('session-live-matches-cancel', sessionId, {
-        expected_live_state_version: expectedVersion,
-        match_id: match.id,
-        audit_payload: {
+      const rpcT0 = nowMs()
+      const { data: payload, error: rpcError } = await supabase.rpc('cancel_live_session_match_versioned', {
+        p_session_id: sessionId,
+        p_expected_live_state_version: expectedVersion,
+        p_match_id: match.id,
+        p_audit_payload: {
           client_request_id: createClientRequestId('match'),
           sequence_no: match.sequence_no,
+          source: 'client-direct-cancel-live-match',
         },
       })
+      if (rpcError) throw rpcError
+      const applyT0 = nowMs()
       applyLiveMatches(payload.match ? [payload.match] : [], payload.live_state_version)
+      const applyMs = nowMs() - applyT0
+      console.log('[NextRoundSuggesterV2] cancel live match timing', {
+        matchId: match.id,
+        expectedVersion,
+        nextVersion: payload?.live_state_version,
+        rpcMs: Math.round(nowMs() - rpcT0),
+        applyMs: Math.round(applyMs),
+        totalMs: Math.round(nowMs() - cancelT0),
+      })
       return {
         reload: false,
         reconcileAfterMs: 600,
@@ -915,8 +1032,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   }
 
   const updateLiveMatchScore = async (matchId: string, side: 'a' | 'b', delta: number) => {
+    const scoreT0 = nowMs()
     const currentScore = liveScores[matchId]?.[side] ?? 0
     const newScore = Math.max(0, currentScore + delta)
+    const localT0 = nowMs()
     setLiveScores(previous => ({
       ...previous,
       [matchId]: {
@@ -924,13 +1043,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         [side]: newScore,
       },
     }))
+    const localMs = nowMs() - localT0
 
+    const rpcT0 = nowMs()
     const { error: scoreError } = await supabase
       .from('session_live_matches')
       .update({
         [side === 'a' ? 'score_a' : 'score_b']: newScore,
       })
       .eq('id', matchId)
+    const rpcMs = nowMs() - rpcT0
 
     if (scoreError) {
       setLiveScores(previous => ({
@@ -942,6 +1064,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       }))
       Alert.alert('Lỗi', 'Không thể cập nhật điểm số')
     }
+    console.log('[NextRoundSuggesterV2] score update timing', {
+      matchId,
+      side,
+      delta,
+      score: newScore,
+      ok: !scoreError,
+      localMs: Math.round(localMs),
+      rpcMs: Math.round(rpcMs),
+      totalMs: Math.round(nowMs() - scoreT0),
+      error: scoreError?.message,
+    })
   }
 
   const startRound = async (alternative: SuggestionAlternative) => {
@@ -1184,11 +1317,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       .filter(match => match.status === 'live')
       .flatMap(match => [...match.team_a, ...match.team_b]),
   ), [effectiveLiveMatchRows])
-  const activeLiveMatchPlayerIds = useMemo(() => new Set(
-    effectiveLiveMatchRows
-      .filter(match => match.status === 'live')
-      .flatMap(match => [...match.team_a, ...match.team_b]),
-  ), [effectiveLiveMatchRows])
   const nextMatchSuggestion = useMemo(
     () => suggestNextMatch(state, {
       tier_overrides: fairnessAdjustment.tier_overrides,
@@ -1209,10 +1337,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         },
       },
     })
-    return payloads.map((match, index): SessionLiveMatchRow => ({
+    return payloads.map((match, index): SuggestedLiveMatchRow => ({
       id: `preview-${match.court_idx ?? index}-${match.team_a.join('-')}-${match.team_b.join('-')}`,
       session_id: sessionId,
       sequence_no: index,
+      round_no: match.round_no,
       court_idx: match.court_idx ?? index,
       status: 'suggested',
       team_a: match.team_a,
@@ -1223,6 +1352,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       suggested_at: new Date().toISOString(),
       started_at: null,
       ended_at: null,
+      warnings: match.warnings,
+      tradeoffs: match.tradeoffs,
+      approval_required: match.approval_required,
     }))
   }, [
     buildSuggestedMatchPayloads,
@@ -1291,13 +1423,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
             courtCount={courtCount}
             completedRounds={completedRoundCount}
             targetRounds={effectiveTargetRounds}
+            onOpenRoster={openRoster}
           />
 
           <StatusChipRow
             fairnessScore={fairnessScore}
+            fairnessPreview={fairnessPreview}
             courtCount={courtCount}
             courtPreset={courtPreset}
             onFairnessPress={() => setSheet('fairness')}
+            onPreviewPress={() => setSheet('preview')}
             onSettingsPress={() => setSheet('settings')}
           />
 
@@ -1310,15 +1445,19 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
               <LiveMatchBoard
                 liveMatches={activeLiveMatches}
                 suggestedMatches={suggestedLiveMatches}
+                completedMatches={completedLiveMatches}
                 roundSize={queueCourtCount}
                 scores={liveScores}
                 busy={busy}
                 state={state}
+                pvnaTolerance={pvnaTolerance}
                 playersById={playersById}
                 onScoreChange={updateLiveMatchScore}
                 onStartMatch={startLiveMatch}
                 onCompleteMatch={completeLiveMatch}
                 onCancelMatch={cancelLiveMatch}
+                onPlayerPress={openSwapForPlayer}
+                onOpenSettings={() => setSheet('settings')}
               />
               {targetReached && !activeRound ? (
                 <Card style={{ marginTop: 14, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
@@ -1468,28 +1607,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         <LateArrivalsSheetView players={lateArrivalPlayers} busy={busy} onAddPlayer={playerId => { void addLateArrivalToRoster(playerId) }} />
       </NextRoundSheet>
 
-      <NextRoundSheet visible={sheet === 'roster'} snap="88" onClose={() => setSheet(null)}>
-        <RosterSheetView
-          rows={rows.playerRows}
-          playersById={playersById}
-          busy={busy}
-          activeRoundIds={activeLiveMatchPlayerIds}
-          onToggleCheckout={(playerId, checkedOut) => { void toggleRosterCheckout(playerId, checkedOut) }}
-          onToggleRest={(playerId, optedRest) => { void toggleRosterRest(playerId, optedRest) }}
-          onSwap={openSwapForPlayer}
-          onRefreshRoster={syncRoster}
-          groupSelection={groupSelection}
-          groupSummaries={groupSummaries}
-          groupAliases={groupAliases}
-          onToggleGroupSelection={toggleGroupSelection}
-          onCreateGroup={() => { void createRosterGroup() }}
-          onClearGroup={playerId => { void clearRosterGroupForPlayer(playerId) }}
-          onClearWholeGroup={groupId => { void clearWholeRosterGroup(groupId) }}
-          onClearGroupSelection={() => setGroupSelection([])}
-        />
-      </NextRoundSheet>
-
-      <NextRoundSheet visible={sheet === 'more'} snap="50" onClose={() => setSheet(null)}>
+<NextRoundSheet visible={sheet === 'more'} snap="50" onClose={() => setSheet(null)}>
         <MoreSheetView
           onSyncRoster={syncRoster}
           onOpenRoster={openRoster}
@@ -1512,6 +1630,7 @@ function SessionHeroCard({
   courtCount,
   completedRounds,
   targetRounds,
+  onOpenRoster,
 }: {
   phase: 'plan' | 'active'
   roundNo: number
@@ -1522,6 +1641,7 @@ function SessionHeroCard({
   courtCount: number
   completedRounds: number
   targetRounds: number
+  onOpenRoster: () => void
 }) {
   const theme = useAppTheme()
   const remaining = Math.max(0, targetRounds - completedRounds)
@@ -1546,9 +1666,11 @@ function SessionHeroCard({
           <Text style={{ marginTop: 7, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
             {presentCount} {phase === 'active' ? 'trong vòng' : 'trong danh sách'} · {courtCount} sân · {completedRounds}/{targetRounds} vòng
           </Text>
-          <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.heroBodyMuted }}>
-            Roster {rosterTotalCount} · Check-out {checkedOutCount} · Xin nghỉ {requestedRestCount}
-          </Text>
+          <TouchableOpacity onPress={onOpenRoster} activeOpacity={0.7}>
+            <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.heroBodyMuted }}>
+              Roster {rosterTotalCount} · Check-out {checkedOutCount} · Xin nghỉ {requestedRestCount} →
+            </Text>
+          </TouchableOpacity>
         </View>
         <View
           style={{
@@ -1601,34 +1723,57 @@ function LateArrivalsCta({ count, onPress }: { count: number; onPress: () => voi
 
 function StatusChipRow({
   fairnessScore,
+  fairnessPreview,
   courtCount,
   courtPreset,
   onFairnessPress,
+  onPreviewPress,
   onSettingsPress,
 }: {
   fairnessScore: SessionFairnessScore
+  fairnessPreview: FairnessPreview | null
   courtCount: number
   courtPreset: CourtPreset
   onFairnessPress: () => void
+  onPreviewPress: () => void
   onSettingsPress: () => void
 }) {
   const theme = useAppTheme()
   const preset = PRESETS[courtPreset]
+  const delta = fairnessPreview?.delta_total ?? null
+  const deltaColor = delta == null ? theme.outline : delta >= 0 ? theme.successText : theme.warningText
   return (
     <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-      <TouchableOpacity testID="nrv2-fairness-chip" onPress={onFairnessPress} activeOpacity={0.9} style={{ flex: 1 }}>
-        <Card style={{ borderRadius: RADIUS.lg, padding: 12, minHeight: 72 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <ShieldCheck size={18} color={theme.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={eyebrowStyle(theme.outline)}>Fairness</Text>
-              <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>
-                {fairnessScore.total} {fairnessLabel(fairnessScore)}
-              </Text>
+      <View style={{ flex: 1, gap: 8 }}>
+        <TouchableOpacity testID="nrv2-fairness-chip" onPress={onFairnessPress} activeOpacity={0.9}>
+          <Card style={{ borderRadius: RADIUS.lg, padding: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <ShieldCheck size={18} color={theme.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={eyebrowStyle(theme.outline)}>Fairness</Text>
+                <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>
+                  {fairnessScore.total} {fairnessLabel(fairnessScore)}
+                </Text>
+              </View>
             </View>
-          </View>
-        </Card>
-      </TouchableOpacity>
+          </Card>
+        </TouchableOpacity>
+        <TouchableOpacity testID="nrv2-preview-chip" onPress={onPreviewPress} activeOpacity={0.9}>
+          <Card style={{ borderRadius: RADIUS.lg, padding: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <TrendingUp size={18} color={deltaColor} />
+              <View style={{ flex: 1 }}>
+                <Text style={eyebrowStyle(theme.outline)}>Dự kiến vòng kế</Text>
+                <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: deltaColor }}>
+                  {delta == null
+                    ? 'Chưa có gợi ý'
+                    : `${fairnessScore.total} → ${fairnessPreview!.after_total} (${delta > 0 ? '+' : ''}${delta})`}
+                </Text>
+              </View>
+            </View>
+          </Card>
+        </TouchableOpacity>
+      </View>
       <TouchableOpacity testID="nrv2-settings-chip" onPress={onSettingsPress} activeOpacity={0.9} style={{ flex: 1 }}>
         <Card style={{ borderRadius: RADIUS.lg, padding: 12, minHeight: 72 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -2161,31 +2306,40 @@ function NextMatchSuggestionCard({
 function LiveMatchBoard({
   liveMatches,
   suggestedMatches,
+  completedMatches,
   roundSize,
   scores,
   busy,
   state,
+  pvnaTolerance,
   playersById,
   onScoreChange,
   onStartMatch,
   onCompleteMatch,
   onCancelMatch,
+  onPlayerPress,
+  onOpenSettings,
 }: {
   liveMatches: SessionLiveMatchRow[]
-  suggestedMatches: SessionLiveMatchRow[]
+  suggestedMatches: SuggestedLiveMatchRow[]
+  completedMatches: SessionLiveMatchRow[]
   roundSize: number
   scores: Record<string, { a: number; b: number }>
   busy: string | null
   state: SessionState
+  pvnaTolerance: number
   playersById: Map<string, ArrangementPlayer>
   onScoreChange: (matchId: string, side: 'a' | 'b', delta: number) => void
-  onStartMatch: (match: SessionLiveMatchRow) => void
+  onStartMatch: (match: SuggestedLiveMatchRow) => void
   onCompleteMatch: (match: SessionLiveMatchRow) => void
   onCancelMatch: (match: SessionLiveMatchRow) => void
+  onPlayerPress: (playerId: string) => void
+  onOpenSettings: () => void
 }) {
   if (liveMatches.length === 0 && suggestedMatches.length === 0) return null
-  const liveGroups = groupMatchesByLogicalRound(liveMatches, roundSize)
-  const suggestedGroups = groupMatchesByLogicalRound(suggestedMatches, roundSize)
+  const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches], roundSize)
+  const liveGroups = groupMatchesByLogicalRound(liveMatches, logicalRoundByMatchId)
+  const suggestedGroups = groupMatchesByLogicalRound(suggestedMatches, logicalRoundByMatchId)
   return (
     <View style={{ marginTop: 16, gap: 14 }}>
       {liveMatches.length > 0 ? (
@@ -2227,8 +2381,11 @@ function LiveMatchBoard({
                     match={match}
                     busy={busy === `start-match-${match.id}`}
                     state={state}
+                    pvnaTolerance={pvnaTolerance}
                     playersById={playersById}
                     onStart={onStartMatch}
+                    onPlayerPress={onPlayerPress}
+                    onOpenSettings={onOpenSettings}
                   />
                 ))}
               </View>
@@ -2240,14 +2397,29 @@ function LiveMatchBoard({
   )
 }
 
-function groupMatchesByLogicalRound(matches: SessionLiveMatchRow[], roundSize: number) {
-  const safeRoundSize = Math.max(1, Math.floor(roundSize))
-  const groups = new Map<number, SessionLiveMatchRow[]>()
+function groupMatchesByLogicalRound<TMatch extends SessionLiveMatchRow>(
+  matches: TMatch[],
+  logicalRoundByMatchId: Map<string, number>,
+) {
+  const groups = new Map<number, TMatch[]>()
   for (const match of [...matches].sort((left, right) => left.sequence_no - right.sequence_no)) {
-    const roundNo = Math.floor(match.sequence_no / safeRoundSize) + 1
-    groups.set(roundNo, [...(groups.get(roundNo) ?? []), match])
+    const key = logicalRoundByMatchId.get(match.id) ?? ((match.round_no ?? 0) + 1)
+    groups.set(key, [...(groups.get(key) ?? []), match])
   }
-  return [...groups.entries()].map(([roundNo, groupMatches]) => ({ roundNo, matches: groupMatches }))
+  return [...groups.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([roundNo, groupMatches]) => ({ roundNo, matches: groupMatches }))
+}
+
+function buildLogicalRoundDisplayMap(matches: SessionLiveMatchRow[], roundSize: number) {
+  const safeRoundSize = Math.max(1, Math.floor(roundSize))
+  const countableMatches = [...matches]
+    .filter(match => match.status !== 'cancelled')
+    .sort((left, right) => left.sequence_no - right.sequence_no)
+  return new Map(countableMatches.map((match, index) => [
+    match.id,
+    Math.floor(index / safeRoundSize) + 1,
+  ]))
 }
 
 function RoundDivider({ roundNo }: { roundNo: number }) {
@@ -2276,28 +2448,195 @@ function toMatch(row: SessionLiveMatchRow): Match {
   }
 }
 
+function getProjectedRepeatCapSummary(match: Match, state: SessionState) {
+  const summary = getProjectedRepeatSummary(match.team_a, match.team_b, state)
+  return {
+    ...summary,
+    maxPartner: summary.max_repeated_partners_per_player,
+    maxOpponent: summary.max_repeated_opponents_per_player,
+  }
+}
+
+function getRepeatDetailLines(
+  match: Match,
+  state: SessionState,
+  playersById: Map<string, ArrangementPlayer>,
+) {
+  const pairLines: string[] = []
+  const sentenceLines: string[] = []
+  const playerRepeatMap = new Map<string, { partners: string[]; opponents: string[] }>()
+  const describePair = (playerA: string, playerB: string) =>
+    `${playerName(playerA, playersById)} và ${playerName(playerB, playersById)}`
+  const repeatSentence = (
+    playerA: string,
+    playerB: string,
+    currentCount: number,
+    projectedCount: number,
+    relation: 'partner' | 'opponent',
+  ) => {
+    const pairText = describePair(playerA, playerB)
+    const previousText = currentCount === 1 ? '1 trận' : `${currentCount} trận`
+    const projectedText = projectedCount === 2 ? 'trận thứ 2' : `trận thứ ${projectedCount}`
+    return relation === 'partner'
+      ? `${pairText} đã làm đồng đội ${previousText}; đây là ${projectedText} cùng làm đồng đội.`
+      : `${pairText} đã làm đối thủ ${previousText}; đây là ${projectedText} làm đối thủ.`
+  }
+
+  for (const team of [match.team_a, match.team_b]) {
+    const currentCount = state.players.get(team[0])?.partner_counts.get(team[1]) ?? 0
+    const projectedCount = currentCount + 1
+    if (projectedCount >= 2) {
+      sentenceLines.push(repeatSentence(team[0], team[1], currentCount, projectedCount, 'partner'))
+      pairLines.push(`Partner: ${describePair(team[0], team[1])} (${projectedCount} lần)`)
+    }
+  }
+
+  for (const playerA of match.team_a) {
+    for (const playerB of match.team_b) {
+      const currentCount = state.players.get(playerA)?.opponent_counts.get(playerB) ?? 0
+      const projectedCount = currentCount + 1
+      if (projectedCount >= 2) {
+        sentenceLines.push(repeatSentence(playerA, playerB, currentCount, projectedCount, 'opponent'))
+        pairLines.push(`Đối thủ: ${describePair(playerA, playerB)} (${projectedCount} lần)`)
+      }
+    }
+  }
+
+  const playerLines = [...playerRepeatMap.entries()]
+    .map(([playerId, item]) => {
+      const parts: string[] = []
+      if (item.partners.length > 0) {
+        parts.push(`partner ${item.partners.map(id => playerName(id, playersById)).join(', ')}`)
+      }
+      if (item.opponents.length > 0) {
+        parts.push(`đối thủ ${item.opponents.map(id => playerName(id, playersById)).join(', ')}`)
+      }
+      return `${playerName(playerId, playersById)} lặp với ${parts.join('; ')}`
+    })
+    .slice(0, 4)
+
+  return {
+    pairLines: sentenceLines.slice(0, 4),
+    playerLines: [],
+    hiddenCount: Math.max(0, sentenceLines.length - 4),
+  }
+}
+
 function SuggestedLiveMatchCard({
   match,
   busy,
   state,
+  pvnaTolerance,
   playersById,
   onStart,
+  onPlayerPress,
+  onOpenSettings,
 }: {
-  match: SessionLiveMatchRow
+  match: SuggestedLiveMatchRow
   busy: boolean
   state: SessionState
+  pvnaTolerance: number
   playersById: Map<string, ArrangementPlayer>
-  onStart: (match: SessionLiveMatchRow) => void
+  onStart: (match: SuggestedLiveMatchRow) => void
+  onPlayerPress: (playerId: string) => void
+  onOpenSettings: () => void
 }) {
   const theme = useAppTheme()
   const cancelBusy = false
+  const pvnaDiff = useMemo(
+    () => Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state)),
+    [match.team_a, match.team_b, state],
+  )
+  const pvnaOverBy = Math.max(0, pvnaDiff - pvnaTolerance)
+  const pvnaCapExceeded = pvnaOverBy > 0
+  const requiresRepeatApproval = match.approval_required || pvnaCapExceeded || match.warnings?.includes('REPEAT_CAP_RELAXED') || match.warnings?.includes('PVNA_TOLERANCE_RELAXED') || false
+  const repeatTradeoff = match.tradeoffs?.find(tradeoff => tradeoff.type === 'repeat_cap_relaxed')
+  const pvnaTradeoff = match.tradeoffs?.find(tradeoff => tradeoff.type === 'pvna_tolerance_relaxed')
+  const hasPvnaTradeoff = pvnaCapExceeded || Boolean(pvnaTradeoff)
+  const hasRepeatTradeoff = Boolean(repeatTradeoff)
+  const approvalSummary = hasPvnaTradeoff && hasRepeatTradeoff
+    ? 'Trận này vượt cả cap PVNA và cap lặp. Duyệt nghĩa là host chấp nhận trận hiện tại dù chưa đạt hai giới hạn chính.'
+    : hasPvnaTradeoff
+      ? 'Trận này vượt cap PVNA. Duyệt nghĩa là host chấp nhận chênh trình lớn hơn giới hạn hiện tại.'
+      : 'Trận này vượt cap lặp. Duyệt nghĩa là host chấp nhận một hoặc nhiều cặp/người chơi lặp quá giới hạn.'
+  const bestEffortSummary = hasPvnaTradeoff && hasRepeatTradeoff
+    ? 'Engine đã thử giữ cả PVNA và lặp trước; trong pool hiện tại không còn trận thỏa cả hai nên đây là phương án ít vi phạm nhất tìm được.'
+    : hasPvnaTradeoff
+      ? 'Engine đã ưu tiên giữ cap PVNA; trận này chỉ xuất hiện khi không còn phương án trong cap tốt hơn theo thứ tự ưu tiên hiện tại.'
+      : 'Engine đã ưu tiên tránh lặp; trận này chỉ xuất hiện khi không còn phương án trong cap lặp tốt hơn theo thứ tự ưu tiên hiện tại.'
+  const [repeatTradeoffApproved, setRepeatTradeoffApproved] = useState(false)
+  const startDisabled = busy || (requiresRepeatApproval && !repeatTradeoffApproved)
   return (
     <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-      <MatchTile match={toMatch(match)} state={state} playersById={playersById} onPlayerPress={() => {}} />
+      <MatchTile match={toMatch(match)} state={state} pvnaTolerance={pvnaTolerance} playersById={playersById} onPlayerPress={onPlayerPress} />
+      {requiresRepeatApproval ? (
+        <View style={{ marginTop: 12, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, backgroundColor: theme.warningBg, padding: 12, gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+            <AlertTriangle size={16} color={theme.warningText} />
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: theme.warningText, fontWeight: '900' }}>
+                Trận vượt giới hạn
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.warningText }}>
+                {approvalSummary}
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
+                {bestEffortSummary}
+              </Text>
+              <Text style={{ display: 'none', fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.warningText }}>
+                {requiresRepeatApproval
+                  ? 'Không còn phương án thỏa tất cả điều kiện. Host cần duyệt trade-off giữa chênh PVNA và lặp partner/đối thủ trước khi bắt đầu.'
+                  : 'Trận này vẫn nằm trong cap, nhưng đã chạm giới hạn lặp partner/đối thủ. Trận sau cùng cặp này sẽ cần host duyệt.'}
+              </Text>
+              {pvnaTradeoff ? (
+                <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
+                  PVNA vượt tolerance {formatNumber(pvnaTradeoff.over_by ?? 0, 2)}
+                </Text>
+              ) : pvnaCapExceeded ? (
+                <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
+                  PVNA vượt tolerance {formatNumber(pvnaOverBy, 2)}
+                </Text>
+              ) : null}
+              {repeatTradeoff ? (
+                <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
+                  Lặp vượt cap {repeatTradeoff.over_by ?? 0} điểm trên {repeatTradeoff.affected_pairs ?? 0} cặp
+                </Text>
+              ) : null}
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+            <Pressable
+              onPress={onOpenSettings}
+              style={{ minHeight: 34, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, backgroundColor: theme.surface, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 7 }}
+            >
+              <Settings size={15} color={theme.warningStrong} />
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.warningStrong, fontWeight: '900' }}>
+                Chỉnh PVNA
+              </Text>
+            </Pressable>
+            <View style={{ minHeight: 34, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, backgroundColor: theme.warningBg, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.warningText, fontWeight: '800' }}>
+                Bấm avatar để đổi người
+              </Text>
+            </View>
+          </View>
+          {requiresRepeatApproval ? (
+            <Pressable
+              onPress={() => setRepeatTradeoffApproved(value => !value)}
+              style={{ minHeight: 36, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: repeatTradeoffApproved ? theme.warningStrong : theme.outlineVariant, backgroundColor: repeatTradeoffApproved ? theme.surface : theme.warningBg, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+            >
+              <ShieldCheck size={16} color={repeatTradeoffApproved ? theme.warningStrong : theme.warningText} />
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: repeatTradeoffApproved ? theme.warningStrong : theme.warningText, fontWeight: '900' }}>
+                {repeatTradeoffApproved ? 'Đã chấp nhận trận này' : 'Chấp nhận trận này'}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       <TouchableOpacity
         onPress={() => onStart(match)}
-        disabled={busy}
-        style={{ marginTop: 12, height: 42, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}
+        disabled={startDisabled}
+        style={{ marginTop: 12, height: 42, borderRadius: RADIUS.md, backgroundColor: startDisabled ? theme.outlineVariant : theme.primary, alignItems: 'center', justifyContent: 'center' }}
       >
         {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Bắt đầu trận</Text>}
       </TouchableOpacity>
@@ -2466,7 +2805,7 @@ function LiveScoreTeam({
         {team.map(playerId => playerName(playerId, playersById)).join(' · ')}
       </Text>
       <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.outline }}>
-        PVNA {getTeamPvna(team, state).toFixed(2)}
+        Tổng PVNA {getTeamPvna(team, state).toFixed(2)}
       </Text>
     </View>
   )
@@ -2559,11 +2898,13 @@ function MatchList({
 function MatchTile({
   match,
   state,
+  pvnaTolerance,
   playersById,
   onPlayerPress,
 }: {
   match: Match
   state: SessionState
+  pvnaTolerance?: number
   playersById: Map<string, ArrangementPlayer>
   onPlayerPress: (playerId: string) => void
 }) {
@@ -2572,9 +2913,24 @@ function MatchTile({
     () => Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state)),
     [match.team_a, match.team_b, state],
   )
+  const effectivePvnaTolerance = pvnaTolerance ?? state.config.pvna_tolerance
+  const pvnaCapExceeded = diff > effectivePvnaTolerance
   const scored = useMemo(
     () => match.stats && match.score != null ? { score: match.score, stats: match.stats } : scoreMatch(match.team_a, match.team_b, state),
     [match, state],
+  )
+  const repeatCap = useMemo(
+    () => getProjectedRepeatCapSummary(match, state),
+    [match, state],
+  )
+  const repeatCapExceeded =
+    repeatCap.max_partner_pair_count > MAX_PROJECTED_PARTNER_PAIR_COUNT ||
+    repeatCap.max_opponent_pair_count > MAX_PROJECTED_OPPONENT_PAIR_COUNT ||
+    repeatCap.max_repeated_partners_per_player > MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER ||
+    repeatCap.max_repeated_opponents_per_player > MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER
+  const repeatDetails = useMemo(
+    () => getRepeatDetailLines(match, state, playersById),
+    [match, playersById, state],
   )
   return (
     <Card style={{ padding: 12 }}>
@@ -2585,8 +2941,8 @@ function MatchTile({
           </View>
           <Text style={eyebrowStyle(theme.outline)}>Sân {match.court_idx + 1}</Text>
         </View>
-        <View style={{ borderRadius: RADIUS.full, backgroundColor: diff > 0.5 ? theme.warningBg : theme.secondaryContainer, paddingHorizontal: 9, paddingVertical: 5 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: diff > 0.5 ? theme.warningText : theme.primary }}>
+        <View style={{ borderRadius: RADIUS.full, backgroundColor: pvnaCapExceeded ? theme.warningBg : theme.secondaryContainer, paddingHorizontal: 9, paddingVertical: 5 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: pvnaCapExceeded ? theme.warningText : theme.primary }}>
             Chênh {diff.toFixed(2)}
           </Text>
         </View>
@@ -2598,9 +2954,35 @@ function MatchTile({
         </View>
         <TeamBlock team={match.team_b} state={state} playersById={playersById} onPlayerPress={onPlayerPress} align="right" />
       </View>
-      <Text style={{ marginTop: 10, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
+      <Text style={{ display: 'none', marginTop: 10, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: repeatCapExceeded ? theme.warningText : theme.outline }}>
         Điểm ghép {Number.isFinite(scored.score) ? scored.score.toFixed(1) : '-'} · Partner lặp {scored.stats.partner_repeats} · Đối thủ lặp {scored.stats.opponent_repeats}
       </Text>
+      <Text style={{ display: 'none', marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: repeatCapExceeded ? theme.warningText : theme.outline }}>
+        Max sau trận: partner {repeatCap.maxPartner}/{MAX_PROJECTED_PARTNER_PAIR_COUNT} · đối thủ {repeatCap.maxOpponent}/{MAX_PROJECTED_OPPONENT_PAIR_COUNT}
+      </Text>
+      {repeatDetails.pairLines.length > 0 ? (
+        <View style={{ marginTop: 6, gap: 2 }}>
+          {repeatDetails.pairLines.map(line => (
+            <Text key={line} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10.5, lineHeight: 14, color: repeatCapExceeded ? theme.warningText : theme.outline }}>
+              {line}
+            </Text>
+          ))}
+          {repeatDetails.hiddenCount > 0 ? (
+            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10.5, lineHeight: 14, color: theme.outline }}>
+              +{repeatDetails.hiddenCount} cặp khác
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      {repeatDetails.playerLines.length > 0 ? (
+        <View style={{ marginTop: 5, gap: 2 }}>
+          {repeatDetails.playerLines.map(line => (
+            <Text key={line} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10.5, lineHeight: 14, color: repeatCapExceeded ? theme.warningText : theme.outline }}>
+              {line}
+            </Text>
+          ))}
+        </View>
+      ) : null}
     </Card>
   )
 }
@@ -2633,7 +3015,7 @@ function TeamBlock({
         {names.join(' · ')}
       </Text>
       <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-        TB PVNA {getTeamPvna(team, state).toFixed(2)}
+        Tổng PVNA {getTeamPvna(team, state).toFixed(2)}
       </Text>
     </View>
   )
@@ -3109,6 +3491,8 @@ function FairnessSheet({
       {rows.map(([label, value, max, detail]) => (
         <BreakdownRow key={label} label={label} value={value} max={max} detail={detail} />
       ))}
+      <PlayerMatchDistributionBlock match={match} rest={rest} playersById={playersById} />
+      <FairnessEvolutionBlock state={state} />
       <LatestFairnessAuditCard audit={latestAudit} />
       <RepeatDetailsBlock
         partnerPairs={partner.repeat_pairs}
@@ -3129,6 +3513,97 @@ function FairnessSheet({
         </View>
       ) : null}
       <GroupAuditBlock state={state} groupSummaries={groupSummaries} playersById={playersById} />
+    </View>
+  )
+}
+
+function PlayerMatchDistributionBlock({
+  match,
+  rest,
+  playersById,
+}: {
+  match: ReturnType<typeof computeMatchCountMetrics>
+  rest: ReturnType<typeof computeRestFairness>
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  if (match.per_player.length === 0) return null
+  const maxMatches = match.max
+  const violationSet = new Set(rest.violations.map(v => v.player_id))
+  const restByPlayer = new Map(rest.per_player.map(p => [p.player_id, p]))
+  const sorted = [...match.per_player].sort((a, b) => a.matches_played - b.matches_played)
+  return (
+    <View style={{ marginTop: 14 }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.onSurface, marginBottom: 8 }}>
+        Số trận mỗi người ({match.min}–{match.max})
+      </Text>
+      <View style={{ gap: 5 }}>
+        {sorted.map(({ player_id, matches_played }) => {
+          const player = playersById.get(player_id)
+          const name = player?.name ?? player_id.slice(0, 6)
+          const hasViolation = violationSet.has(player_id)
+          const playerRest = restByPlayer.get(player_id)
+          const barWidth = maxMatches === 0 ? 0 : (matches_played / maxMatches) * 100
+          const isMin = matches_played === match.min && match.range > 0
+          const isMax = matches_played === match.max && match.range > 0
+          return (
+            <View key={player_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text
+                numberOfLines={1}
+                style={{ width: 80, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: hasViolation ? theme.warningText : theme.onSurface }}
+              >
+                {name}
+              </Text>
+              <View style={{ flex: 1, height: 8, backgroundColor: theme.outlineVariant, borderRadius: RADIUS.full, overflow: 'hidden' }}>
+                <View style={{ width: `${barWidth}%`, height: '100%', backgroundColor: isMin ? theme.warningStrong : isMax ? theme.primary : theme.primaryContainer, borderRadius: RADIUS.full }} />
+              </View>
+              <Text style={{ width: 18, textAlign: 'right', fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: isMin ? theme.warningText : theme.onSurface }}>
+                {matches_played}
+              </Text>
+              {hasViolation ? (
+                <Text style={{ width: 40, fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.warningText }}>
+                  {`nghỉ ${playerRest?.max_consecutive_rest ?? 0}`}
+                </Text>
+              ) : <View style={{ width: 40 }} />}
+            </View>
+          )
+        })}
+      </View>
+    </View>
+  )
+}
+
+function FairnessEvolutionBlock({ state }: { state: SessionState }) {
+  const theme = useAppTheme()
+  const evolution = useMemo(() => computeFairnessEvolution(state), [state])
+  if (evolution.length < 2) return null
+  return (
+    <View style={{ marginTop: 14 }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.onSurface, marginBottom: 8 }}>
+        Lịch sử fairness
+      </Text>
+      <View style={{ gap: 4 }}>
+        {evolution.map((entry: { round: number; score: number }, index: number) => {
+          const prev = index > 0 ? evolution[index - 1].score : entry.score
+          const delta = entry.score - prev
+          const deltaColor = delta > 0 ? theme.successText : delta < 0 ? theme.warningText : theme.outline
+          return (
+            <View key={`evolution-${entry.round}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 3 }}>
+              <Text style={{ width: 52, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
+                Vòng {entry.round + 1}
+              </Text>
+              <Text style={{ width: 30, fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: theme.onSurface }}>
+                {entry.score}
+              </Text>
+              {index > 0 ? (
+                <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: deltaColor }}>
+                  {delta > 0 ? '+' : ''}{delta}
+                </Text>
+              ) : null}
+            </View>
+          )
+        })}
+      </View>
     </View>
   )
 }

@@ -102,10 +102,12 @@ export type SessionFairnessScore = {
 }
 
 export function computeMatchCountMetrics(state: SessionState): MatchCountMetrics {
-  const perPlayer = sortedPlayers(state).map((player) => ({
-    player_id: player.player_id,
-    matches_played: player.matches_played,
-  }))
+  const perPlayer = sortedPlayers(state)
+    .filter((player) => !player.opted_rest)
+    .map((player) => ({
+      player_id: player.player_id,
+      matches_played: player.matches_played,
+    }))
   const values = perPlayer.map((player) => player.matches_played)
   const min = values.length === 0 ? 0 : Math.min(...values)
   const max = values.length === 0 ? 0 : Math.max(...values)
@@ -381,11 +383,14 @@ export function computeRestFairness(state: SessionState): RestFairnessMetrics {
     }
   }
 
-  for (const player of sortedPlayers(state)) {
-    const metrics = byPlayer.get(player.player_id)
-    if (!metrics) continue
+  // Use currentRestRun (derived from complete rounds) instead of player.consecutive_rest (from DB,
+  // which may be inflated in live mode where DB increments per match rather than per complete round).
+  for (const [playerId, currentRun] of currentRestRun) {
+    const metrics = byPlayer.get(playerId)
+    const player = state.players.get(playerId)
+    if (!metrics || !player) continue
     if (player.checked_out_at !== null || player.opted_rest) continue
-    metrics.max_consecutive_rest = Math.max(metrics.max_consecutive_rest, player.consecutive_rest)
+    metrics.max_consecutive_rest = Math.max(metrics.max_consecutive_rest, currentRun)
   }
 
   const perPlayer = [...byPlayer.values()]

@@ -45,6 +45,14 @@ function normalizeCourtCount(value: number) {
   return Math.max(1, Math.floor(value || 1))
 }
 
+function withoutRestPenalty(alternative: SuggestionAlternative | null | undefined): SuggestionAlternative | null {
+  if (!alternative) return null
+  return {
+    ...alternative,
+    resting: [],
+  }
+}
+
 const SETTINGS_STORAGE_PREFIX = 'next-round-v2-settings'
 
 type PersistedSettings = {
@@ -184,24 +192,79 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const stateRoundRows = useMemo(() => {
     const legacyRows = deferredRows.roundRows
     const baseRoundNo = legacyRows.reduce((max, row) => Math.max(max, row.round_no), -1) + 1
-    const liveCompletedRows = deferredRows.liveMatchRows
-      .filter(match => match.status === 'completed')
-      .map((match, index) => ({
-        id: match.id,
-        session_id: match.session_id,
-        round_no: baseRoundNo + index,
-        status: 'completed' as const,
-        matches: [{
-          court_idx: match.court_idx ?? 0,
-          team_a: match.team_a,
-          team_b: match.team_b,
-        }],
-        resting: match.resting ?? [],
-        started_at: match.started_at,
-        ended_at: match.ended_at,
-      }))
-    return [...legacyRows, ...liveCompletedRows]
-  }, [deferredRows.liveMatchRows, deferredRows.roundRows])
+
+    const completedLive = deferredRows.liveMatchRows.filter(m => m.status === 'completed')
+
+    // Group by round_no từ DB nếu có. Nếu không (migration chưa apply):
+    // greedy group theo sân — các trận không trùng court_idx thuộc cùng 1 vòng.
+    const byRound = new Map<number, typeof completedLive>()
+    for (const match of completedLive.filter(m => m.round_no != null)) {
+      const key = match.round_no!
+      if (!byRound.has(key)) byRound.set(key, [])
+      byRound.get(key)!.push(match)
+    }
+
+    // Some live sessions contain older completed matches with round_no = null mixed
+    // with newer rows that have round_no. Keep those legacy rows as separate
+    // greedy court groups; grouping all nulls together creates fake mega-rounds.
+    let nextFallbackRoundKey = Math.max(-1, ...byRound.keys()) + 1
+    for (const match of completedLive.filter(m => m.round_no == null).sort((a, b) => a.sequence_no - b.sequence_no)) {
+      const courtIdx = match.court_idx ?? match.sequence_no
+      const targetRound = [...byRound.entries()]
+        .filter(([key]) => key >= nextFallbackRoundKey)
+        .find(([, matches]) => !matches.some(m => (m.court_idx ?? m.sequence_no) === courtIdx))
+      const key = targetRound ? targetRound[0] : nextFallbackRoundKey++
+      if (!byRound.has(key)) byRound.set(key, [])
+      byRound.get(key)!.push(match)
+    }
+
+    // Fallback: người có mặt hiện tại (dùng khi không có timing data)
+    const presentPlayerIds = deferredRows.playerRows
+      .filter(r => !r.checked_out_at)
+      .map(r => r.player_id)
+
+    const liveRoundRows = [...byRound.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, matches], index) => {
+        const playedIds = new Set(matches.flatMap(m => [...m.team_a, ...m.team_b]))
+        const roundStartedAt = matches.map(m => m.started_at).filter(Boolean).sort()[0]
+        const roundEndedAt = matches.map(m => m.ended_at).filter(Boolean).sort().reverse()[0]
+
+        // Tính roster tại thời điểm vòng đó dựa trên timestamp.
+        // Dùng tất cả playerRows (kể cả đã checked_out) để tính đúng lịch sử.
+        let roundPresentIds: string[]
+        if (roundStartedAt) {
+          const roundStartMs = new Date(roundStartedAt).getTime()
+          const roundEndMs = roundEndedAt ? new Date(roundEndedAt).getTime() : Infinity
+          roundPresentIds = deferredRows.playerRows
+            .filter(p => {
+              const checkedIn = new Date(p.checked_in_at).getTime()
+              const checkedOut = p.checked_out_at ? new Date(p.checked_out_at).getTime() : Infinity
+              return checkedIn <= roundEndMs && checkedOut >= roundStartMs
+            })
+            .map(p => p.player_id)
+        } else {
+          roundPresentIds = presentPlayerIds
+        }
+
+        return {
+          id: matches[0].id,
+          session_id: sessionId,
+          round_no: baseRoundNo + index,
+          status: 'completed' as const,
+          matches: matches.map(m => ({
+            court_idx: m.court_idx ?? 0,
+            team_a: m.team_a,
+            team_b: m.team_b,
+          })),
+          resting: matches.length >= engineCourtCount ? roundPresentIds.filter(id => !playedIds.has(id)) : [],
+          started_at: roundStartedAt ?? null,
+          ended_at: roundEndedAt ?? null,
+        }
+      })
+
+    return [...legacyRows, ...liveRoundRows]
+  }, [deferredRows.liveMatchRows, deferredRows.roundRows, deferredRows.playerRows, sessionId, engineCourtCount])
 
   // Fingerprint: chuỗi tóm tắt data thực sự, chỉ thay đổi khi DB trả về data mới.
   // Nếu loadLiveState() trả về data giống hệt (foreground refresh không có gì mới),
@@ -279,7 +342,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     [suggestedRoundActionsCache],
   )
   const alternativeFairnessPreviews = useMemo(
-    () => suggestion.alternatives.map(alt => buildFairnessPreview(deferredState, alt)),
+    () => suggestion.alternatives.map(alt => buildFairnessPreview(deferredState, withoutRestPenalty(alt))),
     [deferredState, suggestion.alternatives],
   )
   const alternativeFairnessWarnings = useMemo(
@@ -289,7 +352,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
 
   // manualAlternative cần tính riêng vì không nằm trong suggestion.alternatives
   const manualFairnessPreview = useMemo(
-    () => manualAlternative ? buildFairnessPreview(deferredState, manualAlternative) : null,
+    () => manualAlternative ? buildFairnessPreview(deferredState, withoutRestPenalty(manualAlternative)) : null,
     [deferredState, manualAlternative],
   )
   const manualFairnessWarnings = useMemo(
