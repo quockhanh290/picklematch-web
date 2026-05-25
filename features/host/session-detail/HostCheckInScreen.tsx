@@ -7,6 +7,7 @@ import { RADIUS, SHADOW } from '@/constants/screenLayout'
 import type { SessionPlayer } from '@/hooks/useSessionDetail'
 import { supabase } from '@/lib/supabase'
 import { STRINGS } from '@/constants/strings'
+import { syncLiveRosterFromSessionPlayers } from './next-round-v2/api'
 
 interface Props {
   sessionId: string
@@ -51,6 +52,12 @@ export function HostCheckInScreen({ sessionId, players, onUpdated, onClose }: Pr
         
         const { error } = await supabase.rpc('complete_session_check_in', { p_session_id: sessionId })
         if (error) throw error
+        await syncLiveRosterFromSessionPlayers(
+          sessionId,
+          Object.entries(statuses)
+            .filter(([, status]) => status === 'present')
+            .map(([playerId]) => playerId),
+        )
         onUpdated()
         onClose()
       } catch (err) {

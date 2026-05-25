@@ -386,6 +386,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const targetReached = effectiveTargetRounds > 0
     && presentRows.length > 0
     && presentRows.every(row => row.matches_played >= effectiveTargetRounds)
+  const reportReady = effectiveTargetRounds > 0 && completedRoundCount >= effectiveTargetRounds
   const reportState = useMemo(
     () => (completedRoundCount > 0 ? rebuildStateThroughRound(state, completedRounds[0].round_no) : state),
     [completedRoundCount, completedRounds, state],
@@ -397,7 +398,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   )
   const groupSummaries = useMemo(() => buildGroupSummaries(deferredRows.playerRows), [deferredRows.playerRows])
   const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
-  const phase: 'plan' | 'active' | 'recap' = showSessionReport && targetReached && !activeRound ? 'recap' : activeRound ? 'active' : 'plan'
+  const phase: 'plan' | 'active' | 'recap' = showSessionReport && reportReady && !activeRound ? 'recap' : activeRound ? 'active' : 'plan'
 
   const rememberRoundSelection = (reason: string) => {
     setSelectionUndo({
@@ -488,6 +489,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     presentCount,
     pvnaTolerance,
     reportState,
+    reportReady,
     rows: liveRows.rows,
     addPlayerRow: liveRows.addPlayerRow,
     applyCompletedLiveMatch: liveRows.applyCompletedLiveMatch,

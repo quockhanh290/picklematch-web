@@ -190,9 +190,74 @@ export async function loadLatestSyncablePlayerIds(
     .map(row => String(row.player_id))
 
   const preferredIds = presentIds.length > 0 ? presentIds : activeIds
-  if (confirmedRows.length > 0) return [...new Set(preferredIds)]
+  if (preferredIds.length > 0) return [...new Set(preferredIds)]
+  if (localFallbackIds.length > 0) return [...new Set(localFallbackIds)]
+  if (confirmedRows.length > 0) return []
 
   return [...new Set(localFallbackIds)]
+}
+
+export async function syncLiveRosterFromSessionPlayers(
+  sessionId: string,
+  localFallbackIds: string[] = [],
+) {
+  const playerIds = await loadLatestSyncablePlayerIds(sessionId, localFallbackIds)
+  if (playerIds.length === 0) {
+    return { synced: false, playerIds }
+  }
+
+  let payload: any
+  try {
+    payload = await invokeLiveSessionFunction('session-sync-roster', sessionId, { player_ids: playerIds })
+  } catch (error) {
+    if (!isRetryableError(error)) throw error
+
+    const { data, error: rpcError } = await supabase.rpc('sync_live_session_roster_versioned', {
+      p_session_id: sessionId,
+      p_player_ids: playerIds,
+      p_revive_checked_out: false,
+    })
+    if (rpcError) throw rpcError
+    payload = data
+  }
+
+  return { synced: true, playerIds, payload }
+}
+
+export async function checkInLiveSessionPlayers(
+  sessionId: string,
+  playerIds: string[],
+  groupWith: string[] = [],
+) {
+  const uniqueIds = [...new Set(playerIds)].filter(Boolean)
+  if (uniqueIds.length === 0) {
+    throw new Error('Missing player_id')
+  }
+
+  try {
+    return await invokeLiveSessionFunction('session-checkin', sessionId, {
+      player_ids: uniqueIds,
+      group_with: groupWith,
+    })
+  } catch (error) {
+    if (!isRetryableError(error)) throw error
+
+    const { data, error: rpcError } = await supabase.rpc('checkin_live_session_players_versioned', {
+      p_session_id: sessionId,
+      p_player_ids: uniqueIds,
+      p_group_with: groupWith,
+    })
+    if (rpcError) throw rpcError
+    return data
+  }
+}
+
+export async function repairLiveSessionPlayerStateFromRounds(sessionId: string) {
+  const { data, error } = await supabase.rpc('repair_live_session_player_state_from_rounds', {
+    p_session_id: sessionId,
+  })
+  if (error) throw error
+  return data
 }
 
 export async function markSessionPlayersPresent(sessionId: string, playerIds: string[]) {

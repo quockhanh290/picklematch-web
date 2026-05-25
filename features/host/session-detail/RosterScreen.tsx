@@ -11,7 +11,7 @@ import type { Match, SessionLiveMatchRow, SessionPlayerStateRow, SessionRoundRow
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
 
-import { invokeLiveSessionFunction } from './next-round-v2/api'
+import { invokeLiveSessionFunction, syncLiveRosterFromSessionPlayers } from './next-round-v2/api'
 import { RosterSheet } from './next-round-v2/flow-sheets'
 import { refreshBus } from './next-round-v2/refreshBus'
 import { useLiveRows } from './next-round-v2/useLiveRows'
@@ -144,6 +144,7 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
   const liveStateRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingCheckoutTargetsRef = useRef(new Map<string, boolean>())
   const pendingCheckoutPatchesRef = useRef(new Map<string, Partial<SessionPlayerStateRow>>())
+  const autoSyncAttemptedRef = useRef(false)
 
   const playersById = useMemo(
     () => new Map(players.map(p => [String(p.id), p])),
@@ -180,6 +181,15 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     applyLiveStateVersion(payload?.live_state_version)
   }, [applyLiveStateVersion])
 
+  const getRosterSyncFallbackIds = useCallback(() => (
+    players
+      .filter(player => {
+        const status = player.checkInStatus
+        return player.status === 'confirmed' && status !== 'no_show'
+      })
+      .map(player => String(player.id))
+  ), [players])
+
   const scheduleLiveStateRefresh = useCallback((delayMs = 450) => {
     if (liveStateRefreshTimerRef.current) clearTimeout(liveStateRefreshTimerRef.current)
     liveStateRefreshTimerRef.current = setTimeout(() => {
@@ -192,6 +202,33 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     if (checkoutBatchTimerRef.current) clearTimeout(checkoutBatchTimerRef.current)
     if (liveStateRefreshTimerRef.current) clearTimeout(liveStateRefreshTimerRef.current)
   }, [])
+
+  const syncRoster = useCallback(async () => {
+    const fallbackIds = getRosterSyncFallbackIds()
+    if (fallbackIds.length === 0) return
+
+    setBusy('sync')
+    setError(null)
+    try {
+      const result = await syncLiveRosterFromSessionPlayers(sessionId, fallbackIds)
+      applyMutationVersion(result.payload)
+      await loadLiveState()
+    } catch (err) {
+      const msg = toUserSafeError(err)
+      setError(msg)
+      if (__DEV__) console.warn('[RosterScreen] roster sync failed', err)
+    } finally {
+      setBusy(null)
+    }
+  }, [applyMutationVersion, getRosterSyncFallbackIds, loadLiveState, sessionId])
+
+  useEffect(() => {
+    if (loading || autoSyncAttemptedRef.current || rows.playerRows.length > 0) return
+    if (getRosterSyncFallbackIds().length === 0) return
+
+    autoSyncAttemptedRef.current = true
+    void syncRoster()
+  }, [getRosterSyncFallbackIds, loading, rows.playerRows.length, syncRoster])
 
   const flushPendingCheckout = useCallback(async () => {
     const targets = new Map(pendingCheckoutTargetsRef.current)
@@ -393,7 +430,7 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
           activeRoundIds={activeRoundMatchIds}
           consecutiveRestByPlayer={consecutiveRestByPlayer}
           onSwap={openSwap}
-          onRefreshRoster={loadLiveState}
+          onRefreshRoster={syncRoster}
           groupSelection={groupSelection}
           groupSummaries={groupSummaries}
           groupAliases={groupAliases}

@@ -27,6 +27,7 @@ import { getSessionSkillLabel } from '@/lib/skillAssessment'
 
 import type { SessionMatch } from '@/hooks/useSessionDetail'
 import { BrandedFooter } from '@/components/design/BrandedFooter'
+import { syncLiveRosterFromSessionPlayers } from './next-round-v2/api'
 
 interface HostSessionDetailScreenProps {
   id: string
@@ -111,6 +112,8 @@ export function HostSessionDetailScreen({
           throw rpcError
         }
         console.log('[CheckIn] RPC Success')
+        await syncLiveRosterFromSessionPlayers(id)
+        console.log('[CheckIn] Roster sync success')
 
         onRefresh()
         setIsCheckInMode(false)

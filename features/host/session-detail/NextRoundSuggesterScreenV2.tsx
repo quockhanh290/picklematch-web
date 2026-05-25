@@ -66,7 +66,7 @@ import type {
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
-import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent, prewarmLiveSessionVersionGuard } from './next-round-v2/api'
+import { checkInLiveSessionPlayers, invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent, prewarmLiveSessionVersionGuard, repairLiveSessionPlayerStateFromRounds } from './next-round-v2/api'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
 import { ChoiceRow, NavbarRightActions, StickyRoundCta } from './next-round-v2/controls'
@@ -284,6 +284,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   const [busy, setBusy] = useState<string | null>(null)
   const actionInFlightRef = useRef(false)
   const autoSyncAttemptedRef = useRef(false)
+  const autoRepairStateAttemptedRef = useRef(false)
   const completingCleanupTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const completingMatchExpectedPlayedRef = useRef(new Map<string, { playerIds: string[]; expectedPlayed: number }>())
   const lateArrivalInFlightRef = useRef(new Set<string>())
@@ -334,6 +335,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     refreshing,
     rememberRoundSelection,
     reportState,
+    reportReady,
     rows,
     selectAlternativeForRound,
     selectedAlternative,
@@ -372,6 +374,23 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   React.useEffect(() => {
     liveStateVersionRef.current = rows.liveStateVersion ?? null
   }, [rows.liveStateVersion])
+  React.useEffect(() => {
+    autoRepairStateAttemptedRef.current = false
+  }, [sessionId])
+  React.useEffect(() => {
+    if (phase !== 'recap' || matchCountConsistencyRows.length === 0) {
+      autoRepairStateAttemptedRef.current = false
+      return
+    }
+    if (activeRound || autoRepairStateAttemptedRef.current) return
+    autoRepairStateAttemptedRef.current = true
+
+    void repairLiveSessionPlayerStateFromRounds(sessionId)
+      .then(() => loadLiveState({ silent: true }))
+      .catch(error => {
+        console.warn('Could not repair live session player state', error)
+      })
+  }, [activeRound, loadLiveState, matchCountConsistencyRows.length, phase, sessionId])
   React.useEffect(() => {
     setOptimisticLiveMatches(current => {
       if (current.length === 0) return current
@@ -617,23 +636,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     }
     addPlayerRow(optimisticRow)
     try {
-      const [, checkinPayload] = await Promise.all([
-        markSessionPlayersPresent(sessionId, [playerId]),
-        invokeLiveSessionFunction('session-checkin', sessionId, { player_id: playerId }),
-      ])
-      const serverRow = checkinPayload?.player as SessionPlayerStateRow | null | undefined
+      const checkinPayload = await checkInLiveSessionPlayers(sessionId, [playerId])
       applyLiveStateVersion(checkinPayload?.live_state_version)
-      if (serverRow) {
-        const hydratedRow: SessionPlayerStateRow = {
-          ...serverRow,
-          players: optimisticRow.players,
-          session_players: optimisticRow.session_players,
-        }
-        addPlayerRow(hydratedRow)
-        settlePlayerRow(playerId, hydratedRow)
-      } else {
-        settlePlayerRow(playerId, optimisticRow)
-      }
+      settlePlayerRow(playerId, optimisticRow)
+      void markSessionPlayersPresent(sessionId, [playerId]).catch((error) => {
+        if (__DEV__) console.warn('[NextRoundSuggesterV2] late arrival session_players status update failed', error)
+      })
     } catch (err: any) {
       clearPlayerRow(playerId)
       const safeMessage = toUserSafeActionError(err)
@@ -1379,11 +1387,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   const lateArrivalPlayers = useMemo(() => {
     const livePlayerIds = new Set(rows.playerRows.map(row => String(row.player_id)))
     return players.filter(player => {
+      const playerId = String(player.id)
       if (player.status && player.status !== 'confirmed') return false
       const status = player.checkInStatus
-      return (status === 'pending' || status === 'no_show') && !livePlayerIds.has(String(player.id))
+      return (status === 'pending' || status === 'no_show') && (!livePlayerIds.has(playerId) || busy === `late-${playerId}`)
     })
-  }, [rows.playerRows, players])
+  }, [busy, rows.playerRows, players])
 
   const navbarRightSlot = <NavbarRightActions sessionId={sessionId} onRefresh={loadLiveState} refreshing={refreshing} />
 
@@ -1459,7 +1468,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                 onPlayerPress={openSwapForPlayer}
                 onOpenSettings={() => setSheet('settings')}
               />
-              {targetReached && !activeRound ? (
+              {reportReady && !activeRound ? (
                 <Card style={{ marginTop: 14, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
                   <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: theme.primary }}>
                     Đã đủ số trận mục tiêu
@@ -1544,7 +1553,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       {phase !== 'recap' && phase === 'active' && (
         <StickyRoundCta
           busy={busy}
-          primaryLabel={phase === 'active' ? 'Kết thúc & lưu vòng' : targetReached ? 'Tạo thêm trận' : completedLiveMatches.length === 0 ? 'Tạo các trận đầu tiên' : 'Tạo trận kế tiếp'}
+          primaryLabel={phase === 'active' ? 'Kết thúc & lưu vòng' : reportReady ? 'Tạo thêm trận' : completedLiveMatches.length === 0 ? 'Tạo các trận đầu tiên' : 'Tạo trận kế tiếp'}
           onPrimary={() => {
             if (phase === 'active') void endActiveRound()
             else return
@@ -1611,8 +1620,13 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         <MoreSheetView
           onSyncRoster={syncRoster}
           onOpenRoster={openRoster}
+          onOpenReport={() => {
+            setSheet(null)
+            setShowSessionReport(true)
+          }}
           onOpenHistory={() => setSheet('history')}
           onOpenFairness={() => setSheet('fairness')}
+          canOpenReport={reportReady && !activeRound}
           busy={busy}
         />
       </NextRoundSheet>
