@@ -243,13 +243,6 @@ export async function checkInLiveSessionPlayers(
   }
 
   try {
-    return await invokeLiveSessionFunction('session-checkin', sessionId, {
-      player_ids: uniqueIds,
-      group_with: groupWith,
-    })
-  } catch (error) {
-    if (!isRetryableError(error)) throw error
-
     const { data, error: rpcError } = await supabase.rpc('checkin_live_session_players_versioned', {
       p_session_id: sessionId,
       p_player_ids: uniqueIds,
@@ -257,6 +250,13 @@ export async function checkInLiveSessionPlayers(
     })
     if (rpcError) throw rpcError
     return data
+  } catch (error) {
+    if (!isRetryableError(error)) throw error
+
+    return await invokeLiveSessionFunction('session-checkin', sessionId, {
+      player_ids: uniqueIds,
+      group_with: groupWith,
+    })
   }
 }
 

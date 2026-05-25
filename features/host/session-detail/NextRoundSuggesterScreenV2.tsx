@@ -3534,12 +3534,14 @@ function RepeatCompactSummary({
   const theme = useAppTheme()
   const visiblePartnerPairs = partnerPairs.filter(pair => pair.currentCount > 0)
   const visibleOpponentPairs = opponentPairs.filter(pair => pair.currentCount > 0)
+  const showPartnerChip = partnerCount > 1
+  const showOpponentChip = opponentCount > 1
   const textColor = theme.warningText
   return (
     <View style={{ marginTop: 10 }}>
       <Pressable onPress={onToggle} style={{ minHeight: 34, borderRadius: RADIUS.sm, backgroundColor: theme.warningBg, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <RepeatSummaryChip icon="🤝" label="Partner" count={partnerCount} strong={partnerCount > MAX_PROJECTED_PARTNER_PAIR_COUNT} />
-        <RepeatSummaryChip icon="⚔️" label="Đối thủ" count={opponentCount} strong={opponentCount > MAX_PROJECTED_OPPONENT_PAIR_COUNT} />
+        {showPartnerChip ? <RepeatSummaryChip icon="🤝" label="Lặp partner" count={partnerCount} strong={partnerCount > MAX_PROJECTED_PARTNER_PAIR_COUNT} /> : null}
+        {showOpponentChip ? <RepeatSummaryChip icon="⚔️" label="Lặp đối thủ" count={opponentCount} strong={opponentCount > MAX_PROJECTED_OPPONENT_PAIR_COUNT} /> : null}
         <ChevronDown size={15} color={textColor} style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }} />
       </Pressable>
       {expanded ? (

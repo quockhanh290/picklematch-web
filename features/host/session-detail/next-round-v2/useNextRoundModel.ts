@@ -172,6 +172,11 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   }, [sheet, deferredRows.playerRows])
 
   const rosterSheetOpen = sheet === 'roster' || sheet === 'late-arrivals'
+  const frozenEngineLiveStateVersionRef = useRef(deferredRows.liveStateVersion)
+  const engineLiveStateVersion = useMemo(() => {
+    if (!rosterSheetOpen) frozenEngineLiveStateVersionRef.current = deferredRows.liveStateVersion
+    return frozenEngineLiveStateVersionRef.current
+  }, [rosterSheetOpen, deferredRows.liveStateVersion])
 
   const frozenPresentRowsRef = useRef(liveRows.rows.playerRows.filter(row => !row.checked_out_at))
   const presentRows = useMemo(() => {
@@ -244,7 +249,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     }
 
     // Fallback: người có mặt hiện tại (dùng khi không có timing data)
-    const presentPlayerIds = deferredRows.playerRows
+    const presentPlayerIds = enginePlayerRows
       .filter(r => !r.checked_out_at)
       .map(r => r.player_id)
 
@@ -262,7 +267,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
         if (roundStartedAt) {
           const roundStartMs = new Date(roundStartedAt).getTime()
           const roundEndMs = roundEndedAt ? new Date(roundEndedAt).getTime() : Infinity
-          roundPresentIds = deferredRows.playerRows
+          roundPresentIds = enginePlayerRows
             .filter(p => {
               const checkedIn = new Date(p.checked_in_at).getTime()
               const checkedOut = p.checked_out_at ? new Date(p.checked_out_at).getTime() : Infinity
@@ -290,7 +295,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
       })
 
     return [...legacyRows, ...liveRoundRows]
-  }, [deferredRows.liveMatchRows, deferredRows.roundRows, deferredRows.playerRows, sessionId, engineCourtCount])
+  }, [deferredRows.liveMatchRows, deferredRows.roundRows, enginePlayerRows, sessionId, engineCourtCount])
 
   // Fingerprint: chuỗi tóm tắt data thực sự, chỉ thay đổi khi DB trả về data mới.
   // Nếu loadLiveState() trả về data giống hệt (foreground refresh không có gì mới),
@@ -314,8 +319,8 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     const liveMatches = deferredRows.liveMatchRows
       .map(r => `${r.id}|${r.sequence_no}|${r.status}|${r.score_a}|${r.score_b}|${JSON.stringify(r.team_a)}|${JSON.stringify(r.team_b)}|${JSON.stringify(r.resting ?? [])}`)
       .join(';')
-    return `${deferredRows.liveStateVersion ?? 'noversion'}__${players}__${pairs}__${rounds}__${liveMatches}`
-  }, [enrichedPlayerRows, deferredRows.liveStateVersion, deferredRows.liveMatchRows, deferredRows.pairRows, stateRoundRows])
+    return `${engineLiveStateVersion ?? 'noversion'}__${players}__${pairs}__${rounds}__${liveMatches}`
+  }, [enrichedPlayerRows, engineLiveStateVersion, deferredRows.liveMatchRows, deferredRows.pairRows, stateRoundRows])
 
   const rawState = useMemo(() => mapRowsToSessionState({
     sessionId,
