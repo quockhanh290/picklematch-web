@@ -187,6 +187,27 @@ export type SuggestionTradeoff = {
   affected_players?: number
 }
 
+export type SuggestionTradeoffChoiceId = 'balanced' | 'keep_pvna' | 'reduce_repeat'
+
+export type SuggestionTradeoffChoiceMetrics = {
+  pvna_gap: number
+  pvna_over_by: number
+  repeat_over_by: number
+  affected_pairs: number
+  affected_players: number
+  max_partner_pair: number
+  max_opponent_pair: number
+  total_cost: number
+}
+
+export type SuggestionTradeoffChoice = {
+  id: SuggestionTradeoffChoiceId
+  label: string
+  alternative: SuggestionAlternative
+  metrics: SuggestionTradeoffChoiceMetrics
+  explanation: string[]
+}
+
 export type SuggestionResult = {
   alternatives: SuggestionAlternative[]
   warnings: string[]
