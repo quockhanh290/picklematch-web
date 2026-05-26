@@ -333,6 +333,7 @@ function makeAlternative(
     ...warnings,
     ...(partition.relaxed_tolerance ? ['PVNA_TOLERANCE_RELAXED'] : []),
     ...(partition.repeat_overflow ? ['REPEAT_CAP_RELAXED'] : []),
+    ...(partition.intra_team_gap_overflow ? ['INTRA_TEAM_GAP_RELAXED'] : []),
     ...(repeatCapReached && !partition.repeat_overflow ? ['REPEAT_CAP_REACHED'] : []),
   ])]
 
@@ -371,6 +372,7 @@ export function suggestNextRound(
     ? new Set<string>()
     : new Set(
         eligiblePlayers
+          .filter((player) => tierOverrides[player.player_id] !== Tier.FLEXIBLE)
           .filter((player) => {
             // Late arrivals (never played yet in an ongoing session) get a 1-round grace period
             // before being required — only forced at consecutive_rest >= 2.
@@ -676,6 +678,7 @@ function suggestNextMatchExhaustiveFallback(
     ? new Set<string>()
     : new Set(
         eligiblePlayers
+          .filter((player) => tierOverrides[player.player_id] !== Tier.FLEXIBLE)
           .filter((player) => {
             const isLateArrival = hasCompletedRounds && player.matches_played === 0
             if (isLateArrival) return player.consecutive_rest >= 2
@@ -746,14 +749,12 @@ function suggestNextMatchExhaustiveFallback(
 
   evaluateStage(false, false)
   if (alternatives.length === 0) {
-    if (requiredPlayerIds.size > 0) {
-      evaluateStage(false, false, false)
-    }
-  }
-  if (alternatives.length === 0) {
     evaluateStage(false, true)
     evaluateStage(true, false)
     evaluateStage(true, true)
+  }
+  if (alternatives.length === 0 && requiredPlayerIds.size > 0) {
+    evaluateStage(false, false, false)
   }
   if (alternatives.length === 0 && requiredPlayerIds.size > 0) {
     evaluateStage(false, true, false)

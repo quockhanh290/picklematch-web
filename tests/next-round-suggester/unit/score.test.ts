@@ -220,4 +220,25 @@ describe('scoreMatch', () => {
 
     expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], state).score).toBe(Infinity)
   })
+
+  it('can relax intra-team PVNA gap without relaxing match PVNA tolerance', () => {
+    const state = createState({
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('p1', { pvna: 4.42 }),
+        createPlayer('p2', { pvna: 3.02 }),
+        createPlayer('p3', { pvna: 2.66 }),
+        createPlayer('p4', { pvna: 3.59 }),
+      ],
+    })
+
+    const strict = scoreMatch(['p1', 'p3'], ['p2', 'p4'], state)
+    const relaxedIntra = scoreMatch(['p1', 'p3'], ['p2', 'p4'], state, {
+      allowIntraTeamGapOverflow: true,
+    })
+
+    expect(strict.score).toBe(Infinity)
+    expect(Math.abs(relaxedIntra.stats.pvna_diff - 0.47)).toBeLessThan(0.001)
+    expect(Math.abs(relaxedIntra.score - 0.47)).toBeLessThan(0.001)
+  })
 })

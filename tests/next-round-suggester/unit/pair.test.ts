@@ -111,6 +111,23 @@ describe('bestPartitioning', () => {
     expect(result?.stats.pvna_diff).toBeLessThanOrEqual(1.0)
   })
 
+  it('relaxes intra-team gap before relaxing match PVNA tolerance', () => {
+    const players = [
+      createPlayer('p1', { pvna: 4.42 }),
+      createPlayer('p2', { pvna: 3.02 }),
+      createPlayer('p3', { pvna: 2.66 }),
+      createPlayer('p4', { pvna: 3.59 }),
+    ]
+
+    const result = bestPartitioning(players, createState({ players, pvnaTolerance: 0.5 }))
+
+    expect(result?.relaxed_tolerance).not.toBe(true)
+    expect(result?.intra_team_gap_overflow).toBe(true)
+    expect(result?.matches[0].team_a).toEqual(['p1', 'p3'])
+    expect(result?.matches[0].team_b).toEqual(['p2', 'p4'])
+    expect(Math.abs((result?.stats.pvna_diff ?? 0) - 0.47)).toBeLessThan(0.001)
+  })
+
   it('skips court creation when fewer than four players are present', () => {
     const players = [createPlayer('p1'), createPlayer('p2'), createPlayer('p3')]
 

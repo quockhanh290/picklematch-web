@@ -143,7 +143,7 @@ describe('suggestNextRound', () => {
     expect(result.alternatives[0]?.approval_required).toBe(false)
   })
 
-  it('uses exhaustive fallback when priority candidates miss a strict match', () => {
+  it('finds an in-cap match when priority candidates need intra-team relaxation', () => {
     const players = createPlayers(28)
     const fallbackIds = new Set(['p25', 'p26', 'p27', 'p28'])
     for (const player of players) {
@@ -160,7 +160,7 @@ describe('suggestNextRound', () => {
     const match = result.alternatives[0]?.matches[0]
 
     expect(result.alternatives).toHaveLength(1)
-    expect(result.alternatives[0]?.warnings).toContain('EXHAUSTIVE_FALLBACK')
+    expect(result.alternatives[0]?.warnings).toContain('INTRA_TEAM_GAP_RELAXED')
     expect(result.alternatives[0]?.warnings).not.toContain('PVNA_TOLERANCE_RELAXED')
     expect(result.alternatives[0]?.warnings).not.toContain('REPEAT_CAP_RELAXED')
     expect(match?.stats?.pvna_diff).toBeLessThanOrEqual(0.5)

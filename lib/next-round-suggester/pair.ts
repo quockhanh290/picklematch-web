@@ -1,5 +1,5 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { hasRepeatOverflow, scoreMatch } from './score.ts'
+import { hasIntraTeamGapOverflow, hasRepeatOverflow, scoreMatch } from './score.ts'
 import type { Match, MatchScore, PlayerSessionState, SessionState, Team } from './types'
 
 export type TeamSplitResult = {
@@ -15,6 +15,7 @@ export type PartitioningResult = {
   iterations: number
   relaxed_tolerance?: boolean
   repeat_overflow?: boolean
+  intra_team_gap_overflow?: boolean
 }
 
 export type PartitioningDiagnostic = {
@@ -92,8 +93,8 @@ function teamKey(team: Team) {
   return [...team].sort().join(':')
 }
 
-function splitCacheKey(players: PlayerSessionState[], tolerance?: number) {
-  return `${players.map((player) => player.player_id).sort().join(':')}|${tolerance ?? 'strict'}`
+function splitCacheKey(players: PlayerSessionState[], tolerance?: number, allowIntraTeamGapOverflow?: boolean) {
+  return `${players.map((player) => player.player_id).sort().join(':')}|${tolerance ?? 'strict'}|intra:${allowIntraTeamGapOverflow ? 'open' : 'cap'}`
 }
 
 function matchesKey(matches: Match[]) {
@@ -128,7 +129,12 @@ function evaluatePartition(
   state: SessionState,
   iteration: number,
   cache?: PartitioningRuntimeCache,
-  options: { tolerance?: number; relaxedTolerance?: boolean; allowRepeatOverflow?: boolean } = {},
+  options: {
+    tolerance?: number
+    relaxedTolerance?: boolean
+    allowRepeatOverflow?: boolean
+    allowIntraTeamGapOverflow?: boolean
+  } = {},
 ): PartitioningResult | null {
   let score = 0
   let stats = zeroStats()
@@ -139,6 +145,7 @@ function evaluatePartition(
     const split = bestTeamSplitWithTolerance(groups[courtIdx], state, {
       tolerance: options.tolerance,
       allowRepeatOverflow: options.allowRepeatOverflow,
+      allowIntraTeamGapOverflow: options.allowIntraTeamGapOverflow,
     }, cache)
     if (!split) return null
 
@@ -160,6 +167,9 @@ function evaluatePartition(
     iterations: iteration,
     relaxed_tolerance: options.relaxedTolerance,
     repeat_overflow: repeatOverflow,
+    intra_team_gap_overflow: matches.some((match) =>
+      hasIntraTeamGapOverflow(match.team_a, match.team_b, state),
+    ),
   }
 }
 
@@ -274,12 +284,16 @@ function isProjectedBurdenRepeat(
 function bestTeamSplitWithTolerance(
   players: PlayerSessionState[],
   state: SessionState,
-  options: { tolerance?: number; allowRepeatOverflow?: boolean } = {},
+  options: {
+    tolerance?: number
+    allowRepeatOverflow?: boolean
+    allowIntraTeamGapOverflow?: boolean
+  } = {},
   cache?: PartitioningRuntimeCache,
 ): TeamSplitResult | null {
   if (players.length !== 4) return null
 
-  const key = `${splitCacheKey(players, options.tolerance)}|repeat:${options.allowRepeatOverflow ? 'open' : 'cap'}`
+  const key = `${splitCacheKey(players, options.tolerance, options.allowIntraTeamGapOverflow)}|repeat:${options.allowRepeatOverflow ? 'open' : 'cap'}`
   if (cache?.split.has(key)) return cache.split.get(key) ?? null
 
   let best: TeamSplitResult | null = null
@@ -290,6 +304,7 @@ function bestTeamSplitWithTolerance(
     const scored = scoreMatch(teamA, teamB, state, {
       ...(options.tolerance === undefined ? {} : { tolerance: options.tolerance }),
       allowRepeatOverflow: options.allowRepeatOverflow,
+      allowIntraTeamGapOverflow: options.allowIntraTeamGapOverflow,
     })
 
     if (!Number.isFinite(scored.score)) continue
@@ -434,6 +449,7 @@ export function bestPartitioning(
     cache?: PartitioningRuntimeCache
     allowRelaxedTolerance?: boolean
     allowRepeatOverflow?: boolean
+    allowIntraTeamGapOverflow?: boolean
   } = {},
 ): PartitioningResult | null {
   if (players.length < 4 || players.length % 4 !== 0) return null
@@ -444,7 +460,11 @@ export function bestPartitioning(
   const canSearchExhaustively = partitionCount > 0 && partitionCount <= maxIterations
 
   function runSearch(
-    searchOptions: { tolerance?: number; relaxedTolerance?: boolean } = {},
+    searchOptions: {
+      tolerance?: number
+      relaxedTolerance?: boolean
+      allowIntraTeamGapOverflow?: boolean
+    } = {},
   ): { result: PartitioningResult | null; iterations: number } {
     let best: PartitioningResult | null = null
     let iterations = 0
@@ -489,6 +509,7 @@ export function bestPartitioning(
               iterations,
               relaxed_tolerance: finalBest.relaxed_tolerance,
               repeat_overflow: finalBest.repeat_overflow,
+              intra_team_gap_overflow: finalBest.intra_team_gap_overflow,
             }
           : null,
         iterations,
@@ -514,6 +535,7 @@ export function bestPartitioning(
           iterations,
           relaxed_tolerance: finalBest.relaxed_tolerance,
           repeat_overflow: finalBest.repeat_overflow,
+          intra_team_gap_overflow: finalBest.intra_team_gap_overflow,
         }
       : null,
       iterations,
@@ -535,13 +557,33 @@ export function bestPartitioning(
     return strict.result
   }
 
+  const canRelaxIntraTeamGap = options.allowIntraTeamGapOverflow !== false
+  const strictWithIntraTeamGap = canRelaxIntraTeamGap
+    ? runSearch({
+        allowIntraTeamGapOverflow: true,
+      })
+    : { result: null, iterations: 0 }
+  if (strictWithIntraTeamGap.result) {
+    options.diagnostics?.({
+      player_count: normalizedPlayers.length,
+      max_iterations: maxIterations,
+      partition_count: partitionCount,
+      exhaustive: canSearchExhaustively,
+      strict_iterations: strict.iterations + strictWithIntraTeamGap.iterations,
+      relaxed_iterations: 0,
+      found: true,
+      relaxed_tolerance: false,
+    })
+    return strictWithIntraTeamGap.result
+  }
+
   if (options.allowRelaxedTolerance === false) {
     options.diagnostics?.({
       player_count: normalizedPlayers.length,
       max_iterations: maxIterations,
       partition_count: partitionCount,
       exhaustive: canSearchExhaustively,
-      strict_iterations: strict.iterations,
+      strict_iterations: strict.iterations + strictWithIntraTeamGap.iterations,
       relaxed_iterations: 0,
       found: false,
       relaxed_tolerance: false,
@@ -563,7 +605,7 @@ export function bestPartitioning(
       max_iterations: maxIterations,
       partition_count: partitionCount,
       exhaustive: canSearchExhaustively,
-      strict_iterations: strict.iterations,
+      strict_iterations: strict.iterations + strictWithIntraTeamGap.iterations,
       relaxed_iterations: soft.iterations,
       found: true,
       relaxed_tolerance: true,
@@ -571,19 +613,61 @@ export function bestPartitioning(
     return soft.result
   }
 
+  const softWithIntraTeamGap = shouldTrySoftTolerance && canRelaxIntraTeamGap
+    ? runSearch({
+        tolerance: softTolerance,
+        relaxedTolerance: true,
+        allowIntraTeamGapOverflow: true,
+      })
+    : { result: null, iterations: 0 }
+  if (softWithIntraTeamGap.result) {
+    options.diagnostics?.({
+      player_count: normalizedPlayers.length,
+      max_iterations: maxIterations,
+      partition_count: partitionCount,
+      exhaustive: canSearchExhaustively,
+      strict_iterations: strict.iterations + strictWithIntraTeamGap.iterations,
+      relaxed_iterations: soft.iterations + softWithIntraTeamGap.iterations,
+      found: true,
+      relaxed_tolerance: true,
+    })
+    return softWithIntraTeamGap.result
+  }
+
   const open = runSearch({
     tolerance: Number.POSITIVE_INFINITY,
     relaxedTolerance: true,
   })
+  if (open.result) {
+    options.diagnostics?.({
+      player_count: normalizedPlayers.length,
+      max_iterations: maxIterations,
+      partition_count: partitionCount,
+      exhaustive: canSearchExhaustively,
+      strict_iterations: strict.iterations + strictWithIntraTeamGap.iterations,
+      relaxed_iterations: soft.iterations + softWithIntraTeamGap.iterations + open.iterations,
+      found: true,
+      relaxed_tolerance: true,
+    })
+    return open.result
+  }
+
+  const openWithIntraTeamGap = canRelaxIntraTeamGap
+    ? runSearch({
+        tolerance: Number.POSITIVE_INFINITY,
+        relaxedTolerance: true,
+        allowIntraTeamGapOverflow: true,
+      })
+    : { result: null, iterations: 0 }
   options.diagnostics?.({
     player_count: normalizedPlayers.length,
     max_iterations: maxIterations,
     partition_count: partitionCount,
     exhaustive: canSearchExhaustively,
-    strict_iterations: strict.iterations,
-    relaxed_iterations: soft.iterations + open.iterations,
-    found: Boolean(open.result),
-    relaxed_tolerance: Boolean(open.result),
+    strict_iterations: strict.iterations + strictWithIntraTeamGap.iterations,
+    relaxed_iterations: soft.iterations + softWithIntraTeamGap.iterations + open.iterations + openWithIntraTeamGap.iterations,
+    found: Boolean(openWithIntraTeamGap.result),
+    relaxed_tolerance: Boolean(openWithIntraTeamGap.result),
   })
-  return open.result
+  return openWithIntraTeamGap.result
 }

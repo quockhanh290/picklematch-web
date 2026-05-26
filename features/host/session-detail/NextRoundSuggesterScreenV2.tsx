@@ -982,15 +982,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       const courtIdx = options.courtIdx ?? nextCourtIdx
       if (courtIdx === undefined) break
       const suggestT0 = nowMs()
-      const requiredForThisCourt = [...roundRequiredIds]
+      const remainingCourtsInRound = Math.max(1, courtCapacity - projectedRoundMatchCount)
+      const availableRequiredIds = [...roundRequiredIds]
         .filter(playerId => !roundBusyIds.has(playerId) && !baseBusyIds.has(playerId))
-        .slice(0, 4)
+      const minRequiredForThisCourt = availableRequiredIds.length === 0
+        ? 0
+        : Math.min(4, Math.max(1, availableRequiredIds.length - ((remainingCourtsInRound - 1) * 4)))
+      const requiredForThisCourt = availableRequiredIds.slice(0, minRequiredForThisCourt)
       const requiredForThisCourtIds = new Set(requiredForThisCourt)
-      const deferredRequiredIds = [...roundRequiredIds]
-        .filter(playerId => !requiredForThisCourtIds.has(playerId) && !roundBusyIds.has(playerId))
-      const busyIds = new Set([...baseBusyIds, ...roundBusyIds, ...deferredRequiredIds])
+      const deferredRequiredIds = availableRequiredIds
+        .filter(playerId => !requiredForThisCourtIds.has(playerId))
+      const busyIds = new Set([...baseBusyIds, ...roundBusyIds])
       const tierOverrides = {
         ...fairnessAdjustment.tier_overrides,
+        ...Object.fromEntries(deferredRequiredIds.map(playerId => [playerId, Tier.FLEXIBLE])),
         ...Object.fromEntries(requiredForThisCourt.map(playerId => [playerId, Tier.MUST_PLAY])),
       }
       const result = suggestNextMatch(suggestionState, {
@@ -2930,11 +2935,28 @@ function SuggestedLiveMatchCard({
     setRepeatTradeoffApproved(false)
   }, [selectedChoiceId])
   const startDisabled = busy
+  const tradeoffSummaryLines: string[] = []
+  const visiblePvnaOverBy = pvnaTradeoff?.over_by ?? pvnaOverBy
+  if (visiblePvnaOverBy > 0) {
+    tradeoffSummaryLines.push(`PVNA +${formatNumber(visiblePvnaOverBy, 2)} so với cap ${formatNumber(configuredPvnaTolerance, 2)}`)
+  }
+  if (repeatTradeoff && (repeatTradeoff.over_by ?? 0) > 0) {
+    tradeoffSummaryLines.push(`lặp +${repeatTradeoff.over_by}`)
+  }
   return (
     <View style={{ borderRadius: RADIUS.lg, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, overflow: 'hidden', ...LAYOUT_SHADOW.sm }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
         <MatchTile match={toMatch(activeMatch)} state={state} pvnaTolerance={pvnaTolerance} playersById={playersById} onPlayerPress={onPlayerPress} embedded showSwapBadges />
       </View>
+      {tradeoffSummaryLines.length > 0 ? (
+        <View style={{ paddingHorizontal: 14, paddingBottom: tradeoffChoices.length > 1 ? 8 : 12 }}>
+          <View style={{ borderTopWidth: BORDER.hairline, borderTopColor: theme.outlineVariant, paddingTop: 9 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
+              Trade-off: {tradeoffSummaryLines.join(' · ')}
+            </Text>
+          </View>
+        </View>
+      ) : null}
       {tradeoffChoices.length > 1 ? (
         <View style={{ paddingHorizontal: 14, paddingBottom: 12, gap: 8 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.outline, fontWeight: '900', textTransform: 'uppercase' }}>
