@@ -50,6 +50,9 @@ Deno.serve(async (request) => {
       p_score_after: requiredNumber(body.score_after, 'score_after'),
       p_audit_payload: {
         ...auditPayload,
+        expected_round_matches: typeof body.expected_round_matches === 'number' && Number.isFinite(body.expected_round_matches)
+          ? Math.max(1, Math.floor(body.expected_round_matches))
+          : (auditPayload as Record<string, unknown>).expected_round_matches,
         source: 'session-live-matches-complete',
       },
     })

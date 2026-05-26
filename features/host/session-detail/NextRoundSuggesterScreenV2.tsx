@@ -20,6 +20,7 @@ import { SecondaryNavbar } from '@/components/design'
 import { BORDER, RADIUS, SHADOW as LAYOUT_SHADOW, SPACING } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { calculateOptimalCourts, PRESETS, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
+import { Tier } from '@/lib/next-round-suggester/classify'
 import type { SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import type { AlternativeAudit } from '@/lib/next-round-suggester/alternatives'
 import { commitCompletedRound, pairHistoryRowsFromState } from '@/lib/next-round-suggester/commit'
@@ -473,6 +474,9 @@ function buildLiveTradeoffChoices(
   })
 
   if (choices.length < 2) return null
+  if (!choices.some(choice => choice.metrics.pvna_over_by > 0 || choice.metrics.repeat_over_by > 0)) {
+    return null
+  }
   return {
     choices,
     recommended: choices.some(choice => choice.id === 'balanced') ? 'balanced' : choices[0].id,
@@ -908,6 +912,38 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       match.team_b.forEach(playerId => playerIds.add(playerId))
       playerIdsByRound.set(roundNo, playerIds)
     })
+    const hasCompletedRounds = suggestionState.rounds.some(round => round.status === 'completed')
+    const getRoundRequiredIds = (roundNo: number, remainingCourts: number, busyIds: Set<string>) => {
+      const remainingRoundSlots = Math.max(0, remainingCourts * 4)
+      if (remainingRoundSlots <= 0) return new Set<string>()
+      const required = [...suggestionState.players.values()]
+        .filter(player => player.checked_out_at === null && !player.opted_rest && !busyIds.has(player.player_id))
+        .filter(player => {
+          const isLateArrival = hasCompletedRounds && player.matches_played === 0
+          if (isLateArrival) return player.consecutive_rest >= 2
+          return player.consecutive_rest >= 1
+        })
+        .sort((left, right) => {
+          if (right.consecutive_rest !== left.consecutive_rest) return right.consecutive_rest - left.consecutive_rest
+          if (left.matches_played !== right.matches_played) return left.matches_played - right.matches_played
+          if (left.last_played_round !== right.last_played_round) return left.last_played_round - right.last_played_round
+          return left.player_id.localeCompare(right.player_id)
+        })
+        .map(player => player.player_id)
+      if (required.length > remainingRoundSlots) {
+        if (__DEV__) {
+          console.log('[NextRoundSuggesterV2] rolling round required over capacity', {
+            sessionId,
+            roundNo,
+            required: required.length,
+            remainingRoundSlots,
+          })
+        }
+        return new Set<string>()
+      }
+      return new Set(required)
+    }
+    let roundRequiredIds = new Set<string>()
     const projectedExistingMatches = countableMatches.filter(match =>
       match.status === 'live'
       || match.status === 'suggested'
@@ -932,21 +968,33 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     let projectedRoundMatchCount = countableMatches.length % courtCapacity
     let roundCourtIdxs = getInitialRoundCourtIdxs(projectedRoundNo)
     let roundBusyIds = new Set(playerIdsByRound.get(projectedRoundNo) ?? [])
+    roundRequiredIds = getRoundRequiredIds(projectedRoundNo, courtCapacity - projectedRoundMatchCount, roundBusyIds)
     for (let index = 0; index < count; index += 1) {
       if (projectedRoundMatchCount >= courtCapacity) {
         projectedRoundNo += 1
         projectedRoundMatchCount = 0
         roundCourtIdxs = getInitialRoundCourtIdxs(projectedRoundNo)
         roundBusyIds = new Set(playerIdsByRound.get(projectedRoundNo) ?? [])
+        roundRequiredIds = getRoundRequiredIds(projectedRoundNo, courtCapacity, roundBusyIds)
       }
       const nextCourtIdx = Array.from({ length: courtCapacity }, (_, idx) => idx)
         .find(idx => !queuedCourtIdxs.has(idx) && !roundCourtIdxs.has(idx))
       const courtIdx = options.courtIdx ?? nextCourtIdx
       if (courtIdx === undefined) break
       const suggestT0 = nowMs()
-      const busyIds = new Set([...baseBusyIds, ...roundBusyIds])
+      const requiredForThisCourt = [...roundRequiredIds]
+        .filter(playerId => !roundBusyIds.has(playerId) && !baseBusyIds.has(playerId))
+        .slice(0, 4)
+      const requiredForThisCourtIds = new Set(requiredForThisCourt)
+      const deferredRequiredIds = [...roundRequiredIds]
+        .filter(playerId => !requiredForThisCourtIds.has(playerId) && !roundBusyIds.has(playerId))
+      const busyIds = new Set([...baseBusyIds, ...roundBusyIds, ...deferredRequiredIds])
+      const tierOverrides = {
+        ...fairnessAdjustment.tier_overrides,
+        ...Object.fromEntries(requiredForThisCourt.map(playerId => [playerId, Tier.MUST_PLAY])),
+      }
       const result = suggestNextMatch(suggestionState, {
-        tier_overrides: fairnessAdjustment.tier_overrides,
+        tier_overrides: tierOverrides,
         busy_player_ids: busyIds,
         court_idx: courtIdx,
         max_alternatives: __DEV__ ? 8 : LIVE_TRADEOFF_ALTERNATIVE_LIMIT,
@@ -1028,6 +1076,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       match.team_b.forEach(playerId => busyIds.add(playerId))
       match.team_a.forEach(playerId => roundBusyIds.add(playerId))
       match.team_b.forEach(playerId => roundBusyIds.add(playerId))
+      match.team_a.forEach(playerId => roundRequiredIds.delete(playerId))
+      match.team_b.forEach(playerId => roundRequiredIds.delete(playerId))
       roundCourtIdxs.add(courtIdx)
       queuedCourtIdxs.add(courtIdx)
       projectedRoundMatchCount += 1
@@ -1174,6 +1224,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         audit_payload: {
           client_request_id: createClientRequestId('match'),
           sequence_no: match.sequence_no,
+          expected_round_matches: queueCourtCount,
         },
       }
       const rpcT0 = nowMs()
@@ -2878,7 +2929,7 @@ function SuggestedLiveMatchCard({
   useEffect(() => {
     setRepeatTradeoffApproved(false)
   }, [selectedChoiceId])
-  const startDisabled = busy || (requiresRepeatApproval && !repeatTradeoffApproved)
+  const startDisabled = busy
   return (
     <View style={{ borderRadius: RADIUS.lg, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, overflow: 'hidden', ...LAYOUT_SHADOW.sm }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
@@ -2927,7 +2978,7 @@ function SuggestedLiveMatchCard({
           </View>
         </View>
       ) : null}
-      {requiresRepeatApproval ? (
+      {false ? (
         <View style={{ marginHorizontal: 14, marginBottom: 12, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, backgroundColor: theme.warningBg, padding: 12, gap: 10 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
             <AlertTriangle size={16} color={theme.warningText} />

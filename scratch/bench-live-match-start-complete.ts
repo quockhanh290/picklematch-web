@@ -338,6 +338,7 @@ async function completeOneMatch(client: SupabaseAny, sessionId: string, startedM
       benchmark: true,
       source: 'scratch/bench-live-match-start-complete.ts',
       sequence_no: startedMatch.sequence_no,
+      expected_round_matches: Math.max(1, Number(startedMatch.round_no == null ? 1 : stateForScore.config.courts)),
     },
   })
   const completeRpcMs = now() - completeRpcT0

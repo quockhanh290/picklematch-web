@@ -252,6 +252,11 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     const presentPlayerIds = enginePlayerRows
       .filter(r => !r.checked_out_at)
       .map(r => r.player_id)
+    const optedRestPlayerIds = new Set(
+      enginePlayerRows
+        .filter(r => !r.checked_out_at && r.opted_rest)
+        .map(r => r.player_id),
+    )
 
     const liveRoundRows = [...byRound.entries()]
       .sort(([a], [b]) => a - b)
@@ -288,7 +293,9 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
             team_a: m.team_a,
             team_b: m.team_b,
           })),
-          resting: matches.length >= engineCourtCount ? roundPresentIds.filter(id => !playedIds.has(id)) : [],
+          resting: matches.length >= engineCourtCount
+            ? roundPresentIds.filter(id => !playedIds.has(id) && !optedRestPlayerIds.has(id))
+            : [],
           started_at: roundStartedAt ?? null,
           ended_at: roundEndedAt ?? null,
         }
