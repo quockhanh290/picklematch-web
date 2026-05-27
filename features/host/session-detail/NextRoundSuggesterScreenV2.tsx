@@ -18,6 +18,7 @@ import {
 } from 'lucide-react-native'
 
 import { SecondaryNavbar } from '@/components/design'
+import { colors } from '@/constants/colors'
 import { BORDER, RADIUS, SHADOW as LAYOUT_SHADOW, SPACING } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { calculateOptimalCourts, PRESETS, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
@@ -2034,37 +2035,28 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 126 + insets.bottom }}
         >
-          <SessionHeroCard
+          <SessionDashboardCard
             phase={phase}
             roundNo={heroRoundNo}
             presentCount={heroPlayerCount}
             rosterTotalCount={rosterTotalCount}
             checkedOutCount={checkedOutCount}
             requestedRestCount={requestedRestCount}
+            lateCount={lateArrivalPlayers.length}
+            groupSummaries={groupSummaries}
+            playersById={playersById}
             courtCount={courtCount}
+            roundPace={15}
+            pvnaTolerance={pvnaTolerance}
+            sessionDuration={courtDurationMin}
+            fairnessScore={fairnessScore}
             completedRounds={liveCompletedRoundCount}
             targetRounds={effectiveTargetRounds}
             onOpenRoster={openRoster}
-          />
-
-          <ManagePlayersButton
-            rosterTotalCount={rosterTotalCount}
-            checkedOutCount={checkedOutCount}
-            requestedRestCount={requestedRestCount}
-            onPress={openRoster}
-          />
-
-          <StatusChipRow
-            fairnessScore={fairnessScore}
-            courtCount={courtCount}
-            courtPreset={courtPreset}
             onFairnessPress={() => setSheet('fairness')}
             onSettingsPress={() => setSheet('settings')}
+            onLatePress={() => setSheet('late-arrivals')}
           />
-
-          {lateArrivalPlayers.length > 0 ? (
-            <LateArrivalsCta count={lateArrivalPlayers.length} onPress={() => setSheet('late-arrivals')} />
-          ) : null}
 
           {phase === 'plan' && (
             <>
@@ -2253,17 +2245,24 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   )
 }
 
-function SessionHeroCard({
-  phase,
+function SessionDashboardCard({
   roundNo,
   presentCount,
-  rosterTotalCount,
   checkedOutCount,
   requestedRestCount,
+  lateCount,
+  groupSummaries,
   courtCount,
+  roundPace,
+  pvnaTolerance,
+  sessionDuration,
+  fairnessScore,
   completedRounds,
   targetRounds,
   onOpenRoster,
+  onFairnessPress,
+  onSettingsPress,
+  onLatePress,
 }: {
   phase: 'plan' | 'active'
   roundNo: number
@@ -2271,55 +2270,395 @@ function SessionHeroCard({
   rosterTotalCount: number
   checkedOutCount: number
   requestedRestCount: number
+  lateCount: number
+  groupSummaries: GroupSummary[]
+  playersById: Map<string, ArrangementPlayer>
   courtCount: number
+  roundPace: number
+  pvnaTolerance: number
+  sessionDuration: number
+  fairnessScore: SessionFairnessScore
   completedRounds: number
   targetRounds: number
   onOpenRoster: () => void
+  onFairnessPress: () => void
+  onSettingsPress: () => void
+  onLatePress: () => void
 }) {
-  const theme = useAppTheme()
-  const remaining = Math.max(0, targetRounds - completedRounds)
+  const progressPct = targetRounds > 0 ? Math.min(100, Math.max(0, (completedRounds / targetRounds) * 100)) : 0
+  const configItems = [
+    `${courtCount} sân`,
+    `${roundPace}p`,
+    `±${pvnaTolerance}`,
+    `${sessionDuration}p`,
+    `${targetRounds} vòng`,
+  ]
   return (
-    <LinearGradient
-      colors={[theme.heroGradientStart, theme.primaryContainer]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ borderRadius: RADIUS.lg, padding: 16, minHeight: 134 }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: theme.heroLiveDot }} />
-            <Text style={eyebrowStyle(theme.heroBodyMuted, 10)}>
-              {phase === 'active' ? 'Đang diễn ra · Live' : 'Vòng kế tiếp · Đề xuất'}
-            </Text>
+    <>
+      <View style={dashboardStyles.card}>
+        <View style={dashboardStyles.body}>
+          <View style={dashboardStyles.leftCol}>
+            <View>
+              <Text style={dashboardStyles.miniLabel}>VÒNG</Text>
+              <Text style={dashboardStyles.roundNum}>{roundNo}</Text>
+              <View style={dashboardStyles.progressTrack}>
+                <View style={[dashboardStyles.progressFill, { width: `${progressPct}%` }]} />
+              </View>
+              <Text style={dashboardStyles.progressTxt}>{completedRounds}/{targetRounds} vòng</Text>
+            </View>
+
+            <TouchableOpacity testID="nrv2-fairness-chip" onPress={onFairnessPress} activeOpacity={0.85} style={dashboardStyles.fairBlock}>
+              <Text style={dashboardStyles.miniLabel}>FAIRNESS</Text>
+              <Text style={dashboardStyles.fairScore}>{fairnessScore.total}</Text>
+              <View style={dashboardStyles.fairBadge}>
+                <Text style={dashboardStyles.fairBadgeTxt}>{fairnessLabel(fairnessScore)}</Text>
+              </View>
+            </TouchableOpacity>
           </View>
-          <Text style={{ marginTop: 10, fontFamily: SCREEN_FONTS.headlineItalic, fontSize: 32, color: theme.surface }}>
-            Vòng {roundNo}
-          </Text>
-          <Text style={{ marginTop: 7, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
-            {presentCount} {phase === 'active' ? 'trong vòng' : 'trong danh sách'} · {courtCount} sân · {completedRounds}/{targetRounds} vòng
-          </Text>
-          <TouchableOpacity onPress={onOpenRoster} activeOpacity={0.7}>
-            <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.heroBodyMuted }}>
-              Roster {rosterTotalCount} · Check-out {checkedOutCount} · Xin nghỉ {requestedRestCount} →
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <View
-          style={{
-            backgroundColor: theme.heroPillBg,
-            borderRadius: RADIUS.full,
-            paddingHorizontal: 12,
-            paddingVertical: 8,
-          }}
-        >
-          <Text style={ctaTextStyle(theme.heroCountdownText, 12)}>
-            {phase === 'active' ? 'LIVE' : `Còn ${remaining} vòng`}
-          </Text>
+
+          <View style={dashboardStyles.divider} />
+
+          <View style={dashboardStyles.rightCol}>
+            <View style={dashboardStyles.manageLabelRow}>
+              <Text style={dashboardStyles.manageLabel}>NGƯỜI CHƠI</Text>
+              <TouchableOpacity testID="nrv2-roster-link" onPress={onOpenRoster} activeOpacity={0.7}>
+                <Text style={dashboardStyles.manageHint}>Bấm để quản lý ›</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={dashboardStyles.rowTop}>
+              <PlayerCell
+                num={presentCount}
+                label="Đang chơi"
+                size="big"
+                bgColor={colors.primaryLight}
+                borderColor="transparent"
+                numColor={colors.primary}
+                labelColor={colors.primary}
+                onPress={onOpenRoster}
+              />
+              <PlayerCell
+                num={groupSummaries.length}
+                label="Nhóm ưu tiên"
+                size="big"
+                bgColor={colors.surface}
+                borderColor={colors.primary}
+                numColor={colors.primary}
+                labelColor={colors.primary}
+                onPress={onOpenRoster}
+              />
+            </View>
+
+            <View style={dashboardStyles.statusRow}>
+              <StatusInlineItem count={lateCount} label="đến muộn" tone="warn" onPress={onLatePress} />
+              <View style={dashboardStyles.statusDivider} />
+              <StatusInlineItem count={requestedRestCount} label="nghỉ vòng" onPress={onOpenRoster} />
+              <View style={dashboardStyles.statusDivider} />
+              <StatusInlineItem count={checkedOutCount} label="check-out" onPress={onOpenRoster} />
+            </View>
+          </View>
         </View>
       </View>
-    </LinearGradient>
+
+      {lateCount > 0 && (
+        <View style={dashboardStyles.alertBanner}>
+          <View style={dashboardStyles.alertDot} />
+          <Text style={dashboardStyles.alertText}>
+            {lateCount} người chưa check-in - có thể đến muộn
+          </Text>
+          <TouchableOpacity onPress={onLatePress} activeOpacity={0.75}>
+            <Text style={dashboardStyles.alertAction}>Xử lý →</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <TouchableOpacity testID="nrv2-settings-chip" style={dashboardStyles.configFooter} onPress={onSettingsPress} activeOpacity={0.88}>
+        <Text style={dashboardStyles.cfgIcon}>☷</Text>
+        <View style={dashboardStyles.cfgGrid}>
+          {configItems.map((item, index) => (
+            <React.Fragment key={`${item}-${index}`}>
+              {index > 0 ? <View style={dashboardStyles.cfgDivider} /> : null}
+              <Text style={dashboardStyles.cfgVal} numberOfLines={1}>{item}</Text>
+            </React.Fragment>
+          ))}
+        </View>
+        <Text style={dashboardStyles.cfgEditText}>ĐỔI ›</Text>
+      </TouchableOpacity>
+    </>
   )
+}
+
+function StatusInlineItem({
+  count,
+  label,
+  tone = 'neutral',
+  onPress,
+}: {
+  count: number
+  label: string
+  tone?: 'neutral' | 'warn'
+  onPress: () => void
+}) {
+  const color = tone === 'warn' ? colors.warningDark : colors.textSecondary
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.75} style={dashboardStyles.statusItem}>
+      <Text style={[dashboardStyles.statusCount, { color }]}>{count}</Text>
+      <Text style={[dashboardStyles.statusLabel, { color }]}>{label}</Text>
+    </TouchableOpacity>
+  )
+}
+
+function PlayerCell({
+  num,
+  label,
+  size,
+  numColor,
+  bgColor,
+  borderColor,
+  labelColor,
+  subText,
+  isAlert,
+  onPress,
+}: {
+  num: number
+  label: string
+  size: 'big' | 'sm'
+  numColor?: string
+  bgColor?: string
+  borderColor?: string
+  labelColor?: string
+  subText?: string
+  isAlert?: boolean
+  onPress?: () => void
+}) {
+  const isBig = size === 'big'
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.84}
+      style={[
+        dashboardStyles.cell,
+        isBig && dashboardStyles.cellBig,
+        { backgroundColor: bgColor ?? colors.surfaceAlt, borderColor: borderColor ?? 'transparent' },
+        isAlert && dashboardStyles.cellAlert,
+      ]}
+    >
+      <Text
+        style={[
+          dashboardStyles.cellNum,
+          isBig ? dashboardStyles.cellNumBig : dashboardStyles.cellNumSm,
+          { color: isAlert ? colors.warningDark : numColor ?? colors.textSecondary },
+        ]}
+      >
+        {num}
+      </Text>
+      <Text style={[dashboardStyles.cellLbl, { color: labelColor ?? colors.textSecondary }, isAlert && dashboardStyles.cellLblAlert]}>
+        {label}
+      </Text>
+      {subText ? (
+        <Text style={dashboardStyles.cellSub} numberOfLines={1}>{subText}</Text>
+      ) : null}
+      <Text style={[dashboardStyles.cellChev, isAlert && { color: colors.warning }]}>›</Text>
+    </TouchableOpacity>
+  )
+}
+
+const dashboardStyles = {
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 0.5,
+    borderColor: colors.border,
+    overflow: 'hidden' as const,
+  },
+  strip: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+  },
+  stripLeft: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
+  stripDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: colors.surface },
+  stripLabel: {
+    fontFamily: SCREEN_FONTS.bold,
+    fontSize: 10,
+    color: colors.surface,
+    fontWeight: '700' as const,
+    letterSpacing: 0.5,
+  },
+  remainingPill: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 9,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  remainingText: { fontFamily: SCREEN_FONTS.bold, fontSize: 10, color: colors.surface, fontWeight: '700' as const },
+  body: {
+    paddingHorizontal: 14,
+    paddingVertical: 15,
+    flexDirection: 'row' as const,
+    alignItems: 'stretch' as const,
+    gap: 12,
+  },
+  divider: { width: 0.5, backgroundColor: colors.border },
+  leftCol: { width: 84, flexDirection: 'column' as const, gap: 8, flexShrink: 0 },
+  miniLabel: {
+    fontFamily: SCREEN_FONTS.bold,
+    fontSize: 10,
+    color: colors.textMuted,
+    fontWeight: '800' as const,
+    letterSpacing: 0.5,
+    marginBottom: 1,
+  },
+  roundNum: {
+    fontFamily: SCREEN_FONTS.headlineBlack,
+    fontSize: 40,
+    color: colors.text,
+    lineHeight: 40,
+  },
+  progressTrack: {
+    height: 3,
+    backgroundColor: colors.border,
+    borderRadius: 999,
+    overflow: 'hidden' as const,
+    width: 78,
+    marginTop: 4,
+  },
+  progressFill: { height: '100%' as const, backgroundColor: colors.primary, borderRadius: 999 },
+  progressTxt: { fontFamily: SCREEN_FONTS.label, fontSize: 11, color: colors.textSecondary, fontWeight: '600' as const, marginTop: 3 },
+  fairBlock: { marginTop: 9 },
+  fairScore: {
+    fontFamily: SCREEN_FONTS.headlineBlack,
+    fontSize: 36,
+    color: colors.primary,
+    lineHeight: 36,
+  },
+  fairBadge: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    alignSelf: 'flex-start' as const,
+    marginTop: 2,
+  },
+  fairBadgeTxt: { fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: colors.primary, fontWeight: '800' as const },
+  rightCol: { flex: 1, flexDirection: 'column' as const, gap: 8 },
+  manageLabelRow: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const, marginBottom: 0 },
+  manageLabel: { fontFamily: SCREEN_FONTS.bold, fontSize: 10, color: colors.textMuted, fontWeight: '600' as const, letterSpacing: 0.5 },
+  manageHint: { fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: colors.primary, fontWeight: '800' as const },
+  rowTop: { flexDirection: 'row' as const, gap: 8 },
+  rowBottom: { flexDirection: 'row' as const, gap: 5 },
+  cell: {
+    flex: 1,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 10,
+    padding: 10,
+    paddingHorizontal: 13,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    position: 'relative' as const,
+    minHeight: 58,
+  },
+  cellBig: { minHeight: 94, justifyContent: 'center' as const },
+  cellAlert: { backgroundColor: colors.warningLight, borderColor: '#F0D5A8' },
+  cellNum: { fontFamily: SCREEN_FONTS.headlineBlack },
+  cellNumBig: { fontSize: 40, marginBottom: 5 },
+  cellNumSm: { fontSize: 24, marginBottom: 1 },
+  cellLbl: { fontFamily: SCREEN_FONTS.label, fontSize: 13, color: colors.textSecondary, fontWeight: '700' as const },
+  cellLblAlert: { color: colors.warningDark },
+  cellSub: {
+    fontFamily: SCREEN_FONTS.body,
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
+    paddingRight: 10,
+  },
+  cellChev: {
+    position: 'absolute' as const,
+    bottom: 5,
+    right: 7,
+    fontSize: 10,
+    color: 'transparent',
+    fontFamily: SCREEN_FONTS.label,
+  },
+  statusRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    flexWrap: 'wrap' as const,
+    gap: 8,
+    marginTop: 1,
+  },
+  statusItem: { flexDirection: 'row' as const, alignItems: 'baseline' as const, gap: 3 },
+  statusCount: { fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 17, lineHeight: 18 },
+  statusLabel: { fontFamily: SCREEN_FONTS.label, fontSize: 12, fontWeight: '700' as const },
+  statusDivider: { width: 1, height: 12, backgroundColor: colors.border },
+  alertBanner: {
+    marginTop: 12,
+    backgroundColor: colors.warningLight,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#F0D5A8',
+  },
+  alertDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: colors.warning },
+  alertText: { flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 13, color: colors.warningDark, fontWeight: '700' as const },
+  alertAction: { fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: colors.warningDark, fontWeight: '700' as const },
+  configFooter: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 9,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    marginTop: 12,
+  },
+  cfgHeader: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const, marginBottom: 8 },
+  cfgLabel: { fontFamily: SCREEN_FONTS.bold, fontSize: 10, color: colors.textMuted, fontWeight: '700' as const, letterSpacing: 0.5 },
+  cfgEditPill: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    backgroundColor: colors.surface,
+    borderWidth: 0.5,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  cfgIcon: { fontFamily: SCREEN_FONTS.bold, fontSize: 14, color: colors.textSecondary, fontWeight: '800' as const },
+  cfgEditText: { fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: colors.primary, fontWeight: '800' as const },
+  cfgGrid: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 7,
+    minWidth: 0,
+  },
+  cfgDivider: { width: 1, height: 12, backgroundColor: colors.border },
+  cfgItem: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    borderColor: colors.border,
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    alignItems: 'center' as const,
+    gap: 2,
+    minWidth: 0,
+  },
+  cfgItemHi: { backgroundColor: colors.primaryLight, borderColor: '#C5DDD3' },
+  cfgVal: { fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: colors.text, lineHeight: 14 },
+  cfgLbl: { fontFamily: SCREEN_FONTS.label, fontSize: 11, color: colors.textMuted, fontWeight: '600' as const, textAlign: 'center' as const },
 }
 
 function LateArrivalsCta({ count, onPress }: { count: number; onPress: () => void }) {
@@ -3307,9 +3646,16 @@ function SuggestedLiveMatchCard({
     tradeoffSummaryLines.push(`lặp +${repeatTradeoff.over_by}`)
   }
   return (
-    <View style={{ borderRadius: RADIUS.lg, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, overflow: 'hidden', ...LAYOUT_SHADOW.sm }}>
+    <View style={{ borderRadius: 16, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
-        <MatchTile match={toMatch(activeMatch)} state={state} pvnaTolerance={pvnaTolerance} playersById={playersById} onPlayerPress={onPlayerPress} embedded showSwapBadges />
+        <SuggestedMatchTile
+          match={toMatch(activeMatch)}
+          state={state}
+          pvnaTolerance={pvnaTolerance}
+          playersById={playersById}
+          onPlayerPress={onPlayerPress}
+          showSwapBadges
+        />
       </View>
       {tradeoffSummaryLines.length > 0 ? (
         <View style={{ paddingHorizontal: 14, paddingBottom: tradeoffChoices.length > 1 ? 8 : 12 }}>
@@ -3440,11 +3786,11 @@ function SuggestedLiveMatchCard({
           ) : null}
         </View>
       ) : null}
-      <View style={{ backgroundColor: theme.surfaceContainerLow, borderTopWidth: BORDER.hairline, borderTopColor: theme.outlineVariant, padding: 14 }}>
+      <View style={{ backgroundColor: colors.surfaceAlt, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 12 }}>
         <TouchableOpacity
           onPress={() => onStart(activeMatch)}
           disabled={startDisabled}
-          style={{ height: 44, borderRadius: RADIUS.md, backgroundColor: startDisabled ? theme.outlineVariant : theme.primary, alignItems: 'center', justifyContent: 'center', ...LAYOUT_SHADOW.xs }}
+          style={{ height: 42, borderRadius: 9, backgroundColor: startDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
         >
           {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Bắt đầu trận</Text>}
         </TouchableOpacity>
@@ -3548,6 +3894,123 @@ function LiveMatchScoreBoard({
         >
           {cancelBusy ? <ActivityIndicator color={theme.dangerText} /> : <Text style={ctaTextStyle(theme.dangerText, 12)}>Hủy trận</Text>}
         </Pressable>
+      </View>
+    </View>
+  )
+}
+
+function SuggestedMatchTile({
+  match,
+  state,
+  pvnaTolerance,
+  playersById,
+  onPlayerPress,
+  showSwapBadges = false,
+}: {
+  match: Match
+  state: SessionState
+  pvnaTolerance?: number
+  playersById: Map<string, ArrangementPlayer>
+  onPlayerPress: (playerId: string) => void
+  showSwapBadges?: boolean
+}) {
+  const theme = useAppTheme()
+  const diff = useMemo(
+    () => Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state)),
+    [match.team_a, match.team_b, state],
+  )
+  const effectivePvnaTolerance = pvnaTolerance ?? state.config.pvna_tolerance
+  const pvnaCapExceeded = diff > effectivePvnaTolerance
+  const repeatCap = useMemo(
+    () => getProjectedRepeatCapSummary(match, state),
+    [match, state],
+  )
+  const repeatCapExceeded =
+    repeatCap.max_partner_pair_count > MAX_PROJECTED_PARTNER_PAIR_COUNT ||
+    repeatCap.max_opponent_pair_count > MAX_PROJECTED_OPPONENT_PAIR_COUNT ||
+    repeatCap.max_repeated_partners_per_player > MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER ||
+    repeatCap.max_repeated_opponents_per_player > MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER
+  const repeatDetails = useMemo(
+    () => getRepeatDetailLines(match, state, playersById),
+    [match, playersById, state],
+  )
+  const [repeatExpanded, setRepeatExpanded] = useState(false)
+
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+          <View style={{ backgroundColor: colors.primary, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: colors.surface, textTransform: 'uppercase' }}>
+              SÂN {match.court_idx + 1}
+            </Text>
+          </View>
+        </View>
+        <View style={{ borderRadius: 6, backgroundColor: pvnaCapExceeded ? colors.warningLight : colors.primaryLight, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: pvnaCapExceeded ? '#993C1D30' : '#0F6E5630' }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: pvnaCapExceeded ? colors.warningDark : colors.primary, textTransform: 'uppercase' }}>
+            CHÊNH {diff.toFixed(2)}
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+        <SuggestedTeamBlock team={match.team_a} state={state} playersById={playersById} onPlayerPress={onPlayerPress} showSwapBadges={showSwapBadges} />
+        <View style={{ width: 36, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, lineHeight: 20, color: colors.textMuted }}>VS</Text>
+        </View>
+        <SuggestedTeamBlock team={match.team_b} state={state} playersById={playersById} onPlayerPress={onPlayerPress} showSwapBadges={showSwapBadges} />
+      </View>
+
+      {repeatDetails.pairLines.length > 0 ? (
+        <RepeatCompactSummary
+          expanded={repeatExpanded}
+          onToggle={() => setRepeatExpanded(value => !value)}
+          partnerCount={repeatCap.max_partner_pair_count}
+          opponentCount={repeatCap.max_opponent_pair_count}
+          partnerPairs={repeatDetails.partnerPairs}
+          opponentPairs={repeatDetails.opponentPairs}
+          playersById={playersById}
+          exceeded={repeatCapExceeded}
+        />
+      ) : null}
+    </View>
+  )
+}
+
+function SuggestedTeamBlock({
+  team,
+  state,
+  playersById,
+  onPlayerPress,
+  showSwapBadges,
+}: {
+  team: string[]
+  state: SessionState
+  playersById: Map<string, ArrangementPlayer>
+  onPlayerPress: (playerId: string) => void
+  showSwapBadges: boolean
+}) {
+  const theme = useAppTheme()
+  return (
+    <View style={{ flex: 1, alignItems: 'center', minWidth: 0 }}>
+      <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 10 }}>
+        {team.map((id, index) => (
+          <React.Fragment key={id}>
+            <TouchableOpacity onPress={() => onPlayerPress(id)} activeOpacity={0.76} style={{ flex: 1, alignItems: 'center', position: 'relative' }}>
+              <View style={{ position: 'relative' }}>
+                <PlayerAvatar name={playerName(id, playersById)} size={52} />
+                {showSwapBadges ? (
+                  <View style={{ position: 'absolute', right: -3, bottom: -3, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.surfaceAlt, borderWidth: 1.5, borderColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                    <Repeat2 size={9} color={colors.textSecondary} strokeWidth={2.5} />
+                  </View>
+                ) : null}
+              </View>
+              <Text numberOfLines={1} style={{ marginTop: 5, textAlign: 'center', fontFamily: SCREEN_FONTS.headline, fontSize: 17, lineHeight: 18, color: colors.text }}>
+                {playerName(id, playersById)}
+              </Text>
+            </TouchableOpacity>
+          </React.Fragment>
+        ))}
       </View>
     </View>
   )

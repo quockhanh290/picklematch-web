@@ -58,7 +58,7 @@ export function PlayerAvatar({ name, size = 30 }: { name: string; size?: number 
         justifyContent: 'center',
       }}
     >
-      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: Math.max(10, size * 0.34), color: avatarColor.text }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: Math.max(10, size * 0.34), color: avatarColor.text }}>
         {initials(name)}
       </Text>
     </View>
