@@ -27,12 +27,75 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
   const optimisticPlayerRowsRef = useRef(new Map<string, SessionPlayerStateRow>())
   const settleTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
+  const buildRowsFromRaw = useCallback((raw: {
+    live_state_version: unknown
+    player_rows?: SessionPlayerStateRow[]
+    pair_rows?: SessionPairHistoryRow[]
+    round_rows?: RawRoundRow[]
+    live_match_rows?: SessionLiveMatchRow[]
+  }): LiveRows => {
+    const liveStateVersion = typeof raw.live_state_version === 'number'
+      ? raw.live_state_version
+      : Number(raw.live_state_version ?? 0)
+
+    const serverPlayerRows = ((raw.player_rows ?? []) as SessionPlayerStateRow[]).map(row => ({
+      ...row,
+      ...(optimisticPlayerPatchesRef.current.get(row.player_id) ?? {}),
+      players: {
+        pvna: getPlayerPvna(playersById.get(row.player_id)) ?? 0,
+        elo: playersById.get(row.player_id)?.elo,
+        gender: playersById.get(row.player_id)?.gender,
+        partner_gender_pref: playersById.get(row.player_id)?.metadata?.partner_gender_pref,
+        opponent_gender_pref: playersById.get(row.player_id)?.metadata?.opponent_gender_pref,
+      },
+      session_players: {
+        metadata: playersById.get(row.player_id)?.metadata ?? null,
+      },
+    }))
+    const serverPlayerIds = new Set(serverPlayerRows.map(row => row.player_id))
+    const optimisticRows = [...optimisticPlayerRowsRef.current.values()]
+      .filter(row => !serverPlayerIds.has(row.player_id))
+
+    return {
+      playerRows: [...serverPlayerRows, ...optimisticRows],
+      pairRows: (raw.pair_rows ?? []) as SessionPairHistoryRow[],
+      roundRows: ((raw.round_rows ?? []) as RawRoundRow[]).map(normalizeRoundRow),
+      liveMatchRows: ((raw.live_match_rows ?? []) as SessionLiveMatchRow[]).map(row => ({
+        ...row,
+        team_a: row.team_a,
+        team_b: row.team_b,
+        resting: row.resting ?? [],
+        score_a: row.score_a ?? 0,
+        score_b: row.score_b ?? 0,
+      })),
+      liveStateVersion,
+    }
+  }, [playersById])
+
   const loadLiveState = useCallback(async (options: LoadLiveStateOptions = {}): Promise<LiveRows | null> => {
     const silent = options.silent === true
     const startedAt = Date.now()
     setRefreshing(true)
     if (!silent) setError(null)
     try {
+      const snapshotRes = await supabase.rpc('get_live_session_snapshot_versioned', {
+        p_session_id: sessionId,
+      })
+      if (!snapshotRes.error && snapshotRes.data) {
+        const nextRows = buildRowsFromRaw(snapshotRes.data as {
+          live_state_version: unknown
+          player_rows?: SessionPlayerStateRow[]
+          pair_rows?: SessionPairHistoryRow[]
+          round_rows?: RawRoundRow[]
+          live_match_rows?: SessionLiveMatchRow[]
+        })
+        setRows(nextRows)
+        return nextRows
+      }
+      if (__DEV__ && snapshotRes.error) {
+        console.warn('[useLiveRows] snapshot RPC failed, falling back to multi-query load', snapshotRes.error)
+      }
+
       const loadVersion = () =>
         supabase
           .from('sessions')
@@ -111,48 +174,20 @@ export function useLiveRows(sessionId: string, playersById: Map<string, Arrangem
         return null
       }
 
-      const liveStateVersion = typeof sessionRes.data.live_state_version === 'number'
-        ? sessionRes.data.live_state_version
-        : Number(sessionRes.data.live_state_version ?? 0)
-
-      const serverPlayerRows = ((playerRes.data ?? []) as SessionPlayerStateRow[]).map(row => ({
-          ...row,
-          ...(optimisticPlayerPatchesRef.current.get(row.player_id) ?? {}),
-          players: {
-            pvna: getPlayerPvna(playersById.get(row.player_id)) ?? 0,
-            elo: playersById.get(row.player_id)?.elo,
-            gender: playersById.get(row.player_id)?.gender,
-            partner_gender_pref: playersById.get(row.player_id)?.metadata?.partner_gender_pref,
-            opponent_gender_pref: playersById.get(row.player_id)?.metadata?.opponent_gender_pref,
-          },
-          session_players: {
-            metadata: playersById.get(row.player_id)?.metadata ?? null,
-          },
-        }))
-      const serverPlayerIds = new Set(serverPlayerRows.map(row => row.player_id))
-      const optimisticRows = [...optimisticPlayerRowsRef.current.values()]
-        .filter(row => !serverPlayerIds.has(row.player_id))
-      const nextRows = {
-        playerRows: [...serverPlayerRows, ...optimisticRows],
-        pairRows: (pairRes.data ?? []) as SessionPairHistoryRow[],
-        roundRows: ((roundRes.data ?? []) as RawRoundRow[]).map(normalizeRoundRow),
-        liveMatchRows: ((liveMatchRes.data ?? []) as SessionLiveMatchRow[]).map(row => ({
-          ...row,
-          team_a: row.team_a,
-          team_b: row.team_b,
-          resting: row.resting ?? [],
-          score_a: row.score_a ?? 0,
-          score_b: row.score_b ?? 0,
-        })),
-        liveStateVersion,
-      }
+      const nextRows = buildRowsFromRaw({
+        live_state_version: sessionRes.data.live_state_version,
+        player_rows: playerRes.data ?? [],
+        pair_rows: pairRes.data ?? [],
+        round_rows: roundRes.data ?? [],
+        live_match_rows: liveMatchRes.data ?? [],
+      })
       setRows(nextRows)
       return nextRows
     } finally {
       lastLoadStateMsRef.current = Date.now() - startedAt
       setRefreshing(false)
     }
-  }, [playersById, sessionId])
+  }, [buildRowsFromRaw, sessionId])
 
   const patchPlayerRow = useCallback((playerId: string, patch: Partial<SessionPlayerStateRow>) => {
     optimisticPlayerPatchesRef.current.set(playerId, patch)

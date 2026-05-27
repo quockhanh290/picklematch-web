@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Sparkles,
   TrendingUp,
+  Users,
   Zap,
 } from 'lucide-react-native'
 
@@ -70,7 +71,7 @@ import type {
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
-import { checkInLiveSessionPlayers, invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent, prewarmLiveSessionVersionGuard, repairLiveSessionPlayerStateFromRounds } from './next-round-v2/api'
+import { checkInLiveSessionPlayers, invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent, repairLiveSessionPlayerStateFromRounds } from './next-round-v2/api'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
 import { ChoiceRow, NavbarRightActions, StickyRoundCta } from './next-round-v2/controls'
@@ -288,6 +289,16 @@ function nowMs() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now()
 }
 
+function waitForUiFrame() {
+  return new Promise<void>(resolve => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve())
+      return
+    }
+    setTimeout(resolve, 0)
+  })
+}
+
 function createClientRequestId(action: 'start' | 'end' | 'match') {
   const randomPart = Math.random().toString(36).slice(2, 10)
   return `${action}_${Date.now().toString(36)}_${randomPart}`
@@ -312,6 +323,7 @@ type BuildSuggestedMatchOptions = {
 
 type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   preview_live_state_version?: number | null
+  preview_countable_match_count?: number | null
   warnings?: string[]
   tradeoffs?: SuggestionTradeoff[]
   approval_required?: boolean
@@ -321,6 +333,69 @@ type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   fairness_reason_details?: string[]
   tradeoff_choices?: SuggestionTradeoffChoice[]
   recommended_tradeoff_choice?: SuggestionTradeoffChoiceId
+}
+
+type LiveDisplayMatchRow = SessionLiveMatchRow & {
+  client_preview_id?: string
+}
+
+type SuggestedPreviewBatch = {
+  key: string
+  matches: SuggestedLiveMatchRow[]
+}
+
+function buildPreviewBatchKey(
+  sessionId: string,
+  state: SessionState,
+  courtCount: number,
+  pvnaTolerance: number,
+  fairnessAdjustment: { tier_overrides: Record<string, Tier>; applied_for_warnings: unknown[] },
+) {
+  const playersKey = [...state.players.values()]
+    .map(player => {
+      const partnerKey = [...player.partner_counts.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([playerId, count]) => `${playerId}:${count}`)
+        .join(',')
+      const opponentKey = [...player.opponent_counts.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([playerId, count]) => `${playerId}:${count}`)
+        .join(',')
+      return [
+        player.player_id,
+        player.pvna,
+        player.group_id ?? '',
+        player.checked_out_at ? 'out' : 'in',
+        player.opted_rest ? 'rest' : 'play',
+        player.matches_played,
+        player.last_played_round,
+        player.consecutive_rest,
+        player.consecutive_play,
+        player.gender ?? '',
+        player.partner_gender_pref,
+        player.opponent_gender_pref,
+        partnerKey,
+        opponentKey,
+      ].join(':')
+    })
+    .sort()
+    .join('|')
+  const tierKey = Object.entries(fairnessAdjustment.tier_overrides)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([playerId, tier]) => `${playerId}:${tier}`)
+    .join(',')
+  return [
+    sessionId,
+    state.status,
+    state.current_round,
+    courtCount,
+    pvnaTolerance,
+    state.config.pvna_tolerance,
+    JSON.stringify(state.config.weights),
+    fairnessAdjustment.applied_for_warnings.map(String).sort().join(','),
+    tierKey,
+    playersKey,
+  ].join('||')
 }
 
 function getAlternativePvnaGap(alternative: SuggestionAlternative) {
@@ -497,9 +572,14 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   const completingMatchExpectedPlayedRef = useRef(new Map<string, { playerIds: string[]; expectedPlayed: number }>())
   const lateArrivalInFlightRef = useRef(new Set<string>())
   const reconcileTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const liveMatchMutationQueueRef = useRef(Promise.resolve())
+  const suggestedPreviewBatchRef = useRef<SuggestedPreviewBatch | null>(null)
+  const previewBatchKeyRef = useRef<string | null>(null)
   const model = useNextRoundModel({ sessionId, players, courts })
   const [liveScores, setLiveScores] = useState<Record<string, { a: number; b: number }>>({})
-  const [optimisticLiveMatches, setOptimisticLiveMatches] = useState<SessionLiveMatchRow[]>([])
+  const [optimisticLiveMatches, setOptimisticLiveMatches] = useState<LiveDisplayMatchRow[]>([])
+  const [liveMatchDisplayKeys, setLiveMatchDisplayKeys] = useState<Record<string, string>>({})
+  const [startedPreviewIds, setStartedPreviewIds] = useState<Set<string>>(() => new Set())
   const [completingLiveMatchIds, setCompletingLiveMatchIds] = useState<Set<string>>(() => new Set())
   const {
     activeRound,
@@ -577,13 +657,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
 
   const lastBusRefreshRef = useRef(0)
   const liveStateVersionRef = useRef<number | null>(rows.liveStateVersion ?? null)
-  const prewarmedVersionGuardRef = useRef<string | null>(null)
 
   React.useEffect(() => {
     liveStateVersionRef.current = rows.liveStateVersion ?? null
   }, [rows.liveStateVersion])
   React.useEffect(() => {
     autoRepairStateAttemptedRef.current = false
+    suggestedPreviewBatchRef.current = null
+    previewBatchKeyRef.current = null
+    setStartedPreviewIds(new Set())
+    setLiveMatchDisplayKeys({})
   }, [sessionId])
   React.useEffect(() => {
     if (phase !== 'recap' || matchCountConsistencyRows.length === 0) {
@@ -718,18 +801,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     if (Date.now() - lastBusRefreshRef.current < 2000) return
     void loadLiveState()
   }, [loadLiveState]))
-
-  React.useEffect(() => {
-    if (loading || liveStateVersion === null || actionInFlightRef.current) return
-
-    const prewarmKey = `${sessionId}:${liveStateVersion}`
-    if (prewarmedVersionGuardRef.current === prewarmKey) return
-    prewarmedVersionGuardRef.current = prewarmKey
-
-    void prewarmLiveSessionVersionGuard(sessionId).catch((error) => {
-      if (__DEV__) console.warn('[NextRoundSuggesterV2] version guard prewarm failed', error)
-    })
-  }, [loading, liveStateVersion, sessionId])
 
   const openRoster = useCallback(() => {
     router.push({ pathname: '/host/session/[id]/roster', params: { id: sessionId } } as any)
@@ -869,7 +940,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     let projectMs = 0
     let suggestionState = options.stateOverride ?? state
     const liveMatchRows = options.liveMatchRowsOverride ?? rows.liveMatchRows
-    const payloads: Array<Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice'>> = []
+    const payloads: Array<Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice'>> = []
     const baseBusyIds = new Set(
       liveMatchRows
         .filter(match =>
@@ -895,6 +966,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     const countableMatches = liveMatchRows
       .filter(match => match.status !== 'cancelled')
       .sort((left, right) => left.sequence_no - right.sequence_no)
+    const previewCountableMatchCount = countableMatches.length
     const logicalRoundByMatchId = new Map<string, number>()
     countableMatches.forEach((match, matchIndex) => {
       const roundNo = Math.floor(matchIndex / courtCapacity)
@@ -1089,6 +1161,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         resting: alternative.resting,
         round_no: projectedRoundNo,
         preview_live_state_version: rows.liveStateVersion,
+        preview_countable_match_count: previewCountableMatchCount,
         warnings: visibleWarnings,
         tradeoffs: visibleTradeoffs,
         approval_required: alternative.approval_required || shouldSurfaceAutoPvnaTradeoff,
@@ -1156,12 +1229,48 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       roundNo: match.round_no,
       status: match.status,
     })
-    await runAction(`start-match-${match.id}`, async () => {
+    const previewVersion = match.preview_live_state_version ?? null
+    const previewCountableMatchCount = match.preview_countable_match_count ?? null
+    if (previewVersion === null || previewCountableMatchCount === null) {
+      setError(toUserSafeActionError(new Error('Preview version missing')))
+      void loadLiveState()
+      return
+    }
+
+    const optimisticT0 = nowMs()
+    const optimisticSequenceNo = [...rows.liveMatchRows, ...optimisticLiveMatches]
+      .filter(row => row.status !== 'cancelled')
+      .length
+    const optimisticMatch: LiveDisplayMatchRow = {
+      ...match,
+      client_preview_id: match.id,
+      status: 'live',
+      started_at: new Date().toISOString(),
+      score_a: match.score_a ?? 0,
+      score_b: match.score_b ?? 0,
+      resting: match.resting ?? [],
+    }
+    setStartedPreviewIds(current => {
+      const next = new Set(current)
+      next.add(match.id)
+      return next
+    })
+    setOptimisticLiveMatches(current => {
+      return [
+        ...current.filter(row => row.id !== match.id),
+        {
+          ...optimisticMatch,
+          sequence_no: optimisticSequenceNo,
+        },
+      ]
+    })
+    const optimisticMs = nowMs() - optimisticT0
+
+    const executeStart = async () => {
       const actionT0 = nowMs()
       const expectedVersion = liveStateVersionRef.current
       if (expectedVersion === null) throw new Error('Session changed')
-      const previewVersion = match.preview_live_state_version ?? null
-      if (previewVersion === null || previewVersion !== expectedVersion) {
+      if (expectedVersion < previewVersion) {
         throw new Error('Preview is stale')
       }
       const payloadBuildT0 = nowMs()
@@ -1180,6 +1289,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           source: 'client-preview-start-live-match',
           preview_id: match.id,
           preview_live_state_version: previewVersion,
+          preview_countable_match_count: previewCountableMatchCount,
         },
       }
       const payloadBuildMs = nowMs() - payloadBuildT0
@@ -1189,14 +1299,25 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       })
       if (rpcError) throw rpcError
       const rpcMs = nowMs() - rpcT0
-      const optimisticT0 = nowMs()
+      const nextVersion = Number(payload?.live_state_version)
+      if (Number.isFinite(nextVersion)) {
+        liveStateVersionRef.current = liveStateVersionRef.current === null
+          ? nextVersion
+          : Math.max(liveStateVersionRef.current, nextVersion)
+      }
       if (payload.match) {
+        setLiveMatchDisplayKeys(current => ({
+          ...current,
+          [payload.match.id]: match.id,
+        }))
         setOptimisticLiveMatches(current => [
-          ...current.filter(row => row.id !== payload.match.id),
-          payload.match,
+          ...current.filter(row => row.id !== match.id && row.id !== payload.match.id),
+          {
+            ...payload.match,
+            client_preview_id: match.id,
+          },
         ])
       }
-      const optimisticMs = nowMs() - optimisticT0
       const applyT0 = nowMs()
       applyLiveMatches(payload.match ? [payload.match] : [], payload.live_state_version)
       const applyMs = nowMs() - applyT0
@@ -1217,7 +1338,34 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         reload: false,
         reconcileAfterMs: 600,
       }
-    })
+    }
+
+    const queuedStart = liveMatchMutationQueueRef.current
+      .catch(() => undefined)
+      .then(executeStart)
+    liveMatchMutationQueueRef.current = queuedStart.then(() => undefined, () => undefined)
+
+    try {
+      const result = await queuedStart
+      if (result?.reload !== false) {
+        await loadLiveState()
+      } else {
+        scheduleReconcile(result)
+      }
+    } catch (err: any) {
+      setStartedPreviewIds(current => {
+        if (!current.has(match.id)) return current
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
+      setOptimisticLiveMatches(current => current.filter(row => row.id !== match.id))
+      const safeMessage = toUserSafeActionError(err)
+      console.warn('[NextRoundSuggesterV2] start match failed', err)
+      setError(safeMessage)
+      await loadLiveState()
+      Alert.alert('Lỗi', safeMessage)
+    }
   }
 
   const completeLiveMatch = async (match: SessionLiveMatchRow) => {
@@ -1234,8 +1382,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     const expectedPlayed = (state.players.get(match.team_a[0])?.matches_played ?? 0) + 1
     completingMatchExpectedPlayedRef.current.set(match.id, { playerIds, expectedPlayed })
     const score = liveScores[match.id] ?? { a: match.score_a ?? 0, b: match.score_b ?? 0 }
-    let didComplete = false
-    await runAction(`complete-match-${match.id}`, async () => {
+    await waitForUiFrame()
+
+    const executeComplete = async () => {
       const actionT0 = nowMs()
       const expectedVersion = liveStateVersionRef.current
       if (expectedVersion === null) throw new Error('Session changed')
@@ -1279,7 +1428,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       if (rpcError) throw rpcError
       const rpcMs = nowMs() - rpcT0
       const payload = data
-      didComplete = true
+      const nextVersion = Number(payload?.live_state_version)
+      if (Number.isFinite(nextVersion)) {
+        liveStateVersionRef.current = liveStateVersionRef.current === null
+          ? nextVersion
+          : Math.max(liveStateVersionRef.current, nextVersion)
+      }
       console.log('[NextRoundSuggesterV2] complete live match committed', {
         matchId: match.id,
         status: payload?.match?.status,
@@ -1300,6 +1454,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         )
       }
       const applyMs = nowMs() - applyT0
+      suggestedPreviewBatchRef.current = null
+      setStartedPreviewIds(new Set())
       const completedMatch = (payload.match ?? { ...match, status: 'completed', ended_at: new Date().toISOString() }) as SessionLiveMatchRow
       console.log('[NextRoundSuggesterV2] complete live match timing', {
         matchId: match.id,
@@ -1320,15 +1476,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         reload: false,
         reconcileAfterMs: 600,
       }
-    })
-    if (!didComplete) {
-      completingMatchExpectedPlayedRef.current.delete(match.id)
-      setCompletingLiveMatchIds(current => {
-        const next = new Set(current)
-        next.delete(match.id)
-        return next
-      })
-    } else {
+    }
+
+    const queuedComplete = liveMatchMutationQueueRef.current
+      .catch(() => undefined)
+      .then(executeComplete)
+    liveMatchMutationQueueRef.current = queuedComplete.then(() => undefined, () => undefined)
+
+    try {
+      const result = await queuedComplete
+      if (result?.reload !== false) {
+        await loadLiveState()
+      } else {
+        scheduleReconcile(result)
+      }
       const cleanupId = setTimeout(() => {
         setCompletingLiveMatchIds(current => {
           if (!current.has(match.id)) return current
@@ -1338,11 +1499,25 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         })
       }, 8000)
       completingCleanupTimeoutsRef.current.push(cleanupId)
+    } catch (err: any) {
+      completingMatchExpectedPlayedRef.current.delete(match.id)
+      setCompletingLiveMatchIds(current => {
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
+      const safeMessage = toUserSafeActionError(err)
+      console.warn('[NextRoundSuggesterV2] complete match failed', err)
+      setError(safeMessage)
+      await loadLiveState()
+      Alert.alert('Lỗi', safeMessage)
     }
   }
 
   const cancelLiveMatch = async (match: SessionLiveMatchRow) => {
     const cancelT0 = nowMs()
+    suggestedPreviewBatchRef.current = null
+    setStartedPreviewIds(new Set())
     await runAction(`cancel-match-${match.id}`, async () => {
       const expectedVersion = liveStateVersionRef.current
       if (expectedVersion === null) throw new Error('Session changed')
@@ -1643,15 +1818,25 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     ]).size
     : presentCount, [activeRound, presentCount])
   const effectiveLiveMatchRows = useMemo(() => {
-    const byId = new Map(rows.liveMatchRows.map(match => [match.id, match]))
+    const byId = new Map<string, LiveDisplayMatchRow>()
+    for (const match of rows.liveMatchRows) {
+      byId.set(match.id, {
+        ...match,
+        client_preview_id: liveMatchDisplayKeys[match.id],
+      })
+    }
     for (const match of optimisticLiveMatches) {
       if (!byId.has(match.id)) byId.set(match.id, match)
     }
     return [...byId.values()].sort((left, right) => left.sequence_no - right.sequence_no)
-  }, [optimisticLiveMatches, rows.liveMatchRows])
+  }, [liveMatchDisplayKeys, optimisticLiveMatches, rows.liveMatchRows])
   const activeLiveMatches = useMemo(
     () => effectiveLiveMatchRows.filter(match => match.status === 'live' && !completingLiveMatchIds.has(match.id)),
     [completingLiveMatchIds, effectiveLiveMatchRows],
+  )
+  const capacityOccupyingLiveMatchCount = useMemo(
+    () => effectiveLiveMatchRows.filter(match => match.status === 'live').length,
+    [effectiveLiveMatchRows],
   )
   const completedLiveMatches = useMemo(
     () => effectiveLiveMatchRows.filter(match => match.status === 'completed'),
@@ -1670,8 +1855,27 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     [busyLiveMatchPlayerIds, fairnessAdjustment.tier_overrides, state],
   )
   const queueCourtCount = Math.max(1, Math.floor(courtCount || 1))
-  const suggestedQueueCount = Math.max(0, queueCourtCount - activeLiveMatches.length)
+  const suggestedQueueCount = Math.max(0, queueCourtCount - capacityOccupyingLiveMatchCount)
+  const previewBatchKey = useMemo(
+    () => buildPreviewBatchKey(sessionId, state, queueCourtCount, pvnaTolerance, fairnessAdjustment),
+    [fairnessAdjustment, pvnaTolerance, queueCourtCount, sessionId, state],
+  )
+  React.useEffect(() => {
+    if (previewBatchKeyRef.current === null) {
+      previewBatchKeyRef.current = previewBatchKey
+      return
+    }
+    if (previewBatchKeyRef.current === previewBatchKey) return
+    previewBatchKeyRef.current = previewBatchKey
+    setStartedPreviewIds(current => current.size === 0 ? current : new Set())
+  }, [previewBatchKey])
   const suggestedLiveMatches = useMemo(() => {
+    const cachedBatch = suggestedPreviewBatchRef.current
+    if (startedPreviewIds.size > 0 && cachedBatch?.key === previewBatchKey) {
+      return cachedBatch.matches
+        .filter(match => !startedPreviewIds.has(match.id))
+        .slice(0, suggestedQueueCount)
+    }
     const payloads = buildSuggestedMatchPayloads(suggestedQueueCount, {
       liveMatchRowsOverride: effectiveLiveMatchRows,
       stateOverride: {
@@ -1682,7 +1886,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         },
       },
     })
-    return payloads.map((match, index): SuggestedLiveMatchRow => ({
+    const matches = payloads.map((match, index): SuggestedLiveMatchRow => ({
       id: `preview-${match.court_idx ?? index}-${match.team_a.join('-')}-${match.team_b.join('-')}`,
       session_id: sessionId,
       sequence_no: index,
@@ -1701,6 +1905,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       tradeoffs: match.tradeoffs,
       approval_required: match.approval_required,
       preview_live_state_version: match.preview_live_state_version,
+      preview_countable_match_count: match.preview_countable_match_count,
       configured_pvna_tolerance: match.configured_pvna_tolerance,
       effective_pvna_tolerance: match.effective_pvna_tolerance,
       fairness_reasons: match.fairness_reasons,
@@ -1708,14 +1913,42 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       tradeoff_choices: match.tradeoff_choices,
       recommended_tradeoff_choice: match.recommended_tradeoff_choice,
     }))
+    suggestedPreviewBatchRef.current = { key: previewBatchKey, matches }
+    return matches
   }, [
     buildSuggestedMatchPayloads,
     effectiveLiveMatchRows,
+    previewBatchKey,
     queueCourtCount,
     sessionId,
+    startedPreviewIds,
     state,
     suggestedQueueCount,
   ])
+  const liveLogicalRoundByMatchId = useMemo(
+    () => buildLogicalRoundDisplayMap([...completedLiveMatches, ...activeLiveMatches], queueCourtCount),
+    [activeLiveMatches, completedLiveMatches, queueCourtCount],
+  )
+  const heroRoundNo = useMemo(() => {
+    if (activeRound) return activeRound.round_no
+    if (activeLiveMatches.length > 0) {
+      return Math.min(
+        ...activeLiveMatches.map(match => liveLogicalRoundByMatchId.get(match.id) ?? ((match.round_no ?? 0) + 1)),
+      )
+    }
+    if (suggestedLiveMatches.length > 0) {
+      return Math.min(...suggestedLiveMatches.map(match => (match.round_no ?? 0) + 1))
+    }
+    const countableLiveMatches = effectiveLiveMatchRows.filter(match => match.status !== 'cancelled').length
+    return Math.floor(countableLiveMatches / queueCourtCount) + 1
+  }, [activeLiveMatches, activeRound, effectiveLiveMatchRows, liveLogicalRoundByMatchId, queueCourtCount, suggestedLiveMatches])
+  const liveCompletedRoundCount = useMemo(() => {
+    const countableLiveMatches = effectiveLiveMatchRows
+      .filter(match => match.status !== 'cancelled')
+      .length
+    if (countableLiveMatches === 0) return completedRoundCount
+    return Math.floor(countableLiveMatches / queueCourtCount)
+  }, [completedRoundCount, effectiveLiveMatchRows, queueCourtCount])
   const heroPlayerCount = phase === 'active' ? activePlayerCount : plannedPlayerCount
   const { rosterTotalCount, checkedOutCount, requestedRestCount } = useMemo(() => ({
     rosterTotalCount: rows.playerRows.length,
@@ -1768,24 +2001,29 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         >
           <SessionHeroCard
             phase={phase}
-            roundNo={activeRound?.round_no ?? state.current_round}
+            roundNo={heroRoundNo}
             presentCount={heroPlayerCount}
             rosterTotalCount={rosterTotalCount}
             checkedOutCount={checkedOutCount}
             requestedRestCount={requestedRestCount}
             courtCount={courtCount}
-            completedRounds={completedRoundCount}
+            completedRounds={liveCompletedRoundCount}
             targetRounds={effectiveTargetRounds}
             onOpenRoster={openRoster}
           />
 
+          <ManagePlayersButton
+            rosterTotalCount={rosterTotalCount}
+            checkedOutCount={checkedOutCount}
+            requestedRestCount={requestedRestCount}
+            onPress={openRoster}
+          />
+
           <StatusChipRow
             fairnessScore={fairnessScore}
-            fairnessPreview={fairnessPreview}
             courtCount={courtCount}
             courtPreset={courtPreset}
             onFairnessPress={() => setSheet('fairness')}
-            onPreviewPress={() => setSheet('preview')}
             onSettingsPress={() => setSheet('settings')}
           />
 
@@ -2079,9 +2317,57 @@ function LateArrivalsCta({ count, onPress }: { count: number; onPress: () => voi
   )
 }
 
+function ManagePlayersButton({
+  rosterTotalCount,
+  checkedOutCount,
+  requestedRestCount,
+  onPress,
+}: {
+  rosterTotalCount: number
+  checkedOutCount: number
+  requestedRestCount: number
+  onPress: () => void
+}) {
+  const theme = useAppTheme()
+  return (
+    <TouchableOpacity
+      testID="nrv2-manage-players"
+      onPress={onPress}
+      activeOpacity={0.88}
+      style={{
+        marginTop: 12,
+        minHeight: 48,
+        borderRadius: RADIUS.md,
+        backgroundColor: theme.surface,
+        borderWidth: BORDER.hairline,
+        borderColor: theme.outlineVariant,
+        paddingHorizontal: 14,
+        paddingVertical: 11,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        ...LAYOUT_SHADOW.xs,
+      }}
+    >
+      <View style={{ width: 32, height: 32, borderRadius: RADIUS.full, backgroundColor: theme.secondaryContainer, alignItems: 'center', justifyContent: 'center' }}>
+        <Users size={17} color={theme.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, color: theme.onSurface, fontWeight: '900' }}>
+          Quản lý người chơi
+        </Text>
+        <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
+          Roster {rosterTotalCount} · Check-out {checkedOutCount} · Xin nghỉ {requestedRestCount}
+        </Text>
+      </View>
+      <Text style={ctaTextStyle(theme.primary, 11)}>Mở</Text>
+    </TouchableOpacity>
+  )
+}
+
 function StatusChipRow({
   fairnessScore,
-  fairnessPreview,
+  fairnessPreview = null,
   courtCount,
   courtPreset,
   onFairnessPress,
@@ -2089,11 +2375,11 @@ function StatusChipRow({
   onSettingsPress,
 }: {
   fairnessScore: SessionFairnessScore
-  fairnessPreview: FairnessPreview | null
+  fairnessPreview?: FairnessPreview | null
   courtCount: number
   courtPreset: CourtPreset
   onFairnessPress: () => void
-  onPreviewPress: () => void
+  onPreviewPress?: () => void
   onSettingsPress: () => void
 }) {
   const theme = useAppTheme()
@@ -2104,7 +2390,7 @@ function StatusChipRow({
     <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
       <View style={{ flex: 1, gap: 8 }}>
         <TouchableOpacity testID="nrv2-fairness-chip" onPress={onFairnessPress} activeOpacity={0.9}>
-          <Card style={{ borderRadius: RADIUS.lg, padding: 12 }}>
+          <Card style={{ borderRadius: RADIUS.lg, padding: 12, minHeight: 72 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <ShieldCheck size={18} color={theme.primary} />
               <View style={{ flex: 1 }}>
@@ -2116,7 +2402,7 @@ function StatusChipRow({
             </View>
           </Card>
         </TouchableOpacity>
-        <TouchableOpacity testID="nrv2-preview-chip" onPress={onPreviewPress} activeOpacity={0.9}>
+        {false ? <TouchableOpacity testID="nrv2-preview-chip" onPress={onPreviewPress} activeOpacity={0.9}>
           <Card style={{ borderRadius: RADIUS.lg, padding: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <TrendingUp size={18} color={deltaColor} />
@@ -2130,7 +2416,7 @@ function StatusChipRow({
               </View>
             </View>
           </Card>
-        </TouchableOpacity>
+        </TouchableOpacity> : null}
       </View>
       <TouchableOpacity testID="nrv2-settings-chip" onPress={onSettingsPress} activeOpacity={0.9} style={{ flex: 1 }}>
         <Card style={{ borderRadius: RADIUS.lg, padding: 12, minHeight: 72 }}>
@@ -2661,6 +2947,10 @@ function NextMatchSuggestionCard({
   )
 }
 
+function displayMatchKey(match: SessionLiveMatchRow) {
+  return (match as LiveDisplayMatchRow).client_preview_id ?? match.id
+}
+
 function LiveMatchBoard({
   liveMatches,
   suggestedMatches,
@@ -2709,7 +2999,7 @@ function LiveMatchBoard({
                 <RoundDivider roundNo={group.roundNo} />
                 {group.matches.map(match => (
                   <LiveMatchScoreBoard
-                    key={match.id}
+                    key={displayMatchKey(match)}
                     match={match}
                     score={scores[match.id] ?? { a: match.score_a ?? 0, b: match.score_b ?? 0 }}
                     busy={busy === `complete-match-${match.id}`}
