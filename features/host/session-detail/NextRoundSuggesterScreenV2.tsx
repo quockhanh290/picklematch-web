@@ -579,7 +579,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   const [liveScores, setLiveScores] = useState<Record<string, { a: number; b: number }>>({})
   const [optimisticLiveMatches, setOptimisticLiveMatches] = useState<LiveDisplayMatchRow[]>([])
   const [liveMatchDisplayKeys, setLiveMatchDisplayKeys] = useState<Record<string, string>>({})
+  const [startingPreviewIds, setStartingPreviewIds] = useState<Set<string>>(() => new Set())
   const [startedPreviewIds, setStartedPreviewIds] = useState<Set<string>>(() => new Set())
+  const [endingLiveMatchIds, setEndingLiveMatchIds] = useState<Set<string>>(() => new Set())
   const [completingLiveMatchIds, setCompletingLiveMatchIds] = useState<Set<string>>(() => new Set())
   const {
     activeRound,
@@ -665,7 +667,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     autoRepairStateAttemptedRef.current = false
     suggestedPreviewBatchRef.current = null
     previewBatchKeyRef.current = null
+    setStartingPreviewIds(new Set())
     setStartedPreviewIds(new Set())
+    setEndingLiveMatchIds(new Set())
     setLiveMatchDisplayKeys({})
   }, [sessionId])
   React.useEffect(() => {
@@ -1222,6 +1226,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
 
   const startLiveMatch = async (match: SuggestedLiveMatchRow) => {
     const startT0 = nowMs()
+    if (startingPreviewIds.has(match.id) || startedPreviewIds.has(match.id)) return
     console.log('[NextRoundSuggesterV2] start live match press', {
       matchId: match.id,
       version: liveStateVersionRef.current,
@@ -1237,7 +1242,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       return
     }
 
-    const optimisticT0 = nowMs()
+    setStartingPreviewIds(current => {
+      const next = new Set(current)
+      next.add(match.id)
+      return next
+    })
     const optimisticSequenceNo = [...rows.liveMatchRows, ...optimisticLiveMatches]
       .filter(row => row.status !== 'cancelled')
       .length
@@ -1249,22 +1258,18 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       score_a: match.score_a ?? 0,
       score_b: match.score_b ?? 0,
       resting: match.resting ?? [],
+      sequence_no: optimisticSequenceNo,
     }
     setStartedPreviewIds(current => {
       const next = new Set(current)
       next.add(match.id)
       return next
     })
-    setOptimisticLiveMatches(current => {
-      return [
-        ...current.filter(row => row.id !== match.id),
-        {
-          ...optimisticMatch,
-          sequence_no: optimisticSequenceNo,
-        },
-      ]
-    })
-    const optimisticMs = nowMs() - optimisticT0
+    setOptimisticLiveMatches(current => [
+      ...current.filter(row => row.id !== match.id),
+      optimisticMatch,
+    ])
+    await waitForUiFrame()
 
     const executeStart = async () => {
       const actionT0 = nowMs()
@@ -1310,6 +1315,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           ...current,
           [payload.match.id]: match.id,
         }))
+        setStartedPreviewIds(current => {
+          const next = new Set(current)
+          next.add(match.id)
+          return next
+        })
         setOptimisticLiveMatches(current => [
           ...current.filter(row => row.id !== match.id && row.id !== payload.match.id),
           {
@@ -1329,7 +1339,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         nextVersion: payload?.live_state_version,
         payloadBuildMs: Math.round(payloadBuildMs),
         rpcMs: Math.round(rpcMs),
-        optimisticMs: Math.round(optimisticMs),
         applyMs: Math.round(applyMs),
         actionMs: Math.round(nowMs() - actionT0),
         totalMs: Math.round(nowMs() - startT0),
@@ -1347,12 +1356,24 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
 
     try {
       const result = await queuedStart
+      setStartingPreviewIds(current => {
+        if (!current.has(match.id)) return current
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
       if (result?.reload !== false) {
         await loadLiveState()
       } else {
         scheduleReconcile(result)
       }
     } catch (err: any) {
+      setStartingPreviewIds(current => {
+        if (!current.has(match.id)) return current
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
       setStartedPreviewIds(current => {
         if (!current.has(match.id)) return current
         const next = new Set(current)
@@ -1370,6 +1391,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
 
   const completeLiveMatch = async (match: SessionLiveMatchRow) => {
     const completeT0 = nowMs()
+    if (endingLiveMatchIds.has(match.id)) return
     const pressedVersion = liveStateVersionRef.current
     console.log('[NextRoundSuggesterV2] complete live match press', {
       matchId: match.id,
@@ -1377,6 +1399,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       courtIdx: match.court_idx,
       status: match.status,
     })
+    setEndingLiveMatchIds(current => new Set(current).add(match.id))
     setCompletingLiveMatchIds(current => new Set(current).add(match.id))
     const playerIds = [...match.team_a, ...match.team_b]
     const expectedPlayed = (state.players.get(match.team_a[0])?.matches_played ?? 0) + 1
@@ -1490,6 +1513,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       } else {
         scheduleReconcile(result)
       }
+      setEndingLiveMatchIds(current => {
+        if (!current.has(match.id)) return current
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
       const cleanupId = setTimeout(() => {
         setCompletingLiveMatchIds(current => {
           if (!current.has(match.id)) return current
@@ -1500,6 +1529,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       }, 8000)
       completingCleanupTimeoutsRef.current.push(cleanupId)
     } catch (err: any) {
+      setEndingLiveMatchIds(current => {
+        if (!current.has(match.id)) return current
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
       completingMatchExpectedPlayedRef.current.delete(match.id)
       setCompletingLiveMatchIds(current => {
         const next = new Set(current)
@@ -2040,6 +2075,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                 roundSize={queueCourtCount}
                 scores={liveScores}
                 busy={busy}
+                startingPreviewIds={startingPreviewIds}
+                endingLiveMatchIds={endingLiveMatchIds}
                 state={state}
                 pvnaTolerance={pvnaTolerance}
                 playersById={playersById}
@@ -2958,6 +2995,8 @@ function LiveMatchBoard({
   roundSize,
   scores,
   busy,
+  startingPreviewIds,
+  endingLiveMatchIds,
   state,
   pvnaTolerance,
   playersById,
@@ -2974,6 +3013,8 @@ function LiveMatchBoard({
   roundSize: number
   scores: Record<string, { a: number; b: number }>
   busy: string | null
+  startingPreviewIds: Set<string>
+  endingLiveMatchIds: Set<string>
   state: SessionState
   pvnaTolerance: number
   playersById: Map<string, ArrangementPlayer>
@@ -3002,7 +3043,7 @@ function LiveMatchBoard({
                     key={displayMatchKey(match)}
                     match={match}
                     score={scores[match.id] ?? { a: match.score_a ?? 0, b: match.score_b ?? 0 }}
-                    busy={busy === `complete-match-${match.id}`}
+                    busy={busy === `complete-match-${match.id}` || endingLiveMatchIds.has(match.id)}
                     cancelBusy={busy === `cancel-match-${match.id}`}
                     state={state}
                     playersById={playersById}
@@ -3027,7 +3068,7 @@ function LiveMatchBoard({
                   <SuggestedLiveMatchCard
                     key={match.id}
                     match={match}
-                    busy={busy === `start-match-${match.id}`}
+                    busy={busy === `start-match-${match.id}` || startingPreviewIds.has(match.id)}
                     state={state}
                     pvnaTolerance={pvnaTolerance}
                     playersById={playersById}

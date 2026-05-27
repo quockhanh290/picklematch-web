@@ -429,10 +429,21 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     () => (completedRoundCount > 0 ? rebuildStateThroughRound(state, completedRounds[0].round_no) : state),
     [completedRoundCount, completedRounds, state],
   )
+  const hasCompletedLiveMatchOverflow = useMemo(() => {
+    const completedLiveMatchCount = deferredRows.liveMatchRows.filter(row => row.status === 'completed').length
+    if (completedLiveMatchCount === 0) return false
+
+    const liveMatchIds = new Set(deferredRows.liveMatchRows.map(row => row.id))
+    const representedCompletedLiveMatchCount = stateRoundRows
+      .filter(row => row.id && liveMatchIds.has(row.id))
+      .reduce((sum, row) => sum + row.matches.length, 0)
+
+    return completedLiveMatchCount > representedCompletedLiveMatchCount
+  }, [deferredRows.liveMatchRows, stateRoundRows])
   const sessionSummary = useMemo(() => sanitizeSummaryForHost(buildSessionSummary(reportState)), [reportState])
   const matchCountConsistencyRows = useMemo(
-    () => buildMatchCountConsistencyRows(state, reportState),
-    [reportState, state],
+    () => hasCompletedLiveMatchOverflow ? [] : buildMatchCountConsistencyRows(state, reportState),
+    [hasCompletedLiveMatchOverflow, reportState, state],
   )
   const groupSummaries = useMemo(() => buildGroupSummaries(deferredRows.playerRows), [deferredRows.playerRows])
   const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
