@@ -1,5 +1,5 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { hasIntraTeamGapOverflow, hasRepeatOverflow, scoreMatch } from './score.ts'
+import { INTRA_TEAM_PVNA_GAP_LIMIT, hasIntraTeamGapOverflow, hasRepeatOverflow, scoreMatch } from './score.ts'
 import type { Match, MatchScore, PlayerSessionState, SessionState, Team } from './types'
 
 export type TeamSplitResult = {
@@ -72,7 +72,7 @@ export function bestTeamSplit(players: PlayerSessionState[], state: SessionState
       stats: scored.stats,
     }
 
-    if (!best || result.score < best.score) {
+    if (!best || shouldReplaceBestSplit(result, best, state)) {
       best = result
     }
   }
@@ -319,13 +319,51 @@ function bestTeamSplitWithTolerance(
       stats: scored.stats,
     }
 
-    if (!best || result.score < best.score) {
+    if (!best || shouldReplaceBestSplit(result, best, state)) {
       best = result
     }
   }
 
   cache?.split.set(key, best)
   return best
+}
+
+function shouldReplaceBestSplit(
+  candidate: TeamSplitResult,
+  best: TeamSplitResult,
+  state: SessionState,
+): boolean {
+  if (candidate.score !== best.score) return candidate.score < best.score
+
+  const candidateGroupOverflow = getSameGroupIntraGapOverflowCount(candidate.match.team_a, candidate.match.team_b, state)
+  const bestGroupOverflow = getSameGroupIntraGapOverflowCount(best.match.team_a, best.match.team_b, state)
+  if (candidateGroupOverflow !== bestGroupOverflow) return candidateGroupOverflow < bestGroupOverflow
+
+  return false
+}
+
+function getSameGroupIntraGapOverflowCount(teamA: Team, teamB: Team, state: SessionState): number {
+  return getSameGroupTeamGapOverflowCount(teamA, state) + getSameGroupTeamGapOverflowCount(teamB, state)
+}
+
+function getSameGroupTeamGapOverflowCount(team: Team, state: SessionState): number {
+  let count = 0
+
+  for (let index = 0; index < team.length; index += 1) {
+    for (let otherIndex = index + 1; otherIndex < team.length; otherIndex += 1) {
+      const player = state.players.get(team[index])
+      const other = state.players.get(team[otherIndex])
+      if (
+        player?.group_id &&
+        player.group_id === other?.group_id &&
+        Math.abs(player.pvna - other.pvna) > INTRA_TEAM_PVNA_GAP_LIMIT
+      ) {
+        count += 1
+      }
+    }
+  }
+
+  return count
 }
 
 function getCombinations<T>(items: T[], size: number): T[][] {

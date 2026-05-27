@@ -7,7 +7,7 @@ import { SecondaryNavbar } from '@/components/design'
 import { BORDER, RADIUS } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { buildGroupSummaries, buildGroupAliasMap } from '@/lib/next-round-suggester/fairness/group-audit'
-import type { Match, SessionLiveMatchRow, SessionPlayerStateRow, SessionRoundRow } from '@/lib/next-round-suggester/types'
+import type { SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
 
@@ -15,109 +15,6 @@ import { invokeLiveSessionFunction, syncLiveRosterFromSessionPlayers } from './n
 import { RosterSheet } from './next-round-v2/flow-sheets'
 import { refreshBus } from './next-round-v2/refreshBus'
 import { useLiveRows } from './next-round-v2/useLiveRows'
-
-type CompletedRosterRound = {
-  round_no: number
-  matches: Match[]
-  resting: string[]
-  started_at: string | null
-  ended_at: string | null
-}
-
-function getRoundPresentPlayerIds(
-  playerRows: SessionPlayerStateRow[],
-  round: Pick<CompletedRosterRound, 'started_at' | 'ended_at'>,
-): string[] {
-  const startedAt = round.started_at ? new Date(round.started_at).getTime() : null
-  const endedAt = round.ended_at ? new Date(round.ended_at).getTime() : null
-  if (startedAt === null && endedAt === null) {
-    return playerRows.filter(row => !row.checked_out_at).map(row => row.player_id)
-  }
-
-  const startMs = startedAt ?? endedAt ?? 0
-  const endMs = endedAt ?? startedAt ?? Number.POSITIVE_INFINITY
-  return playerRows
-    .filter(row => {
-      const checkedInAt = new Date(row.checked_in_at).getTime()
-      const checkedOutAt = row.checked_out_at ? new Date(row.checked_out_at).getTime() : Number.POSITIVE_INFINITY
-      return checkedInAt <= endMs && checkedOutAt >= startMs
-    })
-    .map(row => row.player_id)
-}
-
-function buildCompletedLiveRosterRounds(
-  playerRows: SessionPlayerStateRow[],
-  liveMatchRows: SessionLiveMatchRow[],
-): CompletedRosterRound[] {
-  const byRound = new Map<number, SessionLiveMatchRow[]>()
-  for (const match of liveMatchRows) {
-    if (match.round_no === null || match.round_no === undefined) continue
-    const rows = byRound.get(match.round_no) ?? []
-    rows.push(match)
-    byRound.set(match.round_no, rows)
-  }
-
-  return [...byRound.entries()]
-    .filter(([, matches]) => (
-      matches.some(match => match.status === 'completed') &&
-      matches.every(match => match.status === 'completed' || match.status === 'cancelled')
-    ))
-    .map(([roundNo, matches]) => {
-      const completedMatches = matches.filter(match => match.status === 'completed')
-      const playedIds = new Set(completedMatches.flatMap(match => [...match.team_a, ...match.team_b]))
-      const startedAt = matches.map(match => match.started_at).filter(Boolean).sort()[0] ?? null
-      const endedAt = matches.map(match => match.ended_at).filter(Boolean).sort().reverse()[0] ?? null
-      const presentIds = getRoundPresentPlayerIds(playerRows, { started_at: startedAt, ended_at: endedAt })
-      return {
-        round_no: roundNo,
-        matches: completedMatches.map(match => ({
-          court_idx: match.court_idx ?? 0,
-          team_a: match.team_a,
-          team_b: match.team_b,
-        })),
-        resting: presentIds.filter(playerId => !playedIds.has(playerId)),
-        started_at: startedAt,
-        ended_at: endedAt,
-      }
-    })
-}
-
-function buildRosterConsecutiveRestByPlayer(
-  playerRows: SessionPlayerStateRow[],
-  roundRows: SessionRoundRow[],
-  liveMatchRows: SessionLiveMatchRow[],
-): Map<string, number> {
-  const restByPlayer = new Map(playerRows.map(row => [row.player_id, 0]))
-  const completedRoundRows: CompletedRosterRound[] = roundRows
-    .filter(row => row.status === 'completed')
-    .map(row => ({
-      round_no: row.round_no,
-      matches: row.matches ?? [],
-      resting: row.resting ?? [],
-      started_at: row.started_at,
-      ended_at: row.ended_at,
-    }))
-  const rounds = [
-    ...completedRoundRows,
-    ...buildCompletedLiveRosterRounds(playerRows, liveMatchRows),
-  ].sort((left, right) => left.round_no - right.round_no)
-
-  for (const round of rounds) {
-    const playedIds = new Set(round.matches.flatMap(match => [...match.team_a, ...match.team_b]))
-    const restingIds = new Set(round.resting)
-    const rosterIds = new Set([...playedIds, ...restingIds])
-    for (const playerId of rosterIds) {
-      if (!restByPlayer.has(playerId)) restByPlayer.set(playerId, 0)
-      if (playedIds.has(playerId)) {
-        restByPlayer.set(playerId, 0)
-      } else if (restingIds.has(playerId)) {
-        restByPlayer.set(playerId, (restByPlayer.get(playerId) ?? 0) + 1)
-      }
-    }
-  }
-
-  return restByPlayer
-}
 
 function toUserSafeError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err)
@@ -157,10 +54,6 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
 
   const groupSummaries = useMemo(() => buildGroupSummaries(rows.playerRows), [rows.playerRows])
   const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
-  const consecutiveRestByPlayer = useMemo(
-    () => buildRosterConsecutiveRestByPlayer(rows.playerRows, rows.roundRows, rows.liveMatchRows),
-    [rows.playerRows, rows.roundRows, rows.liveMatchRows],
-  )
 
   const activeRoundMatchIds = useMemo(() => {
     const activeRound = rows.roundRows.find(r => r.status === 'active')
@@ -428,7 +321,6 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
           onToggleCheckout={toggleCheckout}
           onToggleRest={toggleRest}
           activeRoundIds={activeRoundMatchIds}
-          consecutiveRestByPlayer={consecutiveRestByPlayer}
           onSwap={openSwap}
           onRefreshRoster={syncRoster}
           groupSelection={groupSelection}

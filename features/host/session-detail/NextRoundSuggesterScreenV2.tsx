@@ -191,6 +191,7 @@ function toUserSafeActionError(error: unknown): string {
   if (message.includes('Manual matches must use checked-in players')) return 'Trận đấu tự chọn phải sử dụng người chơi đã check-in.'
   if (message.includes('Player is in a live match')) return 'Người này đang trong trận live. Hãy kết thúc hoặc hủy trận trước.'
   if (message.includes('Request timed out')) return 'Yêu cầu quá hạn. Vui lòng kiểm tra kết nối mạng và thử lại.'
+  if (message.includes('Preview is stale') || message.includes('Preview version')) return 'Gợi ý trên màn hình đã cũ. Vui lòng làm mới gợi ý rồi bắt đầu lại.'
   if (message.includes('Round commit audit failed')) return 'Đánh giá lưu vòng thất bại. Vui lòng làm mới trước khi tiếp tục.'
   if (message.includes('Session changed')) return 'Buổi chơi đã thay đổi. Vui lòng làm mới và kiểm tra vòng đấu đã đổi trước khi bắt đầu.'
   if (message.includes('Temporary network issue')) return 'Lỗi kết nối mạng tạm thời. Vui lòng thử lại.'
@@ -310,6 +311,7 @@ type BuildSuggestedMatchOptions = {
 }
 
 type SuggestedLiveMatchRow = SessionLiveMatchRow & {
+  preview_live_state_version?: number | null
   warnings?: string[]
   tradeoffs?: SuggestionTradeoff[]
   approval_required?: boolean
@@ -867,7 +869,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     let projectMs = 0
     let suggestionState = options.stateOverride ?? state
     const liveMatchRows = options.liveMatchRowsOverride ?? rows.liveMatchRows
-    const payloads: Array<Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice'>> = []
+    const payloads: Array<Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice'>> = []
     const baseBusyIds = new Set(
       liveMatchRows
         .filter(match =>
@@ -993,8 +995,31 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       const deferredRequiredIds = availableRequiredIds
         .filter(playerId => !requiredForThisCourtIds.has(playerId))
       const busyIds = new Set([...baseBusyIds, ...roundBusyIds])
+      const activePlayersForBias = [...suggestionState.players.values()]
+        .filter(player => player.checked_out_at === null && !player.opted_rest && !busyIds.has(player.player_id))
+      const avgMatchesForBias = activePlayersForBias.length === 0
+        ? 0
+        : activePlayersForBias.reduce((sum, player) => sum + player.matches_played, 0) / activePlayersForBias.length
+      const softUnderplayedOverrides = Object.fromEntries(
+        activePlayersForBias
+          .filter(player => player.matches_played <= avgMatchesForBias - 0.25)
+          .filter(player => !requiredForThisCourtIds.has(player.player_id))
+          .filter(player => !deferredRequiredIds.includes(player.player_id))
+          .filter(player => fairnessAdjustment.tier_overrides[player.player_id] === undefined)
+          .map(player => [player.player_id, Tier.SHOULD_PLAY]),
+      )
+      const softOverplayedOverrides = Object.fromEntries(
+        activePlayersForBias
+          .filter(player => player.matches_played >= avgMatchesForBias + 0.75)
+          .filter(player => !requiredForThisCourtIds.has(player.player_id))
+          .filter(player => !deferredRequiredIds.includes(player.player_id))
+          .filter(player => fairnessAdjustment.tier_overrides[player.player_id] === undefined)
+          .map(player => [player.player_id, Tier.SHOULD_REST]),
+      )
       const tierOverrides = {
         ...fairnessAdjustment.tier_overrides,
+        ...softOverplayedOverrides,
+        ...softUnderplayedOverrides,
         ...Object.fromEntries(deferredRequiredIds.map(playerId => [playerId, Tier.FLEXIBLE])),
         ...Object.fromEntries(requiredForThisCourt.map(playerId => [playerId, Tier.MUST_PLAY])),
       }
@@ -1063,6 +1088,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         team_b: match.team_b,
         resting: alternative.resting,
         round_no: projectedRoundNo,
+        preview_live_state_version: rows.liveStateVersion,
         warnings: visibleWarnings,
         tradeoffs: visibleTradeoffs,
         approval_required: alternative.approval_required || shouldSurfaceAutoPvnaTradeoff,
@@ -1119,9 +1145,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       })
     }
     return payloads
-  }, [completingLiveMatchIds, courtCount, fairnessAdjustment.applied_for_warnings, fairnessAdjustment.tier_overrides, fairnessWarnings, playersById, pvnaTolerance, rows.liveMatchRows, sessionId, state])
+  }, [completingLiveMatchIds, courtCount, fairnessAdjustment.applied_for_warnings, fairnessAdjustment.tier_overrides, fairnessWarnings, playersById, pvnaTolerance, rows.liveMatchRows, rows.liveStateVersion, sessionId, state])
 
-  const startLiveMatch = async (match: SessionLiveMatchRow) => {
+  const startLiveMatch = async (match: SuggestedLiveMatchRow) => {
     const startT0 = nowMs()
     console.log('[NextRoundSuggesterV2] start live match press', {
       matchId: match.id,
@@ -1134,6 +1160,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       const actionT0 = nowMs()
       const expectedVersion = liveStateVersionRef.current
       if (expectedVersion === null) throw new Error('Session changed')
+      const previewVersion = match.preview_live_state_version ?? null
+      if (previewVersion === null || previewVersion !== expectedVersion) {
+        throw new Error('Preview is stale')
+      }
       const payloadBuildT0 = nowMs()
       const rpcPayload = {
         p_session_id: sessionId,
@@ -1149,6 +1179,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           client_request_id: createClientRequestId('match'),
           source: 'client-preview-start-live-match',
           preview_id: match.id,
+          preview_live_state_version: previewVersion,
         },
       }
       const payloadBuildMs = nowMs() - payloadBuildT0
@@ -1669,6 +1700,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       warnings: match.warnings,
       tradeoffs: match.tradeoffs,
       approval_required: match.approval_required,
+      preview_live_state_version: match.preview_live_state_version,
       configured_pvna_tolerance: match.configured_pvna_tolerance,
       effective_pvna_tolerance: match.effective_pvna_tolerance,
       fairness_reasons: match.fairness_reasons,

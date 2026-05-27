@@ -198,9 +198,15 @@ function getGroupedTeamPairCount(team: Team, state: SessionState): number {
 
   for (let i = 0; i < team.length; i += 1) {
     for (let j = i + 1; j < team.length; j += 1) {
-      const groupA = state.players.get(team[i])?.group_id
-      const groupB = state.players.get(team[j])?.group_id
-      if (groupA && groupA === groupB) count += 1
+      const playerA = state.players.get(team[i])
+      const playerB = state.players.get(team[j])
+      if (
+        playerA?.group_id &&
+        playerA.group_id === playerB?.group_id &&
+        Math.abs(playerA.pvna - playerB.pvna) <= INTRA_TEAM_PVNA_GAP_LIMIT
+      ) {
+        count += 1
+      }
     }
   }
 

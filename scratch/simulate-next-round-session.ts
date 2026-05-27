@@ -26,6 +26,9 @@ const courtPreset = argValue('--court-preset', 'balanced') as CourtPreset
 const sessionDurationMin = Math.max(1, Number(argValue('--session-duration-min', '120')))
 const matchDurationMin = Math.max(1, Number(argValue('--match-duration-min', '15')))
 const pvnaTolerance = Number(argValue('--pvna-tolerance', '0.5'))
+const injectGroupCount = Math.max(0, Number(argValue('--inject-group-count', '0')))
+const injectGroupSize = Math.max(2, Number(argValue('--inject-group-size', '2')))
+const mutationScenario = argValue('--mutation-scenario', 'baseline')
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL
 const anon = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
@@ -55,6 +58,16 @@ function bucket(values: number[]) {
     .sort((a, b) => a[0] - b[0])
     .map(([value, count]) => `${value}:${count}`)
     .join(', ')
+}
+
+function timingSummary(values: number[]) {
+  return {
+    total_ms: format(values.reduce((sum, value) => sum + value, 0)),
+    avg_ms: format(avg(values)),
+    p50_ms: format(percentile(values, 50)),
+    p95_ms: format(percentile(values, 95)),
+    max_ms: format(Math.max(0, ...values)),
+  }
 }
 
 function pairKey(a: string, b: string) {
@@ -136,18 +149,33 @@ async function main() {
   })
   const courtCount = courtCalculator.recommended.courts
 
+  const basePlayerRows = ((playersRes.data ?? []) as SessionPlayerStateRow[]).map(row => ({
+    ...row,
+    checked_out_at: null,
+    matches_played: 0,
+    last_played_round: -1,
+    consecutive_rest: 0,
+    consecutive_play: 0,
+    opted_rest: false,
+  }))
+  if (injectGroupCount > 0) {
+    for (let groupIndex = 0; groupIndex < injectGroupCount; groupIndex += 1) {
+      const groupId = `sim_group_${groupIndex + 1}`
+      const start = groupIndex * injectGroupSize
+      for (let offset = 0; offset < injectGroupSize; offset += 1) {
+        const row = basePlayerRows[start + offset]
+        if (row) row.group_id = groupId
+      }
+    }
+  }
+  if (mutationScenario === 'late_checkin_4_round3' || mutationScenario === 'mixed_late_checkout_rest') {
+    for (const row of basePlayerRows.slice(0, 4)) row.checked_out_at = new Date().toISOString()
+  }
+
   let pairRows: SessionPairHistoryRow[] = []
   let state = mapRowsToSessionState({
     sessionId,
-    playerRows: ((playersRes.data ?? []) as SessionPlayerStateRow[]).map(row => ({
-      ...row,
-      checked_out_at: null,
-      matches_played: 0,
-      last_played_round: -1,
-      consecutive_rest: 0,
-      consecutive_play: 0,
-      opted_rest: false,
-    })),
+    playerRows: basePlayerRows,
     pairRows,
     roundRows: [],
     preferenceRows: (preferenceRes.data ?? []) as SessionPlayerPreferenceRow[],
@@ -177,13 +205,17 @@ async function main() {
     warnings: string[]
     tradeoffs: number
   }> = []
+  const suggestTimes: number[] = []
 
   for (let roundNo = 0; roundNo < roundsToSimulate; roundNo += 1) {
+    applyMutationScenario(state, mutationScenario, roundNo)
     const adjustment = correctForFairness(state)
+    const suggestStartedAt = performance.now()
     const suggestion = suggestNextRound(state, {
       tier_overrides: adjustment.tier_overrides,
       max_alternatives: 1,
     })
+    suggestTimes.push(performance.now() - suggestStartedAt)
     const alternative = suggestion.alternatives[0]
     if (!alternative) throw new Error(`No suggestion at round ${roundNo + 1}: ${suggestion.warnings.join(', ')}`)
 
@@ -262,10 +294,28 @@ async function main() {
   const opponentBurden = computeOpponentRepeatBurden(state)
   const repeatCapMatches = matchStats.filter(row => row.maxProjectedPartnerPair > 2 || row.maxProjectedOpponentPair > 2)
   const worstGaps = [...matchStats].sort((a, b) => b.gap - a.gap).slice(0, 10)
+  const groupPartnerPairs = [...partnerCounts.entries()]
+    .map(([key, count]) => {
+      const [a, b] = key.split(':')
+      const playerA = state.players.get(a)
+      const playerB = state.players.get(b)
+      return {
+        pair: `${label(a)}+${label(b)}`,
+        count,
+        sameGroup: Boolean(playerA?.group_id && playerA.group_id === playerB?.group_id),
+      }
+    })
+    .filter(row => row.sameGroup)
 
   console.log(JSON.stringify({
     sessionId,
     mode: 'next-round-batch-aware-local-simulation',
+    mutationScenario,
+    injectedGroups: {
+      count: injectGroupCount,
+      size: injectGroupSize,
+      groupedPlayers: basePlayerRows.filter(row => row.group_id).length,
+    },
     rounds: roundsToSimulate,
     matches: matchStats.length,
     players: state.players.size,
@@ -293,6 +343,12 @@ async function main() {
       avgRepeatedPartnersPerPlayer: format(partnerBurden.avg_repeated_partners),
       avgRepeatedOpponentsPerPlayer: format(opponentBurden.avg_repeated_opponents),
     },
+    groupService: {
+      sameGroupPartnerPairCount: groupPartnerPairs.length,
+      totalSameGroupPartnerMatches: groupPartnerPairs.reduce((sum, row) => sum + row.count, 0),
+      maxSameGroupPartnerCount: Math.max(0, ...groupPartnerPairs.map(row => row.count)),
+      sameGroupPairs: groupPartnerPairs.sort((a, b) => b.count - a.count || a.pair.localeCompare(b.pair)),
+    },
     playerDistribution: {
       matchCount: {
         min: Math.min(...matchValues),
@@ -312,10 +368,48 @@ async function main() {
       warningCount: warningsByRound.reduce((sum, row) => sum + row.warnings.length, 0),
       tradeoffCount: warningsByRound.reduce((sum, row) => sum + row.tradeoffs, 0),
     },
+    timing: timingSummary(suggestTimes),
     roundSummaries,
     worstGaps,
     repeatCapExamples: repeatCapMatches.slice(0, 10),
   }, null, 2))
+}
+
+function applyMutationScenario(state: ReturnType<typeof mapRowsToSessionState>, scenario: string, roundIndex: number) {
+  const ids = [...state.players.keys()]
+  const now = new Date()
+
+  if (scenario === 'late_checkin_4_round3' && roundIndex === 2) {
+    patchPlayers(state, ids.slice(0, 4), { checked_out_at: null, checked_in_at: now })
+  }
+
+  if (scenario === 'checkout_4_round4' && roundIndex === 3) {
+    patchPlayers(state, ids.slice(-4), { checked_out_at: now })
+  }
+
+  if (scenario === 'opt_rest_4_round3_4') {
+    if (roundIndex === 2) patchPlayers(state, ids.slice(0, 4), { opted_rest: true })
+    if (roundIndex === 4) patchPlayers(state, ids.slice(0, 4), { opted_rest: false })
+  }
+
+  if (scenario === 'mixed_late_checkout_rest') {
+    if (roundIndex === 2) patchPlayers(state, ids.slice(0, 4), { checked_out_at: null, checked_in_at: now })
+    if (roundIndex === 4) patchPlayers(state, ids.slice(4, 8), { checked_out_at: now })
+    if (roundIndex === 5) patchPlayers(state, ids.slice(8, 12), { opted_rest: true })
+    if (roundIndex === 6) patchPlayers(state, ids.slice(8, 12), { opted_rest: false })
+  }
+}
+
+function patchPlayers(
+  state: ReturnType<typeof mapRowsToSessionState>,
+  ids: string[],
+  patch: Partial<PlayerSessionState>,
+) {
+  for (const id of ids) {
+    const player = state.players.get(id)
+    if (!player) continue
+    state.players.set(id, { ...player, ...patch })
+  }
 }
 
 void main().catch(error => {
