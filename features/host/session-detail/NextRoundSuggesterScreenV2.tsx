@@ -2065,6 +2065,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                 suggestedMatches={suggestedLiveMatches}
                 completedMatches={completedLiveMatches}
                 roundSize={queueCourtCount}
+                targetRounds={effectiveTargetRounds}
+                roundPace={15}
                 scores={liveScores}
                 busy={busy}
                 startingPreviewIds={startingPreviewIds}
@@ -3332,6 +3334,8 @@ function LiveMatchBoard({
   suggestedMatches,
   completedMatches,
   roundSize,
+  targetRounds,
+  roundPace,
   scores,
   busy,
   startingPreviewIds,
@@ -3350,12 +3354,15 @@ function LiveMatchBoard({
   suggestedMatches: SuggestedLiveMatchRow[]
   completedMatches: SessionLiveMatchRow[]
   roundSize: number
+  targetRounds: number
+  roundPace: number
   scores: Record<string, { a: number; b: number }>
   busy: string | null
   startingPreviewIds: Set<string>
   endingLiveMatchIds: Set<string>
   state: SessionState
   pvnaTolerance: number
+  roundPace: number
   playersById: Map<string, ArrangementPlayer>
   onScoreChange: (matchId: string, side: 'a' | 'b', delta: number) => void
   onStartMatch: (match: SuggestedLiveMatchRow) => void
@@ -3398,11 +3405,10 @@ function LiveMatchBoard({
       ) : null}
       {suggestedMatches.length > 0 ? (
         <View>
-          <SectionEyebrow label="Gợi ý trận kế tiếp" />
           <View style={{ gap: 12 }}>
             {suggestedGroups.map(group => (
               <View key={`suggested-round-${group.roundNo}`} style={{ gap: 10 }}>
-                <RoundDivider roundNo={group.roundNo} />
+                <SuggestedRoundHeader roundNo={group.roundNo} targetRounds={targetRounds} />
                 {group.matches.map(match => (
                   <SuggestedLiveMatchCard
                     key={match.id}
@@ -3410,6 +3416,7 @@ function LiveMatchBoard({
                     busy={busy === `start-match-${match.id}` || startingPreviewIds.has(match.id)}
                     state={state}
                     pvnaTolerance={pvnaTolerance}
+                    roundPace={roundPace}
                     playersById={playersById}
                     onStart={onStartMatch}
                     onPlayerPress={onPlayerPress}
@@ -3459,6 +3466,20 @@ function RoundDivider({ roundNo }: { roundNo: number }) {
         <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.outline, fontWeight: '800' }}>Vòng {roundNo}</Text>
       </View>
       <View style={{ flex: 1, height: BORDER.hairline, backgroundColor: theme.outlineVariant }} />
+    </View>
+  )
+}
+
+function SuggestedRoundHeader({ roundNo, targetRounds }: { roundNo: number; targetRounds: number }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2, marginBottom: 2 }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: colors.primary, letterSpacing: 0.8 }}>
+        GỢI Ý TRẬN KẾ TIẾP
+      </Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: colors.primary, fontWeight: '800', letterSpacing: 0.4 }}>
+        VÒNG {roundNo} / {targetRounds}
+      </Text>
     </View>
   )
 }
@@ -3567,6 +3588,7 @@ function SuggestedLiveMatchCard({
   busy,
   state,
   pvnaTolerance,
+  roundPace,
   playersById,
   onStart,
   onPlayerPress,
@@ -3576,6 +3598,7 @@ function SuggestedLiveMatchCard({
   busy: boolean
   state: SessionState
   pvnaTolerance: number
+  roundPace: number
   playersById: Map<string, ArrangementPlayer>
   onStart: (match: SuggestedLiveMatchRow) => void
   onPlayerPress: (playerId: string) => void
@@ -3652,9 +3675,9 @@ function SuggestedLiveMatchCard({
           match={toMatch(activeMatch)}
           state={state}
           pvnaTolerance={pvnaTolerance}
+          roundPace={roundPace}
           playersById={playersById}
           onPlayerPress={onPlayerPress}
-          showSwapBadges
         />
       </View>
       {tradeoffSummaryLines.length > 0 ? (
@@ -3786,13 +3809,20 @@ function SuggestedLiveMatchCard({
           ) : null}
         </View>
       ) : null}
-      <View style={{ backgroundColor: colors.surfaceAlt, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 12 }}>
+      <View style={{ backgroundColor: colors.surface, paddingHorizontal: 14, paddingTop: 0, paddingBottom: 14, flexDirection: 'row', gap: 10 }}>
+        <TouchableOpacity
+          onPress={onOpenSettings}
+          activeOpacity={0.82}
+          style={{ width: 46, height: 46, borderRadius: 10, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 24, lineHeight: 26, color: colors.textSecondary }}>↔</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => onStart(activeMatch)}
           disabled={startDisabled}
-          style={{ height: 42, borderRadius: 9, backgroundColor: startDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
+          style={{ flex: 1, height: 46, borderRadius: 10, backgroundColor: startDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
         >
-          {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Bắt đầu trận</Text>}
+          {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Bắt đầu trận</Text>}
         </TouchableOpacity>
       </View>
       <TouchableOpacity
@@ -3903,16 +3933,16 @@ function SuggestedMatchTile({
   match,
   state,
   pvnaTolerance,
+  roundPace,
   playersById,
   onPlayerPress,
-  showSwapBadges = false,
 }: {
   match: Match
   state: SessionState
   pvnaTolerance?: number
+  roundPace: number
   playersById: Map<string, ArrangementPlayer>
   onPlayerPress: (playerId: string) => void
-  showSwapBadges?: boolean
 }) {
   const theme = useAppTheme()
   const diff = useMemo(
@@ -3937,28 +3967,45 @@ function SuggestedMatchTile({
   const [repeatExpanded, setRepeatExpanded] = useState(false)
 
   return (
-    <View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-          <View style={{ backgroundColor: colors.primary, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: colors.surface, textTransform: 'uppercase' }}>
-              SÂN {match.court_idx + 1}
-            </Text>
+    <View style={{ position: 'relative' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+          <View style={{ backgroundColor: colors.primaryDark, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: colors.surface, textTransform: 'uppercase' }}>SÂN {match.court_idx + 1}</Text>
           </View>
         </View>
-        <View style={{ borderRadius: 6, backgroundColor: pvnaCapExceeded ? colors.warningLight : colors.primaryLight, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: pvnaCapExceeded ? '#993C1D30' : '#0F6E5630' }}>
+        <View style={{ borderRadius: 6, backgroundColor: pvnaCapExceeded ? colors.warningLight : colors.primaryLight, paddingHorizontal: 9, paddingVertical: 5 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: pvnaCapExceeded ? colors.warningDark : colors.primary, textTransform: 'uppercase' }}>
             CHÊNH {diff.toFixed(2)}
           </Text>
         </View>
       </View>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-        <SuggestedTeamBlock team={match.team_a} state={state} playersById={playersById} onPlayerPress={onPlayerPress} showSwapBadges={showSwapBadges} />
-        <View style={{ width: 36, height: 30, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, lineHeight: 20, color: colors.textMuted }}>VS</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: 12 }}>
+        <SuggestedTeamBlock
+          label="ĐỘI A"
+          tone="green"
+          side="left"
+          team={match.team_a}
+          state={state}
+          playersById={playersById}
+          onPlayerPress={onPlayerPress}
+        />
+        <SuggestedTeamBlock
+          label="ĐỘI B"
+          tone="sand"
+          side="right"
+          team={match.team_b}
+          state={state}
+          playersById={playersById}
+          onPlayerPress={onPlayerPress}
+        />
+      </View>
+
+      <View style={{ position: 'absolute', left: '50%', top: 94, marginLeft: -22, width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 14, lineHeight: 16, color: colors.text }}>VS</Text>
         </View>
-        <SuggestedTeamBlock team={match.team_b} state={state} playersById={playersById} onPlayerPress={onPlayerPress} showSwapBadges={showSwapBadges} />
       </View>
 
       {repeatDetails.pairLines.length > 0 ? (
@@ -3978,38 +4025,60 @@ function SuggestedMatchTile({
 }
 
 function SuggestedTeamBlock({
+  label,
+  tone,
+  side,
   team,
   state,
   playersById,
   onPlayerPress,
-  showSwapBadges,
 }: {
+  label: string
+  tone: 'green' | 'sand'
+  side: 'left' | 'right'
   team: string[]
   state: SessionState
   playersById: Map<string, ArrangementPlayer>
   onPlayerPress: (playerId: string) => void
-  showSwapBadges: boolean
 }) {
   const theme = useAppTheme()
+  const teamTotal = getTeamPvna(team, state)
+  const panelStyle = tone === 'green'
+    ? { backgroundColor: 'rgba(225,245,238,0.42)', borderColor: '#D0E7DD' }
+    : { backgroundColor: colors.surfaceAlt, borderColor: '#DDD8C9' }
+  const accentColor = tone === 'green' ? colors.primary : colors.text
   return (
-    <View style={{ flex: 1, alignItems: 'center', minWidth: 0 }}>
-      <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 10 }}>
-        {team.map((id, index) => (
-          <React.Fragment key={id}>
-            <TouchableOpacity onPress={() => onPlayerPress(id)} activeOpacity={0.76} style={{ flex: 1, alignItems: 'center', position: 'relative' }}>
-              <View style={{ position: 'relative' }}>
-                <PlayerAvatar name={playerName(id, playersById)} size={52} />
-                {showSwapBadges ? (
-                  <View style={{ position: 'absolute', right: -3, bottom: -3, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.surfaceAlt, borderWidth: 1.5, borderColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
-                    <Repeat2 size={9} color={colors.textSecondary} strokeWidth={2.5} />
-                  </View>
-                ) : null}
-              </View>
-              <Text numberOfLines={1} style={{ marginTop: 5, textAlign: 'center', fontFamily: SCREEN_FONTS.headline, fontSize: 17, lineHeight: 18, color: colors.text }}>
-                {playerName(id, playersById)}
-              </Text>
+    <View style={{ flex: 1, minWidth: 0, minHeight: 138, borderRadius: 14, borderWidth: 1, padding: 14, paddingTop: 15, paddingRight: side === 'left' ? 28 : 14, paddingLeft: side === 'right' ? 28 : 14, ...panelStyle }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: accentColor, letterSpacing: 0.6 }}>
+        {label}
+      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 5, marginBottom: 12 }}>
+        <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 34, lineHeight: 35, color: accentColor }}>
+          {teamTotal.toFixed(1)}
+        </Text>
+        <View style={{ width: 60, flexDirection: 'row', justifyContent: side === 'left' ? 'flex-start' : 'flex-end' }}>
+          {team.map((id, index) => (
+            <TouchableOpacity
+              key={id}
+              onPress={() => onPlayerPress(id)}
+              activeOpacity={0.76}
+              style={{ position: 'relative', marginLeft: index === 0 ? 0 : -8 }}
+            >
+              <PlayerAvatar name={playerName(id, playersById)} size={34} />
             </TouchableOpacity>
-          </React.Fragment>
+          ))}
+        </View>
+      </View>
+      <View style={{ gap: 4 }}>
+        {team.map(id => (
+          <View key={`row-${id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text numberOfLines={1} style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 13, lineHeight: 16, color: accentColor }}>
+              {playerName(id, playersById).toUpperCase()}
+            </Text>
+            <Text style={{ width: 60, textAlign: side === 'left' ? 'left' : 'right', fontFamily: SCREEN_FONTS.label, fontSize: 12, color: accentColor, fontWeight: '700' }}>
+              {(state.players.get(id)?.pvna ?? 3.0).toFixed(1)}
+            </Text>
+          </View>
         ))}
       </View>
     </View>
