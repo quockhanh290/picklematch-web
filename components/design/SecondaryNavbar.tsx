@@ -59,6 +59,7 @@ export function SecondaryNavbar({
       >
         {/* Left Slot: Back Button */}
         <Pressable
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           onPress={() => {
             if (canHaptics) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
             handleBack()

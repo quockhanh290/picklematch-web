@@ -6,9 +6,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; img-src 'self' https: data: blob:; font-src 'self' https: data:; worker-src 'self' blob:;"
+      content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://mzqsxgfvtgmsscbqugni.supabase.co wss://mzqsxgfvtgmsscbqugni.supabase.co; img-src 'self' https: data: blob:; font-src 'self' https: data:; worker-src 'self' blob:;"
     />
     <title>PickleMatch VN</title>
+    
+    <!-- SEO & Basic Meta -->
+    <meta name="description" content="Nền tảng ghép kèo và tìm sân Pickleball hàng đầu Việt Nam. Cùng giao lưu và nâng cao trình độ ngay hôm nay!" />
+    <meta name="theme-color" content="#111827" />
+
+    <!-- Open Graph / Facebook / Zalo -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://picklematch.vn/" />
+    <meta property="og:title" content="PickleMatch VN - Kết nối đam mê Pickleball" />
+    <meta property="og:description" content="Nền tảng ghép kèo và tìm sân Pickleball hàng đầu Việt Nam. Cùng giao lưu và nâng cao trình độ ngay hôm nay!" />
+    <meta property="og:image" content="https://picklematch.vn/og-image.png" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://picklematch.vn/" />
+    <meta property="twitter:title" content="PickleMatch VN - Kết nối đam mê Pickleball" />
+    <meta property="twitter:description" content="Nền tảng ghép kèo và tìm sân Pickleball hàng đầu Việt Nam. Cùng giao lưu và nâng cao trình độ ngay hôm nay!" />
+    <meta property="twitter:image" content="https://picklematch.vn/og-image.png" />
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icon.png" />
     <style>
       #root,
       body,
@@ -20,6 +42,7 @@
         min-height: 100dvh;
         margin: 0;
         padding: 0;
+        overscroll-behavior: none;
       }
     </style>
   </head>

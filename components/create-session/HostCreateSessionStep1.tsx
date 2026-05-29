@@ -7,6 +7,7 @@ import { DateStripPicker } from './DateStripPicker'
 import { TimeRangePicker } from './TimeRangePicker'
 import { SectionDivider } from './SectionDivider'
 import DateTimePicker from '@react-native-community/datetimepicker'
+import { AppDateTimePicker } from '@/components/design/AppDateTimePicker'
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { Users, CheckCircle2, Trophy, Search, X, MapPin } from 'lucide-react-native'
 
@@ -360,31 +361,7 @@ export function HostCreateSessionStep1({
             {Platform.OS === 'web' ? (
               <View style={{ width: '100%', padding: 20, alignItems: 'center', backgroundColor: theme.surfaceContainerLow }}>
                 <Text style={{ color: theme.onSurface, marginBottom: 12, fontFamily: SCREEN_FONTS.body }}>Chọn ngày (Web):</Text>
-                <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-                  {/* Basic fallback for web: next 7 days selection */}
-                  {Array.from({ length: 14 }).map((_, i) => {
-                    const d = new Date()
-                    d.setDate(d.getDate() + i)
-                    const isSelected = draftDate.toDateString() === d.toDateString()
-                    return (
-                      <TouchableOpacity 
-                        key={i} 
-                        onPress={() => setDraftDate(d)}
-                        style={{ 
-                          padding: 10, 
-                          borderRadius: 8, 
-                          backgroundColor: isSelected ? theme.primary : theme.surfaceVariant,
-                          minWidth: 60,
-                          alignItems: 'center'
-                        }}
-                      >
-                        <Text style={{ color: isSelected ? theme.onPrimary : theme.onSurface, fontSize: 12 }}>
-                          {d.getDate()}/{d.getMonth() + 1}
-                        </Text>
-                      </TouchableOpacity>
-                    )
-                  })}
-                </View>
+                <AppDateTimePicker mode="date" value={draftDate} onChange={setDraftDate} />
               </View>
             ) : (
               <DateTimePicker mode="date" display="spinner" themeVariant="light" value={draftDate} minimumDate={new Date()} locale="vi-VN" style={{ width: '100%', maxWidth: 360, height: 216, backgroundColor: theme.surfaceContainerLow }} onChange={(_e, d) => d && setDraftDate(d)} />
@@ -404,25 +381,9 @@ export function HostCreateSessionStep1({
               </Pressable>
             </View>
             {Platform.OS === 'web' ? (
-              <ScrollView style={{ height: 216, width: '100%', backgroundColor: theme.surfaceContainerLowest }} contentContainerStyle={{ padding: 10 }}>
-                {Array.from({ length: 48 }).map((_, i) => {
-                  const hours = Math.floor(i / 2)
-                  const minutes = (i % 2) * 30
-                  const d = new Date(draftStartTime)
-                  d.setHours(hours, minutes, 0, 0)
-                  const label = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
-                  const isSelected = draftStartTime.getHours() === hours && draftStartTime.getMinutes() === minutes
-                  return (
-                    <TouchableOpacity 
-                      key={i} 
-                      onPress={() => setDraftStartTime(d)}
-                      style={{ padding: 15, borderBottomWidth: 0.5, borderColor: theme.outlineVariant, backgroundColor: isSelected ? theme.primaryContainer : 'transparent' }}
-                    >
-                      <Text style={{ color: isSelected ? theme.primary : theme.onSurface, textAlign: 'center', fontFamily: SCREEN_FONTS.headline, fontSize: 18 }}>{label}</Text>
-                    </TouchableOpacity>
-                  )
-                })}
-              </ScrollView>
+              <View style={{ width: '100%', padding: 20, alignItems: 'center', backgroundColor: theme.surfaceContainerLowest }}>
+                <AppDateTimePicker mode="time" value={draftStartTime} onChange={setDraftStartTime} />
+              </View>
             ) : (
               <DateTimePicker mode="time" display="spinner" themeVariant="light" value={draftStartTime} is24Hour locale="vi-VN" style={{ width: '100%', maxWidth: 360, height: 216, backgroundColor: theme.surfaceContainerLowest }} onChange={(_e, d) => d && setDraftStartTime(d)} />
             )}
@@ -441,25 +402,9 @@ export function HostCreateSessionStep1({
               </Pressable>
             </View>
             {Platform.OS === 'web' ? (
-              <ScrollView style={{ height: 216, width: '100%', backgroundColor: theme.surfaceContainerLowest }} contentContainerStyle={{ padding: 10 }}>
-                {Array.from({ length: 48 }).map((_, i) => {
-                  const hours = Math.floor(i / 2)
-                  const minutes = (i % 2) * 30
-                  const d = new Date(draftEndTime)
-                  d.setHours(hours, minutes, 0, 0)
-                  const label = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
-                  const isSelected = draftEndTime.getHours() === hours && draftEndTime.getMinutes() === minutes
-                  return (
-                    <TouchableOpacity 
-                      key={i} 
-                      onPress={() => setDraftEndTime(d)}
-                      style={{ padding: 15, borderBottomWidth: 0.5, borderColor: theme.outlineVariant, backgroundColor: isSelected ? theme.primaryContainer : 'transparent' }}
-                    >
-                      <Text style={{ color: isSelected ? theme.primary : theme.onSurface, textAlign: 'center', fontFamily: SCREEN_FONTS.headline, fontSize: 18 }}>{label}</Text>
-                    </TouchableOpacity>
-                  )
-                })}
-              </ScrollView>
+              <View style={{ width: '100%', padding: 20, alignItems: 'center', backgroundColor: theme.surfaceContainerLowest }}>
+                <AppDateTimePicker mode="time" value={draftEndTime} onChange={setDraftEndTime} />
+              </View>
             ) : (
               <DateTimePicker mode="time" display="spinner" themeVariant="light" value={draftEndTime} is24Hour locale="vi-VN" style={{ width: '100%', maxWidth: 360, height: 216, backgroundColor: theme.surfaceContainerLowest }} onChange={(_e, d) => d && setDraftEndTime(d)} />
             )}

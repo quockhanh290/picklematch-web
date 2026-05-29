@@ -232,11 +232,25 @@ export function HostSessionDetailScreen({
     const shareMessage = `Mời bạn tham gia kèo ${FORMAT_LABELS[HostDetails.format_type || 'social']} tại ${session.slot.court.name}!\n\nĐăng ký tham gia ngay tại đây: ${url}`
 
     const copyLink = async () => {
-      if (Platform.OS === 'web' && globalThis.navigator?.clipboard?.writeText) {
-        await globalThis.navigator.clipboard.writeText(url)
+      if (Platform.OS === 'web') {
+        try {
+          if (globalThis.navigator?.clipboard?.writeText) {
+            await globalThis.navigator.clipboard.writeText(url)
+            setDialogConfig({
+              title: 'Đã sao chép link',
+              message: 'Link đăng ký đã được copy vào clipboard.',
+              actions: [{ label: 'OK' }],
+            })
+            return
+          }
+        } catch (e) {
+          console.warn('Clipboard write block, showing fallback dialog');
+        }
+        
+        // Fallback dialog
         setDialogConfig({
-          title: 'Đã sao chép link',
-          message: 'Link đăng ký đã được copy vào clipboard.',
+          title: 'Sao chép link đăng ký',
+          message: `Vui lòng bôi đen và copy link sau:\n\n${url}`,
           actions: [{ label: 'OK' }],
         })
       }
