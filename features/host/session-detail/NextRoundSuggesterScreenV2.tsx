@@ -1209,7 +1209,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       }, projectedRoundNo)
       projectMs += nowMs() - projectT0
     }
-    if (count > 0) {
+    if (__DEV__ && count > 0) {
       console.log('[NextRoundSuggesterV2] build suggested matches timing', {
         requested: count,
         built: payloads.length,
@@ -1228,7 +1228,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   const startLiveMatch = async (match: SuggestedLiveMatchRow) => {
     const startT0 = nowMs()
     if (startingPreviewIds.has(match.id) || startedPreviewIds.has(match.id)) return
-    console.log('[NextRoundSuggesterV2] start live match press', {
+    if (__DEV__) console.log('[NextRoundSuggesterV2] start live match press', {
       matchId: match.id,
       version: liveStateVersionRef.current,
       courtIdx: match.court_idx,
@@ -1276,9 +1276,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       const actionT0 = nowMs()
       const expectedVersion = liveStateVersionRef.current
       if (expectedVersion === null) throw new Error('Session changed')
-      if (expectedVersion < previewVersion) {
-        throw new Error('Preview is stale')
-      }
       const payloadBuildT0 = nowMs()
       const rpcPayload = {
         p_session_id: sessionId,
@@ -1332,7 +1329,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       const applyT0 = nowMs()
       applyLiveMatches(payload.match ? [payload.match] : [], payload.live_state_version)
       const applyMs = nowMs() - applyT0
-      console.log('[NextRoundSuggesterV2] start live match timing', {
+      if (__DEV__) console.log('[NextRoundSuggesterV2] start live match timing', {
         matchId: match.id,
         courtIdx: match.court_idx,
         roundNo: match.round_no,
@@ -1394,7 +1391,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     const completeT0 = nowMs()
     if (endingLiveMatchIds.has(match.id)) return
     const pressedVersion = liveStateVersionRef.current
-    console.log('[NextRoundSuggesterV2] complete live match press', {
+    if (__DEV__) console.log('[NextRoundSuggesterV2] complete live match press', {
       matchId: match.id,
       version: pressedVersion,
       courtIdx: match.court_idx,
@@ -1458,7 +1455,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           ? nextVersion
           : Math.max(liveStateVersionRef.current, nextVersion)
       }
-      console.log('[NextRoundSuggesterV2] complete live match committed', {
+      if (__DEV__) console.log('[NextRoundSuggesterV2] complete live match committed', {
         matchId: match.id,
         status: payload?.match?.status,
         liveStateVersion: payload?.live_state_version,
@@ -1481,7 +1478,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       suggestedPreviewBatchRef.current = null
       setStartedPreviewIds(new Set())
       const completedMatch = (payload.match ?? { ...match, status: 'completed', ended_at: new Date().toISOString() }) as SessionLiveMatchRow
-      console.log('[NextRoundSuggesterV2] complete live match timing', {
+      if (__DEV__) console.log('[NextRoundSuggesterV2] complete live match timing', {
         matchId: match.id,
         courtIdx: match.court_idx,
         completedStatus: completedMatch.status,
@@ -1572,7 +1569,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       const applyT0 = nowMs()
       applyLiveMatches(payload.match ? [payload.match] : [], payload.live_state_version)
       const applyMs = nowMs() - applyT0
-      console.log('[NextRoundSuggesterV2] cancel live match timing', {
+      if (__DEV__) console.log('[NextRoundSuggesterV2] cancel live match timing', {
         matchId: match.id,
         expectedVersion,
         nextVersion: payload?.live_state_version,
@@ -1620,7 +1617,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       }))
       Alert.alert('Lỗi', 'Không thể cập nhật điểm số')
     }
-    console.log('[NextRoundSuggesterV2] score update timing', {
+    if (__DEV__) console.log('[NextRoundSuggesterV2] score update timing', {
       matchId,
       side,
       delta,
@@ -1712,7 +1709,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         reconcileAfterMs: 600,
         reconcile: {
           action: 'start',
-          expectedLiveStateVersion: Number(payload?.live_state_version),
+          expectedLiveStateVersion: payload?.live_state_version != null ? Number(payload.live_state_version) : null,
           expectedRoundNo: Number(payload?.round?.round_no ?? state.current_round),
           expectedRoundStatus: 'active',
         },
@@ -1814,7 +1811,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         reconcileAfterMs: 600,
         reconcile: {
           action: 'end',
-          expectedLiveStateVersion: Number(payload?.live_state_version),
+          expectedLiveStateVersion: payload?.live_state_version != null ? Number(payload.live_state_version) : null,
           expectedRoundNo: activeRound.round_no,
           expectedRoundStatus: 'completed',
         },
