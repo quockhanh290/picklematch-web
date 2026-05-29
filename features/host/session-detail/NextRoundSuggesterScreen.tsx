@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Play, RefreshCcw, Star, UserMinus, UserPlu
 import { AppLoading } from '@/components/design'
 import { RADIUS, SHADOW } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { calculateOptimalCourts, PRESETS, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
+import { calculateOptimalCourts, getCourtPresetTargetMatches, PRESETS, PRESET_ROTATION_TARGETS, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
 import { buildSuggestedRoundActions, buildSuggestedRoundActionsCache, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import { mapRowsToSessionState } from '@/lib/next-round-suggester/state'
 import { suggestNextRound } from '@/lib/next-round-suggester/suggest'
@@ -494,6 +494,9 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
     match_duration_min: 15,
     preset: courtPreset,
   }), [calculatorPlayerCount, courtDurationMin, courtPreset])
+  const minSuggestedCourts = courtCalculator.recommended.courts
+  const courtPresetTargetMatches = getCourtPresetTargetMatches(courtPreset, courtCalculator.recommended.total_rounds)
+  const courtPresetIdealPercent = Math.round(PRESET_ROTATION_TARGETS[courtPreset].ideal * 100)
 
   const effectiveTargetRounds = targetRounds ?? courtCalculator.recommended.total_rounds
   const applyCourtWarningAlternative = (alternative: CourtWarningAlternative) => {
@@ -784,7 +787,9 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
         <View style={{ marginBottom: 20 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, fontWeight: '900', marginBottom: 10 }}>SỐ SÂN VÒNG NÀY</Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            {Array.from({ length: maxSelectableCourts }, (_, index) => index + 1).map(value => {
+            {Array.from({ length: maxSelectableCourts }, (_, index) => index + 1)
+              .filter(value => value >= minSuggestedCourts || value === courtCount)
+              .map(value => {
               const active = courtCount === value
               const disabled = value > Math.max(1, Math.floor(calculatorPlayerCount / 4))
               return (
@@ -804,6 +809,9 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
               )
             })}
           </View>
+          <Text style={{ marginTop: 8, fontFamily: SCREEN_FONTS.label, fontSize: 10, color: UI_THEME.textSub, lineHeight: 15 }}>
+            {PRESETS[courtPreset].label}: mục tiêu khoảng {courtPresetIdealPercent}% người vào sân mỗi vòng. Với {courtCalculator.recommended.total_rounds} vòng, target là ~{courtPresetTargetMatches.toFixed(1)} trận/người.
+          </Text>
         </View>
 
         <View style={{ marginBottom: 20 }}>
@@ -927,7 +935,9 @@ export function NextRoundSuggesterScreen({ sessionId, players, courts }: Props) 
                 
                 {/* Keep existing action buttons for setup warnings */}
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-                  {warning.alternatives.map((alt, aidx) => (
+                  {warning.alternatives
+                    .filter(alt => alt.action !== 'set_courts' || !alt.courts || alt.courts >= minSuggestedCourts || alt.courts === courtCount)
+                    .map((alt, aidx) => (
                     <TouchableOpacity
                       key={aidx}
                       disabled={alt.action === 'accept_tradeoff'}

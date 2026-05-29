@@ -1,15 +1,10 @@
 import { checkFeasibility } from './feasibility'
-import { PRESETS } from './presets'
+import { getCourtPresetTargetMatches, PRESETS, PRESET_ROTATION_TARGETS } from './presets'
 import { computeCourtRepeatPressure } from './pressure'
 import { buildCourtWarnings } from './warnings'
 import type { CourtCalculatorInput, CourtCalculatorOutput, CourtOption } from './types'
 
 const DEFAULT_MATCH_DURATION_MIN = 15
-const ROTATION_TARGETS = {
-  relaxed: { ideal: 0.55, min: 0.4, max: 0.7 },
-  balanced: { ideal: 0.7, min: 0.55, max: 0.8 },
-  play_more: { ideal: 0.82, min: 0.65, max: 0.95 },
-} as const
 
 export function calculateOptimalCourts(
   input: CourtCalculatorInput,
@@ -18,8 +13,8 @@ export function calculateOptimalCourts(
   const sessionDuration = normalizeInteger(input.session_duration_min)
   const matchDuration = normalizeInteger(input.match_duration_min ?? DEFAULT_MATCH_DURATION_MIN)
   const preset = input.preset ?? 'balanced'
-  const targetMatches = PRESETS[preset].matches
   const totalRounds = Math.max(0, Math.floor(sessionDuration / Math.max(1, matchDuration)))
+  const targetMatches = getCourtPresetTargetMatches(preset, totalRounds)
   const maxUsefulCourts = Math.max(0, Math.floor(nPlayers / 4))
   const alternatives =
     maxUsefulCourts === 0
@@ -110,7 +105,7 @@ function withQuality(
   targetMatches: number,
 ): CourtOption {
   const selectedPreset = preset ?? 'balanced'
-  const target = ROTATION_TARGETS[selectedPreset]
+  const target = PRESET_ROTATION_TARGETS[selectedPreset]
   const playRatio = option.play_ratio
   const matchDistance = Math.abs(option.avg_matches_per_player - targetMatches)
   const rotationDistance = Math.abs(playRatio - target.ideal)

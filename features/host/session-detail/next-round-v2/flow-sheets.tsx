@@ -19,6 +19,7 @@ import {
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
 import type { sanitizeSummaryForHost } from '@/lib/next-round-suggester/fairness/sanitize'
 import type {
+  SessionLiveMatchRow,
   SessionPlayerStateRow,
   SessionRoundRow,
   SessionState,
@@ -833,6 +834,7 @@ export function RecapView({
   matchCountConsistencyRows,
   groupSummaries,
   playersById,
+  liveMatchRows,
   onOpenHistory,
   onContinue,
 }: {
@@ -841,6 +843,7 @@ export function RecapView({
   matchCountConsistencyRows: MatchCountConsistencyRow[]
   groupSummaries: GroupSummary[]
   playersById: Map<string, ArrangementPlayer>
+  liveMatchRows?: SessionLiveMatchRow[]
   onOpenHistory: () => void
   onContinue: () => void
 }) {
@@ -899,7 +902,7 @@ export function RecapView({
           </View>
         </Card>
       ) : null}
-      <PlayerQualityReport state={state} playersById={playersById} />
+      <PlayerQualityReport state={state} playersById={playersById} liveMatchRows={liveMatchRows} />
       <Card style={{ padding: 14, marginBottom: 14 }}>
         <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Số trận mỗi người</Text>
         <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 10, marginBottom: 12 }}>

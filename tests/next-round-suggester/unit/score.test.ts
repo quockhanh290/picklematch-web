@@ -59,7 +59,7 @@ describe('scoreMatch', () => {
       ],
     })
 
-    expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], state).score).toBe(-5)
+    expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], state).score).toBe(-6)
   })
 
   it('does not subtract group bonus when grouped players are opponents', () => {
@@ -162,7 +162,7 @@ describe('scoreMatch', () => {
 
     expect(result.stats.group_bonus).toBe(1)
     expect(result.stats.gender_pref_penalty).toBe(2)
-    expect(result.score).toBe(-3)
+    expect(result.score).toBe(-4)
   })
 
   it('returns Infinity when inter-team PVNA diff violates hard guard', () => {

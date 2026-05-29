@@ -21,7 +21,7 @@ import { SecondaryNavbar } from '@/components/design'
 import { colors } from '@/constants/colors'
 import { BORDER, RADIUS, SHADOW as LAYOUT_SHADOW, SPACING } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { calculateOptimalCourts, PRESETS, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
+import { calculateOptimalCourts, getCourtPresetTargetMatches, PRESETS, PRESET_ROTATION_TARGETS, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
 import { Tier } from '@/lib/next-round-suggester/classify'
 import type { SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import type { AlternativeAudit } from '@/lib/next-round-suggester/alternatives'
@@ -2027,6 +2027,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           matchCountConsistencyRows={matchCountConsistencyRows}
           groupSummaries={groupSummaries}
           playersById={playersById}
+          liveMatchRows={rows.liveMatchRows}
           onOpenHistory={() => setSheet('history')}
           onContinue={() => setShowSessionReport(false)}
         />
@@ -5119,6 +5120,7 @@ function SettingsSheet({
   onApply: (s: SettingsSnapshot) => void
 }) {
   const theme = useAppTheme()
+  const appliedCourtCount = initial.courtCount
   const [courtCount, setCourtCount] = useState(initial.courtCount)
   const [courtPreset, setCourtPreset] = useState(initial.courtPreset)
   const [pvnaTolerance, setPvnaTolerance] = useState(initial.pvnaTolerance)
@@ -5133,7 +5135,17 @@ function SettingsSheet({
   }), [playerCount, courtDurationMin, courtPreset])
 
   const recommended = calculator.recommended
+  const courtPresetTargetMatches = getCourtPresetTargetMatches(courtPreset, recommended.total_rounds)
+  const courtPresetIdealPercent = Math.round(PRESET_ROTATION_TARGETS[courtPreset].ideal * 100)
+  const recommendedSlotsPerRound = recommended.courts * 4
+  const recommendedPlayRatioPercent = Math.round(recommended.play_ratio * 100)
   const warning = calculator.setup_warnings[0]
+  const visibleWarningAlternatives = warning?.alternatives.filter(
+    alternative => alternative.action !== 'set_courts' || !alternative.courts || alternative.courts >= recommended.courts || alternative.courts === appliedCourtCount,
+  ) ?? []
+  const courtChoiceOptions = calculator.alternatives
+    .filter(option => option.courts >= recommended.courts || option.courts === appliedCourtCount)
+    .map(option => ({ label: String(option.courts), value: option.courts }))
 
   const applyCourtWarningAlternative = (alternative: CourtWarningAlternative) => {
     if (alternative.action === 'set_duration' && alternative.duration_min) {
@@ -5156,31 +5168,32 @@ function SettingsSheet({
     <View>
       <SheetTitle title="Cài đặt vòng" subtitle="Điều chỉnh setup trước khi start vòng kế." />
       <LinearGradient colors={[theme.heroGradientStart, theme.primaryContainer]} style={{ borderRadius: RADIUS.lg, padding: 14, marginBottom: 14 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Zap size={18} color={theme.heroCountdownText} />
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+          <Zap size={18} color={theme.heroCountdownText} style={{ marginTop: 2 }} />
           <View style={{ flex: 1 }}>
             <Text style={eyebrowStyle(theme.heroCountdownText)}>Gợi ý setup</Text>
             <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
               Giữ setup gần gợi ý sân, chỉ mở dung sai PVNA khi áp lực lặp partner/đối thủ tăng.
             </Text>
+            <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.surface }}>
+              Gợi ý: {recommended.courts} sân
+            </Text>
+            <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted, lineHeight: 17 }}>
+              {PRESETS[courtPreset].label} nhắm khoảng {courtPresetIdealPercent}% người vào sân mỗi vòng: {recommended.total_rounds} vòng x {courtPresetIdealPercent}% = ~{courtPresetTargetMatches.toFixed(1)} trận/người.
+            </Text>
+            <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted, lineHeight: 17 }}>
+              {recommended.courts} sân có {recommendedSlotsPerRound} slot/vòng cho {playerCount} người ({recommendedPlayRatioPercent}% vào sân), dự kiến {recommended.avg_matches_per_player.toFixed(1)} trận/người nên gần target nhất.
+            </Text>
           </View>
         </View>
       </LinearGradient>
-      <View style={{ marginBottom: 14, borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.primary }}>
-          Gợi ý: {recommended.courts} sân
-        </Text>
-        <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.onSurface }}>
-          {calculator.reasoning}
-        </Text>
-      </View>
       {warning ? (
         <View style={{ marginBottom: 14, borderRadius: RADIUS.md, backgroundColor: theme.warningBg, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, padding: 12 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.warningText }}>{warning.message}</Text>
           <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText }}>{warning.why}</Text>
-          {warning.alternatives.length > 0 ? (
+          {visibleWarningAlternatives.length > 0 ? (
             <View style={{ marginTop: 10, gap: 8 }}>
-              {warning.alternatives.map((alternative, index) => (
+              {visibleWarningAlternatives.map((alternative, index) => (
                 <TouchableOpacity
                   key={`${warning.type}-${alternative.action}-${index}`}
                   onPress={() => applyCourtWarningAlternative(alternative)}
@@ -5199,10 +5212,11 @@ function SettingsSheet({
       <CourtSuggestionOptions
         options={calculator.alternatives}
         selectedCourts={courtCount}
+        appliedCourts={appliedCourtCount}
         recommendedCourts={recommended.courts}
         onSelect={setCourtCount}
       />
-      <ChoiceRow label="Sân" options={[1, 2, 3, 4, 5, 6].map(value => ({ label: String(value), value }))} value={courtCount} onChange={setCourtCount} />
+      <ChoiceRow label="Sân" options={courtChoiceOptions} value={courtCount} onChange={setCourtCount} />
       <ChoiceRow
         label="Chế độ"
         options={COURT_PRESET_OPTIONS.map(value => ({ label: PRESETS[value].label, value }))}
@@ -5231,20 +5245,23 @@ function SettingsSheet({
 function CourtSuggestionOptions({
   options,
   selectedCourts,
+  appliedCourts,
   recommendedCourts,
   onSelect,
 }: {
   options: CourtOption[]
   selectedCourts: number
+  appliedCourts: number
   recommendedCourts: number
   onSelect: (courts: number) => void
 }) {
   const theme = useAppTheme()
+  const visibleOptions = options.filter(option => option.courts >= recommendedCourts || option.courts === appliedCourts)
   return (
     <View style={{ marginBottom: 14 }}>
       <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Gợi ý số sân</Text>
       <View style={{ gap: 8 }}>
-        {options.map(option => {
+        {visibleOptions.map(option => {
           const selected = option.courts === selectedCourts
           const recommended = option.courts === recommendedCourts
           const disabled = option.feasibility === 'infeasible'

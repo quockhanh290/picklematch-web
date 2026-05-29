@@ -15,7 +15,7 @@ describe('court calculator', () => {
 
   it('marks target warning when play-more target cannot be reached', () => {
     const result = calculateOptimalCourts({
-      n_players: 8,
+      n_players: 12,
       session_duration_min: 60,
       match_duration_min: 15,
       preset: 'play_more',
@@ -86,7 +86,7 @@ describe('court calculator', () => {
     expect(result.recommended.play_ratio).toBe(0.67)
   })
 
-  it('keeps 5 courts for 33 players balanced', () => {
+  it('prefers 6 courts for 33 players balanced after dynamic pace target', () => {
     const result = calculateOptimalCourts({
       n_players: 33,
       session_duration_min: 120,
@@ -94,10 +94,10 @@ describe('court calculator', () => {
       preset: 'balanced',
     })
 
-    expect(result.recommended.courts).toBe(5)
+    expect(result.recommended.courts).toBe(6)
   })
 
-  it('keeps 6 courts for 40 players balanced', () => {
+  it('prefers 7 courts for 40 players balanced after dynamic pace target', () => {
     const result = calculateOptimalCourts({
       n_players: 40,
       session_duration_min: 120,
@@ -105,7 +105,7 @@ describe('court calculator', () => {
       preset: 'balanced',
     })
 
-    expect(result.recommended.courts).toBe(6)
+    expect(result.recommended.courts).toBe(7)
   })
 
   it('adds actionable warnings for small long sessions', () => {
@@ -135,7 +135,7 @@ describe('court calculator', () => {
     expect(result.recommended.repeat_pressure.risk).toBe('extreme')
     const warning = result.setup_warnings.find((item) => item.type === 'repeat_pressure')
     expect(warning).toBeDefined()
-    expect(warning?.why).toContain('opponent pressure')
+    expect(warning?.why).toContain('áp lực đối thủ')
     expect(warning?.alternatives.map((item) => item.action)).toEqual(
       expect.arrayContaining(['set_duration', 'set_preset', 'accept_tradeoff']),
     )
@@ -156,9 +156,9 @@ describe('court calculator', () => {
   it('adds a set-courts alternative when target matches are not reached', () => {
     const result = calculateOptimalCourts({
       n_players: 20,
-      session_duration_min: 90,
+      session_duration_min: 60,
       match_duration_min: 15,
-      preset: 'play_more',
+      preset: 'balanced',
     })
 
     const warning = result.setup_warnings.find((item) => item.type === 'target_unreachable')
