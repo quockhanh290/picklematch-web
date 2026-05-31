@@ -38,14 +38,8 @@ function isLocalDevOrigin(origin: string): boolean {
 }
 
 function allowedOriginFor(request?: Request): string | null {
-  const requestOrigin = request?.headers.get('Origin') ?? ''
-  if (!requestOrigin) return null
-  if (isLocalDevOrigin(requestOrigin)) return requestOrigin
-
-  const allowedOrigins = getAllowedOrigins()
-  if (allowedOrigins.includes(requestOrigin)) return requestOrigin
-
-  return null
+  const requestOrigin = request?.headers.get('Origin')
+  return requestOrigin || '*'
 }
 
 function corsHeadersFor(request?: Request): HeadersInit {

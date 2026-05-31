@@ -324,3 +324,21 @@ export async function markSessionPlayersPresent(sessionId: string, playerIds: st
 
   if (error) throw error
 }
+
+export async function fetchLiveMatchesPreview(
+  sessionId: string,
+  body: {
+    count: number
+    court_count: number
+    pvna_tolerance: number
+    live_match_rows: any[]
+    live_state_version: number | null
+    completing_live_match_ids: string[]
+    players: { id: string; name: string }[]
+    player_rows: any[]
+    pair_rows: any[]
+    round_rows: any[]
+  }
+) {
+  return invokeLiveSessionFunction('session-live-matches-suggest', sessionId, body)
+}

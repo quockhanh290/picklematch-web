@@ -707,8 +707,21 @@ function suggestNextMatchExhaustiveFallback(
   const alternatives: SuggestionAlternative[] = []
   const seen = new Set<string>()
 
+  const startMs = Date.now()
   const evaluateStage = (allowRelaxedTolerance: boolean, allowRepeatOverflow: boolean, enforceRequired = true) => {
-    for (const selected of getAllCombinations(eligiblePlayers, 4)) {
+    let fallbackEligiblePlayers = eligiblePlayers
+    if (eligiblePlayers.length > 20) {
+      const required = eligiblePlayers.filter(p => requiredPlayerIds.has(p.player_id))
+      const others = eligiblePlayers.filter(p => !requiredPlayerIds.has(p.player_id))
+      const medianPvna = others.reduce((s, p) => s + p.pvna, 0) / (others.length || 1)
+      const sortedByExtreme = [...others].sort((a, b) =>
+        Math.abs(b.pvna - medianPvna) - Math.abs(a.pvna - medianPvna),
+      )
+      fallbackEligiblePlayers = [...required, ...sortedByExtreme].slice(0, 20)
+    }
+
+    for (const selected of getAllCombinations(fallbackEligiblePlayers, 4)) {
+      if (Date.now() - startMs > 2500) break
       if (
         enforceRequired &&
         requiredPlayerIds.size > 0 &&

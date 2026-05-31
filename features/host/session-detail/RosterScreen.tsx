@@ -13,8 +13,10 @@ import { useAppTheme } from '@/lib/theme-context'
 
 import { invokeLiveSessionFunction, syncLiveRosterFromSessionPlayers } from './next-round-v2/api'
 import { RosterSheet } from './next-round-v2/flow-sheets'
-import { refreshBus } from './next-round-v2/refreshBus'
-import { useLiveRows } from './next-round-v2/useLiveRows'
+import { useQueryClient } from '@tanstack/react-query'
+import { liveSessionQueryKeys, useLiveSessionQuery } from './next-round-v2/queries'
+import type { LiveRows } from './next-round-v2/types'
+
 
 function toUserSafeError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err)
@@ -47,7 +49,20 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     () => new Map(players.map(p => [String(p.id), p])),
     [players],
   )
-  const { rows, applyLiveStateVersion, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState, loading, refreshing } = useLiveRows(sessionId, playersById)
+  const queryClient = useQueryClient()
+  const { data: rowsData, isLoading: loading } = useLiveSessionQuery(sessionId, playersById)
+  const rows = rowsData || { playerRows: [], pairRows: [], roundRows: [], liveMatchRows: [], liveStateVersion: null }
+  const refreshing = loading
+  const loadLiveState = useCallback(async () => { await queryClient.invalidateQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) }) }, [queryClient, sessionId])
+  const applyLiveStateVersion = useCallback((version) => { queryClient.invalidateQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) }) }, [queryClient, sessionId])
+  const patchPlayerRow = useCallback((playerId, patch) => {
+    queryClient.setQueryData(liveSessionQueryKeys.detail(sessionId), old => {
+      if (!old) return old
+      return { ...old, playerRows: old.playerRows.map(r => r.player_id === playerId ? { ...r, ...patch } : r) }
+    })
+  }, [queryClient, sessionId])
+  const settlePlayerPatch = useCallback(() => {}, [])
+  const clearPlayerPatch = useCallback(() => { queryClient.invalidateQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) }) }, [queryClient, sessionId])
 
   const rowsRef = useRef(rows)
   rowsRef.current = rows
@@ -301,7 +316,7 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <SecondaryNavbar title="NGƯỜI CHƠI" onBackPress={() => {
-        refreshBus.emit()
+        queryClient.invalidateQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) })
         router.replace({ pathname: '/host/session/[id]/next-round', params: { id: sessionId } } as any)
       }} />
       {error ? (
