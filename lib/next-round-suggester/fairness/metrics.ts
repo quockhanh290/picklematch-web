@@ -102,8 +102,10 @@ export type SessionFairnessScore = {
 }
 
 export function computeMatchCountMetrics(state: SessionState): MatchCountMetrics {
-  const perPlayer = sortedPlayers(state)
-    .filter((player) => !player.opted_rest)
+  const eligiblePlayers = sortedPlayers(state).filter((player) => !player.opted_rest)
+  const activePlayers = eligiblePlayers.filter((player) => player.checked_out_at === null)
+  const scoredPlayers = activePlayers.length > 0 ? activePlayers : eligiblePlayers
+  const perPlayer = scoredPlayers
     .map((player) => ({
       player_id: player.player_id,
       matches_played: player.matches_played,

@@ -192,36 +192,139 @@ export function GroupAuditBlock({
   groupSummaries: GroupSummary[]
   playersById: Map<string, ArrangementPlayer>
 }) {
-  const theme = useAppTheme()
   const rows = buildGroupAuditRows(state, groupSummaries)
+  return <GroupAuditBlockContent rows={rows} playersById={playersById} />
+}
+
+function GroupAuditBlockContent({
+  rows,
+  playersById,
+}: {
+  rows: ReturnType<typeof buildGroupAuditRows>
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  const totalMembers = rows.reduce((sum, row) => sum + row.player_ids.length, 0)
+  const maxSharedMatches = Math.max(0, ...rows.map(row => row.shared_matches))
+  const maxPairCount = Math.max(0, ...rows.flatMap(row => row.pair_counts.map(pair => pair.count)))
+
   return (
-    <View style={{ marginTop: 14 }}>
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Đánh giá Nhóm</Text>
+    <View style={{ marginTop: 16 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.onSurface }}>
+            Đánh giá nhóm
+          </Text>
+          <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.outline }}>
+            Theo dõi nhóm quen nhau có bị xếp chung đội quá nhiều hay không.
+          </Text>
+        </View>
+        {rows.length > 0 ? (
+          <View style={{ borderRadius: RADIUS.full, backgroundColor: theme.secondaryContainer, paddingHorizontal: 10, paddingVertical: 5 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.primary, fontWeight: '900' }}>
+              {rows.length} nhóm
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
       {rows.length === 0 ? (
-        <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, padding: 12 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Chưa có nhóm nào được tạo.</Text>
+        <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>
+            Chưa có nhóm nào được tạo.
+          </Text>
         </View>
       ) : (
-        <View style={{ gap: 10 }}>
-          {rows.map(row => (
-            <View key={row.group_id} style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.onSurface }}>
-                {row.label}: {row.player_ids.map(id => playerName(id, playersById)).join(', ')}
-              </Text>
-              <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>
-                Cùng xuất hiện trong {row.shared_matches} trận.
-              </Text>
-              <View style={{ marginTop: 8, gap: 4 }}>
-                {row.pair_counts.map(pair => (
-                  <Text key={`${pair.player_a}-${pair.player_b}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-                    {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} trận chung đội
-                  </Text>
-                ))}
-              </View>
-            </View>
-          ))}
+        <View>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+            <GroupAuditStat label="Thành viên" value={String(totalMembers)} />
+            <GroupAuditStat label="Cùng xuất hiện" value={String(maxSharedMatches)} />
+            <GroupAuditStat label="Chung đội" value={String(maxPairCount)} />
+          </View>
+
+          <View style={{ gap: 10 }}>
+            {rows.map(row => {
+              const topPair = row.pair_counts[0]
+              const topPairText = topPair
+                ? `${playerName(topPair.player_a, playersById)} / ${playerName(topPair.player_b, playersById)} · ${topPair.count} trận`
+                : 'Chưa có cặp chung đội'
+              const sortedPairs = row.pair_counts.filter(pair => pair.count > 0)
+
+              return (
+                <View key={row.group_id} style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.onSurface }}>
+                        {row.label}
+                      </Text>
+                      <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.outline }}>
+                        {row.player_ids.map(id => playerName(id, playersById)).join(', ')}
+                      </Text>
+                    </View>
+                    <View style={{ borderRadius: RADIUS.full, backgroundColor: theme.surfaceContainerLow, paddingHorizontal: 9, paddingVertical: 4 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10.5, color: theme.outline, fontWeight: '900' }}>
+                        {row.player_ids.length} người
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                    <View style={{ flex: 1, borderRadius: RADIUS.sm, backgroundColor: theme.surfaceContainerLow, padding: 9 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.outline }}>Cùng xuất hiện</Text>
+                      <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.onSurface }}>{row.shared_matches} trận</Text>
+                    </View>
+                    <View style={{ flex: 1.4, borderRadius: RADIUS.sm, backgroundColor: theme.surfaceContainerLow, padding: 9 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.outline }}>Cặp chung đội nhiều nhất</Text>
+                      <Text numberOfLines={1} style={{ marginTop: 2, fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: theme.onSurface }}>{topPairText}</Text>
+                    </View>
+                  </View>
+
+                  {sortedPairs.length > 0 ? (
+                    <View style={{ marginTop: 10, gap: 7 }}>
+                      {sortedPairs.map(pair => {
+                        const pct = maxPairCount <= 0 ? 0 : Math.max(8, (pair.count / maxPairCount) * 100)
+                        return (
+                          <View key={`${pair.player_a}-${pair.player_b}`}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                              <Text numberOfLines={1} style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.onSurface }}>
+                                {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}
+                              </Text>
+                              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.outline, fontWeight: '800' }}>
+                                {pair.count}
+                              </Text>
+                            </View>
+                            <View style={{ marginTop: 4, height: 5, borderRadius: RADIUS.full, backgroundColor: theme.outlineVariant, overflow: 'hidden' }}>
+                              <View style={{ width: `${pct}%`, height: '100%', borderRadius: RADIUS.full, backgroundColor: theme.primaryContainer }} />
+                            </View>
+                          </View>
+                        )
+                      })}
+                    </View>
+                  ) : (
+                    <Text style={{ marginTop: 10, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>
+                      Nhóm này chưa có ai được xếp chung đội với nhau.
+                    </Text>
+                  )}
+                </View>
+              )
+            })}
+          </View>
         </View>
       )}
+    </View>
+  )
+}
+
+function GroupAuditStat({ label, value }: { label: string; value: string }) {
+  const theme = useAppTheme()
+  return (
+    <View style={{ flex: 1, borderRadius: RADIUS.sm, backgroundColor: theme.surfaceContainerLow, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 10 }}>
+      <Text numberOfLines={1} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.outline }}>
+        {label}
+      </Text>
+      <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>
+        {value}
+      </Text>
     </View>
   )
 }

@@ -404,6 +404,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   const [startedPreviewIds, setStartedPreviewIds] = useState<Set<string>>(() => new Set())
   const [endingLiveMatchIds, setEndingLiveMatchIds] = useState<Set<string>>(() => new Set())
   const [completingLiveMatchIds, setCompletingLiveMatchIds] = useState<Set<string>>(() => new Set())
+  const [suggestedSwapMatch, setSuggestedSwapMatch] = useState<SuggestedLiveMatchRow | null>(null)
   const {
     activeRound,
     alternativeOrder,
@@ -1277,7 +1278,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     })
   }
 
-  const openSwapForPlayer = useCallback((playerId: string) => {
+  const openSwapForPlayer = useCallback((playerId: string, match?: SuggestedLiveMatchRow) => {
+    setSuggestedSwapMatch(match ?? null)
     setSwapFromPlayerId(playerId)
     setSheet('swap')
   }, [setSwapFromPlayerId, setSheet])
@@ -1292,6 +1294,21 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     }
     rememberRoundSelection(`Đổi ${playerName(fromId, playersById)}`)
     setManualAlternative(result.alternative)
+    setSwapFromPlayerId(null)
+    setSheet(null)
+  }
+
+  const swapPlayersInSuggestedLiveMatch = (fromId: string, toId: string) => {
+    if (!suggestedSwapMatch || fromId === toId) return
+    const nextMatch = swapPlayersInSuggestedMatch(suggestedSwapMatch, fromId, toId)
+    setSuggestedLiveMatches(current => current.map(match => match.id === nextMatch.id ? nextMatch : match))
+    if (suggestedPreviewBatchRef.current) {
+      suggestedPreviewBatchRef.current = {
+        ...suggestedPreviewBatchRef.current,
+        matches: suggestedPreviewBatchRef.current.matches.map(match => match.id === nextMatch.id ? nextMatch : match),
+      }
+    }
+    setSuggestedSwapMatch(null)
     setSwapFromPlayerId(null)
     setSheet(null)
   }
@@ -1776,15 +1793,29 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         <FairnessPreviewSheet preview={fairnessPreview} />
       </NextRoundSheet>
 
-      <NextRoundSheet visible={sheet === 'swap'} snap="88" onClose={() => setSheet(null)}>
-        <SwapSheetView
-          state={state}
-          alternative={workingAlternative}
-          playersById={playersById}
-          swapFromPlayerId={swapFromPlayerId}
-          setSwapFromPlayerId={setSwapFromPlayerId}
-          onSwap={swapPlayersInWorkingAlternative}
-        />
+      <NextRoundSheet visible={sheet === 'swap'} snap="88" onClose={() => {
+        setSuggestedSwapMatch(null)
+        setSheet(null)
+      }}>
+        {suggestedSwapMatch ? (
+          <SuggestedLiveMatchSwapSheet
+            match={suggestedSwapMatch}
+            state={state}
+            playersById={playersById}
+            swapFromPlayerId={swapFromPlayerId}
+            setSwapFromPlayerId={setSwapFromPlayerId}
+            onSwap={swapPlayersInSuggestedLiveMatch}
+          />
+        ) : (
+          <SwapSheetView
+            state={state}
+            alternative={workingAlternative}
+            playersById={playersById}
+            swapFromPlayerId={swapFromPlayerId}
+            setSwapFromPlayerId={setSwapFromPlayerId}
+            onSwap={swapPlayersInWorkingAlternative}
+          />
+        )}
       </NextRoundSheet>
 
 
@@ -1810,6 +1841,220 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           busy={busy}
         />
       </NextRoundSheet>
+    </View>
+  )
+}
+
+function swapPlayersInSuggestedMatch(match: SuggestedLiveMatchRow, fromId: string, toId: string): SuggestedLiveMatchRow {
+  const replaceInTeam = (team: string[]) => team.map(playerId => {
+    if (playerId === fromId) return toId
+    if (playerId === toId) return fromId
+    return playerId
+  }) as [string, string]
+
+  const teamA = replaceInTeam(match.team_a)
+  const teamB = replaceInTeam(match.team_b)
+  const toWasResting = (match.resting ?? []).includes(toId)
+  const restingBase = toWasResting
+    ? [...(match.resting ?? []).filter(playerId => playerId !== toId), fromId]
+    : (match.resting ?? [])
+  const playingAfter = new Set([...teamA, ...teamB])
+  const resting = [...new Set(restingBase)].filter(playerId => !playingAfter.has(playerId))
+
+  return {
+    ...match,
+    team_a: teamA,
+    team_b: teamB,
+    resting,
+  }
+}
+
+function buildSuggestedSwapImpact(match: SuggestedLiveMatchRow, fromId: string, toId: string, state: SessionState) {
+  const beforePvnaDiff = Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state))
+  const beforeRepeat = getProjectedRepeatSummary(match.team_a, match.team_b, state)
+  const afterMatch = swapPlayersInSuggestedMatch(match, fromId, toId)
+  const afterPvnaDiff = Math.abs(getTeamPvna(afterMatch.team_a, state) - getTeamPvna(afterMatch.team_b, state))
+  const afterRepeat = getProjectedRepeatSummary(afterMatch.team_a, afterMatch.team_b, state)
+  const beforeRepeatOver = beforeRepeat.pair_over_by + beforeRepeat.player_over_by
+  const afterRepeatOver = afterRepeat.pair_over_by + afterRepeat.player_over_by
+  const pvnaDelta = afterPvnaDiff - beforePvnaDiff
+  const repeatDelta = afterRepeatOver - beforeRepeatOver
+  const qualityDelta = -pvnaDelta - repeatDelta * 0.35
+  const label = qualityDelta > 0.08
+    ? 'Tốt hơn'
+    : qualityDelta < -0.08
+      ? 'Giảm chất lượng'
+      : 'Ít đổi'
+
+  return {
+    label,
+    qualityDelta,
+    beforePvnaDiff,
+    afterPvnaDiff,
+    beforeRepeatOver,
+    afterRepeatOver,
+    beforePartnerMax: beforeRepeat.max_partner_pair_count,
+    afterPartnerMax: afterRepeat.max_partner_pair_count,
+    beforeOpponentMax: beforeRepeat.max_opponent_pair_count,
+    afterOpponentMax: afterRepeat.max_opponent_pair_count,
+  }
+}
+
+function describeSuggestedMatchRepeats(
+  match: SuggestedLiveMatchRow,
+  state: SessionState,
+  playersById: Map<string, ArrangementPlayer>,
+) {
+  const lines: string[] = []
+  for (const team of [match.team_a, match.team_b]) {
+    const count = (state.players.get(team[0])?.partner_counts.get(team[1]) ?? 0) + 1
+    if (count >= 2) {
+      lines.push(`${playerName(team[0], playersById)} và ${playerName(team[1], playersById)} làm đồng đội lần thứ ${count}`)
+    }
+  }
+
+  for (const playerA of match.team_a) {
+    for (const playerB of match.team_b) {
+      const count = (state.players.get(playerA)?.opponent_counts.get(playerB) ?? 0) + 1
+      if (count >= 2) {
+        lines.push(`${playerName(playerA, playersById)} gặp lại ${playerName(playerB, playersById)} lần thứ ${count}`)
+      }
+    }
+  }
+
+  if (lines.length === 0) return 'Không lặp lại đối thủ/đồng đội.'
+  return lines.slice(0, 4).join('; ') + (lines.length > 4 ? `; +${lines.length - 4} lặp khác` : '.')
+}
+
+function SuggestedLiveMatchSwapSheet({
+  match,
+  state,
+  playersById,
+  swapFromPlayerId,
+  setSwapFromPlayerId,
+  onSwap,
+}: {
+  match: SuggestedLiveMatchRow
+  state: SessionState
+  playersById: Map<string, ArrangementPlayer>
+  swapFromPlayerId: string | null
+  setSwapFromPlayerId: (playerId: string) => void
+  onSwap: (fromId: string, toId: string) => void
+}) {
+  const theme = useAppTheme()
+  const playingIds = [...match.team_a, ...match.team_b]
+  const targetIds = [...new Set([...playingIds, ...(match.resting ?? [])])]
+  const candidates = swapFromPlayerId
+    ? targetIds
+        .filter(playerId => playerId !== swapFromPlayerId)
+        .map(playerId => ({
+          playerId,
+          impact: buildSuggestedSwapImpact(match, swapFromPlayerId, playerId, state),
+        }))
+        .sort((left, right) => {
+          const qualityDiff = right.impact.qualityDelta - left.impact.qualityDelta
+          if (Math.abs(qualityDiff) > 0.001) return qualityDiff
+          const repeatDiff = left.impact.afterRepeatOver - right.impact.afterRepeatOver
+          if (repeatDiff !== 0) return repeatDiff
+          const pvnaDiff = left.impact.afterPvnaDiff - right.impact.afterPvnaDiff
+          if (Math.abs(pvnaDiff) > 0.001) return pvnaDiff
+          const leftPlaying = playingIds.includes(left.playerId)
+          const rightPlaying = playingIds.includes(right.playerId)
+          if (leftPlaying !== rightPlaying) return leftPlaying ? 1 : -1
+          return playerName(left.playerId, playersById).localeCompare(playerName(right.playerId, playersById))
+        })
+    : []
+
+  return (
+    <View>
+      <SheetTitle title="Đổi người trận gợi ý" subtitle={`Sân ${(match.court_idx ?? 0) + 1}: đổi trực tiếp trong suggested live match đang chọn.`} />
+      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>1. Đổi ra</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
+        {playingIds.map(playerId => {
+          const active = swapFromPlayerId === playerId
+          return (
+            <TouchableOpacity
+              key={playerId}
+              onPress={() => setSwapFromPlayerId(playerId)}
+              style={{
+                height: 44,
+                borderRadius: RADIUS.full,
+                backgroundColor: active ? theme.primary : theme.surface,
+                borderWidth: BORDER.hairline,
+                borderColor: active ? theme.primary : theme.outlineVariant,
+                paddingHorizontal: 10,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 7,
+              }}
+            >
+              <PlayerAvatar name={playerName(playerId, playersById)} size={24} />
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: active ? theme.onPrimary : theme.onSurface }}>
+                {playerName(playerId, playersById)}
+              </Text>
+            </TouchableOpacity>
+          )
+        })}
+      </ScrollView>
+
+      {swapFromPlayerId ? (
+        <>
+          <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>2. Đổi với</Text>
+          <View style={{ gap: 8 }}>
+            {candidates.map(({ playerId, impact }) => {
+              const impactColor = impact.label === 'Tốt hơn'
+                ? theme.primary
+                : impact.label === 'Giảm chất lượng'
+                  ? theme.dangerText
+                  : theme.outline
+              const pvnaText = `${impact.beforePvnaDiff.toFixed(2)} -> ${impact.afterPvnaDiff.toFixed(2)}`
+              const repeatText = describeSuggestedMatchRepeats(
+                swapPlayersInSuggestedMatch(match, swapFromPlayerId, playerId),
+                state,
+                playersById,
+              )
+              return (
+                <TouchableOpacity
+                  key={playerId}
+                  onPress={() => onSwap(swapFromPlayerId, playerId)}
+                  style={{
+                    minHeight: 58,
+                    borderRadius: RADIUS.md,
+                    backgroundColor: theme.surface,
+                    borderWidth: BORDER.hairline,
+                    borderColor: theme.outlineVariant,
+                    borderLeftWidth: 4,
+                    borderLeftColor: impactColor,
+                    padding: 10,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}
+                >
+                  <PlayerAvatar name={playerName(playerId, playersById)} />
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <Text numberOfLines={1} style={{ flex: 1, fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.outline, fontWeight: '900' }}>
+                        PVNA {(state.players.get(playerId)?.pvna ?? 0).toFixed(2)}
+                      </Text>
+                    </View>
+                    <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.label, fontSize: 11, color: impactColor, fontWeight: '900' }}>
+                      {impact.label} · chênh PVNA {pvnaText}
+                    </Text>
+                    <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, lineHeight: 14, color: theme.outline }}>
+                      {repeatText}
+                    </Text>
+                  </View>
+                  <Text style={ctaTextStyle(impactColor, 12)}>
+                    Đổi
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+        </>
+      ) : null}
     </View>
   )
 }

@@ -76,13 +76,14 @@ function isCourtPreset(value: unknown): value is CourtPreset {
 
 export function useNextRoundModel({ sessionId, players, courts }: NextRoundSuggesterV2Props) {
   const queryClient = useQueryClient()
+  const sessionCourtSetup = useMemo(() => normalizeCourtCount(courts), [courts])
   const [selectedAlternative, setSelectedAlternative] = useState(0)
   const [manualAlternative, setManualAlternative] = useState<SuggestionAlternative | null>(null)
   const [selectionUndo, setSelectionUndo] = useState<RoundSelectionSnapshot | null>(null)
   const [swapFromPlayerId, setSwapFromPlayerId] = useState<string | null>(null)
   const [sheet, setSheet] = useState<SheetKey>(null)
   const [pvnaTolerance, setPvnaTolerance] = useState(0.5)
-  const [courtCountOverride, setCourtCountOverride] = useState<number | null>(null)
+  const [courtCountOverride, setCourtCountOverride] = useState<number | null>(sessionCourtSetup)
   const [courtPreset, setCourtPreset] = useState<CourtPreset>('balanced')
   const [courtDurationMin, setCourtDurationMin] = useState(120)
   const [targetRounds, setTargetRounds] = useState<number | null>(null)
@@ -99,7 +100,6 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
     const savedTolerance = readNumber(settings.pvnaTolerance)
     const savedTarget = readNumber(settings.targetRounds)
     if (savedCourts !== null) setCourtCountOverride(normalizeCourtCount(savedCourts))
-    else if ('courtCountOverride' in settings && settings.courtCountOverride === null) setCourtCountOverride(null)
     if (isCourtPreset(settings.courtPreset)) setCourtPreset(settings.courtPreset)
     if (savedDuration !== null) setCourtDurationMin(Math.max(15, Math.floor(savedDuration)))
     if (savedTolerance !== null) setPvnaTolerance(savedTolerance)
@@ -110,7 +110,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   useEffect(() => {
     let cancelled = false
     setSettingsHydrated(false)
-    setCourtCountOverride(null)
+    setCourtCountOverride(sessionCourtSetup)
     setCourtPreset('balanced')
     setCourtDurationMin(120)
     setPvnaTolerance(0.5)
@@ -136,7 +136,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
       setSettingsHydrated(true)
     })()
     return () => { cancelled = true }
-  }, [applyPersistedSettings, sessionId, settingsStorageKey])
+  }, [applyPersistedSettings, sessionCourtSetup, sessionId, settingsStorageKey])
 
   useEffect(() => {
     if (!settingsHydrated) return

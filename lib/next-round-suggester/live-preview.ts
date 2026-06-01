@@ -3,10 +3,13 @@ import { Tier } from './classify.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import type { FairnessWarning } from './fairness/detector.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import { computeAvailabilityMetrics } from './fairness/metrics.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { getProjectedRepeatSummary } from './score.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { suggestNextMatch } from './suggest.ts'
 import type {
+  PlayerSessionState,
   SessionLiveMatchRow,
   SessionState,
   SuggestionAlternative,
@@ -548,12 +551,21 @@ export function buildSuggestedMatchPayloads({
     const busyIds = new Set([...baseBusyIds, ...roundBusyIds])
     const activePlayersForBias = [...suggestionState.players.values()]
       .filter(player => player.checked_out_at === null && !player.opted_rest && !busyIds.has(player.player_id))
+    const availabilityForBias = computeAvailabilityMetrics(suggestionState)
+    const availabilityDeltaByPlayer = new Map(
+      availabilityForBias.per_player.map(player => [player.player_id, player.delta_from_expected]),
+    )
     const avgMatchesForBias = activePlayersForBias.length === 0
       ? 0
       : activePlayersForBias.reduce((sum, player) => sum + player.matches_played, 0) / activePlayersForBias.length
+    const getMatchBalanceForBias = (player: PlayerSessionState) => (
+      availabilityForBias.rounds_tracked > 0
+        ? (availabilityDeltaByPlayer.get(player.player_id) ?? 0)
+        : player.matches_played - avgMatchesForBias
+    )
     const softUnderplayedOverrides = Object.fromEntries(
       activePlayersForBias
-        .filter(player => player.matches_played <= avgMatchesForBias - 0.25)
+        .filter(player => getMatchBalanceForBias(player) <= -0.25)
         .filter(player => !requiredForThisCourtIds.has(player.player_id))
         .filter(player => !deferredRequiredIds.includes(player.player_id))
         .filter(player => fairnessAdjustment.tier_overrides[player.player_id] === undefined)
@@ -561,7 +573,7 @@ export function buildSuggestedMatchPayloads({
     )
     const softOverplayedOverrides = Object.fromEntries(
       activePlayersForBias
-        .filter(player => player.matches_played >= avgMatchesForBias + 0.75)
+        .filter(player => getMatchBalanceForBias(player) >= 0.75)
         .filter(player => !requiredForThisCourtIds.has(player.player_id))
         .filter(player => !deferredRequiredIds.includes(player.player_id))
         .filter(player => fairnessAdjustment.tier_overrides[player.player_id] === undefined)

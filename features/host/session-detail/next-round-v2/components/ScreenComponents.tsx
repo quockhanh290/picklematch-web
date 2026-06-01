@@ -40,6 +40,7 @@ import { suggestNextMatch, suggestNextRound } from '@/lib/next-round-suggester/s
 import { buildSessionStateFingerprint } from '@/lib/next-round-suggester/state-version'
 import type { FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
 import {
+  buildFairnessAudits,
   type FairnessAudit,
   type MatchCountConsistencyRow,
   type FairnessPreview,
@@ -59,6 +60,7 @@ import {
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
 import type {
   Match,
+  PlayerSessionState,
   SessionLiveMatchRow,
   SessionPairHistoryRow,
   SessionRoundRow,
@@ -1142,32 +1144,15 @@ export function FairnessPreviewSheet({ preview }: { preview: FairnessPreview | n
 }
 
 function describePreviewRow(row: FairnessPreview['rows'][number]) {
-  if (row.key === 'match_count') {
-    return row.delta < 0
-      ? 'Một số người sẽ lệch số trận sau vòng này. Nếu lệch chỉ 1 trận thì thường vẫn ổn.'
-      : 'Số trận giữa người chơi vẫn cân bằng.'
-  }
-  if (row.key === 'partner_diversity') {
-    return row.delta < 0
-      ? 'Có thêm cặp đánh chung bị lặp.'
-      : 'Không làm xấu độ đa dạng partner (đồng đội).'
-  }
-  if (row.key === 'opponent_diversity') {
-    return row.delta < 0
-      ? 'Có thêm đối thủ bị gặp lại.'
-      : 'Không làm xấu độ đa dạng đối thủ.'
-  }
-  if (row.key === 'rest') {
-    return row.delta < 0
-      ? 'Có người nghỉ liên tiếp hoặc nhịp nghỉ xấu hơn.'
-      : 'Nhịp nghỉ vẫn ổn.'
-  }
-  if (row.key === 'gender_prefs') {
-    return row.delta < 0
-      ? 'Một số sở thích giới tính không được đáp ứng trong vòng này.'
-      : 'Sở thích giới tính vẫn được giữ tốt.'
-  }
-  return row.detail
+  const max = FAIRNESS_BREAKDOWN_MAX[row.key]
+  const loss = Math.max(0, max - row.after)
+  const movement = row.delta > 0
+    ? `Mục này tốt hơn, tăng ${row.delta} điểm (${row.before} → ${row.after}/${max}).`
+    : row.delta < 0
+      ? `Mục này kém hơn, giảm ${Math.abs(row.delta)} điểm (${row.before} → ${row.after}/${max}).`
+      : `Mục này giữ nguyên ở ${row.after}/${max}.`
+  const deduction = loss > 0 ? `Còn thiếu ${loss} điểm để đạt mức tốt nhất.` : 'Đang đạt mức tốt nhất.'
+  return `${movement} ${deduction}${row.detail ? ` ${row.detail}` : ''}`
 }
 
 export function EngineExplainCard({
@@ -1377,7 +1362,7 @@ export function NextMatchSuggestionCard({
   alternative: SuggestionAlternative
   state: SessionState
   playersById: Map<string, ArrangementPlayer>
-  onPlayerPress: (playerId: string) => void
+  onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
   onCreate: () => void
   busy: boolean
   initialCount: number
@@ -1442,7 +1427,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   onStartMatch: (match: SuggestedLiveMatchRow) => void
   onCompleteMatch: (match: SessionLiveMatchRow, score: { a: number; b: number }) => void
   onCancelMatch: (match: SessionLiveMatchRow) => void
-  onPlayerPress: (playerId: string) => void
+  onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
   onOpenSettings: () => void
 }) {
   if (liveMatches.length === 0 && suggestedMatches.length === 0) return null
@@ -1673,7 +1658,7 @@ export function SuggestedLiveMatchCard({
   roundPace: number
   playersById: Map<string, ArrangementPlayer>
   onStart: (match: SuggestedLiveMatchRow) => void
-  onPlayerPress: (playerId: string) => void
+  onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
   onOpenSettings: () => void
 }) {
   const theme = useAppTheme()
@@ -1749,7 +1734,7 @@ export function SuggestedLiveMatchCard({
           pvnaTolerance={pvnaTolerance}
           roundPace={roundPace}
           playersById={playersById}
-          onPlayerPress={onPlayerPress}
+          onPlayerPress={(playerId) => onPlayerPress(playerId, activeMatch)}
         />
       </View>
       {tradeoffSummaryLines.length > 0 ? (
@@ -2024,7 +2009,7 @@ export function SuggestedMatchTile({
   pvnaTolerance?: number
   roundPace: number
   playersById: Map<string, ArrangementPlayer>
-  onPlayerPress: (playerId: string) => void
+  onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
 }) {
   const theme = useAppTheme()
   const diff = useMemo(
@@ -3442,27 +3427,13 @@ export function FairnessSheet({
       {rows.map(([label, value, max, detail]) => (
         <BreakdownRow key={label} label={label} value={value} max={max} detail={detail} />
       ))}
-      <PlayerMatchDistributionBlock match={match} rest={rest} playersById={playersById} />
-      <FairnessEvolutionBlock state={state} />
-      <LatestFairnessAuditCard audit={latestAudit} />
+      <PlayerMatchDistributionBlock match={match} rest={rest} state={state} playersById={playersById} />
+      <FairnessHistoryAuditSection state={state} latestAudit={latestAudit} />
       <RepeatDetailsBlock
         partnerPairs={partner.repeat_pairs}
         opponentPairs={opponent.repeat_pairs}
         playersById={playersById}
       />
-      {warnings.length > 0 ? (
-        <View style={{ marginTop: 12, gap: 8 }}>
-          {warnings.map((warning, index) => {
-            const tone = warningTone(theme, warning.severity)
-            return (
-              <View key={`${warning.type}-${index}`} style={{ backgroundColor: tone.bg, borderRadius: RADIUS.md, padding: 10, borderWidth: BORDER.hairline, borderColor: tone.border }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: tone.text }}>{warningTitle(warning.type)}</Text>
-                <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: tone.text }}>{warning.message}</Text>
-              </View>
-            )
-          })}
-        </View>
-      ) : null}
       <GroupAuditBlock state={state} groupSummaries={groupSummaries} playersById={playersById} />
     </View>
   )
@@ -3471,51 +3442,289 @@ export function FairnessSheet({
 export function PlayerMatchDistributionBlock({
   match,
   rest,
+  state,
   playersById,
 }: {
   match: ReturnType<typeof computeMatchCountMetrics>
   rest: ReturnType<typeof computeRestFairness>
+  state: SessionState
   playersById: Map<string, ArrangementPlayer>
 }) {
   const theme = useAppTheme()
-  if (match.per_player.length === 0) return null
-  const maxMatches = match.max
+  const completedRounds = useMemo(
+    () => [...state.rounds].filter(round => round.status === 'completed').sort((a, b) => a.round_no - b.round_no),
+    [state.rounds],
+  )
+  const rows = useMemo(
+    () => [...state.players.values()]
+      .sort((a, b) => {
+        if (a.checked_out_at && !b.checked_out_at) return 1
+        if (!a.checked_out_at && b.checked_out_at) return -1
+        if (a.opted_rest !== b.opted_rest) return a.opted_rest ? 1 : -1
+        if (a.matches_played !== b.matches_played) return a.matches_played - b.matches_played
+        return playerName(a.player_id, playersById).localeCompare(playerName(b.player_id, playersById))
+      }),
+    [playersById, state.players],
+  )
+  if (rows.length === 0) return null
   const violationSet = new Set(rest.violations.map(v => v.player_id))
   const restByPlayer = new Map(rest.per_player.map(p => [p.player_id, p]))
-  const sorted = [...match.per_player].sort((a, b) => a.matches_played - b.matches_played)
   return (
     <View style={{ marginTop: 14 }}>
       <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.onSurface, marginBottom: 8 }}>
         Số trận mỗi người ({match.min}–{match.max})
       </Text>
-      <View style={{ gap: 5 }}>
-        {sorted.map(({ player_id, matches_played }) => {
-          const player = playersById.get(player_id)
-          const name = player?.name ?? player_id.slice(0, 6)
-          const hasViolation = violationSet.has(player_id)
-          const playerRest = restByPlayer.get(player_id)
-          const barWidth = maxMatches === 0 ? 0 : (matches_played / maxMatches) * 100
-          const isMin = matches_played === match.min && match.range > 0
-          const isMax = matches_played === match.max && match.range > 0
+      <View style={{ gap: 7 }}>
+        {rows.map(row => {
+          const name = playerName(row.player_id, playersById)
+          const hasViolation = violationSet.has(row.player_id)
+          const playerRest = restByPlayer.get(row.player_id)
+          const isMin = row.matches_played === match.min && match.range > 0 && !row.checked_out_at && !row.opted_rest
+          const activities = buildPlayerRoundTimeline(row, completedRounds)
+          const checkedOutRound = activities.find(activity => activity.status === 'checked_out')?.round_no
+          const checkedOutLabel = checkedOutRound != null ? `R\u1eddi t\u1eeb V${checkedOutRound + 1}` : null
+          const statusLabel = checkedOutLabel ?? (row.opted_rest ? '\u0110ang xin ngh\u1ec9' : hasViolation ? `Ngh\u1ec9 ${playerRest?.max_consecutive_rest ?? 0}` : null)
           return (
-            <View key={player_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View
+              key={row.player_id}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 9,
+                borderRadius: RADIUS.sm,
+                borderWidth: BORDER.hairline,
+                borderColor: hasViolation ? theme.warningStrong : theme.outlineVariant,
+                backgroundColor: row.checked_out_at ? theme.surfaceContainerLow : theme.surface,
+                padding: 8,
+                opacity: row.checked_out_at ? 0.78 : 1,
+              }}
+            >
+              <View style={{ width: 92, minWidth: 0 }}>
               <Text
                 numberOfLines={1}
-                style={{ width: 80, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: hasViolation ? theme.warningText : theme.onSurface }}
+                style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: hasViolation || isMin ? theme.warningText : theme.onSurface }}
               >
                 {name}
               </Text>
-              <View style={{ flex: 1, height: 8, backgroundColor: theme.outlineVariant, borderRadius: RADIUS.full, overflow: 'hidden' }}>
-                <View style={{ width: `${barWidth}%`, height: '100%', backgroundColor: isMin ? theme.warningStrong : isMax ? theme.primary : theme.primaryContainer, borderRadius: RADIUS.full }} />
-              </View>
-              <Text style={{ width: 18, textAlign: 'right', fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: isMin ? theme.warningText : theme.onSurface }}>
-                {matches_played}
+              <Text
+                numberOfLines={1}
+                style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 9.5, color: row.checked_out_at ? theme.outline : statusLabel ? theme.warningText : theme.outline }}
+              >
+                {statusLabel ?? '\u0110ang ch\u01a1i'}
               </Text>
-              {hasViolation ? (
-                <Text style={{ width: 40, fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.warningText }}>
-                  {`nghỉ ${playerRest?.max_consecutive_rest ?? 0}`}
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <RoundTimelineBar activities={activities} />
+              </View>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: RADIUS.sm,
+                  backgroundColor: isMin ? theme.warningBg : theme.secondaryContainer,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: BORDER.hairline,
+                  borderColor: theme.outlineVariant,
+                }}
+              >
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: isMin ? theme.warningText : theme.onSurface }}>
+                  {row.matches_played}
                 </Text>
-              ) : <View style={{ width: 40 }} />}
+                <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 8.5, color: theme.outline }}>
+                  trận
+                </Text>
+              </View>
+            </View>
+          )
+        })}
+      </View>
+      <RoundTimelineLegend />
+    </View>
+  )
+}
+
+type RoundTimelineStatus = 'played' | 'rested' | 'absent' | 'checked_out'
+
+function buildPlayerRoundTimeline(
+  player: PlayerSessionState,
+  rounds: SessionState['rounds'],
+): { round_no: number; status: RoundTimelineStatus }[] {
+  const checkedOutMs = player.checked_out_at?.getTime() ?? null
+  const checkedInMs = player.checked_in_at.getTime()
+  return rounds.map(round => {
+    const played = round.matches.some(match => match.team_a.includes(player.player_id) || match.team_b.includes(player.player_id))
+    if (played) return { round_no: round.round_no, status: 'played' }
+    if (round.resting.includes(player.player_id)) return { round_no: round.round_no, status: 'rested' }
+
+    const roundStartMs = round.started_at?.getTime() ?? null
+    const roundEndMs = round.ended_at?.getTime() ?? roundStartMs
+    if (checkedOutMs !== null) {
+      if (roundStartMs !== null && checkedOutMs <= roundStartMs) return { round_no: round.round_no, status: 'checked_out' }
+      if (roundEndMs !== null && checkedInMs <= roundEndMs && checkedOutMs <= roundEndMs) return { round_no: round.round_no, status: 'checked_out' }
+      if (roundStartMs === null && round.round_no > player.last_played_round) return { round_no: round.round_no, status: 'checked_out' }
+    }
+
+    return { round_no: round.round_no, status: 'absent' }
+  })
+}
+
+function RoundTimelineBar({ activities }: { activities: { round_no: number; status: RoundTimelineStatus }[] }) {
+  const theme = useAppTheme()
+  if (activities.length === 0) return null
+  return (
+    <View
+      style={{
+        minHeight: 34,
+        borderRadius: RADIUS.sm,
+        backgroundColor: theme.surfaceContainerLow,
+        borderWidth: BORDER.hairline,
+        borderColor: theme.outlineVariant,
+        padding: 5,
+        justifyContent: 'center',
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        {activities.map(activity => {
+          const tone = roundTimelineTone(activity.status, theme)
+          return (
+            <View key={activity.round_no} style={{ flex: 1, alignItems: 'center', minWidth: 0 }}>
+              <View
+                style={{
+                  width: 21,
+                  height: 21,
+                  borderRadius: RADIUS.full,
+                  backgroundColor: tone.bg,
+                  borderWidth: 1.5,
+                  borderColor: tone.border,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 8.5, color: tone.text }}>
+                  {activity.round_no + 1}
+                </Text>
+              </View>
+            </View>
+          )
+        })}
+      </View>
+    </View>
+  )
+}
+
+function RoundTimelineLegend() {
+  const theme = useAppTheme()
+  const items: { label: string; status: RoundTimelineStatus }[] = [
+    { label: '\u0110\u00e1nh', status: 'played' },
+    { label: 'Ngh\u1ec9', status: 'rested' },
+    { label: 'V\u1eafng', status: 'absent' },
+    { label: 'R\u1eddi', status: 'checked_out' },
+  ]
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 10 }}>
+      {items.map(item => {
+        const tone = roundTimelineTone(item.status, theme)
+        return (
+          <View key={item.status} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: tone.bg, borderWidth: 1.5, borderColor: tone.border }} />
+            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 9.5, color: theme.outline }}>{item.label}</Text>
+          </View>
+        )
+      })}
+    </View>
+  )
+}
+
+function roundTimelineTone(status: RoundTimelineStatus, theme: ReturnType<typeof useAppTheme>) {
+  if (status === 'played') return { bg: theme.primary, border: theme.primary, text: theme.onPrimary }
+  if (status === 'rested') return { bg: theme.surface, border: theme.outline, text: theme.outline }
+  if (status === 'checked_out') return { bg: theme.surfaceContainerLow, border: theme.outline, text: theme.outline }
+  return { bg: theme.dangerBg, border: theme.dangerText, text: theme.dangerText }
+}
+
+const FAIRNESS_BREAKDOWN_MAX: Record<keyof SessionFairnessScore['breakdown'], number> = {
+  match_count: 25,
+  partner_diversity: 20,
+  opponent_diversity: 15,
+  rest: 20,
+  gender_prefs: 20,
+}
+
+export function FairnessHistoryAuditSection({
+  state,
+  latestAudit,
+}: {
+  state: SessionState
+  latestAudit?: FairnessAudit | null
+}) {
+  const theme = useAppTheme()
+  const audits = useMemo(() => buildFairnessAudits(state), [state])
+  const visibleAudits = audits.length > 0 ? audits : latestAudit ? [latestAudit] : []
+  if (visibleAudits.length === 0) return null
+  return (
+    <View style={{ marginTop: 14, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.onSurface }}>
+        Lịch sử & audit fairness
+      </Text>
+      <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline, lineHeight: 15 }}>
+        Mỗi vòng hiển thị điểm sau vòng đó, thay đổi so với trước vòng và các mục đang bị trừ điểm.
+      </Text>
+      <View style={{ marginTop: 10, gap: 8 }}>
+        {visibleAudits.map(audit => {
+          const tone = audit.delta_total > 0 ? theme.successText : audit.delta_total < 0 ? theme.warningText : theme.outline
+          const deductedRows = audit.rows
+            .filter(row => row.after < FAIRNESS_BREAKDOWN_MAX[row.key] || row.delta < 0)
+            .sort((a, b) => {
+              const lossA = FAIRNESS_BREAKDOWN_MAX[a.key] - a.after
+              const lossB = FAIRNESS_BREAKDOWN_MAX[b.key] - b.after
+              if (lossA !== lossB) return lossB - lossA
+              return a.label.localeCompare(b.label)
+            })
+          const rowsToShow = deductedRows.length > 0 ? deductedRows : audit.rows.filter(row => row.delta !== 0).slice(0, 2)
+          return (
+            <View key={`fairness-audit-${audit.round_no}`} style={{ borderRadius: RADIUS.sm, backgroundColor: theme.surfaceContainerLow, padding: 10, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface }}>
+                    Vòng {audit.round_no + 1}
+                  </Text>
+                  <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>
+                    {audit.before_total} → {audit.after_total} điểm
+                  </Text>
+                </View>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: tone }}>
+                  {audit.delta_total > 0 ? '+' : ''}{audit.delta_total}
+                </Text>
+              </View>
+              {rowsToShow.length > 0 ? (
+                <View style={{ marginTop: 8, gap: 6 }}>
+                  {rowsToShow.map(row => {
+                    const max = FAIRNESS_BREAKDOWN_MAX[row.key]
+                    const loss = Math.max(0, max - row.after)
+                    const rowTone = row.delta < 0 || loss > 0 ? theme.warningText : theme.primary
+                    return (
+                      <View key={`${audit.round_no}-${row.key}`} style={{ borderRadius: RADIUS.xs, backgroundColor: theme.surface, padding: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: theme.onSurface }}>
+                            {row.label}
+                          </Text>
+                          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10.5, color: rowTone }}>
+                            {row.after}/{max}{row.delta !== 0 ? ` (${row.delta > 0 ? '+' : ''}${row.delta})` : ''}
+                          </Text>
+                        </View>
+                        <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline, lineHeight: 14 }}>
+                          {describePreviewRow(row)}
+                        </Text>
+                      </View>
+                    )
+                  })}
+                </View>
+              ) : (
+                <Text style={{ marginTop: 7, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>
+                  Không có mục bị trừ điểm trong vòng này.
+                </Text>
+              )}
             </View>
           )
         })}
