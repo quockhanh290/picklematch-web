@@ -3337,7 +3337,7 @@ export function CourtSuggestionOptions({
   onSelect: (courts: number) => void
 }) {
   const theme = useAppTheme()
-  const visibleOptions = options.filter(option => option.courts >= recommendedCourts || option.courts === appliedCourts)
+  const visibleOptions = options.filter(option => option.courts >= recommendedCourts - 1 || option.courts === appliedCourts)
   return (
     <View style={{ marginBottom: 14 }}>
       <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Gợi ý số sân</Text>

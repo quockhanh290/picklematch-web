@@ -5,6 +5,7 @@ import { BORDER, RADIUS } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import {
   computeAvailabilityMetrics,
+  computeGenderPrefSatisfaction,
   computeMatchCountMetrics,
   computeOpponentDiversity,
   computeOpponentRepeatBurden,
@@ -222,6 +223,7 @@ function buildPlayerQualityRows(
   const opponentBurden = computeOpponentRepeatBurden(state)
   const rest = computeRestFairness(state)
   const pressure = computeRepeatPressure(state)
+  const genderSatisfaction = computeGenderPrefSatisfaction(state)
   const firstStart = firstCompletedRoundStart(state)
 
   const availabilityById = new Map(availability.per_player.map(row => [row.player_id, row]))
@@ -230,6 +232,7 @@ function buildPlayerQualityRows(
   const partnerBurdenById = new Map(partnerBurden.per_player.map(row => [row.player_id, row]))
   const opponentBurdenById = new Map(opponentBurden.per_player.map(row => [row.player_id, row]))
   const restById = new Map(rest.per_player.map(row => [row.player_id, row]))
+  const genderById = new Map(genderSatisfaction.per_player.map(row => [row.player_id, row]))
 
   return [...state.players.values()].map(player => {
     const availabilityRow = availabilityById.get(player.player_id)
@@ -238,6 +241,7 @@ function buildPlayerQualityRows(
     const partnerRepeat = partnerBurdenById.get(player.player_id)
     const opponentRepeat = opponentBurdenById.get(player.player_id)
     const restRow = restById.get(player.player_id)
+    const genderRow = genderById.get(player.player_id)
     const issues: PlayerQualityIssue[] = []
     let score = 100
 
@@ -319,6 +323,33 @@ function buildPlayerQualityRows(
         detail: `Gặp lại đối thủ cũ: ${names}. ${pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme' ? 'Setup này có pool đối thủ hẹp nên khó tránh hoàn toàn.' : 'Nên ưu tiên đổi đối thủ ở vòng sau.'}`,
         severity: opponentRepeat.repeated_opponents >= 2 ? 'priority' : 'watch',
       })
+    }
+
+    if (genderRow && player.matches_played >= 2) {
+      const hasPartnerPref = player.partner_gender_pref !== 'any'
+      const hasOpponentPref = player.opponent_gender_pref !== 'any'
+      const partnerPct = Math.round(genderRow.partner_satisfaction_rate * 100)
+      const opponentPct = Math.round(genderRow.opponent_satisfaction_rate * 100)
+      const partnerPrefLabel = player.partner_gender_pref === 'M' ? 'nam' : 'nữ'
+      const opponentPrefLabel = player.opponent_gender_pref === 'M' ? 'nam' : 'nữ'
+
+      if (hasPartnerPref && genderRow.partner_satisfaction_rate < 0.6) {
+        score -= genderRow.partner_satisfaction_rate < 0.3 ? 14 : 8
+        issues.push({
+          label: 'Sở thích đồng đội chưa được đáp ứng',
+          detail: `Muốn đồng đội ${partnerPrefLabel} nhưng chỉ được xếp đúng ${partnerPct}% số trận. ${genderSatisfaction.unsatisfiable.length > 0 ? 'Số lượng người cùng giới trong session ít, khó đáp ứng hoàn toàn.' : 'Nên ưu tiên xếp đúng sở thích ở vòng sau.'}`,
+          severity: genderRow.partner_satisfaction_rate < 0.3 ? 'priority' : 'watch',
+        })
+      }
+
+      if (hasOpponentPref && genderRow.opponent_satisfaction_rate < 0.6) {
+        score -= genderRow.opponent_satisfaction_rate < 0.3 ? 14 : 8
+        issues.push({
+          label: 'Sở thích đối thủ chưa được đáp ứng',
+          detail: `Muốn đối thủ ${opponentPrefLabel} nhưng chỉ được xếp đúng ${opponentPct}% số trận. ${genderSatisfaction.unsatisfiable.length > 0 ? 'Số lượng người cùng giới trong session ít, khó đáp ứng hoàn toàn.' : 'Nên ưu tiên xếp đúng sở thích ở vòng sau.'}`,
+          severity: genderRow.opponent_satisfaction_rate < 0.3 ? 'priority' : 'watch',
+        })
+      }
     }
 
     const finalScore = clampScore(score)

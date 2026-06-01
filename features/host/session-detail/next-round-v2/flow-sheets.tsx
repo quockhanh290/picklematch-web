@@ -253,30 +253,51 @@ export function RepeatDetailsBlock({
   playersById: Map<string, ArrangementPlayer>
 }) {
   const theme = useAppTheme()
+
   const renderPairs = (pairs: Array<{ player_a: string; player_b: string; count: number }>) => {
-    const repeated = pairs.filter(pair => pair.count > 1)
+    const repeated = pairs.filter(pair => pair.count > 1).sort((a, b) => b.count - a.count)
     if (repeated.length === 0) {
-      return <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>Không có cặp lặp.</Text>
+      return <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Không có cặp nào gặp lại.</Text>
     }
-    return repeated.map(pair => (
-      <Text key={`${pair.player_a}-${pair.player_b}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-        {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} lần
-      </Text>
-    ))
+    return repeated.map((pair, index) => {
+      const repeatCount = pair.count - 1
+      const isHigh = repeatCount >= 2
+      const badgeBg = isHigh ? theme.dangerBg : theme.warningBg
+      const badgeText = isHigh ? theme.dangerText : theme.warningText
+      const isLast = index === repeated.length - 1
+      return (
+        <View
+          key={`${pair.player_a}-${pair.player_b}`}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: isLast ? 0 : BORDER.hairline, borderBottomColor: theme.outlineVariant }}
+        >
+          <View style={{ flexDirection: 'row' }}>
+            <PlayerAvatar name={playerName(pair.player_a, playersById)} size={28} />
+            <View style={{ marginLeft: -8 }}>
+              <PlayerAvatar name={playerName(pair.player_b, playersById)} size={28} />
+            </View>
+          </View>
+          <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurface }} numberOfLines={1}>
+            {playerName(pair.player_a, playersById)} + {playerName(pair.player_b, playersById)}
+          </Text>
+          <View style={{ backgroundColor: badgeBg, borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: badgeText }}>
+              lặp {repeatCount}×
+            </Text>
+          </View>
+        </View>
+      )
+    })
   }
 
   return (
-    <View style={{ marginTop: 12, gap: 8 }}>
-      <Text style={eyebrowStyle(theme.outline)}>Cặp lặp chi tiết</Text>
-      <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Partner lặp (đồng đội)</Text>
-        <View style={{ gap: 3 }}>{renderPairs(partnerPairs)}</View>
-      </View>
-      <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Đối thủ lặp</Text>
-        <View style={{ gap: 3 }}>{renderPairs(opponentPairs)}</View>
-      </View>
-    </View>
+    <Card style={{ padding: 14, marginBottom: 14 }}>
+      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 12 }]}>Các cặp gặp nhau nhiều lần</Text>
+      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Đồng đội</Text>
+      <View style={{ marginBottom: 12 }}>{renderPairs(partnerPairs)}</View>
+      <View style={{ height: BORDER.hairline, backgroundColor: theme.outlineVariant, marginBottom: 12 }} />
+      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Đối thủ</Text>
+      <View>{renderPairs(opponentPairs)}</View>
+    </Card>
   )
 }
 
@@ -293,16 +314,31 @@ export function OpponentBurdenSummary({
     .sort((a, b) => b.repeated_opponents - a.repeated_opponents)
   return (
     <Card style={{ padding: 14, marginBottom: 14 }}>
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Người bị lặp đối thủ nhiều</Text>
+      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 12 }]}>Ai gặp lại đối thủ nhiều nhất</Text>
       {rows.length === 0 ? (
-        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Không có ai bị lặp đối thủ.</Text>
+        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Không ai gặp lại đối thủ cũ.</Text>
       ) : (
-        <View style={{ gap: 4 }}>
-          {rows.map(row => (
-            <Text key={`burden-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-              {playerName(row.player_id, playersById)}: {row.repeated_opponents} đối thủ lặp
-            </Text>
-          ))}
+        <View style={{ gap: 2 }}>
+          {rows.map((row, index) => {
+            const isHigh = row.repeated_opponents >= 2
+            const isLast = index === rows.length - 1
+            return (
+              <View
+                key={`burden-${row.player_id}`}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: isLast ? 0 : BORDER.hairline, borderBottomColor: theme.outlineVariant }}
+              >
+                <PlayerAvatar name={playerName(row.player_id, playersById)} size={30} />
+                <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurface }}>
+                  {playerName(row.player_id, playersById)}
+                </Text>
+                <View style={{ backgroundColor: isHigh ? theme.dangerBg : theme.surfaceContainerLow, borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3 }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: isHigh ? theme.dangerText : theme.outline }}>
+                    {row.repeated_opponents} đối thủ
+                  </Text>
+                </View>
+              </View>
+            )
+          })}
         </View>
       )}
     </Card>
@@ -329,10 +365,6 @@ export function RecapView({
   onContinue: () => void
 }) {
   const theme = useAppTheme()
-  const maxMatchesForChart = useMemo(
-    () => Math.max(1, ...summary.per_player.map(item => item.matches_played)),
-    [summary.per_player],
-  )
   const { partner, opponent, burden, pressure, restByPlayer, breakdownExplanations, lowScoreReasons } = useMemo(() => {
     const p = computePartnerDiversity(state)
     const o = computeOpponentDiversity(state)
@@ -385,40 +417,31 @@ export function RecapView({
       ) : null}
       <PlayerQualityReport state={state} playersById={playersById} liveMatchRows={liveMatchRows} />
       <Card style={{ padding: 14, marginBottom: 14 }}>
-        <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Số trận mỗi người</Text>
-        <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 10, marginBottom: 12 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.primary }}>
-            Cách đọc: mỗi vòng người chơi hoặc được xếp đánh, hoặc nghỉ vòng đó. Lượt nghỉ là số vòng không được xếp đánh. Max là số lượt nghỉ liên tiếp dài nhất. Ví dụ 8 vòng, đánh 6 trận thì nghỉ 2 lượt.
-          </Text>
+        <Text style={[eyebrowStyle(theme.outline), { marginBottom: 12 }]}>Độ đa dạng thi đấu</Text>
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <View style={{
+            backgroundColor: pressure.repeat_risk === 'low' ? theme.secondaryContainer : pressure.repeat_risk === 'medium' ? theme.warningBg : theme.dangerBg,
+            borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 4,
+          }}>
+            <Text style={{
+              fontFamily: SCREEN_FONTS.bold, fontSize: 12,
+              color: pressure.repeat_risk === 'low' ? theme.primary : pressure.repeat_risk === 'medium' ? theme.warningText : theme.dangerText,
+            }}>
+              Mức {repeatRiskLabel(pressure.repeat_risk)}
+            </Text>
+          </View>
+          <View style={{ backgroundColor: theme.surfaceContainerLow, borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 4 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline }}>
+              TB {pressure.avg_matches_per_player.toFixed(1)} trận/người
+            </Text>
+          </View>
         </View>
-        {summary.per_player.map(player => {
-          const rest = restByPlayer.get(player.player_id)
-          return (
-            <View key={player.player_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <PlayerAvatar name={playerName(player.player_id, playersById)} size={26} />
-              <View style={{ width: 92 }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onSurface }} numberOfLines={1}>
-                  {playerName(player.player_id, playersById)}
-                </Text>
-                <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 9.5, color: theme.outline }} numberOfLines={1}>
-                  Nghỉ {rest?.total_rests ?? 0} lượt · max liên tiếp {rest?.max_consecutive_rest ?? player.max_consecutive_rest}
-                </Text>
-              </View>
-              <View style={{ flex: 1, height: 8, borderRadius: RADIUS.full, backgroundColor: theme.outlineVariant, overflow: 'hidden' }}>
-                <View style={{ width: `${(player.matches_played / maxMatchesForChart) * 100}%`, height: '100%', backgroundColor: theme.primary }} />
-              </View>
-              <Text style={{ width: 20, textAlign: 'right', fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface }}>{player.matches_played}</Text>
-            </View>
-          )
-        })}
-      </Card>
-      <Card style={{ padding: 14, marginBottom: 14 }}>
-        <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Áp lực lặp partner (đồng đội)/đối thủ</Text>
         <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 17 }}>
-          Mức {repeatRiskLabel(pressure.repeat_risk)} · hệ số giảm phạt {pressure.penalty_multiplier.toFixed(2)} · trung bình {pressure.avg_matches_per_player.toFixed(1)} trận/người · áp lực đối thủ {pressure.opponent_pressure.toFixed(2)}
-        </Text>
-        <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 17 }}>
-          {backToBackSummary(pressure.play_ratio)} Back-to-back là người chơi đánh các vòng liền nhau không có lượt nghỉ xen giữa.
+          {pressure.play_ratio <= 0.55
+            ? 'Phần lớn mọi người có ít nhất 1 vòng nghỉ xen giữa các trận.'
+            : pressure.play_ratio <= 0.7
+              ? `${Math.round(pressure.play_ratio * 100)}% người đánh liên tiếp không có vòng nghỉ xen giữa.`
+              : `${Math.round(pressure.play_ratio * 100)}% người đánh liên tiếp — session dày, ít cơ hội nghỉ.`}
         </Text>
       </Card>
       <RepeatDetailsBlock partnerPairs={partner.repeat_pairs} opponentPairs={opponent.repeat_pairs} playersById={playersById} />
