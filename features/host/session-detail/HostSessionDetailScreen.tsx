@@ -349,9 +349,9 @@ export function HostSessionDetailScreen({
         {canCheckIn && !isCheckInCompleted && !isCancelled && !isAfterEnd && (
           <View style={{ marginTop: 12 }}>
             {!isCheckInMode ? (
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => setIsCheckInMode(true)}
-                style={{ 
+                style={{
                   backgroundColor: theme.primary,
                   paddingVertical: 16,
                   borderRadius: RADIUS.xl,
@@ -473,7 +473,7 @@ export function HostSessionDetailScreen({
             onUpdated={onRefresh}
             onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
             checkInCompleted={isCheckInCompleted}
-            isCheckInMode={false}
+            isCheckInMode={isCheckInMode}
             startTime={session.slot.start_time}
             isHost={isHost}
             isAfterEnd={isAfterEnd}
