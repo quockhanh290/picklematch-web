@@ -1412,6 +1412,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   onCancelMatch,
   onPlayerPress,
   onOpenSettings,
+  onOpenSwap,
 }: {
   liveMatches: SessionLiveMatchRow[]
   suggestedMatches: SuggestedLiveMatchRow[]
@@ -1430,6 +1431,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   onCancelMatch: (match: SessionLiveMatchRow) => void
   onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
   onOpenSettings: () => void
+  onOpenSwap: (match: SuggestedLiveMatchRow) => void
 }) {
   if (liveMatches.length === 0 && suggestedMatches.length === 0) return null
   const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches], roundSize)
@@ -1479,6 +1481,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
                     onStart={onStartMatch}
                     onPlayerPress={onPlayerPress}
                     onOpenSettings={onOpenSettings}
+                    onOpenSwap={() => onOpenSwap(match)}
                   />
                 ))}
               </View>
@@ -1651,6 +1654,7 @@ export function SuggestedLiveMatchCard({
   onStart,
   onPlayerPress,
   onOpenSettings,
+  onOpenSwap,
 }: {
   match: SuggestedLiveMatchRow
   busy: boolean
@@ -1661,6 +1665,7 @@ export function SuggestedLiveMatchCard({
   onStart: (match: SuggestedLiveMatchRow) => void
   onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
   onOpenSettings: () => void
+  onOpenSwap: (match: SuggestedLiveMatchRow) => void
 }) {
   const theme = useAppTheme()
   const cancelBusy = false
@@ -1869,7 +1874,7 @@ export function SuggestedLiveMatchCard({
       ) : null}
       <View style={{ backgroundColor: colors.surface, paddingHorizontal: 14, paddingTop: 0, paddingBottom: 14, flexDirection: 'row', gap: 10 }}>
         <TouchableOpacity
-          onPress={onOpenSettings}
+          onPress={() => onOpenSwap(activeMatch)}
           activeOpacity={0.82}
           style={{ paddingHorizontal: 16, height: 46, borderRadius: RADIUS.lg, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
         >

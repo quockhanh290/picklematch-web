@@ -1681,6 +1681,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                 onCancelMatch={cancelLiveMatch}
                 onPlayerPress={openSwapForPlayer}
                 onOpenSettings={() => setSheet('settings')}
+                onOpenSwap={(match) => { setSuggestedSwapMatch(match); setSwapFromPlayerId(null); setSheet('swap') }}
               />
               {suggestedLiveMatches.length === 0 && activeLiveMatches.length === 0 ? (
                 planningInProgress || isSuggestingPreview ? (
