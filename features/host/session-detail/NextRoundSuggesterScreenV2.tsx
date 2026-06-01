@@ -374,7 +374,7 @@ type SuggestedPreviewBatch = {
 
 
 
-export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstrapTelemetry = null }: NextRoundSuggesterV2Props) {
+export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstrapTelemetry = null, initialShowReport = false }: NextRoundSuggesterV2Props) {
   const checkInMutation = useCheckInMutation(sessionId)
   const checkOutMutation = useCheckOutMutation(sessionId)
   const startMatchMutation = useStartMatchMutation(sessionId)
@@ -397,7 +397,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   const startingPreviewIdsRef = useRef(new Set<string>())
   const endingLiveMatchIdsRef = useRef(new Set<string>())
   const cancelingLiveMatchIdsRef = useRef(new Set<string>())
-  const model = useNextRoundModel({ sessionId, players, courts })
+  const model = useNextRoundModel({ sessionId, players, courts, initialShowReport })
   const [optimisticLiveMatches, setOptimisticLiveMatches] = useState<LiveDisplayMatchRow[]>([])
   const [liveMatchDisplayKeys, setLiveMatchDisplayKeys] = useState<Record<string, string>>({})
   const [startingPreviewIds, setStartingPreviewIds] = useState<Set<string>>(() => new Set())
@@ -1604,7 +1604,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
 
   return (
     <View testID="nrv2-screen" style={{ flex: 1, backgroundColor: theme.background }}>
-      <SecondaryNavbar title="VÒNG KẾ TIẾP" rightSlot={navbarRightSlot} />
+      <SecondaryNavbar title={phase === 'recap' ? 'BÁO CÁO TRẬN ĐẤU' : 'QUẢN LÝ TRẬN ĐẤU'} rightSlot={navbarRightSlot} />
       {phase === 'recap' ? (
         <RecapViewModule
           summary={sessionSummary}
@@ -1615,6 +1615,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           liveMatchRows={rows.liveMatchRows}
           onOpenHistory={() => setSheet('history')}
           onContinue={() => setShowSessionReport(false)}
+          hideContinue={initialShowReport}
         />
       ) : (
         <ScrollView
@@ -1646,6 +1647,22 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
 
           {phase === 'plan' && (
             <>
+              {reportReady && !activeRound ? (
+                <Card style={{ marginTop: 14, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: theme.primary }}>
+                    Đã đủ số vòng mục tiêu
+                  </Text>
+                  <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.onSurface }}>
+                    Có thể xem report hoặc tạo thêm trận nếu buổi chơi vẫn tiếp tục.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setShowSessionReport(true)}
+                    style={{ marginTop: 12, height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={ctaTextStyle(theme.onPrimary, 12)}>Xem report</Text>
+                  </TouchableOpacity>
+                </Card>
+              ) : null}
               <LiveMatchBoard
                 liveMatches={activeLiveMatches}
                 suggestedMatches={suggestedLiveMatches}
@@ -1665,30 +1682,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                 onPlayerPress={openSwapForPlayer}
                 onOpenSettings={() => setSheet('settings')}
               />
-              {reportReady && !activeRound ? (
-                <Card style={{ marginTop: 14, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: theme.primary }}>
-                    Đã đủ số trận mục tiêu
-                  </Text>
-                  <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.onSurface }}>
-                    Có thể xem report hoặc tạo thêm trận nếu buổi chơi vẫn tiếp tục.
-                  </Text>
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                    <TouchableOpacity
-                      onPress={() => setShowSessionReport(true)}
-                      style={{ flex: 1, height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      <Text style={ctaTextStyle(theme.onPrimary, 12)}>Xem report</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => {}}
-                      style={{ flex: 1, height: 44, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      <Text style={ctaTextStyle(theme.primary, 12)}>Tạo thêm trận</Text>
-                    </TouchableOpacity>
-                  </View>
-                </Card>
-              ) : null}
               {suggestedLiveMatches.length === 0 && activeLiveMatches.length === 0 ? (
                 planningInProgress || isSuggestingPreview ? (
                   <PlanningRoundCard syncingRoster={busy === 'sync' || isSuggestingPreview} />

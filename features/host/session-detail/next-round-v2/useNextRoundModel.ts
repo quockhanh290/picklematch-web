@@ -74,7 +74,7 @@ function isCourtPreset(value: unknown): value is CourtPreset {
   return value === 'balanced' || value === 'play_more' || value === 'relaxed'
 }
 
-export function useNextRoundModel({ sessionId, players, courts }: NextRoundSuggesterV2Props) {
+export function useNextRoundModel({ sessionId, players, courts, initialShowReport = false }: NextRoundSuggesterV2Props) {
   const queryClient = useQueryClient()
   const sessionCourtSetup = useMemo(() => normalizeCourtCount(courts), [courts])
   const [selectedAlternative, setSelectedAlternative] = useState(0)
@@ -90,7 +90,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   const [settingsHydrated, setSettingsHydrated] = useState(false)
   const [groupSelection, setGroupSelection] = useState<string[]>([])
   const [showEngineStats, setShowEngineStats] = useState(false)
-  const [showSessionReport, setShowSessionReport] = useState(false)
+  const [showSessionReport, setShowSessionReport] = useState(initialShowReport)
   const lastSuggestMsRef = useRef<number | null>(null)
   const settingsStorageKey = `${SETTINGS_STORAGE_PREFIX}:${sessionId}`
 
@@ -452,7 +452,7 @@ export function useNextRoundModel({ sessionId, players, courts }: NextRoundSugge
   )
   const groupSummaries = useMemo(() => buildGroupSummaries(deferredRows.playerRows), [deferredRows.playerRows])
   const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
-  const phase: 'plan' | 'active' | 'recap' = showSessionReport && reportReady && !activeRound ? 'recap' : activeRound ? 'active' : 'plan'
+  const phase: 'plan' | 'active' | 'recap' = showSessionReport && (reportReady || initialShowReport) && !activeRound ? 'recap' : activeRound ? 'active' : 'plan'
 
   const rememberRoundSelection = (reason: string) => {
     setSelectionUndo({

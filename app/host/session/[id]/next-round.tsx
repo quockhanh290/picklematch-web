@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/useAuth'
 import { useAppTheme } from '@/lib/theme-context'
 
 export default function NextRoundRoute() {
-  const { id, ui, bootstrap } = useLocalSearchParams<{ id: string; ui?: string; bootstrap?: string }>()
+  const { id, ui, bootstrap, report } = useLocalSearchParams<{ id: string; ui?: string; bootstrap?: string; report?: string }>()
   const { userId } = useAuth()
   const theme = useAppTheme()
   const useFullBootstrap = bootstrap === 'full'
@@ -52,7 +52,7 @@ export default function NextRoundRoute() {
       {ui === 'v1' ? (
         <NextRoundSuggesterScreen sessionId={id!} players={players} courts={courts} />
       ) : (
-        <NextRoundSuggesterScreenV2 sessionId={id!} players={players} courts={courts} bootstrapTelemetry={bootstrapTelemetry} />
+        <NextRoundSuggesterScreenV2 sessionId={id!} players={players} courts={courts} bootstrapTelemetry={bootstrapTelemetry} initialShowReport={report === '1'} />
       )}
     </View>
   )

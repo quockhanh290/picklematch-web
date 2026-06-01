@@ -1,9 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import * as Linking from 'expo-linking'
 import { Platform, Pressable, RefreshControl, ScrollView, Share, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Trophy, CheckCircle2, Check, AlertTriangle, Sparkles } from 'lucide-react-native'
+import { Trophy, CheckCircle2, Sparkles, BarChart2 } from 'lucide-react-native'
 import { Alert } from 'react-native'
 import { supabase } from '@/lib/supabase'
 import { STRINGS } from '@/constants/strings'
@@ -94,6 +94,17 @@ export function HostSessionDetailScreen({
 
   const sessionSkillLabel = getSessionSkillLabel(session.elo_min, session.elo_max)
   const processedPlayers = buildArrangementPlayers({ ...session, owner_sessions: HostDetails })
+
+  const targetRounds = Number(HostDetails.target_rounds ?? 0)
+  const completedRoundCount = useMemo(() => {
+    const rotations = new Set(
+      matches
+        .filter(m => m.status === 'finished' && m.players_snapshot?.rotation != null)
+        .map(m => m.players_snapshot!.rotation!)
+    )
+    return rotations.size
+  }, [matches])
+
 
   const handleCompleteCheckIn = async () => {
     // Message for confirmation
@@ -450,7 +461,7 @@ export function HostSessionDetailScreen({
             </TouchableOpacity>
           </View>
         )}
-        {(!isCheckInCompleted || isAfterEnd || isCancelled) && (
+        {(!isCheckInCompleted || isCancelled) && (
           <HostRosterSection
             players={processedPlayers}
             maxPlayers={session.max_players}
@@ -462,38 +473,80 @@ export function HostSessionDetailScreen({
             onUpdated={onRefresh}
             onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
             checkInCompleted={isCheckInCompleted}
-            isCheckInMode={isCheckInMode}
+            isCheckInMode={false}
             startTime={session.slot.start_time}
             isHost={isHost}
             isAfterEnd={isAfterEnd}
           />
         )}
 
-        <View style={{ marginTop: 24 }}>
-          <SessionActionButtons
-            id={id}
-            session={session}
-            isHost={isHost}
-            hasJoined={false}
-            isAfterEnd={isAfterEnd}
-            isDuringMatch={parseRobustDate(session.slot.start_time) <= Date.now() && !isAfterEnd}
-            isCancelled={isCancelled}
-            isFinalized={['completed', 'finished', 'archived', 'done'].includes(session.status)}
-            viewerSessionPlayer={null}
-            hostPrimaryMode="edit"
-            hostPrimaryDisabled={false}
-            hostActionBusy={false}
-            savingArrangement={false}
-            leaving={isCancelling}
-            onSaveArrangement={() => {}}
-            leaveSession={handleCancelSession}
-            editPathname="/host/create-session"
-            onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
-            checkInCompleted={isCheckInCompleted}
-            hideArrangementCta={true}
-            hideInputResult={false}
-            matchesCount={matches.length}
-          />
+        <View style={{ marginTop: 24, gap: 10 }}>
+          {isAfterEnd ? (
+            <>
+              <View style={{
+                width: '100%',
+                minHeight: 52,
+                borderRadius: RADIUS.lg,
+                backgroundColor: theme.surfaceContainerHigh,
+                borderWidth: 1,
+                borderColor: theme.outlineVariant,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.onSurfaceVariant }}>KÈO ĐÃ KẾT THÚC</Text>
+              </View>
+              <TouchableOpacity
+              onPress={() => router.push(`/host/session/${id}/next-round?report=1` as any)}
+              activeOpacity={0.84}
+              style={{
+                width: '100%',
+                minHeight: 52,
+                backgroundColor: theme.primary,
+                borderRadius: RADIUS.lg,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+            >
+              <BarChart2 size={18} color={theme.onPrimary} />
+              <View style={{ alignItems: 'center' }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.onPrimary }}>XEM BÁO CÁO</Text>
+
+                {targetRounds > 0 && (
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onPrimary, opacity: 0.75 }}>
+                    {completedRoundCount >= targetRounds
+                      ? `Đã hoàn thành ${completedRoundCount} vòng`
+                      : `Đã chơi ${completedRoundCount}/${targetRounds} vòng`}
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
+            </>
+          ) : (
+            <SessionActionButtons
+              id={id}
+              session={session}
+              isHost={isHost}
+              hasJoined={false}
+              isAfterEnd={isAfterEnd}
+              isDuringMatch={parseRobustDate(session.slot.start_time) <= Date.now() && !isAfterEnd}
+              isCancelled={isCancelled}
+              viewerSessionPlayer={null}
+              hostPrimaryMode="edit"
+              hostPrimaryDisabled={false}
+              hostActionBusy={false}
+              savingArrangement={false}
+              leaving={isCancelling}
+              onSaveArrangement={() => {}}
+              leaveSession={handleCancelSession}
+              onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
+              checkInCompleted={isCheckInCompleted}
+              hideArrangementCta={true}
+              hideInputResult={false}
+              matchesCount={matches.length}
+            />
+          )}
         </View>
         <BrandedFooter />
       </ScrollView>

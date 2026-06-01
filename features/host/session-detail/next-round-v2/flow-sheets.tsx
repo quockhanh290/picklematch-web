@@ -457,6 +457,7 @@ export function RecapView({
   liveMatchRows,
   onOpenHistory,
   onContinue,
+  hideContinue = false,
 }: {
   summary: ReturnType<typeof sanitizeSummaryForHost>
   state: SessionState
@@ -466,6 +467,7 @@ export function RecapView({
   liveMatchRows?: SessionLiveMatchRow[]
   onOpenHistory: () => void
   onContinue: () => void
+  hideContinue?: boolean
 }) {
   const theme = useAppTheme()
   const { partner, opponent, burden, pressure, restByPlayer, breakdownExplanations, lowScoreReasons } = useMemo(() => {
@@ -566,9 +568,11 @@ export function RecapView({
         </Card>
       ) : null}
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <TouchableOpacity onPress={onContinue} style={{ flex: 1, height: 52, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={ctaTextStyle(theme.primary, 12)}>Chạy thêm vòng</Text>
-        </TouchableOpacity>
+        {!hideContinue && (
+          <TouchableOpacity onPress={onContinue} style={{ flex: 1, height: 52, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={ctaTextStyle(theme.primary, 12)}>Chạy thêm vòng</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={onOpenHistory} style={{ flex: 1, height: 52, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={ctaTextStyle(theme.onPrimary, 12)}>Lịch sử vòng</Text>
         </TouchableOpacity>
