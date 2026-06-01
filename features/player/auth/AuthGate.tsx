@@ -134,11 +134,15 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
 
   // 4. Handle Redirects
   useEffect(() => {
-    if (authStatus === 'loading' || !fontsLoaded || !navReady) return
+    if (authStatus === 'loading' || !fontsLoaded) return
+    if (!isWeb && !navReady) return
 
     const replaceIfNeeded = (target: string) => {
-      if (pathname !== target) {
-        console.log(`[AuthGate] Redirecting to ${target}`)
+      if (pathname === target) return
+      console.log(`[AuthGate] Redirecting to ${target}`)
+      if (isWeb && typeof window !== 'undefined') {
+        window.location.replace(target)
+      } else {
         router.replace(target as any)
       }
     }
