@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   AlertTriangle,
+  ArrowLeftRight,
   ChevronDown,
   Minus,
   Plus,
@@ -1411,6 +1412,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   onCancelMatch,
   onPlayerPress,
   onOpenSettings,
+  onOpenSwap,
 }: {
   liveMatches: SessionLiveMatchRow[]
   suggestedMatches: SuggestedLiveMatchRow[]
@@ -1429,6 +1431,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   onCancelMatch: (match: SessionLiveMatchRow) => void
   onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
   onOpenSettings: () => void
+  onOpenSwap: (match: SuggestedLiveMatchRow) => void
 }) {
   if (liveMatches.length === 0 && suggestedMatches.length === 0) return null
   const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches], roundSize)
@@ -1478,6 +1481,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
                     onStart={onStartMatch}
                     onPlayerPress={onPlayerPress}
                     onOpenSettings={onOpenSettings}
+                    onOpenSwap={() => onOpenSwap(match)}
                   />
                 ))}
               </View>
@@ -1650,6 +1654,7 @@ export function SuggestedLiveMatchCard({
   onStart,
   onPlayerPress,
   onOpenSettings,
+  onOpenSwap,
 }: {
   match: SuggestedLiveMatchRow
   busy: boolean
@@ -1660,6 +1665,7 @@ export function SuggestedLiveMatchCard({
   onStart: (match: SuggestedLiveMatchRow) => void
   onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
   onOpenSettings: () => void
+  onOpenSwap: (match: SuggestedLiveMatchRow) => void
 }) {
   const theme = useAppTheme()
   const cancelBusy = false
@@ -1868,16 +1874,16 @@ export function SuggestedLiveMatchCard({
       ) : null}
       <View style={{ backgroundColor: colors.surface, paddingHorizontal: 14, paddingTop: 0, paddingBottom: 14, flexDirection: 'row', gap: 10 }}>
         <TouchableOpacity
-          onPress={onOpenSettings}
+          onPress={() => onOpenSwap(activeMatch)}
           activeOpacity={0.82}
-          style={{ width: 46, height: 46, borderRadius: 10, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
+          style={{ paddingHorizontal: 16, height: 46, borderRadius: RADIUS.lg, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 24, lineHeight: 26, color: colors.textSecondary }}>↔</Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: colors.textSecondary }}>ĐỔI NGƯỜI</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => onStart(activeMatch)}
           disabled={startDisabled}
-          style={{ flex: 1, height: 46, borderRadius: 10, backgroundColor: startDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
+          style={{ flex: 1, height: 46, borderRadius: RADIUS.lg, backgroundColor: startDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
         >
           {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Bắt đầu trận</Text>}
         </TouchableOpacity>
@@ -1918,20 +1924,30 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
   }, [])
 
   const startedAt = match.started_at ?? match.suggested_at ?? match.created_at
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    if (!startedAt) return
+    const update = () => setElapsed(Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000))
+    update()
+    const id = setInterval(update, 1000)
+    return () => clearInterval(id)
+  }, [startedAt])
+  const elapsedLabel = `${Math.floor(elapsed / 60).toString().padStart(2, '0')}:${(elapsed % 60).toString().padStart(2, '0')}`
+
   return (
     <View style={{ backgroundColor: theme.surface, borderRadius: RADIUS.xl, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, overflow: 'hidden', ...LAYOUT_SHADOW.sm }}>
       <View style={{ backgroundColor: theme.surfaceContainerLow, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: BORDER.hairline, borderBottomColor: theme.outlineVariant }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.primary }} />
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: theme.primary, fontWeight: '800' }}>TRẬN ĐẤU LIVE</Text>
-          <View style={{ backgroundColor: theme.surface, borderRadius: RADIUS.full, paddingHorizontal: 7, paddingVertical: 2, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: theme.outline, fontWeight: '800' }}>Sân {(match.court_idx ?? 0) + 1}</Text>
+          <View style={{ backgroundColor: colors.primaryDark, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: colors.surface, textTransform: 'uppercase' }}>Sân {(match.court_idx ?? 0) + 1}</Text>
           </View>
         </View>
         {startedAt ? (
-          <View style={{ backgroundColor: theme.onSurface, paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.xs }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.surface, fontWeight: '700' }}>
-              {new Date(startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          <View style={{ backgroundColor: theme.onSurface, paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.sm }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.surface, fontWeight: '700' }}>
+              {elapsedLabel}
             </Text>
           </View>
         ) : null}
@@ -1961,28 +1977,30 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
             onPlus={() => handleScoreChange('b', 1)}
           />
         </View>
-        <Pressable
-          onPress={() => {
-            if (__DEV__) console.log('[NextRoundSuggesterV2] complete button tapped', { matchId: match.id })
-            onComplete(match, score)
-          }}
-          hitSlop={8}
-          disabled={busy || cancelBusy}
-          style={{ marginTop: 4, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', ...LAYOUT_SHADOW.sm }}
-        >
-          {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Kết thúc trận</Text>}
-        </Pressable>
-        <Pressable
-          onPress={() => {
-            if (__DEV__) console.log('[NextRoundSuggesterV2] cancel button tapped', { matchId: match.id })
-            onCancel(match)
-          }}
-          hitSlop={8}
-          disabled={busy || cancelBusy}
-          style={{ marginTop: 8, minHeight: 42, borderRadius: RADIUS.lg, backgroundColor: theme.dangerBg, alignItems: 'center', justifyContent: 'center' }}
-        >
-          {cancelBusy ? <ActivityIndicator color={theme.dangerText} /> : <Text style={ctaTextStyle(theme.dangerText, 12)}>Hủy trận</Text>}
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+          <Pressable
+            onPress={() => {
+              if (__DEV__) console.log('[NextRoundSuggesterV2] cancel button tapped', { matchId: match.id })
+              onCancel(match)
+            }}
+            hitSlop={8}
+            disabled={busy || cancelBusy}
+            style={{ flex: 1, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.dangerBg, alignItems: 'center', justifyContent: 'center' }}
+          >
+            {cancelBusy ? <ActivityIndicator color={theme.dangerText} /> : <Text style={ctaTextStyle(theme.dangerText, 12)}>Hủy trận</Text>}
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              if (__DEV__) console.log('[NextRoundSuggesterV2] complete button tapped', { matchId: match.id })
+              onComplete(match, score)
+            }}
+            hitSlop={8}
+            disabled={busy || cancelBusy}
+            style={{ flex: 2, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', ...LAYOUT_SHADOW.sm }}
+          >
+            {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Kết thúc trận</Text>}
+          </Pressable>
+        </View>
       </View>
     </View>
   )
@@ -2069,7 +2087,7 @@ export function SuggestedMatchTile({
         />
       </View>
 
-      <View style={{ position: 'absolute', left: '50%', top: 94, marginLeft: -22, width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ position: 'absolute', left: '50%', top: 100, marginLeft: -22, width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
         <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 14, lineHeight: 16, color: colors.text }}>VS</Text>
         </View>
@@ -2115,7 +2133,7 @@ export function SuggestedTeamBlock({
     : { backgroundColor: colors.surfaceAlt, borderColor: '#DDD8C9' }
   const accentColor = tone === 'green' ? colors.primary : colors.text
   return (
-    <View style={{ flex: 1, minWidth: 0, minHeight: 138, borderRadius: 14, borderWidth: 1, padding: 14, paddingTop: 15, paddingRight: side === 'left' ? 28 : 14, paddingLeft: side === 'right' ? 28 : 14, ...panelStyle }}>
+    <View style={{ flex: 1, minWidth: 0, minHeight: 150, borderRadius: RADIUS.lg, borderWidth: 1, padding: 14, paddingTop: 15, paddingRight: side === 'left' ? 28 : 14, paddingLeft: side === 'right' ? 28 : 14, ...panelStyle }}>
       <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: accentColor, letterSpacing: 0.6 }}>
         {label}
       </Text>
@@ -2123,7 +2141,7 @@ export function SuggestedTeamBlock({
         <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 34, lineHeight: 35, color: accentColor }}>
           {teamTotal.toFixed(1)}
         </Text>
-        <View style={{ width: 60, flexDirection: 'row', justifyContent: side === 'left' ? 'flex-start' : 'flex-end' }}>
+        <View style={{ width: 74, flexDirection: 'row', justifyContent: side === 'left' ? 'flex-start' : 'flex-end' }}>
           {team.map((id, index) => (
             <TouchableOpacity
               key={id}
@@ -2131,18 +2149,18 @@ export function SuggestedTeamBlock({
               activeOpacity={0.76}
               style={{ position: 'relative', marginLeft: index === 0 ? 0 : -8 }}
             >
-              <PlayerAvatar name={playerName(id, playersById)} size={34} />
+              <PlayerAvatar name={playerName(id, playersById)} size={40} />
             </TouchableOpacity>
           ))}
         </View>
       </View>
-      <View style={{ gap: 4 }}>
+      <View style={{ gap: 5 }}>
         {team.map(id => (
           <View key={`row-${id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text numberOfLines={1} style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 13, lineHeight: 16, color: accentColor }}>
+            <Text numberOfLines={1} style={{ flex: 1, fontFamily: SCREEN_FONTS.headline, fontSize: 15, lineHeight: 18, color: accentColor }}>
               {playerName(id, playersById).toUpperCase()}
             </Text>
-            <Text style={{ width: 60, textAlign: side === 'left' ? 'left' : 'right', fontFamily: SCREEN_FONTS.label, fontSize: 12, color: accentColor, fontWeight: '700' }}>
+            <Text style={{ width: 36, textAlign: side === 'left' ? 'left' : 'right', fontFamily: SCREEN_FONTS.label, fontSize: 13, color: accentColor, fontWeight: '700' }}>
               {(state.players.get(id)?.pvna ?? 3.0).toFixed(1)}
             </Text>
           </View>
@@ -2209,10 +2227,10 @@ export function LiveScoreTeam({
           <Plus size={18} color={theme.onPrimary} />
         </Pressable>
       </View>
-      <Text style={{ marginTop: 8, textAlign: 'center', fontFamily: SCREEN_FONTS.headline, fontSize: 12, lineHeight: 18, color: theme.onSurface, fontWeight: '700' }}>
+      <Text style={{ marginTop: 8, textAlign: 'center', fontFamily: SCREEN_FONTS.headline, fontSize: 14, lineHeight: 20, color: theme.onSurface, fontWeight: '700' }}>
         {team.map(playerId => playerName(playerId, playersById)).join(' · ')}
       </Text>
-      <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.outline }}>
+      <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline }}>
         Tổng PVNA {getTeamPvna(team, state).toFixed(2)}
       </Text>
     </View>
