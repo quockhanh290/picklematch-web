@@ -17,8 +17,8 @@ export function installSuggesterAssertions() {
     },
 
     toRespectPvnaTolerance(received: Match, tolerance: number, pvnaByPlayer: Map<string, number>) {
-      const teamA = average(received.team_a.map((playerId) => pvnaByPlayer.get(playerId) ?? 3.0))
-      const teamB = average(received.team_b.map((playerId) => pvnaByPlayer.get(playerId) ?? 3.0))
+      const teamA = sum(received.team_a.map((playerId) => pvnaByPlayer.get(playerId) ?? 3.0))
+      const teamB = sum(received.team_b.map((playerId) => pvnaByPlayer.get(playerId) ?? 3.0))
       const diff = Math.abs(teamA - teamB)
       const pass = diff <= tolerance
 
@@ -39,8 +39,8 @@ export function installSuggesterAssertions() {
   })
 }
 
-function average(values: number[]): number {
-  return values.reduce((sum, value) => sum + value, 0) / values.length
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0)
 }
 
 declare global {

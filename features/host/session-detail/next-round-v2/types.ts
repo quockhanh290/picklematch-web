@@ -1,5 +1,6 @@
 import type {
   SessionPairHistoryRow,
+  SessionLiveMatchRow,
   SessionPlayerStateRow,
   SessionRoundRow,
   SuggestionAlternative,
@@ -10,12 +11,16 @@ export type NextRoundSuggesterV2Props = {
   sessionId: string
   players: ArrangementPlayer[]
   courts: number
+  bootstrapTelemetry?: Record<string, unknown> | null
+  initialShowReport?: boolean
 }
 
 export type LiveRows = {
   playerRows: SessionPlayerStateRow[]
   pairRows: SessionPairHistoryRow[]
   roundRows: SessionRoundRow[]
+  liveMatchRows: SessionLiveMatchRow[]
+  liveStateVersion: number | null
 }
 
 export type SheetKey = 'settings' | 'swap' | 'fairness' | 'preview' | 'roster' | 'history' | 'late-arrivals' | 'more' | null

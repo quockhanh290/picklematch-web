@@ -19,8 +19,15 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import { SessionNavContext, SessionNavigation } from '@/lib/navigation/SessionNavContext'
 
 import { AuthGate } from '@/features/player/auth/AuthGate'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 void SplashScreen.preventAutoHideAsync()
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: 0 },
+  },
+})
 
 export default function RootLayout() {
   const { userId } = useAuth()
@@ -56,7 +63,8 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AppThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <AppThemeProvider>
         <NetworkProvider>
           <NetworkStatusBanner />
           <NotificationsProvider userId={userId}>
@@ -72,6 +80,7 @@ export default function RootLayout() {
           </NotificationsProvider>
         </NetworkProvider>
       </AppThemeProvider>
+      </QueryClientProvider>
     </GestureHandlerRootView>
   )
 }

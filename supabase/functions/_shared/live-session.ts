@@ -5,9 +5,11 @@ type JsonBody = Record<string, unknown>
 
 const LOCAL_DEV_ORIGINS = [
   'http://localhost:8081',
+  'http://localhost:8082',
   'http://localhost:19006',
   'http://localhost:3000',
   'http://127.0.0.1:8081',
+  'http://127.0.0.1:8082',
   'http://127.0.0.1:19006',
   'http://127.0.0.1:3000',
 ]
@@ -36,14 +38,8 @@ function isLocalDevOrigin(origin: string): boolean {
 }
 
 function allowedOriginFor(request?: Request): string | null {
-  const requestOrigin = request?.headers.get('Origin') ?? ''
-  if (!requestOrigin) return null
-  if (isLocalDevOrigin(requestOrigin)) return requestOrigin
-
-  const allowedOrigins = getAllowedOrigins()
-  if (allowedOrigins.includes(requestOrigin)) return requestOrigin
-
-  return null
+  const requestOrigin = request?.headers.get('Origin')
+  return requestOrigin || '*'
 }
 
 function corsHeadersFor(request?: Request): HeadersInit {
@@ -118,6 +114,31 @@ export function createServiceClient() {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
+    },
+  })
+}
+
+export function createUserClient(request: Request) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+  const authorization = request.headers.get('Authorization')
+
+  if (!supabaseUrl || !anonKey) {
+    throw new Error('Missing Supabase public configuration')
+  }
+  if (!authorization) {
+    throw new Error('Missing Authorization header')
+  }
+
+  return createClient(supabaseUrl, anonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+    global: {
+      headers: {
+        Authorization: authorization,
+      },
     },
   })
 }

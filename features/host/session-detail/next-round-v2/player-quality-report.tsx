@@ -1,10 +1,11 @@
-import React, { useMemo } from 'react'
-import { Text, View } from 'react-native'
+import React, { useMemo, useState } from 'react'
+import { Text, TouchableOpacity, View } from 'react-native'
 
 import { BORDER, RADIUS } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import {
   computeAvailabilityMetrics,
+  computeGenderPrefSatisfaction,
   computeMatchCountMetrics,
   computeOpponentDiversity,
   computeOpponentRepeatBurden,
@@ -13,7 +14,7 @@ import {
   computeRestFairness,
 } from '@/lib/next-round-suggester/fairness/metrics'
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
-import type { SessionState } from '@/lib/next-round-suggester/types'
+import type { SessionLiveMatchRow, SessionState } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
 
@@ -43,6 +44,21 @@ type MatchShortfallReason = {
   capacity_limited_rounds: number
   benched_round_numbers: number[]
   absent_round_numbers: number[]
+}
+
+type RoundActivity = {
+  round_no: number
+  activity: 'played' | 'rested' | 'absent'
+}
+
+type MatchResult = {
+  round_no: number | null
+  court_idx: number | null
+  score_a: number
+  score_b: number
+  won: boolean | null
+  teammates: string[]
+  opponents: string[]
 }
 
 function firstCompletedRoundStart(state: SessionState): number | null {
@@ -157,6 +173,44 @@ function explainMatchShortfall(input: {
   return parts.join(' ')
 }
 
+function getPlayerRoundActivity(state: SessionState, playerId: string): RoundActivity[] {
+  return state.rounds
+    .filter(round => round.status === 'completed')
+    .sort((a, b) => a.round_no - b.round_no)
+    .map(round => {
+      const played = round.matches.some(m => m.team_a.includes(playerId) || m.team_b.includes(playerId))
+      const rested = round.resting.includes(playerId)
+      return {
+        round_no: round.round_no,
+        activity: played ? 'played' : rested ? 'rested' : 'absent',
+      }
+    })
+}
+
+function getPlayerMatchResults(
+  liveMatchRows: SessionLiveMatchRow[],
+  playerId: string,
+  playersById: Map<string, ArrangementPlayer>,
+): MatchResult[] {
+  return liveMatchRows
+    .filter(m => m.status === 'completed' && (m.team_a.includes(playerId) || m.team_b.includes(playerId)))
+    .sort((a, b) => a.sequence_no - b.sequence_no)
+    .map(m => {
+      const inTeamA = m.team_a.includes(playerId)
+      const teammates = (inTeamA ? m.team_a : m.team_b).filter(id => id !== playerId)
+      const opponents = inTeamA ? m.team_b : m.team_a
+      const hasScore = m.score_a > 0 || m.score_b > 0
+      const won = hasScore
+        ? inTeamA ? m.score_a > m.score_b : m.score_b > m.score_a
+        : null
+      return { round_no: m.round_no, court_idx: m.court_idx, score_a: m.score_a, score_b: m.score_b, won, teammates, opponents }
+    })
+}
+
+function formatTime(date: Date): string {
+  return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
 function buildPlayerQualityRows(
   state: SessionState,
   playersById: Map<string, ArrangementPlayer>,
@@ -169,6 +223,7 @@ function buildPlayerQualityRows(
   const opponentBurden = computeOpponentRepeatBurden(state)
   const rest = computeRestFairness(state)
   const pressure = computeRepeatPressure(state)
+  const genderSatisfaction = computeGenderPrefSatisfaction(state)
   const firstStart = firstCompletedRoundStart(state)
 
   const availabilityById = new Map(availability.per_player.map(row => [row.player_id, row]))
@@ -177,6 +232,7 @@ function buildPlayerQualityRows(
   const partnerBurdenById = new Map(partnerBurden.per_player.map(row => [row.player_id, row]))
   const opponentBurdenById = new Map(opponentBurden.per_player.map(row => [row.player_id, row]))
   const restById = new Map(rest.per_player.map(row => [row.player_id, row]))
+  const genderById = new Map(genderSatisfaction.per_player.map(row => [row.player_id, row]))
 
   return [...state.players.values()].map(player => {
     const availabilityRow = availabilityById.get(player.player_id)
@@ -185,6 +241,7 @@ function buildPlayerQualityRows(
     const partnerRepeat = partnerBurdenById.get(player.player_id)
     const opponentRepeat = opponentBurdenById.get(player.player_id)
     const restRow = restById.get(player.player_id)
+    const genderRow = genderById.get(player.player_id)
     const issues: PlayerQualityIssue[] = []
     let score = 100
 
@@ -268,6 +325,33 @@ function buildPlayerQualityRows(
       })
     }
 
+    if (genderRow && player.matches_played >= 2) {
+      const hasPartnerPref = player.partner_gender_pref !== 'any'
+      const hasOpponentPref = player.opponent_gender_pref !== 'any'
+      const partnerPct = Math.round(genderRow.partner_satisfaction_rate * 100)
+      const opponentPct = Math.round(genderRow.opponent_satisfaction_rate * 100)
+      const partnerPrefLabel = player.partner_gender_pref === 'M' ? 'nam' : 'nữ'
+      const opponentPrefLabel = player.opponent_gender_pref === 'M' ? 'nam' : 'nữ'
+
+      if (hasPartnerPref && genderRow.partner_satisfaction_rate < 0.6) {
+        score -= genderRow.partner_satisfaction_rate < 0.3 ? 14 : 8
+        issues.push({
+          label: 'Sở thích đồng đội chưa được đáp ứng',
+          detail: `Muốn đồng đội ${partnerPrefLabel} nhưng chỉ được xếp đúng ${partnerPct}% số trận. ${genderSatisfaction.unsatisfiable.length > 0 ? 'Số lượng người cùng giới trong session ít, khó đáp ứng hoàn toàn.' : 'Nên ưu tiên xếp đúng sở thích ở vòng sau.'}`,
+          severity: genderRow.partner_satisfaction_rate < 0.3 ? 'priority' : 'watch',
+        })
+      }
+
+      if (hasOpponentPref && genderRow.opponent_satisfaction_rate < 0.6) {
+        score -= genderRow.opponent_satisfaction_rate < 0.3 ? 14 : 8
+        issues.push({
+          label: 'Sở thích đối thủ chưa được đáp ứng',
+          detail: `Muốn đối thủ ${opponentPrefLabel} nhưng chỉ được xếp đúng ${opponentPct}% số trận. ${genderSatisfaction.unsatisfiable.length > 0 ? 'Số lượng người cùng giới trong session ít, khó đáp ứng hoàn toàn.' : 'Nên ưu tiên xếp đúng sở thích ở vòng sau.'}`,
+          severity: genderRow.opponent_satisfaction_rate < 0.3 ? 'priority' : 'watch',
+        })
+      }
+    }
+
     const finalScore = clampScore(score)
     return {
       player_id: player.player_id,
@@ -286,16 +370,253 @@ function buildPlayerQualityRows(
   })
 }
 
+function RoundActivityChips({ activities }: { activities: RoundActivity[] }) {
+  const theme = useAppTheme()
+  if (activities.length === 0) return null
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
+      {activities.map(({ round_no, activity }) => {
+        const played = activity === 'played'
+        const absent = activity === 'absent'
+        const bg = played ? theme.primary : absent ? theme.dangerBg : 'transparent'
+        const border = played ? theme.primary : absent ? theme.dangerText : theme.outlineVariant
+        const textColor = played ? theme.onPrimary : absent ? theme.dangerText : theme.outline
+        return (
+          <View
+            key={round_no}
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: RADIUS.full,
+              backgroundColor: bg,
+              borderWidth: 1.5,
+              borderColor: border,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 10, color: textColor }}>
+              {round_no + 1}
+            </Text>
+          </View>
+        )
+      })}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2, width: '100%' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.primary }} />
+          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 9, color: theme.outline }}>Đánh</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, borderWidth: 1.5, borderColor: theme.outlineVariant }} />
+          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 9, color: theme.outline }}>Nghỉ</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.dangerBg, borderWidth: 1, borderColor: theme.dangerText }} />
+          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 9, color: theme.outline }}>Vắng</Text>
+        </View>
+      </View>
+    </View>
+  )
+}
+
+function CheckInInfo({
+  checkedInAt,
+  checkedOutAt,
+  joinedLate,
+}: {
+  checkedInAt: Date
+  checkedOutAt: Date | null
+  joinedLate: boolean
+}) {
+  const theme = useAppTheme()
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
+        Check-in {formatTime(checkedInAt)}
+      </Text>
+      {checkedOutAt && (
+        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
+          · Check-out {formatTime(checkedOutAt)}
+        </Text>
+      )}
+      {joinedLate && (
+        <View style={{ borderRadius: RADIUS.full, backgroundColor: theme.warningBg, paddingHorizontal: 7, paddingVertical: 2 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 9, color: theme.warningText }}>Đến muộn</Text>
+        </View>
+      )}
+      {checkedOutAt && (
+        <View style={{ borderRadius: RADIUS.full, backgroundColor: theme.warningBg, paddingHorizontal: 7, paddingVertical: 2 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 9, color: theme.warningText }}>Về sớm</Text>
+        </View>
+      )}
+    </View>
+  )
+}
+
+
+function PlayerCard({
+  row,
+  state,
+  playersById,
+  liveMatchRows,
+  firstStart,
+}: {
+  row: PlayerQualityRow
+  state: SessionState
+  playersById: Map<string, ArrangementPlayer>
+  liveMatchRows?: SessionLiveMatchRow[]
+  firstStart: number | null
+}) {
+  const theme = useAppTheme()
+  const [detailExpanded, setDetailExpanded] = useState(false)
+  const player = state.players.get(row.player_id)
+  const joinedLate = player != null && firstStart !== null && player.checked_in_at.getTime() > firstStart
+  const roundActivities = useMemo(() => getPlayerRoundActivity(state, row.player_id), [state, row.player_id])
+  const matchResults = useMemo(
+    () => liveMatchRows ? getPlayerMatchResults(liveMatchRows, row.player_id, playersById) : [],
+    [liveMatchRows, row.player_id, playersById],
+  )
+
+  const priority = row.issues.some(issue => issue.severity === 'priority')
+  const tone = priority ? theme.warningText : row.issues.length > 0 ? theme.primary : theme.successText
+  const hasAnyScore = matchResults.some(r => r.score_a > 0 || r.score_b > 0)
+
+  const detailLabel = [
+    matchResults.length > 0 ? `${matchResults.length} trận` : null,
+    row.issues.length > 0 ? `${row.issues.length} vấn đề` : null,
+  ].filter(Boolean).join(' · ')
+
+  return (
+    <View
+      style={{
+        borderRadius: RADIUS.md,
+        backgroundColor: theme.surface,
+        borderWidth: BORDER.hairline,
+        borderColor: priority ? theme.warningStrong : theme.outlineVariant,
+        padding: 12,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <PlayerAvatar name={playerName(row.player_id, playersById)} size={30} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }} numberOfLines={1}>
+            {playerName(row.player_id, playersById)}
+          </Text>
+          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
+            {row.matches_played} trận · {row.label}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: tone }}>
+          {row.score}
+        </Text>
+      </View>
+
+      {player && (
+        <CheckInInfo
+          checkedInAt={player.checked_in_at}
+          checkedOutAt={player.checked_out_at}
+          joinedLate={joinedLate}
+        />
+      )}
+
+      <RoundActivityChips activities={roundActivities} />
+
+      <TouchableOpacity
+        onPress={() => setDetailExpanded(v => !v)}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 }}
+        activeOpacity={0.7}
+      >
+        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: theme.primary }}>
+          {detailExpanded ? '▲' : '▼'} Chi tiết{detailLabel ? ` (${detailLabel})` : ''}
+        </Text>
+      </TouchableOpacity>
+
+      {detailExpanded && (
+        <View style={{ marginTop: 8, gap: 8 }}>
+          {matchResults.length > 0 && (
+            <View style={{ gap: 6 }}>
+              {matchResults.map((r, idx) => {
+                const scoreLabel = hasAnyScore && (r.score_a > 0 || r.score_b > 0)
+                  ? `${r.score_a} – ${r.score_b}`
+                  : null
+                const resultBadge = r.won === true ? 'Thắng' : r.won === false ? 'Thua' : null
+                const badgeColor = r.won === true ? theme.successText : theme.dangerText
+                const badgeBg = r.won === true ? theme.successBg : theme.dangerBg
+                const courtLabel = r.court_idx != null ? `Sân ${r.court_idx + 1}` : null
+                const roundLabel = r.round_no != null ? `Vòng ${r.round_no + 1}` : `Trận ${idx + 1}`
+                return (
+                  <View
+                    key={idx}
+                    style={{
+                      borderRadius: RADIUS.sm,
+                      backgroundColor: theme.secondaryContainer,
+                      borderWidth: BORDER.hairline,
+                      borderColor: theme.outlineVariant,
+                      padding: 9,
+                      gap: 4,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: theme.onSurface }}>
+                        {roundLabel}{courtLabel ? ` · ${courtLabel}` : ''}
+                      </Text>
+                      {scoreLabel && (
+                        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: theme.onSurface }}>
+                          {scoreLabel}
+                        </Text>
+                      )}
+                      {resultBadge && (
+                        <View style={{ borderRadius: RADIUS.full, backgroundColor: badgeBg, paddingHorizontal: 6, paddingVertical: 1 }}>
+                          <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 9, color: badgeColor }}>{resultBadge}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline, lineHeight: 15 }}>
+                      Cùng: {joinNames(r.teammates, playersById)} · vs {joinNames(r.opponents, playersById)}
+                    </Text>
+                  </View>
+                )
+              })}
+            </View>
+          )}
+
+          {row.issues.length === 0 ? (
+            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 16 }}>
+              Chỉ số ổn: số trận, nghỉ, partner và đối thủ không có điểm cần giải thích.
+            </Text>
+          ) : (
+            <View style={{ gap: 7 }}>
+              {row.issues.slice(0, 4).map(issue => (
+                <View key={`${row.player_id}-${issue.label}`} style={{ gap: 2 }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 11.5, color: issue.severity === 'priority' ? theme.warningText : theme.onSurface }}>
+                    {issue.label}
+                  </Text>
+                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline, lineHeight: 15 }}>
+                    {issue.detail}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  )
+}
+
 export function PlayerQualityReport({
   state,
   playersById,
+  liveMatchRows,
 }: {
   state: SessionState
   playersById: Map<string, ArrangementPlayer>
+  liveMatchRows?: SessionLiveMatchRow[]
 }) {
   const theme = useAppTheme()
   const rows = useMemo(() => buildPlayerQualityRows(state, playersById), [state, playersById])
   const issueCount = rows.filter(row => row.issues.length > 0).length
+  const firstStart = useMemo(() => firstCompletedRoundStart(state), [state])
 
   return (
     <Card style={{ padding: 14, marginBottom: 14 }}>
@@ -314,56 +635,16 @@ export function PlayerQualityReport({
       </View>
 
       <View style={{ gap: 10 }}>
-        {rows.map(row => {
-          const priority = row.issues.some(issue => issue.severity === 'priority')
-          const tone = priority ? theme.warningText : row.issues.length > 0 ? theme.primary : theme.successText
-          return (
-            <View
-              key={row.player_id}
-              style={{
-                borderRadius: RADIUS.md,
-                backgroundColor: theme.surface,
-                borderWidth: BORDER.hairline,
-                borderColor: priority ? theme.warningStrong : theme.outlineVariant,
-                padding: 12,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <PlayerAvatar name={playerName(row.player_id, playersById)} size={30} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }} numberOfLines={1}>
-                    {playerName(row.player_id, playersById)}
-                  </Text>
-                  <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                    {row.matches_played} trận · {row.label}
-                  </Text>
-                </View>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: tone }}>
-                  {row.score}
-                </Text>
-              </View>
-
-              {row.issues.length === 0 ? (
-                <Text style={{ marginTop: 8, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 16 }}>
-                  Chỉ số ổn: số trận, nghỉ, partner và đối thủ không có điểm cần giải thích.
-                </Text>
-              ) : (
-                <View style={{ marginTop: 9, gap: 7 }}>
-                  {row.issues.slice(0, 4).map(issue => (
-                    <View key={`${row.player_id}-${issue.label}`} style={{ gap: 2 }}>
-                      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 11.5, color: issue.severity === 'priority' ? theme.warningText : theme.onSurface }}>
-                        {issue.label}
-                      </Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline, lineHeight: 15 }}>
-                        {issue.detail}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          )
-        })}
+        {rows.map(row => (
+          <PlayerCard
+            key={row.player_id}
+            row={row}
+            state={state}
+            playersById={playersById}
+            liveMatchRows={liveMatchRows}
+            firstStart={firstStart}
+          />
+        ))}
       </View>
     </Card>
   )

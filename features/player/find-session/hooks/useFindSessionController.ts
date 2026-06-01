@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { supabase } from '@/lib/supabase'
 import { safeStorageGetItem, safeStorageSetItem } from '@/lib/storage'
+import { useAuth } from '@/lib/useAuth'
 import { ADVANCED_FILTER_INITIAL, AdvancedFilter } from '@/components/find-session/AdvancedSessionFilterModal'
 import { AppDialogConfig } from '@/components/design'
 import { getSkillLevelFromEloRange, getSkillLevelFromPlayer } from '@/lib/skillAssessment'
@@ -30,6 +31,7 @@ import {
 const SMART_QUEUE_STORAGE_PREFIX = '@picklematch/smart-queue:'
 
 export function useFindSessionController() {
+  const { userId } = useAuth()
   const params = useLocalSearchParams<{ courtId?: string; courtName?: string }>()
   const [sessions, setSessions] = useState<Session[]>([])
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null)
@@ -74,9 +76,7 @@ export function useFindSessionController() {
   const fetchSessions = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      const currentUserId = user?.id ?? null
-      const data = await fetchSessionsApi(currentUserId)
+      const data = await fetchSessionsApi(userId)
 
       // Pre-calculate search index to speed up filtering
       const enrichedData = data.map(s => ({
@@ -98,20 +98,19 @@ export function useFindSessionController() {
       setLoading(false)
       setIsFirstLoad(false)
     }
-  }, [])
+  }, [userId])
 
   const fetchPlayerProfile = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
+      if (!userId) {
         setPlayerProfile(null)
         setSmartQueueEnabled(false)
         setSmartQueueHydrated(true)
         return
       }
       const [profile, storedFlag] = await Promise.all([
-        fetchPlayerProfileApi(user.id),
-        safeStorageGetItem(getSmartQueueKey(user.id)),
+        fetchPlayerProfileApi(userId),
+        safeStorageGetItem(getSmartQueueKey(userId)),
       ])
       setPlayerProfile(profile)
       setSmartQueueEnabled(storedFlag === '1')
@@ -122,7 +121,7 @@ export function useFindSessionController() {
     } finally {
       setSmartQueueHydrated(true)
     }
-  }, [])
+  }, [userId])
 
   useEffect(() => {
     fetchSessions()

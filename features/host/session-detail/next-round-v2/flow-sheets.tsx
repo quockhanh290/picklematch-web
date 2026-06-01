@@ -19,6 +19,7 @@ import {
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
 import type { sanitizeSummaryForHost } from '@/lib/next-round-suggester/fairness/sanitize'
 import type {
+  SessionLiveMatchRow,
   SessionPlayerStateRow,
   SessionRoundRow,
   SessionState,
@@ -175,521 +176,12 @@ function backToBackSummary(playRatio: number) {
   return `Play ratio ${pct}%: khả năng cao có back-to-back.`
 }
 
-export function SwapSheet({
-  state,
-  alternative,
-  playersById,
-  swapFromPlayerId,
-  setSwapFromPlayerId,
-  onSwap,
-}: {
-  state: SessionState
-  alternative?: SuggestionAlternative | null
-  playersById: Map<string, ArrangementPlayer>
-  swapFromPlayerId: string | null
-  setSwapFromPlayerId: (playerId: string) => void
-  onSwap: (fromId: string, toId: string) => void
-}) {
-  const theme = useAppTheme()
-  if (!alternative) return <SheetTitle title="Đổi người" subtitle="Chưa có phương án để swap." />
 
-  const playingIds = alternative.matches.flatMap(match => [...match.team_a, ...match.team_b])
-  const targetIds = [...new Set([...playingIds, ...alternative.resting])]
-  const candidates = swapFromPlayerId
-    ? targetIds
-        .filter(playerId => playerId !== swapFromPlayerId)
-        .map(playerId => ({ playerId, audit: auditManualSwap(state, alternative, swapFromPlayerId, playerId) }))
-        .sort((a, b) => {
-          const aBlocked = !a.audit || a.audit.invalid_matches > 0
-          const bBlocked = !b.audit || b.audit.invalid_matches > 0
-          if (aBlocked !== bBlocked) return aBlocked ? 1 : -1
-          const deltaDiff = (b.audit?.delta_fairness ?? -999) - (a.audit?.delta_fairness ?? -999)
-          if (deltaDiff !== 0) return deltaDiff
-          const burdenDiff = (a.audit?.after.max_opponent_burden ?? 999) - (b.audit?.after.max_opponent_burden ?? 999)
-          if (burdenDiff !== 0) return burdenDiff
-          return playerName(a.playerId, playersById).localeCompare(playerName(b.playerId, playersById))
-        })
-    : []
 
-  return (
-    <View>
-      <SheetTitle title="Đổi người" subtitle="Chọn người cần đổi, rồi chọn candidate được sắp theo cải thiện." />
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>1. Đổi ra</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
-        {targetIds.map(playerId => {
-          const active = swapFromPlayerId === playerId
-          return (
-            <TouchableOpacity
-              key={playerId}
-              onPress={() => setSwapFromPlayerId(playerId)}
-              style={{
-                height: 44,
-                borderRadius: RADIUS.full,
-                backgroundColor: active ? theme.primary : theme.surface,
-                borderWidth: BORDER.hairline,
-                borderColor: active ? theme.primary : theme.outlineVariant,
-                paddingHorizontal: 10,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 7,
-              }}
-            >
-              <PlayerAvatar name={playerName(playerId, playersById)} size={24} />
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: active ? theme.onPrimary : theme.onSurface }}>
-                {playerName(playerId, playersById)}
-              </Text>
-            </TouchableOpacity>
-          )
-        })}
-      </ScrollView>
 
-      {swapFromPlayerId ? (
-        <>
-          <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>2. Đổi với · sắp theo cải thiện</Text>
-          <View style={{ gap: 8 }}>
-            {candidates.map(({ playerId, audit }) => {
-              const blocked = !audit || audit.invalid_matches > 0
-              const better = Boolean(audit && audit.delta_fairness > 0 && !blocked)
-              const borderColor = blocked ? theme.dangerText : better ? theme.primary : theme.outlineVariant
-              const auditDetail = audit
-                ? `Điểm fairness ${audit.delta_fairness > 0 ? '+' : ''}${audit.delta_fairness} · chênh số trận ${audit.before.match_range}→${audit.after.match_range} · người bị lặp đối thủ nhiều nhất ${audit.before.max_opponent_burden}→${audit.after.max_opponent_burden}`
-                : 'Swap không hợp lệ'
-              return (
-                <TouchableOpacity
-                  key={playerId}
-                  onPress={() => !blocked && onSwap(swapFromPlayerId, playerId)}
-                  disabled={blocked}
-                  style={{
-                    minHeight: 58,
-                    borderRadius: RADIUS.md,
-                    backgroundColor: theme.surface,
-                    borderWidth: BORDER.hairline,
-                    borderColor: theme.outlineVariant,
-                    borderLeftWidth: 4,
-                    borderLeftColor: borderColor,
-                    padding: 10,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 10,
-                  }}
-                >
-                  <PlayerAvatar name={playerName(playerId, playersById)} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
-                    <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                      PVNA {(state.players.get(playerId)?.pvna ?? 0).toFixed(2)}
-                    </Text>
-                    <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>{auditDetail}</Text>
-                  </View>
-                  <Text style={ctaTextStyle(blocked ? theme.dangerText : better ? theme.primary : theme.outline, 12)}>
-                    {blocked ? 'Chặn' : audit!.delta_fairness > 0 ? `+${audit!.delta_fairness}` : audit!.delta_fairness}
-                  </Text>
-                </TouchableOpacity>
-              )
-            })}
-          </View>
-        </>
-      ) : null}
-    </View>
-  )
-}
 
-type RosterPlayerRowProps = {
-  row: SessionPlayerStateRow
-  player: ArrangementPlayer | undefined
-  expanded: boolean
-  selectedForGroup: boolean
-  inActiveRound: boolean
-  onExpand: (id: string | null) => void
-  onToggleCheckout: (playerId: string, checkedOut: boolean) => void
-  onToggleRest: (playerId: string, optedRest: boolean) => void
-  onToggleGroupSelection: (playerId: string) => void
-  onClearGroup: (playerId: string) => void
-  onSwap: (playerId: string) => void
-}
 
-const RosterPlayerRow = memo(function RosterPlayerRow({
-  row, player, expanded, selectedForGroup, inActiveRound, onExpand,
-  onToggleCheckout, onToggleRest, onToggleGroupSelection, onClearGroup, onSwap,
-}: RosterPlayerRowProps) {
-  const theme = useAppTheme()
-  const playerId = row.player_id
-  const checkedOut = Boolean(row.checked_out_at)
-  const resting = !checkedOut && row.opted_rest
-  const name = player?.name ?? 'Người chơi'
-  const cardBg = checkedOut ? theme.surfaceContainerLow : resting ? theme.warningBg : undefined
-  const infoColor = resting ? theme.warningText : theme.outline
-  const infoSuffix = checkedOut ? 'đã check-out' : resting ? 'đang xin nghỉ' : `nghỉ liên tiếp ${row.consecutive_rest} lượt`
-  return (
-    <Card style={{ borderRadius: RADIUS.md, overflow: 'hidden', borderColor: selectedForGroup ? theme.primary : theme.outlineVariant, ...(cardBg ? { backgroundColor: cardBg } : {}) }}>
-      <TouchableOpacity testID={`nrv2-roster-player-${playerId}`} onPress={() => onExpand(expanded ? null : playerId)} style={{ minHeight: 60, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <PlayerAvatar name={name} />
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{name}</Text>
-          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: infoColor }}>
-            PVNA {(getPlayerPvna(player) ?? 0).toFixed(2)} · {row.matches_played} trận · {infoSuffix}
-          </Text>
-        </View>
-        <ChevronDown size={16} color={theme.outline} />
-      </TouchableOpacity>
-      {expanded ? (
-        <View style={{ borderTopWidth: BORDER.hairline, borderTopColor: theme.outlineVariant, padding: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          <MiniAction testID={`nrv2-roster-checkout-${playerId}`} label={checkedOut ? 'Check-in' : 'Check-out'} icon={checkedOut ? UserPlus : UserMinus} onPress={() => onToggleCheckout(playerId, checkedOut)} tone={checkedOut ? 'good' : 'danger'} />
-          {!checkedOut ? (
-            <MiniAction testID={`nrv2-roster-rest-${playerId}`} label={row.opted_rest ? 'Bỏ nghỉ' : 'Xin nghỉ'} icon={History} onPress={() => onToggleRest(playerId, row.opted_rest)} tone="neutral" />
-          ) : null}
-          {!checkedOut && !row.group_id ? (
-            <MiniAction testID={`nrv2-roster-group-${playerId}`} label={selectedForGroup ? 'Bỏ chọn' : 'Chọn group'} icon={Users} onPress={() => onToggleGroupSelection(playerId)} tone={selectedForGroup ? 'good' : 'neutral'} />
-          ) : null}
-          {!checkedOut && row.group_id ? (
-            <MiniAction label="Xóa khỏi nhóm" icon={X} onPress={() => onClearGroup(playerId)} tone="neutral" />
-          ) : null}
-          {inActiveRound ? <MiniAction label="Đổi người" icon={Zap} onPress={() => onSwap(playerId)} tone="good" /> : null}
-        </View>
-      ) : null}
-    </Card>
-  )
-})
 
-export function RosterSheet({
-  rows,
-  playersById,
-  busy,
-  activeRoundIds,
-  onToggleCheckout,
-  onToggleRest,
-  onSwap,
-  onRefreshRoster,
-  groupSelection,
-  groupSummaries,
-  onToggleGroupSelection,
-  onCreateGroup,
-  onClearGroup,
-  onClearWholeGroup,
-  onClearGroupSelection,
-}: {
-  rows: SessionPlayerStateRow[]
-  playersById: Map<string, ArrangementPlayer>
-  busy: string | null
-  activeRoundIds?: Set<string>
-  onToggleCheckout: (playerId: string, checkedOut: boolean) => void
-  onToggleRest: (playerId: string, optedRest: boolean) => void
-  onSwap: (playerId: string) => void
-  onRefreshRoster: () => void | Promise<void>
-  groupSelection: string[]
-  groupSummaries: GroupSummary[]
-  groupAliases: Map<string, string>
-  onToggleGroupSelection: (playerId: string) => void
-  onCreateGroup: () => void
-  onClearGroup: (playerId: string) => void
-  onClearWholeGroup: (groupId: string) => void
-  onClearGroupSelection: () => void
-}) {
-  const theme = useAppTheme()
-  const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null)
-  const groupSelectionSet = useMemo(() => new Set(groupSelection), [groupSelection])
-
-  type FlatItem =
-    | { type: 'player'; row: SessionPlayerStateRow }
-    | { type: 'section-divider'; label: string; count: number }
-    | { type: 'group-header'; groupId: string; label: string; count: number }
-
-  const { playingRows, flatItems, activeCount, restingCount, checkedOutCount } = useMemo(() => {
-    const playing: SessionPlayerStateRow[] = []
-    const checkedOut: SessionPlayerStateRow[] = []
-    const resting: SessionPlayerStateRow[] = []
-    const ungrouped: SessionPlayerStateRow[] = []
-    const groupedMap = new Map<string, SessionPlayerStateRow[]>()
-
-    for (const row of rows) {
-      if (row.checked_out_at) {
-        checkedOut.push(row)
-      } else if (activeRoundIds?.has(row.player_id)) {
-        playing.push(row)
-      } else if (row.opted_rest) {
-        resting.push(row)
-      } else if (row.group_id) {
-        const arr = groupedMap.get(row.group_id) ?? []
-        arr.push(row)
-        groupedMap.set(row.group_id, arr)
-      } else {
-        ungrouped.push(row)
-      }
-    }
-
-    const groupedCount = [...groupedMap.values()].reduce((s, g) => s + g.length, 0)
-    const items: FlatItem[] = []
-
-    for (const row of ungrouped) items.push({ type: 'player', row })
-
-    for (const [groupId, groupRows] of groupedMap) {
-      const summary = groupSummaries.find(g => g.group_id === groupId)
-      const label = summary?.label ?? 'Nhóm'
-      items.push({ type: 'group-header', groupId, label, count: groupRows.length })
-      for (const row of groupRows) items.push({ type: 'player', row })
-    }
-
-    if (resting.length > 0) {
-      items.push({ type: 'section-divider', label: 'Xin nghỉ', count: resting.length })
-      for (const row of resting) items.push({ type: 'player', row })
-    }
-
-    if (checkedOut.length > 0) {
-      items.push({ type: 'section-divider', label: 'Đã check-out', count: checkedOut.length })
-      for (const row of checkedOut) items.push({ type: 'player', row })
-    }
-
-    return {
-      playingRows: playing,
-      flatItems: items,
-      activeCount: ungrouped.length + groupedCount + playing.length,
-      restingCount: resting.length,
-      checkedOutCount: checkedOut.length,
-    }
-  }, [rows, groupSummaries, activeRoundIds])
-
-  return (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <SheetTitle title="Người chơi" subtitle="Tap vào người chơi để xem thao tác: check-out, nghỉ, nhóm, đổi người." />
-      <TouchableOpacity testID="nrv2-roster-sync" onPress={() => { void onRefreshRoster() }} style={{ height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-        <Text style={ctaTextStyle(theme.onPrimary, 13)}>Làm mới danh sách người chơi</Text>
-      </TouchableOpacity>
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-        <View style={{ flex: 1, borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 10 }}>
-          <Text style={eyebrowStyle(theme.primary)}>Đang trong roster</Text>
-          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.primary }}>{activeCount}</Text>
-        </View>
-        <View style={{ flex: 1, borderRadius: RADIUS.md, backgroundColor: theme.warningBg, padding: 10 }}>
-          <Text style={eyebrowStyle(theme.warningText)}>Xin nghỉ</Text>
-          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.warningText }}>{restingCount}</Text>
-        </View>
-        <View style={{ flex: 1, borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, padding: 10 }}>
-          <Text style={eyebrowStyle(theme.outline)}>Đã check-out</Text>
-          <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.outline }}>{checkedOutCount}</Text>
-        </View>
-      </View>
-      {playingRows.length > 0 ? (
-        <View style={{ borderWidth: 1.5, borderColor: theme.primary, borderRadius: RADIUS.md, overflow: 'hidden', marginBottom: 12 }}>
-          <View style={{ backgroundColor: theme.primaryContainer, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: theme.heroLiveDot }} />
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.primary }}>Đang thi đấu · {playingRows.length}</Text>
-          </View>
-          <View style={{ padding: 8, gap: 8 }}>
-            {playingRows.map(row => (
-              <RosterPlayerRow
-                key={row.player_id}
-                row={row}
-                player={playersById.get(row.player_id)}
-                expanded={expandedPlayerId === row.player_id}
-                selectedForGroup={groupSelectionSet.has(row.player_id)}
-                inActiveRound={true}
-                onExpand={setExpandedPlayerId}
-                onToggleCheckout={onToggleCheckout}
-                onToggleRest={onToggleRest}
-                onToggleGroupSelection={onToggleGroupSelection}
-                onClearGroup={onClearGroup}
-                onSwap={onSwap}
-              />
-            ))}
-          </View>
-        </View>
-      ) : null}
-      {flatItems.map(item => {
-        if (item.type === 'section-divider') {
-          return (
-            <View key={`__divider_${item.label}__`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 4 }}>
-              <View style={{ flex: 1, height: 1, backgroundColor: theme.outlineVariant }} />
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.outline }}>{item.label} · {item.count}</Text>
-              <View style={{ flex: 1, height: 1, backgroundColor: theme.outlineVariant }} />
-            </View>
-          )
-        }
-        if (item.type === 'group-header') {
-          return (
-            <View key={`__group_${item.groupId}__`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 4 }}>
-              <View style={{ flex: 1, height: 1, backgroundColor: theme.primaryContainer }} />
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.primary }}>{item.label} · {item.count} người</Text>
-              <View style={{ flex: 1, height: 1, backgroundColor: theme.primaryContainer }} />
-            </View>
-          )
-        }
-        return (
-          <View key={item.row.player_id} style={{ marginBottom: 8 }}>
-            <RosterPlayerRow
-              row={item.row}
-              player={playersById.get(item.row.player_id)}
-              expanded={expandedPlayerId === item.row.player_id}
-              selectedForGroup={groupSelectionSet.has(item.row.player_id)}
-              inActiveRound={activeRoundIds?.has(item.row.player_id) ?? false}
-              onExpand={setExpandedPlayerId}
-              onToggleCheckout={onToggleCheckout}
-              onToggleRest={onToggleRest}
-              onToggleGroupSelection={onToggleGroupSelection}
-              onClearGroup={onClearGroup}
-              onSwap={onSwap}
-            />
-          </View>
-        )
-      })}
-      {rows.length > 0 ? (
-        <View style={{ marginTop: 6, gap: 10 }}>
-          {groupSummaries.length > 0 ? (
-            <View style={{ gap: 8 }}>
-              <Text style={eyebrowStyle(theme.outline)}>Nhóm hiện tại</Text>
-              {groupSummaries.map(group => (
-                <View key={group.group_id} style={{ borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, padding: 10, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.onSurface }} numberOfLines={2}>
-                    {group.label}: {group.player_ids.map(id => playerName(id, playersById)).join(', ')}
-                  </Text>
-                  <TouchableOpacity onPress={() => onClearWholeGroup(group.group_id)} style={{ minHeight: 34, borderRadius: RADIUS.md, backgroundColor: theme.surface, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={ctaTextStyle(theme.outline, 10)}>Xóa</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          ) : null}
-          <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 12 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.primary }}>
-              Chọn từ 2 người chơi trở lên để tạo nhóm. Engine sẽ ưu tiên xếp họ cùng đội hoặc cùng sân nhưng không bắt buộc.
-            </Text>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <TouchableOpacity
-              testID="nrv2-roster-create-group"
-              onPress={onCreateGroup}
-              disabled={groupSelection.length < 2 || Boolean(busy?.startsWith('group-'))}
-              style={{ flex: 1, height: 48, borderRadius: RADIUS.md, backgroundColor: groupSelection.length >= 2 ? theme.primary : theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}
-            >
-              {busy?.startsWith('group-') ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Tạo nhóm ({groupSelection.length})</Text>}
-            </TouchableOpacity>
-            {groupSelection.length > 0 ? (
-              <TouchableOpacity onPress={onClearGroupSelection} style={{ width: 48, height: 48, borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' }}>
-                <X size={18} color={theme.onSurface} />
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-    </ScrollView>
-  )
-}
-
-export function LateArrivalsSheet({
-  players,
-  busy,
-  onAddPlayer,
-}: {
-  players: ArrangementPlayer[]
-  busy: string | null
-  onAddPlayer: (playerId: string) => void
-}) {
-  const theme = useAppTheme()
-  return (
-    <View>
-      <SheetTitle title="Người đến muộn" subtitle="Thêm người đã tới muộn vào roster live để engine xếp từ vòng kế tiếp." />
-      <View style={{ gap: 8 }}>
-        {players.length === 0 ? (
-          <Card style={{ padding: 14, backgroundColor: theme.surfaceContainerLow }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline }}>
-              Không còn ai trong danh sách chưa tới.
-            </Text>
-          </Card>
-        ) : players.map(player => {
-          const playerId = String(player.id)
-          const loading = busy === `late-${playerId}`
-          return (
-            <Card key={`late-${playerId}`} style={{ borderRadius: RADIUS.md, padding: 10 }}>
-              <View style={{ minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <PlayerAvatar name={player.name || 'Người chơi'} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }} numberOfLines={1}>
-                    {player.name || 'Người chơi'}
-                  </Text>
-                  <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                    PVNA {(getPlayerPvna(player) ?? 0).toFixed(2)} · trạng thái chưa tới
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => onAddPlayer(playerId)}
-                  disabled={loading}
-                  style={{
-                    minHeight: 40,
-                    borderRadius: RADIUS.md,
-                    backgroundColor: theme.secondaryContainer,
-                    paddingHorizontal: 10,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {loading ? <ActivityIndicator color={theme.primary} /> : <Text style={ctaTextStyle(theme.primary, 11)}>Thêm</Text>}
-                </TouchableOpacity>
-              </View>
-            </Card>
-          )
-        })}
-      </View>
-    </View>
-  )
-}
-
-export function HistorySheet({ rounds, playersById }: { rounds: SessionRoundRow[]; playersById: Map<string, ArrangementPlayer> }) {
-  const theme = useAppTheme()
-  return (
-    <View>
-      <SheetTitle title="Lịch sử vòng" subtitle="Các vòng đã lưu trong live session." />
-      <View style={{ gap: 10 }}>
-        {rounds.map(round => (
-          <Card key={round.round_no} style={{ borderRadius: RADIUS.md, padding: 12 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>Vòng {round.round_no}</Text>
-              <View style={{ borderRadius: RADIUS.full, backgroundColor: theme.successBg, paddingHorizontal: 9, paddingVertical: 4 }}>
-                <Text style={ctaTextStyle(theme.successText, 11)}>Đã lưu</Text>
-              </View>
-            </View>
-            <View style={{ gap: 6 }}>
-              {round.matches.map(match => (
-                <View key={`${round.round_no}-${match.court_idx}`} style={{ borderRadius: RADIUS.xs, backgroundColor: theme.surfaceAlt, padding: 8 }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-                    {match.team_a.map(id => playerName(id, playersById)).join(' · ')} vs {match.team_b.map(id => playerName(id, playersById)).join(' · ')}
-                  </Text>
-                </View>
-              ))}
-            </View>
-            <Text style={{ marginTop: 8, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.rescueAccent }}>
-              Nghỉ: {round.resting.map(id => playerName(id, playersById)).join(', ') || 'Không có'}
-            </Text>
-          </Card>
-        ))}
-      </View>
-    </View>
-  )
-}
-
-export function MoreSheet({
-  onSyncRoster,
-  onOpenRoster,
-  onOpenHistory,
-  onOpenFairness,
-  busy,
-}: {
-  onSyncRoster: () => void
-  onOpenRoster: () => void
-  onOpenHistory: () => void
-  onOpenFairness: () => void
-  busy: string | null
-}) {
-  return (
-    <View>
-      <SheetTitle title="Thao tác nhanh" />
-      <View style={{ gap: 10 }}>
-        <SheetAction label="Cập nhật danh sách người chơi" onPress={onSyncRoster} loading={busy === 'sync'} />
-        <SheetAction label="Người chơi" onPress={onOpenRoster} />
-        <SheetAction label="Đánh giá Fairness" onPress={onOpenFairness} />
-        <SheetAction label="Lịch sử vòng" onPress={onOpenHistory} />
-      </View>
-    </View>
-  )
-}
 
 export function GroupAuditBlock({
   state,
@@ -700,36 +192,139 @@ export function GroupAuditBlock({
   groupSummaries: GroupSummary[]
   playersById: Map<string, ArrangementPlayer>
 }) {
-  const theme = useAppTheme()
   const rows = buildGroupAuditRows(state, groupSummaries)
+  return <GroupAuditBlockContent rows={rows} playersById={playersById} />
+}
+
+function GroupAuditBlockContent({
+  rows,
+  playersById,
+}: {
+  rows: ReturnType<typeof buildGroupAuditRows>
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  const totalMembers = rows.reduce((sum, row) => sum + row.player_ids.length, 0)
+  const maxSharedMatches = Math.max(0, ...rows.map(row => row.shared_matches))
+  const maxPairCount = Math.max(0, ...rows.flatMap(row => row.pair_counts.map(pair => pair.count)))
+
   return (
-    <View style={{ marginTop: 14 }}>
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Đánh giá Nhóm</Text>
+    <View style={{ marginTop: 16 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.onSurface }}>
+            Đánh giá nhóm
+          </Text>
+          <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.outline }}>
+            Theo dõi nhóm quen nhau có bị xếp chung đội quá nhiều hay không.
+          </Text>
+        </View>
+        {rows.length > 0 ? (
+          <View style={{ borderRadius: RADIUS.full, backgroundColor: theme.secondaryContainer, paddingHorizontal: 10, paddingVertical: 5 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.primary, fontWeight: '900' }}>
+              {rows.length} nhóm
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
       {rows.length === 0 ? (
-        <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, padding: 12 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Chưa có nhóm nào được tạo.</Text>
+        <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surfaceContainerLow, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>
+            Chưa có nhóm nào được tạo.
+          </Text>
         </View>
       ) : (
-        <View style={{ gap: 10 }}>
-          {rows.map(row => (
-            <View key={row.group_id} style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.onSurface }}>
-                {row.label}: {row.player_ids.map(id => playerName(id, playersById)).join(', ')}
-              </Text>
-              <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>
-                Cùng xuất hiện trong {row.shared_matches} trận.
-              </Text>
-              <View style={{ marginTop: 8, gap: 4 }}>
-                {row.pair_counts.map(pair => (
-                  <Text key={`${pair.player_a}-${pair.player_b}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-                    {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} trận chung đội
-                  </Text>
-                ))}
-              </View>
-            </View>
-          ))}
+        <View>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+            <GroupAuditStat label="Thành viên" value={String(totalMembers)} />
+            <GroupAuditStat label="Cùng xuất hiện" value={String(maxSharedMatches)} />
+            <GroupAuditStat label="Chung đội" value={String(maxPairCount)} />
+          </View>
+
+          <View style={{ gap: 10 }}>
+            {rows.map(row => {
+              const topPair = row.pair_counts[0]
+              const topPairText = topPair
+                ? `${playerName(topPair.player_a, playersById)} / ${playerName(topPair.player_b, playersById)} · ${topPair.count} trận`
+                : 'Chưa có cặp chung đội'
+              const sortedPairs = row.pair_counts.filter(pair => pair.count > 0)
+
+              return (
+                <View key={row.group_id} style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.onSurface }}>
+                        {row.label}
+                      </Text>
+                      <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.outline }}>
+                        {row.player_ids.map(id => playerName(id, playersById)).join(', ')}
+                      </Text>
+                    </View>
+                    <View style={{ borderRadius: RADIUS.full, backgroundColor: theme.surfaceContainerLow, paddingHorizontal: 9, paddingVertical: 4 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10.5, color: theme.outline, fontWeight: '900' }}>
+                        {row.player_ids.length} người
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                    <View style={{ flex: 1, borderRadius: RADIUS.sm, backgroundColor: theme.surfaceContainerLow, padding: 9 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.outline }}>Cùng xuất hiện</Text>
+                      <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.onSurface }}>{row.shared_matches} trận</Text>
+                    </View>
+                    <View style={{ flex: 1.4, borderRadius: RADIUS.sm, backgroundColor: theme.surfaceContainerLow, padding: 9 }}>
+                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.outline }}>Cặp chung đội nhiều nhất</Text>
+                      <Text numberOfLines={1} style={{ marginTop: 2, fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: theme.onSurface }}>{topPairText}</Text>
+                    </View>
+                  </View>
+
+                  {sortedPairs.length > 0 ? (
+                    <View style={{ marginTop: 10, gap: 7 }}>
+                      {sortedPairs.map(pair => {
+                        const pct = maxPairCount <= 0 ? 0 : Math.max(8, (pair.count / maxPairCount) * 100)
+                        return (
+                          <View key={`${pair.player_a}-${pair.player_b}`}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                              <Text numberOfLines={1} style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.onSurface }}>
+                                {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}
+                              </Text>
+                              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.outline, fontWeight: '800' }}>
+                                {pair.count}
+                              </Text>
+                            </View>
+                            <View style={{ marginTop: 4, height: 5, borderRadius: RADIUS.full, backgroundColor: theme.outlineVariant, overflow: 'hidden' }}>
+                              <View style={{ width: `${pct}%`, height: '100%', borderRadius: RADIUS.full, backgroundColor: theme.primaryContainer }} />
+                            </View>
+                          </View>
+                        )
+                      })}
+                    </View>
+                  ) : (
+                    <Text style={{ marginTop: 10, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>
+                      Nhóm này chưa có ai được xếp chung đội với nhau.
+                    </Text>
+                  )}
+                </View>
+              )
+            })}
+          </View>
         </View>
       )}
+    </View>
+  )
+}
+
+function GroupAuditStat({ label, value }: { label: string; value: string }) {
+  const theme = useAppTheme()
+  return (
+    <View style={{ flex: 1, borderRadius: RADIUS.sm, backgroundColor: theme.surfaceContainerLow, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 10 }}>
+      <Text numberOfLines={1} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.outline }}>
+        {label}
+      </Text>
+      <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>
+        {value}
+      </Text>
     </View>
   )
 }
@@ -761,30 +356,51 @@ export function RepeatDetailsBlock({
   playersById: Map<string, ArrangementPlayer>
 }) {
   const theme = useAppTheme()
+
   const renderPairs = (pairs: Array<{ player_a: string; player_b: string; count: number }>) => {
-    const repeated = pairs.filter(pair => pair.count > 1)
+    const repeated = pairs.filter(pair => pair.count > 1).sort((a, b) => b.count - a.count)
     if (repeated.length === 0) {
-      return <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>Không có cặp lặp.</Text>
+      return <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Không có cặp nào gặp lại.</Text>
     }
-    return repeated.map(pair => (
-      <Text key={`${pair.player_a}-${pair.player_b}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-        {playerName(pair.player_a, playersById)} / {playerName(pair.player_b, playersById)}: {pair.count} lần
-      </Text>
-    ))
+    return repeated.map((pair, index) => {
+      const repeatCount = pair.count - 1
+      const isHigh = repeatCount >= 2
+      const badgeBg = isHigh ? theme.dangerBg : theme.warningBg
+      const badgeText = isHigh ? theme.dangerText : theme.warningText
+      const isLast = index === repeated.length - 1
+      return (
+        <View
+          key={`${pair.player_a}-${pair.player_b}`}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: isLast ? 0 : BORDER.hairline, borderBottomColor: theme.outlineVariant }}
+        >
+          <View style={{ flexDirection: 'row' }}>
+            <PlayerAvatar name={playerName(pair.player_a, playersById)} size={28} />
+            <View style={{ marginLeft: -8 }}>
+              <PlayerAvatar name={playerName(pair.player_b, playersById)} size={28} />
+            </View>
+          </View>
+          <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurface }} numberOfLines={1}>
+            {playerName(pair.player_a, playersById)} + {playerName(pair.player_b, playersById)}
+          </Text>
+          <View style={{ backgroundColor: badgeBg, borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: badgeText }}>
+              lặp {repeatCount}×
+            </Text>
+          </View>
+        </View>
+      )
+    })
   }
 
   return (
-    <View style={{ marginTop: 12, gap: 8 }}>
-      <Text style={eyebrowStyle(theme.outline)}>Cặp lặp chi tiết</Text>
-      <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Partner lặp (đồng đội)</Text>
-        <View style={{ gap: 3 }}>{renderPairs(partnerPairs)}</View>
-      </View>
-      <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Đối thủ lặp</Text>
-        <View style={{ gap: 3 }}>{renderPairs(opponentPairs)}</View>
-      </View>
-    </View>
+    <Card style={{ padding: 14, marginBottom: 14 }}>
+      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 12 }]}>Các cặp gặp nhau nhiều lần</Text>
+      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Đồng đội</Text>
+      <View style={{ marginBottom: 12 }}>{renderPairs(partnerPairs)}</View>
+      <View style={{ height: BORDER.hairline, backgroundColor: theme.outlineVariant, marginBottom: 12 }} />
+      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, marginBottom: 6 }}>Đối thủ</Text>
+      <View>{renderPairs(opponentPairs)}</View>
+    </Card>
   )
 }
 
@@ -801,16 +417,31 @@ export function OpponentBurdenSummary({
     .sort((a, b) => b.repeated_opponents - a.repeated_opponents)
   return (
     <Card style={{ padding: 14, marginBottom: 14 }}>
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Người bị lặp đối thủ nhiều</Text>
+      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 12 }]}>Ai gặp lại đối thủ nhiều nhất</Text>
       {rows.length === 0 ? (
-        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Không có ai bị lặp đối thủ.</Text>
+        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>Không ai gặp lại đối thủ cũ.</Text>
       ) : (
-        <View style={{ gap: 4 }}>
-          {rows.map(row => (
-            <Text key={`burden-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.onSurface }}>
-              {playerName(row.player_id, playersById)}: {row.repeated_opponents} đối thủ lặp
-            </Text>
-          ))}
+        <View style={{ gap: 2 }}>
+          {rows.map((row, index) => {
+            const isHigh = row.repeated_opponents >= 2
+            const isLast = index === rows.length - 1
+            return (
+              <View
+                key={`burden-${row.player_id}`}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: isLast ? 0 : BORDER.hairline, borderBottomColor: theme.outlineVariant }}
+              >
+                <PlayerAvatar name={playerName(row.player_id, playersById)} size={30} />
+                <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurface }}>
+                  {playerName(row.player_id, playersById)}
+                </Text>
+                <View style={{ backgroundColor: isHigh ? theme.dangerBg : theme.surfaceContainerLow, borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3 }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 11, color: isHigh ? theme.dangerText : theme.outline }}>
+                    {row.repeated_opponents} đối thủ
+                  </Text>
+                </View>
+              </View>
+            )
+          })}
         </View>
       )}
     </Card>
@@ -823,22 +454,22 @@ export function RecapView({
   matchCountConsistencyRows,
   groupSummaries,
   playersById,
+  liveMatchRows,
   onOpenHistory,
   onContinue,
+  hideContinue = false,
 }: {
   summary: ReturnType<typeof sanitizeSummaryForHost>
   state: SessionState
   matchCountConsistencyRows: MatchCountConsistencyRow[]
   groupSummaries: GroupSummary[]
   playersById: Map<string, ArrangementPlayer>
+  liveMatchRows?: SessionLiveMatchRow[]
   onOpenHistory: () => void
   onContinue: () => void
+  hideContinue?: boolean
 }) {
   const theme = useAppTheme()
-  const maxMatchesForChart = useMemo(
-    () => Math.max(1, ...summary.per_player.map(item => item.matches_played)),
-    [summary.per_player],
-  )
   const { partner, opponent, burden, pressure, restByPlayer, breakdownExplanations, lowScoreReasons } = useMemo(() => {
     const p = computePartnerDiversity(state)
     const o = computeOpponentDiversity(state)
@@ -889,42 +520,33 @@ export function RecapView({
           </View>
         </Card>
       ) : null}
-      <PlayerQualityReport state={state} playersById={playersById} />
+      <PlayerQualityReport state={state} playersById={playersById} liveMatchRows={liveMatchRows} />
       <Card style={{ padding: 14, marginBottom: 14 }}>
-        <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Số trận mỗi người</Text>
-        <View style={{ borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, padding: 10, marginBottom: 12 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.primary }}>
-            Cách đọc: mỗi vòng người chơi hoặc được xếp đánh, hoặc nghỉ vòng đó. Lượt nghỉ là số vòng không được xếp đánh. Max là số lượt nghỉ liên tiếp dài nhất. Ví dụ 8 vòng, đánh 6 trận thì nghỉ 2 lượt.
-          </Text>
+        <Text style={[eyebrowStyle(theme.outline), { marginBottom: 12 }]}>Độ đa dạng thi đấu</Text>
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <View style={{
+            backgroundColor: pressure.repeat_risk === 'low' ? theme.secondaryContainer : pressure.repeat_risk === 'medium' ? theme.warningBg : theme.dangerBg,
+            borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 4,
+          }}>
+            <Text style={{
+              fontFamily: SCREEN_FONTS.bold, fontSize: 12,
+              color: pressure.repeat_risk === 'low' ? theme.primary : pressure.repeat_risk === 'medium' ? theme.warningText : theme.dangerText,
+            }}>
+              Mức {repeatRiskLabel(pressure.repeat_risk)}
+            </Text>
+          </View>
+          <View style={{ backgroundColor: theme.surfaceContainerLow, borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 4 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline }}>
+              TB {pressure.avg_matches_per_player.toFixed(1)} trận/người
+            </Text>
+          </View>
         </View>
-        {summary.per_player.map(player => {
-          const rest = restByPlayer.get(player.player_id)
-          return (
-            <View key={player.player_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <PlayerAvatar name={playerName(player.player_id, playersById)} size={26} />
-              <View style={{ width: 92 }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.onSurface }} numberOfLines={1}>
-                  {playerName(player.player_id, playersById)}
-                </Text>
-                <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 9.5, color: theme.outline }} numberOfLines={1}>
-                  Nghỉ {rest?.total_rests ?? 0} lượt · max liên tiếp {rest?.max_consecutive_rest ?? player.max_consecutive_rest}
-                </Text>
-              </View>
-              <View style={{ flex: 1, height: 8, borderRadius: RADIUS.full, backgroundColor: theme.outlineVariant, overflow: 'hidden' }}>
-                <View style={{ width: `${(player.matches_played / maxMatchesForChart) * 100}%`, height: '100%', backgroundColor: theme.primary }} />
-              </View>
-              <Text style={{ width: 20, textAlign: 'right', fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface }}>{player.matches_played}</Text>
-            </View>
-          )
-        })}
-      </Card>
-      <Card style={{ padding: 14, marginBottom: 14 }}>
-        <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>Áp lực lặp partner (đồng đội)/đối thủ</Text>
         <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 17 }}>
-          Mức {repeatRiskLabel(pressure.repeat_risk)} · hệ số giảm phạt {pressure.penalty_multiplier.toFixed(2)} · trung bình {pressure.avg_matches_per_player.toFixed(1)} trận/người · áp lực đối thủ {pressure.opponent_pressure.toFixed(2)}
-        </Text>
-        <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline, lineHeight: 17 }}>
-          {backToBackSummary(pressure.play_ratio)} Back-to-back là người chơi đánh các vòng liền nhau không có lượt nghỉ xen giữa.
+          {pressure.play_ratio <= 0.55
+            ? 'Phần lớn mọi người có ít nhất 1 vòng nghỉ xen giữa các trận.'
+            : pressure.play_ratio <= 0.7
+              ? `${Math.round(pressure.play_ratio * 100)}% người đánh liên tiếp không có vòng nghỉ xen giữa.`
+              : `${Math.round(pressure.play_ratio * 100)}% người đánh liên tiếp — session dày, ít cơ hội nghỉ.`}
         </Text>
       </Card>
       <RepeatDetailsBlock partnerPairs={partner.repeat_pairs} opponentPairs={opponent.repeat_pairs} playersById={playersById} />
@@ -939,16 +561,18 @@ export function RecapView({
           <View style={{ marginTop: 8, gap: 4 }}>
             {matchCountConsistencyRows.slice(0, 8).map(row => (
               <Text key={`mismatch-${row.player_id}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.dangerText }}>
-                {playerName(row.player_id, playersById)}: live {row.live}, replay {row.replay}
+                {playerName(row.player_id, playersById)}: trận {row.live}/{row.replay} · nghỉ {row.live_consecutive_rest}/{row.replay_consecutive_rest} · đánh liền {row.live_consecutive_play}/{row.replay_consecutive_play} · partner {row.live_partner_total}/{row.replay_partner_total} · đối thủ {row.live_opponent_total}/{row.replay_opponent_total}
               </Text>
             ))}
           </View>
         </Card>
       ) : null}
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <TouchableOpacity onPress={onContinue} style={{ flex: 1, height: 52, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={ctaTextStyle(theme.primary, 12)}>Chạy thêm vòng</Text>
-        </TouchableOpacity>
+        {!hideContinue && (
+          <TouchableOpacity onPress={onContinue} style={{ flex: 1, height: 52, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={ctaTextStyle(theme.primary, 12)}>Chạy thêm vòng</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={onOpenHistory} style={{ flex: 1, height: 52, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={ctaTextStyle(theme.onPrimary, 12)}>Lịch sử vòng</Text>
         </TouchableOpacity>
@@ -956,3 +580,9 @@ export function RecapView({
     </ScrollView>
   )
 }
+
+export * from './sheets/SwapSheet'
+export * from './sheets/RosterSheet'
+export * from './sheets/LateArrivalsSheet'
+export * from './sheets/HistorySheet'
+export * from './sheets/MoreSheet'

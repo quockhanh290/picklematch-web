@@ -1,4 +1,4 @@
-import { PRESETS } from './presets'
+import { getCourtPresetTargetMatches, PRESETS, PRESET_ROTATION_TARGETS } from './presets'
 import { computeCourtRepeatPressure } from './pressure'
 import type {
   CourtCalculatorInput,
@@ -21,6 +21,8 @@ export function buildCourtWarnings(
   const durationMin = Math.max(0, Math.floor(input.session_duration_min))
   const matchDuration = Math.max(1, Math.floor(input.match_duration_min ?? DEFAULT_MATCH_DURATION_MIN))
   const preset = input.preset ?? 'balanced'
+  const totalRounds = roundsFor(durationMin, matchDuration)
+  const targetMatches = getCourtPresetTargetMatches(preset, totalRounds)
   const warnings: CourtWarning[] = []
   const pressure = recommended.repeat_pressure
 
@@ -120,7 +122,7 @@ export function buildCourtWarnings(
     })
   }
 
-  if (recommended.avg_matches_per_player < PRESETS[preset].matches - 0.25) {
+  if (recommended.avg_matches_per_player < targetMatches - 0.25) {
     const higherCourt = alternatives.find(
       (option) => option.courts > recommended.courts && option.feasibility !== 'infeasible',
     )
@@ -128,7 +130,7 @@ export function buildCourtWarnings(
       severity: 'info',
       type: 'target_unreachable',
       message: 'Setup này chưa đạt mục tiêu số trận của chế độ.',
-      why: `Dự kiến ${recommended.avg_matches_per_player.toFixed(1)} trận/người, mục tiêu ${PRESETS[preset].label} là ${PRESETS[preset].matches.toFixed(1)}.`,
+      why: `Dự kiến ${recommended.avg_matches_per_player.toFixed(1)} trận/người, mục tiêu ${PRESETS[preset].label} là ${targetMatches.toFixed(1)}.`,
       alternatives: compactAlternatives([
         higherCourt ? setCourtsAlternativeIfUseful(nPlayers, durationMin, matchDuration, preset, higherCourt, 'Tăng sân để gần mục tiêu trận/người hơn.') : null,
         increaseDurationAlternative(nPlayers, durationMin, matchDuration, preset, recommended),
@@ -192,7 +194,7 @@ function changePresetAlternative(
   return {
     action: 'set_preset',
     label: `Đổi sang ${PRESETS[preset].label}`,
-    expected_effect: `Đổi mục tiêu sang ${PRESETS[preset].description}.`,
+    expected_effect: `Đổi mục tiêu sang khoảng ${getCourtPresetTargetMatches(preset, roundsFor(durationMin, matchDuration)).toFixed(1)} trận/người.`,
     tradeoff: 'Khuyến nghị số sân có thể thay đổi theo mục tiêu mới.',
     preset,
     preview: buildPreview(nPlayers, durationMin, matchDuration, preset, option.courts),
@@ -274,15 +276,11 @@ function roundsFor(durationMin: number, matchDuration: number): number {
 }
 
 function targetMin(preset: CourtPreset): number {
-  if (preset === 'relaxed') return 0.4
-  if (preset === 'play_more') return 0.65
-  return 0.55
+  return PRESET_ROTATION_TARGETS[preset].min
 }
 
 function targetMax(preset: CourtPreset): number {
-  if (preset === 'relaxed') return 0.7
-  if (preset === 'play_more') return 0.95
-  return 0.8
+  return PRESET_ROTATION_TARGETS[preset].max
 }
 
 function compactAlternatives(

@@ -1,6 +1,5 @@
 /* eslint-disable import/no-unresolved */
-import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
-import { insertSuggesterAuditEvent } from '../_shared/suggester-audit.ts'
+import { createUserClient, getSessionId, handleCorsPreflight, jsonResponse, readJson } from '../_shared/live-session.ts'
 
 Deno.serve(async (request) => {
   const corsResponse = handleCorsPreflight(request)
@@ -15,8 +14,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, error: 'Missing session id' }, 400)
   }
 
-  const auth = await requireHost(request, sessionId)
-  if (auth.error) return auth.error
+  const supabase = createUserClient(request)
 
   const body = await readJson(request)
   const playerIds = Array.isArray(body.player_ids)
@@ -29,32 +27,14 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, error: 'Missing player_id' }, 400)
   }
 
-  const checkedOutAt = new Date().toISOString()
-  const { data, error } = await auth.supabase
-    .from('session_player_state')
-    .update({
-      checked_out_at: checkedOutAt,
-      opted_rest: false,
-    })
-    .eq('session_id', sessionId)
-    .in('player_id', playerIds)
-    .select('*')
+  const { data: payload, error } = await supabase.rpc('checkout_live_session_players_versioned', {
+    p_session_id: sessionId,
+    p_player_ids: playerIds,
+  })
 
   if (error) {
     return jsonResponse({ ok: false, error: error.message }, 500)
   }
 
-  const auditError = await insertSuggesterAuditEvent(auth.supabase, {
-    session_id: sessionId,
-    event_type: 'player_checked_out',
-    event_source: 'host',
-    actor_id: auth.userId,
-    payload: {
-      player_id: playerIds.length === 1 ? playerIds[0] : undefined,
-      player_ids: playerIds,
-      checked_out_at: checkedOutAt,
-    },
-  })
-
-  return jsonResponse({ ok: true, player: data?.[0] ?? null, players: data ?? [], audit_error: auditError })
+  return jsonResponse({ ok: true, ...payload })
 })

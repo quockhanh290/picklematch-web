@@ -345,11 +345,11 @@ async function main() {
   const seeds = Math.max(1, Number(argValue('--seeds', '3')))
   const rounds = Math.max(1, Number(argValue('--rounds', '8')))
   const candidateLimit = Math.max(1, Number(argValue('--candidate-limit', '28')))
-  const candidateMode = argValue('--candidate-mode', 'global') as 'global' | 'per-strategy' | 'adaptive' | 'strategy-stop' | 'cached-production'
-  if (!['global', 'per-strategy', 'adaptive', 'strategy-stop', 'cached-production'].includes(candidateMode)) {
-    throw new Error('--candidate-mode must be global, per-strategy, adaptive, strategy-stop, or cached-production')
+  const candidateMode = argValue('--candidate-mode', 'global') as 'global' | 'cached-global' | 'per-strategy' | 'adaptive' | 'strategy-stop' | 'cached-production'
+  if (!['global', 'cached-global', 'per-strategy', 'adaptive', 'strategy-stop', 'cached-production'].includes(candidateMode)) {
+    throw new Error('--candidate-mode must be global, cached-global, per-strategy, adaptive, strategy-stop, or cached-production')
   }
-  const rows = []
+  const rows: any[] = []
 
   for (const template of SCENARIOS) {
     for (let seed = 1; seed <= seeds; seed += 1) {
@@ -369,6 +369,7 @@ async function main() {
         const baselineStarted = now()
         const baseline = suggestNextRound(adjustedState, {
           tier_overrides: adjustment.tier_overrides,
+          partition_cache: false,
         })
         const baselineMs = now() - baselineStarted
 

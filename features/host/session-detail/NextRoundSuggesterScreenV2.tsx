@@ -1,25 +1,92 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, AppState, ScrollView, Text, TouchableOpacity, View } from 'react-native'
-import { useFocusEffect, useRouter } from 'expo-router'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  SessionDashboardCard,
+  StatusInlineItem,
+  PlayerCell,
+  LateArrivalsCta,
+  ManagePlayersButton,
+  StatusChipRow,
+  AlternativeTabs,
+  FairnessPreviewCard,
+  FairnessPreviewSheet,
+  EngineExplainCard,
+  NextMatchSuggestionCard,
+  LiveMatchBoard,
+  RoundDivider,
+  SuggestedRoundHeader,
+  SectionEyebrow,
+  SuggestedLiveMatchCard,
+  LiveMatchScoreBoard,
+  SuggestedMatchTile,
+  SuggestedTeamBlock,
+  LiveScoreTeam,
+  LiveMatchScoreCard,
+  ScoreStepper,
+  MatchList,
+  MatchTile,
+  RepeatCompactSummary,
+  RepeatSummaryChip,
+  RepeatInlineDetail,
+  RepeatExpandedVisual,
+  RepeatPlayerCell,
+  RepeatInlinePlayer,
+  RepeatExpandedConnectionVisual,
+  RepeatConnectionSection,
+  RepeatConnectionRow,
+  RepeatConnectionPlayer,
+  TeamBlock,
+  RestingRow,
+  EngineConstraintNotice,
+  PlanningRoundCard,
+  EmptyPlanCard,
+  SettingsSheet,
+  CourtSuggestionOptions,
+  FairnessSheet,
+  PlayerMatchDistributionBlock,
+  FairnessEvolutionBlock,
+  LatestFairnessAuditCard,
+  buildLogicalRoundDisplayMap
+} from './next-round-v2/components/ScreenComponents'
+
+import { buildPreviewBatchKey } from './next-round-v2/preview'
+import { fetchLiveMatchesPreview } from './next-round-v2/api'
+import { ActivityIndicator, Alert, AppState, Dimensions, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   AlertTriangle,
   ChevronDown,
+  Minus,
+  Plus,
+  Repeat2,
   Settings,
   ShieldCheck,
   Sparkles,
+  TrendingUp,
+  Users,
   Zap,
 } from 'lucide-react-native'
 
 import { SecondaryNavbar } from '@/components/design'
-import { BORDER, RADIUS, SPACING } from '@/constants/screenLayout'
+import { colors } from '@/constants/colors'
+import { BORDER, RADIUS, SHADOW as LAYOUT_SHADOW, SPACING } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { calculateOptimalCourts, PRESETS, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
+import { calculateOptimalCourts, getCourtPresetTargetMatches, PRESETS, PRESET_ROTATION_TARGETS, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
+import { Tier } from '@/lib/next-round-suggester/classify'
 import type { SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import type { AlternativeAudit } from '@/lib/next-round-suggester/alternatives'
+import { commitCompletedRound, pairHistoryRowsFromState } from '@/lib/next-round-suggester/commit'
 import { auditManualSwap, buildSwappedAlternative } from '@/lib/next-round-suggester/manual-swap'
-import { scoreMatch } from '@/lib/next-round-suggester/score'
+import {
+  MAX_PROJECTED_OPPONENT_PAIR_COUNT,
+  MAX_PROJECTED_PARTNER_PAIR_COUNT,
+  MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER,
+  MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER,
+  getProjectedRepeatSummary,
+  scoreMatch,
+} from '@/lib/next-round-suggester/score'
+import { suggestNextMatch, suggestNextRound } from '@/lib/next-round-suggester/suggest'
 import { buildSessionStateFingerprint } from '@/lib/next-round-suggester/state-version'
 import type { FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
 import {
@@ -28,6 +95,7 @@ import {
   type FairnessPreview,
 } from '@/lib/next-round-suggester/fairness/audit'
 import type { GroupSummary } from '@/lib/next-round-suggester/fairness/group-audit'
+import { computeFairnessEvolution } from '@/lib/next-round-suggester/fairness/summary'
 import {
   computeGenderPrefSatisfaction,
   computeMatchCountMetrics,
@@ -41,15 +109,21 @@ import {
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
 import type {
   Match,
+  SessionLiveMatchRow,
+  SessionPairHistoryRow,
   SessionRoundRow,
   SessionPlayerStateRow,
   SessionState,
   SuggestionAlternative,
   SuggestionResult,
+  SuggestionTradeoff,
+  SuggestionTradeoffChoice,
+  SuggestionTradeoffChoiceId,
 } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
+import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
-import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent } from './next-round-v2/api'
+import { checkInLiveSessionPlayers, invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent, repairLiveSessionPlayerStateFromRounds } from './next-round-v2/api'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
 import { ChoiceRow, NavbarRightActions, StickyRoundCta } from './next-round-v2/controls'
@@ -74,7 +148,15 @@ import {
 } from './next-round-v2/helpers'
 import type { NextRoundSuggesterV2Props } from './next-round-v2/types'
 import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
-import { refreshBus } from './next-round-v2/refreshBus'
+import { useCheckInMutation, useCheckOutMutation, useStartMatchMutation, useCompleteMatchMutation, useEndActiveRoundMutation } from './next-round-v2/mutations'
+const { width: SCREEN_WIDTH } = Dimensions.get('window')
+const LIVE_SCORE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 90 : SCREEN_WIDTH > 360 ? 80 : 72
+const LIVE_SCORE_CARD_HEIGHT = LIVE_SCORE_CARD_WIDTH * 1.25
+const LIVE_SCORE_FONT_SIZE = SCREEN_WIDTH > 400 ? 56 : SCREEN_WIDTH > 360 ? 48 : 42
+const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
+const BALANCED_PVNA_COST_WEIGHT = 10
+const BALANCED_REPEAT_COST_WEIGHT = 3
+const BALANCED_AFFECTED_PLAYER_COST_WEIGHT = 1
 
 function fairnessLabel(score: SessionFairnessScore) {
   if (score.grade === 'excellent') return 'Rất đều'
@@ -111,6 +193,7 @@ function warningTitle(type: string) {
   return type.replace(/_/g, ' ')
 }
 
+
 function warningTone(theme: ReturnType<typeof useAppTheme>, severity: FairnessWarning['severity'] | 'ok') {
   if (severity === 'critical') return { bg: theme.dangerBg, border: theme.dangerText, text: theme.dangerText }
   if (severity === 'warning') return { bg: theme.warningBg, border: theme.warningStrong, text: theme.warningText }
@@ -129,7 +212,9 @@ function toUserSafeActionError(error: unknown): string {
   if (message.includes('Manual matches cannot reuse the same court')) return 'Các trận đấu tự chọn không thể trùng sân.'
   if (message.includes('Manual matches exceed court count')) return 'Số trận đấu tự chọn vượt quá số lượng sân.'
   if (message.includes('Manual matches must use checked-in players')) return 'Trận đấu tự chọn phải sử dụng người chơi đã check-in.'
+  if (message.includes('Player is in a live match')) return 'Người này đang trong trận live. Hãy kết thúc hoặc hủy trận trước.'
   if (message.includes('Request timed out')) return 'Yêu cầu quá hạn. Vui lòng kiểm tra kết nối mạng và thử lại.'
+  if (message.includes('Preview is stale') || message.includes('Preview version')) return 'Gợi ý trên màn hình đã cũ. Vui lòng làm mới gợi ý rồi bắt đầu lại.'
   if (message.includes('Round commit audit failed')) return 'Đánh giá lưu vòng thất bại. Vui lòng làm mới trước khi tiếp tục.'
   if (message.includes('Session changed')) return 'Buổi chơi đã thay đổi. Vui lòng làm mới và kiểm tra vòng đấu đã đổi trước khi bắt đầu.'
   if (message.includes('Temporary network issue')) return 'Lỗi kết nối mạng tạm thời. Vui lòng thử lại.'
@@ -138,27 +223,203 @@ function toUserSafeActionError(error: unknown): string {
   return 'Thao tác thất bại. Vui lòng thử lại.'
 }
 
-export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextRoundSuggesterV2Props) {
+function changedPairHistoryRows(beforeRows: SessionPairHistoryRow[], afterRows: SessionPairHistoryRow[]) {
+  const beforeByKey = new Map(beforeRows.map((row) => [`${row.player_a}:${row.player_b}`, row]))
+  return afterRows.filter((row) => {
+    const before = beforeByKey.get(`${row.player_a}:${row.player_b}`)
+    return !before || before.partner_count !== row.partner_count || before.opponent_count !== row.opponent_count
+  })
+}
+
+function buildProjectedStateAfterLiveMatch(
+  state: SessionState,
+  match: SessionLiveMatchRow,
+  roundNo?: number,
+): SessionState {
+  const playedIds = new Set([...match.team_a, ...match.team_b])
+  const players = new Map(state.players)
+  const effectiveRoundNo = roundNo ?? match.round_no ?? match.sequence_no
+
+  players.forEach((player, playerId) => {
+    if (playedIds.has(playerId)) {
+      players.set(playerId, {
+        ...player,
+        matches_played: player.matches_played + 1,
+        last_played_round: effectiveRoundNo,
+        consecutive_play: player.consecutive_play + 1,
+        consecutive_rest: 0,
+        opted_rest: false,
+      })
+      return
+    }
+  })
+
+  const incrementPair = (playerAId: string, playerBId: string, type: 'partner' | 'opponent') => {
+    const playerA = players.get(playerAId)
+    const playerB = players.get(playerBId)
+    if (playerA) {
+      const partnerCounts = new Map(playerA.partner_counts)
+      const opponentCounts = new Map(playerA.opponent_counts)
+      const counts = type === 'partner' ? partnerCounts : opponentCounts
+      counts.set(playerBId, (counts.get(playerBId) ?? 0) + 1)
+      players.set(playerAId, { ...playerA, partner_counts: partnerCounts, opponent_counts: opponentCounts })
+    }
+    if (playerB) {
+      const partnerCounts = new Map(playerB.partner_counts)
+      const opponentCounts = new Map(playerB.opponent_counts)
+      const counts = type === 'partner' ? partnerCounts : opponentCounts
+      counts.set(playerAId, (counts.get(playerAId) ?? 0) + 1)
+      players.set(playerBId, { ...playerB, partner_counts: partnerCounts, opponent_counts: opponentCounts })
+    }
+  }
+
+  incrementPair(match.team_a[0], match.team_a[1], 'partner')
+  incrementPair(match.team_b[0], match.team_b[1], 'partner')
+  for (const playerAId of match.team_a) {
+    for (const playerBId of match.team_b) {
+      incrementPair(playerAId, playerBId, 'opponent')
+    }
+  }
+
+  const newMatch = {
+    court_idx: match.court_idx ?? 0,
+    team_a: match.team_a,
+    team_b: match.team_b,
+  }
+  const existingRound = state.rounds.find(r => r.round_no === effectiveRoundNo)
+  const rounds = existingRound
+    ? state.rounds.map(r =>
+        r.round_no === effectiveRoundNo ? { ...r, matches: [...r.matches, newMatch] } : r,
+      )
+    : [
+        ...state.rounds,
+        {
+          session_id: state.session_id,
+          round_no: effectiveRoundNo,
+          status: 'completed' as const,
+          matches: [newMatch],
+          resting: [],
+          started_at: match.started_at ? new Date(match.started_at) : null,
+          ended_at: new Date(),
+        },
+      ]
+
+  return { ...state, players, rounds }
+}
+
+function nowMs() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now()
+}
+
+function waitForUiFrame() {
+  return new Promise<void>(resolve => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve())
+      return
+    }
+    setTimeout(resolve, 0)
+  })
+}
+
+function createClientRequestId(action: 'start' | 'end' | 'match') {
+  const randomPart = Math.random().toString(36).slice(2, 10)
+  return `${action}_${Date.now().toString(36)}_${randomPart}`
+}
+
+type ActionResult = {
+  reload?: boolean
+  reconcileAfterMs?: number
+  reconcile?: {
+    action: 'start' | 'end'
+    expectedLiveStateVersion?: number | null
+    expectedRoundNo?: number | null
+    expectedRoundStatus?: 'active' | 'completed'
+  }
+}
+
+type BuildSuggestedMatchOptions = {
+  courtIdx?: number
+  stateOverride?: SessionState
+  liveMatchRowsOverride?: SessionLiveMatchRow[]
+}
+
+type SuggestedLiveMatchRow = SessionLiveMatchRow & {
+  preview_live_state_version?: number | null
+  preview_countable_match_count?: number | null
+  warnings?: string[]
+  tradeoffs?: SuggestionTradeoff[]
+  approval_required?: boolean
+  configured_pvna_tolerance?: number
+  effective_pvna_tolerance?: number
+  fairness_reasons?: string[]
+  fairness_reason_details?: string[]
+  tradeoff_choices?: SuggestionTradeoffChoice[]
+  recommended_tradeoff_choice?: SuggestionTradeoffChoiceId
+}
+
+type LiveDisplayMatchRow = SessionLiveMatchRow & {
+  client_preview_id?: string
+}
+
+type SuggestedPreviewBatch = {
+  key: string
+  matches: SuggestedLiveMatchRow[]
+}
+
+
+
+
+
+
+
+
+
+export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstrapTelemetry = null, initialShowReport = false }: NextRoundSuggesterV2Props) {
+  const checkInMutation = useCheckInMutation(sessionId)
+  const checkOutMutation = useCheckOutMutation(sessionId)
+  const startMatchMutation = useStartMatchMutation(sessionId)
+  const completeMatchMutation = useCompleteMatchMutation(sessionId)
+  const endActiveRoundMutation = useEndActiveRoundMutation(sessionId)
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
-  const router = useRouter()
   const isFirstFocusRef = useRef(true)
   const [busy, setBusy] = useState<string | null>(null)
   const actionInFlightRef = useRef(false)
   const autoSyncAttemptedRef = useRef(false)
+  const autoRepairStateAttemptedRef = useRef(false)
+  const completingCleanupTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const completingMatchExpectedPlayedRef = useRef(new Map<string, { playerIds: string[]; expectedPlayed: number }>())
   const lateArrivalInFlightRef = useRef(new Set<string>())
-  const model = useNextRoundModel({ sessionId, players, courts })
+  const reconcileTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const liveMatchMutationQueueRef = useRef(Promise.resolve())
+  const suggestedPreviewBatchRef = useRef<SuggestedPreviewBatch | null>(null)
+  const previewBatchKeyRef = useRef<string | null>(null)
+  const startingPreviewIdsRef = useRef(new Set<string>())
+  const endingLiveMatchIdsRef = useRef(new Set<string>())
+  const cancelingLiveMatchIdsRef = useRef(new Set<string>())
+  const model = useNextRoundModel({ sessionId, players, courts, initialShowReport })
+  const [optimisticLiveMatches, setOptimisticLiveMatches] = useState<LiveDisplayMatchRow[]>([])
+  const [liveMatchDisplayKeys, setLiveMatchDisplayKeys] = useState<Record<string, string>>({})
+  const [startingPreviewIds, setStartingPreviewIds] = useState<Set<string>>(() => new Set())
+  const [startedPreviewIds, setStartedPreviewIds] = useState<Set<string>>(() => new Set())
+  const [endingLiveMatchIds, setEndingLiveMatchIds] = useState<Set<string>>(() => new Set())
+  const [completingLiveMatchIds, setCompletingLiveMatchIds] = useState<Set<string>>(() => new Set())
+  const [suggestedSwapMatch, setSuggestedSwapMatch] = useState<SuggestedLiveMatchRow | null>(null)
   const {
     activeRound,
     alternativeOrder,
     alternativeAudits,
-    addPlayerRow,
+    applyCompletedLiveMatch,
+    applyEndedRound,
+    applyLiveMatches,
+    applyLiveStateVersion,
+    applyStartedRound,
     applySuggestedRoundAction,
     checkedInPlayers,
-    clearPlayerRow,
     completedRoundCount,
     completedRounds,
     calculatorPlayerCount,
+    courtCalculator,
     courtCount,
     courtDurationMin,
     courtPreset,
@@ -173,20 +434,24 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     hasManualSwapHardGuard,
     loadLiveState,
     loading,
+    liveStateVersion,
     manualAlternative,
     matchCountConsistencyRows,
     phase,
     playersById,
+    planTelemetry,
     presentCount,
     pvnaTolerance,
     refreshing,
     rememberRoundSelection,
     reportState,
+    reportReady,
     rows,
     selectAlternativeForRound,
     selectedAlternative,
     selectionUndo,
     sessionSummary,
+    settingsHydrated,
     setCourtCount,
     setCourtDurationMin,
     setCourtPreset,
@@ -198,7 +463,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     setShowSessionReport,
     setSwapFromPlayerId,
     setTargetRounds,
-    settlePlayerRow,
     sheet,
     showEngineStats,
     state,
@@ -213,13 +477,116 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   } = model
 
   const lastBusRefreshRef = useRef(0)
+  const liveStateVersionRef = useRef<number | null>(rows.liveStateVersion ?? null)
+
   React.useEffect(() => {
-    refreshBus.register(() => {
-      lastBusRefreshRef.current = Date.now()
-      void loadLiveState()
+    liveStateVersionRef.current = rows.liveStateVersion ?? null
+  }, [rows.liveStateVersion])
+  React.useEffect(() => {
+    autoRepairStateAttemptedRef.current = false
+    suggestedPreviewBatchRef.current = null
+    previewBatchKeyRef.current = null
+    setStartingPreviewIds(new Set())
+    setStartedPreviewIds(new Set())
+    setEndingLiveMatchIds(new Set())
+    setLiveMatchDisplayKeys({})
+  }, [sessionId])
+  React.useEffect(() => {
+    if (phase !== 'recap' || matchCountConsistencyRows.length === 0) {
+      autoRepairStateAttemptedRef.current = false
+      return
+    }
+    if (activeRound || autoRepairStateAttemptedRef.current) return
+    autoRepairStateAttemptedRef.current = true
+
+    void repairLiveSessionPlayerStateFromRounds(sessionId)
+      .then(() => loadLiveState({ silent: true }))
+      .catch(error => {
+        console.warn('Could not repair live session player state', error)
+      })
+  }, [activeRound, loadLiveState, matchCountConsistencyRows.length, phase, sessionId])
+  React.useEffect(() => {
+    setOptimisticLiveMatches(current => {
+      if (current.length === 0) return current
+      const serverIds = new Set(rows.liveMatchRows.map(match => match.id))
+      const next = current.filter(match => !serverIds.has(match.id))
+      return next.length === current.length ? current : next
     })
-    return () => refreshBus.unregister()
-  }, [loadLiveState])
+  }, [rows.liveMatchRows])
+  React.useEffect(() => () => {
+    reconcileTimeoutsRef.current.forEach(clearTimeout)
+    reconcileTimeoutsRef.current = []
+    completingCleanupTimeoutsRef.current.forEach(clearTimeout)
+    completingCleanupTimeoutsRef.current = []
+  }, [])
+
+  // Xóa completing match khỏi busyIds khi state (deferred) đã phản ánh đủ matches_played mới.
+  React.useEffect(() => {
+    const pending = completingMatchExpectedPlayedRef.current
+    if (pending.size === 0) return
+    const toRemove: string[] = []
+    for (const [matchId, { playerIds, expectedPlayed }] of pending) {
+      const player = state.players.get(playerIds[0])
+      if (player && player.matches_played >= expectedPlayed) {
+        toRemove.push(matchId)
+      }
+    }
+    if (toRemove.length === 0) return
+    for (const id of toRemove) pending.delete(id)
+    setCompletingLiveMatchIds(current => {
+      const next = new Set(current)
+      let changed = false
+      for (const id of toRemove) {
+        if (next.has(id)) { next.delete(id); changed = true }
+      }
+      return changed ? next : current
+    })
+  }, [state])
+
+
+  const scheduleReconcile = useCallback((result: ActionResult) => {
+    if (!result.reconcile) return
+    const delayMs = result.reconcileAfterMs ?? 600
+    const expected = result.reconcile
+    const timeoutId = setTimeout(() => {
+      void loadLiveState({ silent: true }).then((serverRows) => {
+        if (!serverRows) return
+        const mismatches: Record<string, unknown> = {}
+        if (
+          expected.expectedLiveStateVersion != null
+          && Number.isFinite(expected.expectedLiveStateVersion)
+          && serverRows.liveStateVersion !== expected.expectedLiveStateVersion
+        ) {
+          mismatches.live_state_version = {
+            expected: expected.expectedLiveStateVersion,
+            actual: serverRows.liveStateVersion,
+          }
+        }
+        if (expected.expectedRoundNo != null && Number.isFinite(expected.expectedRoundNo) && expected.expectedRoundStatus) {
+          const serverRound = serverRows.roundRows.find(round => round.round_no === expected.expectedRoundNo)
+          if (!serverRound || serverRound.status !== expected.expectedRoundStatus) {
+            mismatches.round = {
+              round_no: expected.expectedRoundNo,
+              expected_status: expected.expectedRoundStatus,
+              actual_status: serverRound?.status ?? null,
+            }
+          }
+        }
+        if (Object.keys(mismatches).length > 0) {
+          console.warn('[NextRoundSuggesterV2] background reconcile mismatch', {
+            action: expected.action,
+            sessionId,
+            ...mismatches,
+          })
+        }
+      }).catch((error) => {
+        if (__DEV__) console.warn('[NextRoundSuggesterV2] background reconcile failed', error)
+      })
+    }, delayMs)
+    reconcileTimeoutsRef.current.push(timeoutId)
+  }, [loadLiveState, sessionId])
+
+
 
   useFocusEffect(useCallback(() => {
     if (isFirstFocusRef.current) { isFirstFocusRef.current = false; return }
@@ -229,16 +596,25 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
 
   const openRoster = useCallback(() => {
     router.push({ pathname: '/host/session/[id]/roster', params: { id: sessionId } } as any)
-  }, [router, sessionId])
+  }, [sessionId])
 
-  const runAction = useCallback(async (key: string, action: () => Promise<void>) => {
-    if (actionInFlightRef.current) return
+  const runAction = useCallback(async (key: string, action: () => Promise<ActionResult | void>) => {
+    if (actionInFlightRef.current) {
+      if (__DEV__) console.warn('[NextRoundSuggesterV2] action ignored while another action is running', { key, busy })
+      setError('Đang xử lý thao tác trước đó, thử lại sau vài giây.')
+      return
+    }
     actionInFlightRef.current = true
     setBusy(key)
     setError(null)
     try {
-      await action()
-      await loadLiveState()
+      const result = await action()
+      if (result?.reload !== false) {
+        await loadLiveState()
+      }
+      if (result?.reload === false) {
+        scheduleReconcile(result)
+      }
     } catch (err: any) {
       const safeMessage = toUserSafeActionError(err)
       console.warn('[NextRoundSuggesterV2] action failed', err)
@@ -259,7 +635,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       actionInFlightRef.current = false
       setBusy(null)
     }
-  }, [loadLiveState])
+  }, [busy, loadLiveState, scheduleReconcile])
 
   const syncRoster = useCallback(async () => {
     await runAction('sync', async () => {
@@ -329,26 +705,13 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         metadata: player?.metadata ?? null,
       },
     }
-    addPlayerRow(optimisticRow)
     try {
-      const [, checkinPayload] = await Promise.all([
-        markSessionPlayersPresent(sessionId, [playerId]),
-        invokeLiveSessionFunction('session-checkin', sessionId, { player_id: playerId }),
-      ])
-      const serverRow = checkinPayload?.player as SessionPlayerStateRow | null | undefined
-      if (serverRow) {
-        const hydratedRow: SessionPlayerStateRow = {
-          ...serverRow,
-          players: optimisticRow.players,
-          session_players: optimisticRow.session_players,
-        }
-        addPlayerRow(hydratedRow)
-        settlePlayerRow(playerId, hydratedRow)
-      } else {
-        settlePlayerRow(playerId, optimisticRow)
-      }
+      await checkInMutation.mutateAsync({ playerIds: [playerId], optimisticRows: [optimisticRow] })
+      void markSessionPlayersPresent(sessionId, [playerId]).catch((error) => {
+        if (__DEV__) console.warn('[NextRoundSuggesterV2] late arrival session_players status update failed', error)
+      })
     } catch (err: any) {
-      clearPlayerRow(playerId)
+      
       const safeMessage = toUserSafeActionError(err)
       console.warn('[NextRoundSuggesterV2] late arrival failed', err)
       setError(safeMessage)
@@ -358,6 +721,372 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       lateArrivalInFlightRef.current.delete(playerId)
       setBusy(null)
     }
+  }
+
+  // buildSuggestedMatchPayloads has been moved to Edge Function
+  const startLiveMatch = async (match: SuggestedLiveMatchRow) => {
+    const startT0 = nowMs()
+    if (startingPreviewIdsRef.current.has(match.id) || startedPreviewIds.has(match.id)) return
+    startingPreviewIdsRef.current.add(match.id)
+    if (__DEV__) console.log('[NextRoundSuggesterV2] start live match press', {
+      matchId: match.id,
+      version: liveStateVersionRef.current,
+      courtIdx: match.court_idx,
+      roundNo: match.round_no,
+      status: match.status,
+    })
+    const previewVersion = match.preview_live_state_version ?? null
+    const previewCountableMatchCount = match.preview_countable_match_count ?? null
+    if (previewVersion === null || previewCountableMatchCount === null) {
+      startingPreviewIdsRef.current.delete(match.id)
+      setError(toUserSafeActionError(new Error('Preview version missing')))
+      void loadLiveState()
+      return
+    }
+
+    setStartingPreviewIds(current => {
+      const next = new Set(current)
+      next.add(match.id)
+      return next
+    })
+    const optimisticSequenceNo = [...rows.liveMatchRows, ...optimisticLiveMatches]
+      .filter(row => row.status !== 'cancelled')
+      .length
+    const optimisticMatch: LiveDisplayMatchRow = {
+      ...match,
+      client_preview_id: match.id,
+      status: 'live',
+      started_at: new Date().toISOString(),
+      score_a: match.score_a ?? 0,
+      score_b: match.score_b ?? 0,
+      resting: match.resting ?? [],
+      sequence_no: optimisticSequenceNo,
+    }
+    setStartedPreviewIds(current => {
+      const next = new Set(current)
+      next.add(match.id)
+      return next
+    })
+    setSuggestedLiveMatches(current => current.filter(row => row.id !== match.id))
+    setOptimisticLiveMatches(current => [
+      ...current.filter(row => row.id !== match.id),
+      optimisticMatch,
+    ])
+    await waitForUiFrame()
+
+    const executeStart = async () => {
+      const actionT0 = nowMs()
+      const expectedVersion = liveStateVersionRef.current
+      if (expectedVersion === null) throw new Error('Session changed')
+      const payloadBuildT0 = nowMs()
+      const rpcPayload = {
+        p_session_id: sessionId,
+        p_expected_live_state_version: expectedVersion,
+        p_match: {
+          court_idx: match.court_idx,
+          team_a: match.team_a,
+          team_b: match.team_b,
+          resting: match.resting ?? [],
+          round_no: match.round_no ?? -1,
+        },
+        p_audit_payload: {
+          client_request_id: createClientRequestId('match'),
+          source: 'client-preview-start-live-match',
+          preview_id: match.id,
+          preview_live_state_version: previewVersion,
+          preview_countable_match_count: previewCountableMatchCount,
+        },
+      }
+      const payloadBuildMs = nowMs() - payloadBuildT0
+      const rpcT0 = nowMs()
+      const { data: payload, error: rpcError } = await supabase.rpc('start_live_session_match_from_payload_versioned', {
+        ...rpcPayload,
+      })
+      if (rpcError) throw rpcError
+      const rpcMs = nowMs() - rpcT0
+      const nextVersion = Number(payload?.live_state_version)
+      if (Number.isFinite(nextVersion)) {
+        liveStateVersionRef.current = liveStateVersionRef.current === null
+          ? nextVersion
+          : Math.max(liveStateVersionRef.current, nextVersion)
+      }
+      if (payload.match) {
+        setLiveMatchDisplayKeys(current => ({
+          ...current,
+          [payload.match.id]: match.id,
+        }))
+        setStartedPreviewIds(current => {
+          const next = new Set(current)
+          next.add(match.id)
+          return next
+        })
+        setOptimisticLiveMatches(current => [
+          ...current.filter(row => row.id !== match.id && row.id !== payload.match.id),
+          {
+            ...payload.match,
+            client_preview_id: match.id,
+          },
+        ])
+      }
+      const applyT0 = nowMs()
+      applyLiveMatches(payload.match ? [payload.match] : [], payload.live_state_version)
+      const applyMs = nowMs() - applyT0
+      if (__DEV__) console.log('[NextRoundSuggesterV2] start live match timing', {
+        matchId: match.id,
+        courtIdx: match.court_idx,
+        roundNo: match.round_no,
+        expectedVersion,
+        nextVersion: payload?.live_state_version,
+        payloadBuildMs: Math.round(payloadBuildMs),
+        rpcMs: Math.round(rpcMs),
+        applyMs: Math.round(applyMs),
+        actionMs: Math.round(nowMs() - actionT0),
+        totalMs: Math.round(nowMs() - startT0),
+      })
+      return {
+        reload: false,
+        reconcileAfterMs: 600,
+      }
+    }
+
+    const queuedStart = liveMatchMutationQueueRef.current
+      .catch(() => undefined)
+      .then(executeStart)
+    liveMatchMutationQueueRef.current = queuedStart.then(() => undefined, () => undefined)
+
+    try {
+      const result = await queuedStart
+      startingPreviewIdsRef.current.delete(match.id)
+      setStartingPreviewIds(current => {
+        if (!current.has(match.id)) return current
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
+      if (result?.reload !== false) {
+        await loadLiveState()
+      } else {
+        scheduleReconcile(result)
+      }
+    } catch (err: any) {
+      startingPreviewIdsRef.current.delete(match.id)
+      setStartingPreviewIds(current => {
+        if (!current.has(match.id)) return current
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
+      setStartedPreviewIds(current => {
+        if (!current.has(match.id)) return current
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
+      setOptimisticLiveMatches(current => current.filter(row => row.id !== match.id))
+      const safeMessage = toUserSafeActionError(err)
+      console.warn('[NextRoundSuggesterV2] start match failed', err)
+      setError(safeMessage)
+      await loadLiveState()
+      Alert.alert('Lỗi', safeMessage)
+    }
+  }
+
+  const completeLiveMatch = async (match: SessionLiveMatchRow, score: { a: number; b: number }) => {
+    const completeT0 = nowMs()
+    if (endingLiveMatchIdsRef.current.has(match.id)) return
+    endingLiveMatchIdsRef.current.add(match.id)
+    const pressedVersion = liveStateVersionRef.current
+    if (__DEV__) console.log('[NextRoundSuggesterV2] complete live match press', {
+      matchId: match.id,
+      version: pressedVersion,
+      courtIdx: match.court_idx,
+      status: match.status,
+    })
+    setEndingLiveMatchIds(current => new Set(current).add(match.id))
+    setCompletingLiveMatchIds(current => new Set(current).add(match.id))
+    suggestedPreviewBatchRef.current = null
+    const playerIds = [...match.team_a, ...match.team_b]
+    const expectedPlayed = (state.players.get(match.team_a[0])?.matches_played ?? 0) + 1
+    completingMatchExpectedPlayedRef.current.set(match.id, { playerIds, expectedPlayed })
+    await waitForUiFrame()
+
+    const executeComplete = async () => {
+      const actionT0 = nowMs()
+      const expectedVersion = liveStateVersionRef.current
+      if (expectedVersion === null) throw new Error('Session changed')
+      const projectT0 = nowMs()
+      const projectedState = buildProjectedStateAfterLiveMatch(state, match)
+      const projectMs = nowMs() - projectT0
+      const targetT0 = nowMs()
+      const targetReachedAfterMatch = effectiveTargetRounds > 0
+        && [...projectedState.players.values()]
+          .filter(player => player.checked_out_at === null)
+          .every(player => player.matches_played >= effectiveTargetRounds)
+      const targetMs = nowMs() - targetT0
+      const fairnessT0 = nowMs()
+      const projectedScore = computeSessionFairness(projectedState).total
+      const fairnessMs = nowMs() - fairnessT0
+      const completePayload = {
+        expected_live_state_version: expectedVersion,
+        match_id: match.id,
+        score_a: score.a,
+        score_b: score.b,
+        score_after: projectedScore,
+        audit_payload: {
+          client_request_id: createClientRequestId('match'),
+          sequence_no: match.sequence_no,
+          expected_round_matches: queueCourtCount,
+        },
+      }
+      const rpcT0 = nowMs()
+      const { data, error: rpcError } = await supabase.rpc('complete_live_session_match_versioned', {
+        p_session_id: sessionId,
+        p_expected_live_state_version: completePayload.expected_live_state_version,
+        p_match_id: completePayload.match_id,
+        p_score_a: completePayload.score_a,
+        p_score_b: completePayload.score_b,
+        p_score_after: completePayload.score_after,
+        p_audit_payload: {
+          ...completePayload.audit_payload,
+          source: 'client-direct-complete-live-match',
+        },
+      })
+      if (rpcError) throw rpcError
+      const rpcMs = nowMs() - rpcT0
+      const payload = data
+      const nextVersion = Number(payload?.live_state_version)
+      if (Number.isFinite(nextVersion)) {
+        liveStateVersionRef.current = liveStateVersionRef.current === null
+          ? nextVersion
+          : Math.max(liveStateVersionRef.current, nextVersion)
+      }
+      if (__DEV__) console.log('[NextRoundSuggesterV2] complete live match committed', {
+        matchId: match.id,
+        status: payload?.match?.status,
+        liveStateVersion: payload?.live_state_version,
+        targetReachedAfterMatch,
+        projectMs: Math.round(projectMs),
+        fairnessMs: Math.round(fairnessMs),
+        rpcMs: Math.round(rpcMs),
+        sincePressMs: Math.round(nowMs() - completeT0),
+      })
+      const applyT0 = nowMs()
+      if (payload.match) {
+        applyCompletedLiveMatch(
+          payload.match,
+          payload.changed_player_state ?? [],
+          payload.changed_pair_history ?? [],
+          payload.live_state_version,
+        )
+      }
+      const applyMs = nowMs() - applyT0
+      suggestedPreviewBatchRef.current = null
+      setStartedPreviewIds(new Set())
+      const completedMatch = (payload.match ?? { ...match, status: 'completed', ended_at: new Date().toISOString() }) as SessionLiveMatchRow
+      if (__DEV__) console.log('[NextRoundSuggesterV2] complete live match timing', {
+        matchId: match.id,
+        courtIdx: match.court_idx,
+        completedStatus: completedMatch.status,
+        expectedVersion,
+        nextVersion: payload.live_state_version,
+        targetReachedAfterMatch,
+        projectMs: Math.round(projectMs),
+        fairnessMs: Math.round(fairnessMs),
+        rpcMs: Math.round(rpcMs),
+        applyMs: Math.round(applyMs),
+        targetMs: Math.round(targetMs),
+        actionMs: Math.round(nowMs() - actionT0),
+        totalMs: Math.round(nowMs() - completeT0),
+      })
+      return {
+        reload: false,
+        reconcileAfterMs: 600,
+      }
+    }
+
+    const queuedComplete = liveMatchMutationQueueRef.current
+      .catch(() => undefined)
+      .then(executeComplete)
+    liveMatchMutationQueueRef.current = queuedComplete.then(() => undefined, () => undefined)
+
+    try {
+      const result = await queuedComplete
+      if (result?.reload !== false) {
+        await loadLiveState()
+      } else {
+        scheduleReconcile(result)
+      }
+      setEndingLiveMatchIds(current => {
+        if (!current.has(match.id)) return current
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
+      const cleanupId = setTimeout(() => {
+        setCompletingLiveMatchIds(current => {
+          if (!current.has(match.id)) return current
+          const next = new Set(current)
+          next.delete(match.id)
+          return next
+        })
+      }, 8000)
+      completingCleanupTimeoutsRef.current.push(cleanupId)
+    } catch (err: any) {
+      setEndingLiveMatchIds(current => {
+        if (!current.has(match.id)) return current
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
+      completingMatchExpectedPlayedRef.current.delete(match.id)
+      setCompletingLiveMatchIds(current => {
+        const next = new Set(current)
+        next.delete(match.id)
+        return next
+      })
+      const safeMessage = toUserSafeActionError(err)
+      console.warn('[NextRoundSuggesterV2] complete match failed', err)
+      setError(safeMessage)
+      await loadLiveState()
+      Alert.alert('Lỗi', safeMessage)
+    }
+  }
+
+  const cancelLiveMatch = async (match: SessionLiveMatchRow) => {
+    const cancelT0 = nowMs()
+    suggestedPreviewBatchRef.current = null
+    setStartedPreviewIds(new Set())
+    await runAction(`cancel-match-${match.id}`, async () => {
+      const expectedVersion = liveStateVersionRef.current
+      if (expectedVersion === null) throw new Error('Session changed')
+      const rpcT0 = nowMs()
+      const { data: payload, error: rpcError } = await supabase.rpc('cancel_live_session_match_versioned', {
+        p_session_id: sessionId,
+        p_expected_live_state_version: expectedVersion,
+        p_match_id: match.id,
+        p_audit_payload: {
+          client_request_id: createClientRequestId('match'),
+          sequence_no: match.sequence_no,
+          source: 'client-direct-cancel-live-match',
+        },
+      })
+      if (rpcError) throw rpcError
+      const applyT0 = nowMs()
+      applyLiveMatches(payload.match ? [payload.match] : [], payload.live_state_version)
+      const applyMs = nowMs() - applyT0
+      if (__DEV__) console.log('[NextRoundSuggesterV2] cancel live match timing', {
+        matchId: match.id,
+        expectedVersion,
+        nextVersion: payload?.live_state_version,
+        rpcMs: Math.round(nowMs() - rpcT0),
+        applyMs: Math.round(applyMs),
+        totalMs: Math.round(nowMs() - cancelT0),
+      })
+      return {
+        reload: false,
+        reconcileAfterMs: 600,
+      }
+    })
   }
 
   const startRound = async (alternative: SuggestionAlternative) => {
@@ -372,13 +1101,22 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       if (unavailableIds.length > 0) {
         throw new Error('Manual matches must use checked-in players')
       }
-      await invokeLiveSessionFunction('session-rounds-start', sessionId, {
+      const clientRequestId = createClientRequestId('start')
+      const startAuditPayload = {
+        client_request_id: clientRequestId,
         suggestion_idx: selectedAlternative,
         manual: alternative.matches,
         decision_mode: manualAlternative !== null ? 'host_manual_matches' : 'host_selected_alternative',
         expected_state_fingerprint: buildSessionStateFingerprint(state),
         courts: courtCount,
         pvna_tolerance: pvnaTolerance,
+        client_telemetry: {
+          bootstrap: bootstrapTelemetry,
+          ...planTelemetry,
+          measured_at: new Date().toISOString(),
+          live_state_version: liveStateVersion,
+          suggestion_updating: suggestionIsUpdating,
+        },
         decision_context: {
           selected_alternative_index: selectedAlternative,
           manual_swap_applied: manualAlternative !== null,
@@ -409,25 +1147,139 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
             detail: action.detail,
           })),
         },
+      }
+      if (liveStateVersion === null) {
+        await invokeLiveSessionFunction('session-rounds-start', sessionId, startAuditPayload)
+        return
+      }
+      const payload = await invokeLiveSessionFunction('session-rounds-start-versioned', sessionId, {
+        expected_live_state_version: liveStateVersion,
+        round_no: state.current_round,
+        matches: alternative.matches,
+        resting: alternative.resting,
+        audit_payload: {
+          ...startAuditPayload,
+          source: 'NextRoundSuggesterScreenV2',
+        },
       })
+      applyStartedRound(payload?.round, payload?.live_state_version)
+      return {
+        reload: false,
+        reconcileAfterMs: 600,
+        reconcile: {
+          action: 'start',
+          expectedLiveStateVersion: payload?.live_state_version != null ? Number(payload.live_state_version) : null,
+          expectedRoundNo: Number(payload?.round?.round_no ?? state.current_round),
+          expectedRoundStatus: 'active',
+        },
+      }
     })
   }
 
   const endActiveRound = async () => {
     await runAction('end', async () => {
       if (!activeRound) throw new Error('Không có vòng active.')
-      const payload = await invokeLiveSessionFunction('session-rounds-end', sessionId, {}, { round_no: activeRound.round_no })
-      const invalidDeltas = payload?.commit_audit?.deltas?.filter((row: any) =>
-        row?.played ? row?.delta !== 1 : row?.delta !== 0
-      ) ?? []
-      if (invalidDeltas.length > 0) {
-        console.error('[NextRoundSuggesterV2] commit audit mismatch', invalidDeltas)
-        throw new Error('Round commit audit failed. Please refresh before continuing.')
+      const clientRequestId = createClientRequestId('end')
+      const validateCommitAudit = (commitAudit: any) => {
+        const invalidDeltas = commitAudit?.deltas?.filter((row: any) =>
+          row?.played ? row?.delta !== 1 : row?.delta !== 0
+        ) ?? []
+        if (invalidDeltas.length > 0) {
+          console.error('[NextRoundSuggesterV2] commit audit mismatch', invalidDeltas)
+          throw new Error('Round commit audit failed. Please refresh before continuing.')
+        }
+      }
+      if (liveStateVersion === null) {
+        const payload = await invokeLiveSessionFunction('session-rounds-end', sessionId, {}, { round_no: activeRound.round_no })
+        validateCommitAudit(payload?.commit_audit)
+        return
+      }
+      const existingPairs = pairHistoryRowsFromState(state)
+      const committed = commitCompletedRound(
+        state,
+        {
+          round_no: activeRound.round_no,
+          matches: activeRound.matches,
+          resting: activeRound.resting,
+        },
+        existingPairs,
+      )
+      const playedIds = new Set(activeRound.matches.flatMap(match => [...match.team_a, ...match.team_b]))
+      const commitAudit = {
+        deltas: [...committed.players.values()].map((player) => {
+          const before = state.players.get(player.player_id)
+          return {
+            player_id: player.player_id,
+            played: playedIds.has(player.player_id),
+            before: before?.matches_played ?? 0,
+            after: player.matches_played,
+            delta: player.matches_played - (before?.matches_played ?? 0),
+          }
+        }),
+      }
+      validateCommitAudit(commitAudit)
+      const playerStatePayload = [...committed.players.values()].map((player) => ({
+        player_id: player.player_id,
+        matches_played: player.matches_played,
+        last_played_round: player.last_played_round,
+        consecutive_rest: player.consecutive_rest,
+        consecutive_play: player.consecutive_play,
+        opted_rest: player.opted_rest,
+      }))
+      const pairHistoryPayload = changedPairHistoryRows(existingPairs, committed.pairHistory).map((row) => ({
+        player_a: row.player_a,
+        player_b: row.player_b,
+        partner_count: row.partner_count,
+        opponent_count: row.opponent_count,
+      }))
+      const scoreAfter = computeSessionFairness({
+        ...state,
+        current_round: Math.max(state.current_round, activeRound.round_no + 1),
+        players: committed.players,
+        rounds: state.rounds.map((round) =>
+          round.round_no === activeRound.round_no
+            ? {
+                ...round,
+                status: 'completed' as const,
+                ended_at: new Date(),
+              }
+            : round,
+        ),
+      }).total
+      const payload = await invokeLiveSessionFunction('session-rounds-end-versioned', sessionId, {
+        expected_live_state_version: liveStateVersion,
+        round_no: activeRound.round_no,
+        player_state: playerStatePayload,
+        pair_history: pairHistoryPayload,
+        score_after: scoreAfter,
+        audit_payload: {
+          client_request_id: clientRequestId,
+          source: 'NextRoundSuggesterScreenV2',
+          commit_audit: commitAudit,
+        },
+      }, { round_no: activeRound.round_no })
+      const changedPlayerState = Array.isArray(payload?.changed_player_state) && payload.changed_player_state.length > 0
+        ? payload.changed_player_state
+        : playerStatePayload
+      const changedPairHistory = Array.isArray(payload?.changed_pair_history) && payload.changed_pair_history.length > 0
+        ? payload.changed_pair_history
+        : pairHistoryPayload
+      applyEndedRound(activeRound.round_no, payload?.round, changedPlayerState, changedPairHistory, payload?.live_state_version)
+      return {
+        reload: false,
+        reconcileAfterMs: 600,
+        reconcile: {
+          action: 'end',
+          expectedLiveStateVersion: payload?.live_state_version != null ? Number(payload.live_state_version) : null,
+          expectedRoundNo: activeRound.round_no,
+          expectedRoundStatus: 'completed',
+        },
       }
     })
   }
 
-  const openSwapForPlayer = useCallback((playerId: string) => {
+  const openSwapForPlayer = useCallback((playerId: string, match?: SuggestedLiveMatchRow) => {
+    setSuggestedSwapMatch(match ?? null)
     setSwapFromPlayerId(playerId)
     setSheet('swap')
   }, [setSwapFromPlayerId, setSheet])
@@ -446,6 +1298,21 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
     setSheet(null)
   }
 
+  const swapPlayersInSuggestedLiveMatch = (fromId: string, toId: string) => {
+    if (!suggestedSwapMatch || fromId === toId) return
+    const nextMatch = swapPlayersInSuggestedMatch(suggestedSwapMatch, fromId, toId)
+    setSuggestedLiveMatches(current => current.map(match => match.id === nextMatch.id ? nextMatch : match))
+    if (suggestedPreviewBatchRef.current) {
+      suggestedPreviewBatchRef.current = {
+        ...suggestedPreviewBatchRef.current,
+        matches: suggestedPreviewBatchRef.current.matches.map(match => match.id === nextMatch.id ? nextMatch : match),
+      }
+    }
+    setSuggestedSwapMatch(null)
+    setSwapFromPlayerId(null)
+    setSheet(null)
+  }
+
   const plannedPlayerCount = useMemo(() => workingAlternative
     ? new Set([
       ...workingAlternative.matches.flatMap(match => [...match.team_a, ...match.team_b]),
@@ -458,20 +1325,272 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
       ...activeRound.resting,
     ]).size
     : presentCount, [activeRound, presentCount])
+  const effectiveLiveMatchRows = useMemo(() => {
+    const byId = new Map<string, LiveDisplayMatchRow>()
+    for (const match of rows.liveMatchRows) {
+      byId.set(match.id, {
+        ...match,
+        client_preview_id: liveMatchDisplayKeys[match.id],
+      })
+    }
+    for (const match of optimisticLiveMatches) {
+      if (!byId.has(match.id)) byId.set(match.id, match)
+    }
+    return [...byId.values()].sort((left, right) =>
+      (left.court_idx ?? left.sequence_no) - (right.court_idx ?? right.sequence_no)
+    )
+  }, [liveMatchDisplayKeys, optimisticLiveMatches, rows.liveMatchRows])
+  const activeLiveMatches = useMemo(
+    () => effectiveLiveMatchRows.filter(match => match.status === 'live' && !completingLiveMatchIds.has(match.id)),
+    [completingLiveMatchIds, effectiveLiveMatchRows],
+  )
+  const capacityOccupyingLiveMatchCount = useMemo(
+    () => effectiveLiveMatchRows.filter(match => match.status === 'live').length,
+    [effectiveLiveMatchRows],
+  )
+  const completedLiveMatches = useMemo(
+    () => effectiveLiveMatchRows.filter(match => match.status === 'completed'),
+    [effectiveLiveMatchRows],
+  )
+  const busyLiveMatchPlayerIds = useMemo(() => new Set(
+    effectiveLiveMatchRows
+      .filter(match => match.status === 'live')
+      .flatMap(match => [...match.team_a, ...match.team_b]),
+  ), [effectiveLiveMatchRows])
+  const nextMatchSuggestion = useMemo(
+    () => suggestNextMatch(state, {
+      tier_overrides: fairnessAdjustment.tier_overrides,
+      busy_player_ids: busyLiveMatchPlayerIds,
+    }),
+    [busyLiveMatchPlayerIds, fairnessAdjustment.tier_overrides, state],
+  )
+  const queueCourtCount = Math.max(1, Math.floor(courtCount || 1))
+  const suggestedQueueCount = Math.max(0, queueCourtCount - capacityOccupyingLiveMatchCount)
+  const previewBatchKey = useMemo(
+    () => buildPreviewBatchKey(sessionId, state, queueCourtCount, pvnaTolerance, fairnessAdjustment),
+    [fairnessAdjustment, pvnaTolerance, queueCourtCount, sessionId, state],
+  )
+  const previewRequestKey = useMemo(() => {
+    const liveRowsKey = effectiveLiveMatchRows
+      .map(match => [
+        match.id,
+        match.sequence_no,
+        match.round_no ?? '',
+        match.court_idx ?? '',
+        match.status,
+        match.team_a.join(':'),
+        match.team_b.join(':'),
+      ].join(':'))
+      .sort()
+      .join('|')
+    const completingKey = [...completingLiveMatchIds].sort().join(',')
+    const rowVersionKey = [
+      rows.liveStateVersion ?? 'noversion',
+      rows.playerRows.length,
+      rows.pairRows.length,
+      rows.roundRows.length,
+    ].join(':')
+    return [
+      previewBatchKey,
+      rowVersionKey,
+      liveRowsKey,
+      completingKey,
+      suggestedQueueCount,
+    ].join('||')
+  }, [
+    completingLiveMatchIds,
+    effectiveLiveMatchRows,
+    previewBatchKey,
+    rows.liveStateVersion,
+    rows.pairRows.length,
+    rows.playerRows.length,
+    rows.roundRows.length,
+    suggestedQueueCount,
+  ])
+  React.useEffect(() => {
+    if (previewBatchKeyRef.current === null) {
+      previewBatchKeyRef.current = previewRequestKey
+      return
+    }
+    if (previewBatchKeyRef.current === previewRequestKey) return
+    previewBatchKeyRef.current = previewRequestKey
+    setStartedPreviewIds(current => current.size === 0 ? current : new Set())
+  }, [previewRequestKey])
+  const [suggestedLiveMatches, setSuggestedLiveMatches] = useState<SuggestedLiveMatchRow[]>([])
+  const [isSuggestingPreview, setIsSuggestingPreview] = useState(false)
+  const [edgeDebug, setEdgeDebug] = useState<any>(null)
+  const previewBodyRef = useRef({
+    effectiveLiveMatchRows,
+    liveStateVersion: rows.liveStateVersion,
+    completingLiveMatchIds,
+    playersById,
+    rows,
+    queueCourtCount,
+    pvnaTolerance,
+    suggestedQueueCount,
+    sessionId,
+  })
+  previewBodyRef.current = { effectiveLiveMatchRows, liveStateVersion: rows.liveStateVersion, completingLiveMatchIds, playersById, rows, queueCourtCount, pvnaTolerance, suggestedQueueCount, sessionId }
+
+  useEffect(() => {
+    const previewReady = phase === 'plan'
+      && settingsHydrated
+      && rows.playerRows.length > 0
+
+    if (!previewReady) {
+      setSuggestedLiveMatches([])
+      suggestedPreviewBatchRef.current = null
+      return
+    }
+
+    if (suggestionIsUpdating) {
+      setSuggestedLiveMatches(prev => {
+        const newMatches = prev
+          .filter((match: SuggestedLiveMatchRow) => !startedPreviewIds.has(match.id))
+          .slice(0, suggestedQueueCount)
+        if (prev.length === newMatches.length && prev.every((m, i) => m.id === newMatches[i].id)) return prev
+        return newMatches
+      })
+      return
+    }
+
+    const cachedBatch = suggestedPreviewBatchRef.current
+    if (cachedBatch?.key === previewRequestKey) {
+      const newMatches = cachedBatch.matches
+        .filter((match: SuggestedLiveMatchRow) => !startedPreviewIds.has(match.id))
+        .slice(0, suggestedQueueCount)
+      
+      setSuggestedLiveMatches(prev => {
+        if (prev.length === newMatches.length && prev.every((m, i) => m.id === newMatches[i].id)) return prev
+        return newMatches
+      })
+      return
+    }
+
+    if (suggestedQueueCount === 0) {
+      setSuggestedLiveMatches([])
+      return
+    }
+
+    let isMounted = true
+    setIsSuggestingPreview(true)
+
+    const previewT0 = nowMs()
+    const timer = setTimeout(() => {
+      if (!isMounted) return
+      if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch start', { suggestedQueueCount, liveStateVersion: rows.liveStateVersion })
+
+      const snap = previewBodyRef.current
+      const body = {
+        count: snap.suggestedQueueCount,
+        court_count: snap.queueCourtCount,
+        pvna_tolerance: snap.pvnaTolerance,
+        live_match_rows: snap.effectiveLiveMatchRows,
+        live_state_version: snap.liveStateVersion,
+        completing_live_match_ids: Array.from(snap.completingLiveMatchIds),
+        players: Array.from(snap.playersById.entries()).map(([id, p]) => ({ id, name: p.name })),
+        player_rows: snap.rows.playerRows,
+        pair_rows: snap.rows.pairRows,
+        round_rows: snap.rows.roundRows,
+      }
+
+      fetchLiveMatchesPreview(snap.sessionId, body)
+        .then(res => {
+          if (!isMounted) return
+          setEdgeDebug(res.debug)
+          if (__DEV__) {
+            const riskyMatches = (res.payloads ?? []).filter((p: any) => p._exhaustive_diag)
+            riskyMatches.forEach((p: any) => {
+              console.log('[preview] vượt cap PVNA — exhaustive fallback diag', {
+                court: p.court_idx,
+                pvnaDiff: p._exhaustive_diag.bestPvnaDiff,
+                timedOut: p._exhaustive_diag.timedOut,
+                combinationsEvaluated: p._exhaustive_diag.combinationsEvaluated,
+                eligibleCount: p._exhaustive_diag.eligibleCount,
+                bestHasTradeoffs: p._exhaustive_diag.bestHasTradeoffs,
+                elapsedMs: p._exhaustive_diag.elapsedMs,
+              })
+            })
+          }
+          const matches = res.payloads.map((match: any, index: number): SuggestedLiveMatchRow => ({
+            ...match,
+            id: `preview-${match.court_idx ?? index}-${match.team_a.join('-')}-${match.team_b.join('-')}`,
+            session_id: sessionId,
+            sequence_no: index,
+            round_no: match.round_no,
+            court_idx: match.court_idx ?? index,
+            status: 'suggested',
+            team_a: match.team_a,
+            team_b: match.team_b,
+            resting: match.resting ?? [],
+            score_a: 0,
+            score_b: 0,
+            suggested_at: new Date().toISOString(),
+            started_at: null,
+            ended_at: null,
+          }))
+          suggestedPreviewBatchRef.current = { key: previewRequestKey, matches }
+          setSuggestedLiveMatches(matches)
+          if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch done', { totalMs: Math.round(nowMs() - previewT0), matchCount: matches.length })
+        })
+        .catch(err => {
+          setIsSuggestingPreview(false)
+          setEdgeDebug(`ERROR: ${err.message || 'Unknown error'}`)
+          console.warn('[NextRoundSuggesterV2] Live preview fetch failed', err)
+          Alert.alert('Lỗi gợi ý trận đấu', err.message || 'Không thể lấy gợi ý trận đấu từ server')
+        })
+        .finally(() => {
+          if (isMounted) setIsSuggestingPreview(false)
+        })
+    }, 80)
+
+    return () => { isMounted = false; clearTimeout(timer) }
+  }, [phase, previewRequestKey, rows.playerRows.length, settingsHydrated, suggestedQueueCount, startedPreviewIds, suggestionIsUpdating])
+  const liveLogicalRoundByMatchId = useMemo(
+    () => buildLogicalRoundDisplayMap([...completedLiveMatches, ...activeLiveMatches], queueCourtCount),
+    [activeLiveMatches, completedLiveMatches, queueCourtCount],
+  )
+  const heroRoundNo = useMemo(() => {
+    if (activeRound) return activeRound.round_no
+    if (activeLiveMatches.length > 0) {
+      return Math.min(
+        ...activeLiveMatches.map(match => liveLogicalRoundByMatchId.get(match.id) ?? ((match.round_no ?? 0) + 1)),
+      )
+    }
+    if (suggestedLiveMatches.length > 0) {
+      return Math.min(...suggestedLiveMatches.map(match => (match.round_no ?? 0) + 1))
+    }
+    const countableLiveMatches = effectiveLiveMatchRows.filter(match => match.status !== 'cancelled').length
+    return Math.floor(countableLiveMatches / queueCourtCount) + 1
+  }, [activeLiveMatches, activeRound, effectiveLiveMatchRows, liveLogicalRoundByMatchId, queueCourtCount, suggestedLiveMatches])
+  const liveCompletedRoundCount = useMemo(() => {
+    const countableLiveMatches = effectiveLiveMatchRows
+      .filter(match => match.status !== 'cancelled')
+      .length
+    if (countableLiveMatches === 0) return completedRoundCount
+    return Math.floor(countableLiveMatches / queueCourtCount)
+  }, [completedRoundCount, effectiveLiveMatchRows, queueCourtCount])
   const heroPlayerCount = phase === 'active' ? activePlayerCount : plannedPlayerCount
   const { rosterTotalCount, checkedOutCount, requestedRestCount } = useMemo(() => ({
     rosterTotalCount: rows.playerRows.length,
     checkedOutCount: rows.playerRows.filter(row => Boolean(row.checked_out_at)).length,
     requestedRestCount: rows.playerRows.filter(row => !row.checked_out_at && row.opted_rest).length,
   }), [rows.playerRows])
+  const planningInProgress = phase === 'plan' && (!settingsHydrated || !workingAlternative) && (
+    !settingsHydrated
+    || suggestionIsUpdating
+    || busy === 'sync'
+    || (rows.playerRows.length === 0 && checkedInPlayers.length > 0 && !autoSyncAttemptedRef.current)
+  )
   const lateArrivalPlayers = useMemo(() => {
     const livePlayerIds = new Set(rows.playerRows.map(row => String(row.player_id)))
     return players.filter(player => {
+      const playerId = String(player.id)
       if (player.status && player.status !== 'confirmed') return false
       const status = player.checkInStatus
-      return (status === 'pending' || status === 'no_show') && !livePlayerIds.has(String(player.id))
+      return (status === 'pending' || status === 'no_show') && (!livePlayerIds.has(playerId) || busy === `late-${playerId}`)
     })
-  }, [rows.playerRows, players])
+  }, [busy, rows.playerRows, players])
 
   const navbarRightSlot = <NavbarRightActions sessionId={sessionId} onRefresh={loadLiveState} refreshing={refreshing} />
 
@@ -485,7 +1604,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
 
   return (
     <View testID="nrv2-screen" style={{ flex: 1, backgroundColor: theme.background }}>
-      <SecondaryNavbar title="VÒNG KẾ TIẾP" rightSlot={navbarRightSlot} />
+      <SecondaryNavbar title={phase === 'recap' ? 'BÁO CÁO TRẬN ĐẤU' : 'QUẢN LÝ TRẬN ĐẤU'} rightSlot={navbarRightSlot} />
       {phase === 'recap' ? (
         <RecapViewModule
           summary={sessionSummary}
@@ -493,126 +1612,92 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
           matchCountConsistencyRows={matchCountConsistencyRows}
           groupSummaries={groupSummaries}
           playersById={playersById}
+          liveMatchRows={rows.liveMatchRows}
           onOpenHistory={() => setSheet('history')}
           onContinue={() => setShowSessionReport(false)}
+          hideContinue={initialShowReport}
         />
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 126 + insets.bottom }}
         >
-          <SessionHeroCard
+          <SessionDashboardCard
             phase={phase}
-            roundNo={activeRound?.round_no ?? state.current_round}
+            roundNo={heroRoundNo}
             presentCount={heroPlayerCount}
             rosterTotalCount={rosterTotalCount}
             checkedOutCount={checkedOutCount}
             requestedRestCount={requestedRestCount}
+            lateCount={lateArrivalPlayers.length}
+            groupSummaries={groupSummaries}
+            playersById={playersById}
             courtCount={courtCount}
-            completedRounds={completedRoundCount}
-            targetRounds={effectiveTargetRounds}
-          />
-
-          <StatusChipRow
+            roundPace={15}
+            pvnaTolerance={pvnaTolerance}
+            sessionDuration={courtDurationMin}
             fairnessScore={fairnessScore}
-            courtCount={courtCount}
-            courtPreset={courtPreset}
+            completedRounds={liveCompletedRoundCount}
+            targetRounds={effectiveTargetRounds}
+            onOpenRoster={openRoster}
             onFairnessPress={() => setSheet('fairness')}
             onSettingsPress={() => setSheet('settings')}
+            onLatePress={() => setSheet('late-arrivals')}
           />
-
-          {lateArrivalPlayers.length > 0 ? (
-            <LateArrivalsCta count={lateArrivalPlayers.length} onPress={() => setSheet('late-arrivals')} />
-          ) : null}
-
-          {targetReached && !activeRound ? (
-            <Card style={{ marginTop: 14, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: theme.primary }}>
-                Đã đủ số vòng mục tiêu
-              </Text>
-              <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.onSurface }}>
-                Host có thể xem tổng kết fairness hoặc chạy thêm một vòng nếu kèo vẫn muốn chơi tiếp.
-              </Text>
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                <TouchableOpacity
-                  onPress={() => setShowSessionReport(true)}
-                  style={{ flex: 1, height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <Text style={ctaTextStyle(theme.onPrimary, 12)}>Xem tổng kết</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => setShowSessionReport(false)}
-                  style={{ flex: 1, height: 44, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <Text style={ctaTextStyle(theme.primary, 12)}>Chạy thêm vòng</Text>
-                </TouchableOpacity>
-              </View>
-            </Card>
-          ) : null}
 
           {phase === 'plan' && (
             <>
-              <AlternativeTabs
-                alternatives={suggestion.alternatives}
-                audits={alternativeAudits}
-                alternativeOrder={alternativeOrder}
-                selectedIndex={selectedAlternative}
-                onSelect={selectAlternativeForRound}
-                onOpenHistory={() => setSheet('history')}
-                onOpenRoster={openRoster}
-                targetReachedLabel={`${Math.min(completedRoundCount, effectiveTargetRounds)}/${effectiveTargetRounds} vòng`}
+              {reportReady && !activeRound ? (
+                <Card style={{ marginTop: 14, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: theme.primary }}>
+                    Đã đủ số vòng mục tiêu
+                  </Text>
+                  <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.onSurface }}>
+                    Có thể xem report hoặc tạo thêm trận nếu buổi chơi vẫn tiếp tục.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setShowSessionReport(true)}
+                    style={{ marginTop: 12, height: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={ctaTextStyle(theme.onPrimary, 12)}>Xem report</Text>
+                  </TouchableOpacity>
+                </Card>
+              ) : null}
+              <LiveMatchBoard
+                liveMatches={activeLiveMatches}
+                suggestedMatches={suggestedLiveMatches}
+                completedMatches={completedLiveMatches}
+                roundSize={queueCourtCount}
+                targetRounds={effectiveTargetRounds}
+                roundPace={15}
+                busy={busy}
+                startingPreviewIds={startingPreviewIds}
+                endingLiveMatchIds={endingLiveMatchIds}
+                state={state}
+                pvnaTolerance={pvnaTolerance}
+                playersById={playersById}
+                onStartMatch={startLiveMatch}
+                onCompleteMatch={completeLiveMatch}
+                onCancelMatch={cancelLiveMatch}
+                onPlayerPress={openSwapForPlayer}
+                onOpenSettings={() => setSheet('settings')}
               />
-              {workingAlternative ? (
-                <>
-                  {fairnessPreview ? (
-                    <FairnessPreviewCard preview={fairnessPreview} onPress={() => setSheet('preview')} />
-                  ) : null}
-                  <EngineConstraintNotice
+              {suggestedLiveMatches.length === 0 && activeLiveMatches.length === 0 ? (
+                planningInProgress || isSuggestingPreview ? (
+                  <PlanningRoundCard syncingRoster={busy === 'sync' || isSuggestingPreview} />
+                ) : (
+                  <EmptyPlanCard
                     state={state}
-                    suggestion={suggestion}
-                    courtCount={courtCount}
+                    suggestion={nextMatchSuggestion}
+                    courtCount={1}
                     tierOverrides={fairnessAdjustment.tier_overrides}
                     onSetCourtCount={setCourtCount}
                     onOpenSettings={() => setSheet('settings')}
+                    onSyncRoster={syncRoster}
+                    busy={busy === 'sync'}
                   />
-                  <EngineExplainCard
-                    alternative={workingAlternative}
-                    actions={suggestedRoundActions}
-                    alternativeOrder={alternativeOrder}
-                    expanded={showEngineStats}
-                    onToggle={() => setShowEngineStats(value => !value)}
-                    onApplyAction={applySuggestedRoundAction}
-                    currentFairness={fairnessScore.total}
-                  />
-                  <MatchList
-                    title={`${workingAlternative.matches.length} trận · ${workingAlternative.matches.length * 4} người chơi`}
-                    matches={workingAlternative.matches}
-                    state={state}
-                    playersById={playersById}
-                    onPlayerPress={openSwapForPlayer}
-                  />
-                  <RestingRow resting={workingAlternative.resting} playersById={playersById} />
-                  {hasManualSwapHardGuard ? (
-                    <View style={{ marginTop: 12, backgroundColor: theme.dangerBg, borderRadius: RADIUS.md, padding: 12, borderWidth: BORDER.hairline, borderColor: theme.dangerText, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <AlertTriangle size={16} color={theme.dangerText} />
-                      <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.dangerText, lineHeight: 17 }}>
-                        Swap hiện tại vi phạm hard guard PVNA/team. Hãy hoàn tác hoặc chọn phương án khác trước khi bắt đầu.
-                      </Text>
-                    </View>
-                  ) : null}
-                </>
-              ) : (
-                <EmptyPlanCard
-                  state={state}
-                  suggestion={suggestion}
-                  courtCount={courtCount}
-                  tierOverrides={fairnessAdjustment.tier_overrides}
-                  onSetCourtCount={setCourtCount}
-                  onOpenSettings={() => setSheet('settings')}
-                  onSyncRoster={syncRoster}
-                  busy={busy === 'sync'}
-                />
-              )}
+                )
+              ) : null}
             </>
           )}
 
@@ -655,16 +1740,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         </ScrollView>
       )}
 
-      {phase !== 'recap' && (
+      {phase !== 'recap' && phase === 'active' && (
         <StickyRoundCta
           busy={busy}
-          primaryLabel={phase === 'active' ? 'Kết thúc & lưu vòng' : targetReached ? 'Chạy thêm vòng' : 'Bắt đầu vòng kế'}
+          primaryLabel={phase === 'active' ? 'Kết thúc & lưu vòng' : reportReady ? 'Tạo thêm trận' : completedLiveMatches.length === 0 ? 'Tạo các trận đầu tiên' : 'Tạo trận kế tiếp'}
           onPrimary={() => {
             if (phase === 'active') void endActiveRound()
-            else if (workingAlternative) void startRound(workingAlternative)
+            else return
           }}
-          disabled={phase === 'plan' && (!workingAlternative || hasManualSwapHardGuard || suggestionIsUpdating)}
-          computing={phase === 'plan' && suggestionIsUpdating}
+          disabled={false}
+          computing={false}
           onMore={() => setSheet('more')}
         />
       )}
@@ -701,15 +1786,29 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         <FairnessPreviewSheet preview={fairnessPreview} />
       </NextRoundSheet>
 
-      <NextRoundSheet visible={sheet === 'swap'} snap="88" onClose={() => setSheet(null)}>
-        <SwapSheetView
-          state={state}
-          alternative={workingAlternative}
-          playersById={playersById}
-          swapFromPlayerId={swapFromPlayerId}
-          setSwapFromPlayerId={setSwapFromPlayerId}
-          onSwap={swapPlayersInWorkingAlternative}
-        />
+      <NextRoundSheet visible={sheet === 'swap'} snap="88" onClose={() => {
+        setSuggestedSwapMatch(null)
+        setSheet(null)
+      }}>
+        {suggestedSwapMatch ? (
+          <SuggestedLiveMatchSwapSheet
+            match={suggestedSwapMatch}
+            state={state}
+            playersById={playersById}
+            swapFromPlayerId={swapFromPlayerId}
+            setSwapFromPlayerId={setSwapFromPlayerId}
+            onSwap={swapPlayersInSuggestedLiveMatch}
+          />
+        ) : (
+          <SwapSheetView
+            state={state}
+            alternative={workingAlternative}
+            playersById={playersById}
+            swapFromPlayerId={swapFromPlayerId}
+            setSwapFromPlayerId={setSwapFromPlayerId}
+            onSwap={swapPlayersInWorkingAlternative}
+          />
+        )}
       </NextRoundSheet>
 
 
@@ -721,12 +1820,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
         <LateArrivalsSheetView players={lateArrivalPlayers} busy={busy} onAddPlayer={playerId => { void addLateArrivalToRoster(playerId) }} />
       </NextRoundSheet>
 
-      <NextRoundSheet visible={sheet === 'more'} snap="50" onClose={() => setSheet(null)}>
+<NextRoundSheet visible={sheet === 'more'} snap="50" onClose={() => setSheet(null)}>
         <MoreSheetView
           onSyncRoster={syncRoster}
           onOpenRoster={openRoster}
+          onOpenReport={() => {
+            setSheet(null)
+            setShowSessionReport(true)
+          }}
           onOpenHistory={() => setSheet('history')}
           onOpenFairness={() => setSheet('fairness')}
+          canOpenReport={reportReady && !activeRound}
           busy={busy}
         />
       </NextRoundSheet>
@@ -734,1245 +1838,216 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts }: NextR
   )
 }
 
-function SessionHeroCard({
-  phase,
-  roundNo,
-  presentCount,
-  rosterTotalCount,
-  checkedOutCount,
-  requestedRestCount,
-  courtCount,
-  completedRounds,
-  targetRounds,
-}: {
-  phase: 'plan' | 'active'
-  roundNo: number
-  presentCount: number
-  rosterTotalCount: number
-  checkedOutCount: number
-  requestedRestCount: number
-  courtCount: number
-  completedRounds: number
-  targetRounds: number
-}) {
-  const theme = useAppTheme()
-  const remaining = Math.max(0, targetRounds - completedRounds)
-  return (
-    <LinearGradient
-      colors={[theme.heroGradientStart, theme.primaryContainer]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ borderRadius: RADIUS.lg, padding: 16, minHeight: 134 }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: theme.heroLiveDot }} />
-            <Text style={eyebrowStyle(theme.heroBodyMuted, 10)}>
-              {phase === 'active' ? 'Đang diễn ra · Live' : 'Vòng kế tiếp · Đề xuất'}
-            </Text>
-          </View>
-          <Text style={{ marginTop: 10, fontFamily: SCREEN_FONTS.headlineItalic, fontSize: 32, color: theme.surface }}>
-            Vòng {roundNo}
-          </Text>
-          <Text style={{ marginTop: 7, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
-            {presentCount} {phase === 'active' ? 'trong vòng' : 'trong danh sách'} · {courtCount} sân · {completedRounds}/{targetRounds} vòng
-          </Text>
-          <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.heroBodyMuted }}>
-            Roster {rosterTotalCount} · Check-out {checkedOutCount} · Xin nghỉ {requestedRestCount}
-          </Text>
-        </View>
-        <View
-          style={{
-            backgroundColor: theme.heroPillBg,
-            borderRadius: RADIUS.full,
-            paddingHorizontal: 12,
-            paddingVertical: 8,
-          }}
-        >
-          <Text style={ctaTextStyle(theme.heroCountdownText, 12)}>
-            {phase === 'active' ? 'LIVE' : `Còn ${remaining} vòng`}
-          </Text>
-        </View>
-      </View>
-    </LinearGradient>
-  )
+function swapPlayersInSuggestedMatch(match: SuggestedLiveMatchRow, fromId: string, toId: string): SuggestedLiveMatchRow {
+  const replaceInTeam = (team: string[]) => team.map(playerId => {
+    if (playerId === fromId) return toId
+    if (playerId === toId) return fromId
+    return playerId
+  }) as [string, string]
+
+  const teamA = replaceInTeam(match.team_a)
+  const teamB = replaceInTeam(match.team_b)
+  const toWasResting = (match.resting ?? []).includes(toId)
+  const restingBase = toWasResting
+    ? [...(match.resting ?? []).filter(playerId => playerId !== toId), fromId]
+    : (match.resting ?? [])
+  const playingAfter = new Set([...teamA, ...teamB])
+  const resting = [...new Set(restingBase)].filter(playerId => !playingAfter.has(playerId))
+
+  return {
+    ...match,
+    team_a: teamA,
+    team_b: teamB,
+    resting,
+  }
 }
 
-function LateArrivalsCta({ count, onPress }: { count: number; onPress: () => void }) {
-  const theme = useAppTheme()
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.88}
-      style={{
-        marginTop: 12,
-        borderRadius: RADIUS.md,
-        backgroundColor: theme.warningBg,
-        borderWidth: BORDER.hairline,
-        borderColor: theme.warningStrong,
-        padding: 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-      }}
-    >
-      <View style={{ width: 32, height: 32, borderRadius: RADIUS.full, backgroundColor: theme.surface, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.warningText }}>{count}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.warningText }}>Có người đến muộn</Text>
-        <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.warningText }}>
-          Thêm vào roster trước khi gợi ý vòng tiếp theo.
-        </Text>
-      </View>
-      <Text style={ctaTextStyle(theme.warningText, 11)}>Mở</Text>
-    </TouchableOpacity>
-  )
+function buildSuggestedSwapImpact(match: SuggestedLiveMatchRow, fromId: string, toId: string, state: SessionState) {
+  const beforePvnaDiff = Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state))
+  const beforeRepeat = getProjectedRepeatSummary(match.team_a, match.team_b, state)
+  const afterMatch = swapPlayersInSuggestedMatch(match, fromId, toId)
+  const afterPvnaDiff = Math.abs(getTeamPvna(afterMatch.team_a, state) - getTeamPvna(afterMatch.team_b, state))
+  const afterRepeat = getProjectedRepeatSummary(afterMatch.team_a, afterMatch.team_b, state)
+  const beforeRepeatOver = beforeRepeat.pair_over_by + beforeRepeat.player_over_by
+  const afterRepeatOver = afterRepeat.pair_over_by + afterRepeat.player_over_by
+  const pvnaDelta = afterPvnaDiff - beforePvnaDiff
+  const repeatDelta = afterRepeatOver - beforeRepeatOver
+  const qualityDelta = -pvnaDelta - repeatDelta * 0.35
+  const label = qualityDelta > 0.08
+    ? 'Tốt hơn'
+    : qualityDelta < -0.08
+      ? 'Giảm chất lượng'
+      : 'Ít đổi'
+
+  return {
+    label,
+    qualityDelta,
+    beforePvnaDiff,
+    afterPvnaDiff,
+    beforeRepeatOver,
+    afterRepeatOver,
+    beforePartnerMax: beforeRepeat.max_partner_pair_count,
+    afterPartnerMax: afterRepeat.max_partner_pair_count,
+    beforeOpponentMax: beforeRepeat.max_opponent_pair_count,
+    afterOpponentMax: afterRepeat.max_opponent_pair_count,
+  }
 }
 
-function StatusChipRow({
-  fairnessScore,
-  courtCount,
-  courtPreset,
-  onFairnessPress,
-  onSettingsPress,
-}: {
-  fairnessScore: SessionFairnessScore
-  courtCount: number
-  courtPreset: CourtPreset
-  onFairnessPress: () => void
-  onSettingsPress: () => void
-}) {
-  const theme = useAppTheme()
-  const preset = PRESETS[courtPreset]
-  return (
-    <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-      <TouchableOpacity testID="nrv2-fairness-chip" onPress={onFairnessPress} activeOpacity={0.9} style={{ flex: 1 }}>
-        <Card style={{ borderRadius: RADIUS.lg, padding: 12, minHeight: 72 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <ShieldCheck size={18} color={theme.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={eyebrowStyle(theme.outline)}>Fairness</Text>
-              <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>
-                {fairnessScore.total} {fairnessLabel(fairnessScore)}
-              </Text>
-            </View>
-          </View>
-        </Card>
-      </TouchableOpacity>
-      <TouchableOpacity testID="nrv2-settings-chip" onPress={onSettingsPress} activeOpacity={0.9} style={{ flex: 1 }}>
-        <Card style={{ borderRadius: RADIUS.lg, padding: 12, minHeight: 72 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Settings size={18} color={theme.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={eyebrowStyle(theme.outline)}>Cài đặt</Text>
-              <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>
-                {courtCount} sân · {preset.label}
-              </Text>
-            </View>
-          </View>
-        </Card>
-      </TouchableOpacity>
-    </View>
-  )
-}
-
-function auditDeltaLines(best: AlternativeAudit, current: AlternativeAudit): string[] {
-  type DeltaEntry = { label: string; delta: number; worse: boolean }
-  const entries: DeltaEntry[] = []
-
-  const opponentBurdenDelta = current.max_opponent_burden - best.max_opponent_burden
-  if (opponentBurdenDelta !== 0) {
-    entries.push({ label: `Lặp đối thủ ${opponentBurdenDelta > 0 ? '+' : ''}${opponentBurdenDelta}`, delta: Math.abs(opponentBurdenDelta), worse: opponentBurdenDelta > 0 })
-  }
-  const opponentPairDelta = current.opponent_repeat_pairs - best.opponent_repeat_pairs
-  if (opponentPairDelta !== 0) {
-    entries.push({ label: `Cặp đối thủ lặp ${opponentPairDelta > 0 ? '+' : ''}${opponentPairDelta}`, delta: Math.abs(opponentPairDelta), worse: opponentPairDelta > 0 })
-  }
-  const partnerPairDelta = current.partner_repeat_pairs - best.partner_repeat_pairs
-  if (partnerPairDelta !== 0) {
-    entries.push({ label: `Cặp partner lặp ${partnerPairDelta > 0 ? '+' : ''}${partnerPairDelta}`, delta: Math.abs(partnerPairDelta), worse: partnerPairDelta > 0 })
-  }
-  const matchRangeDelta = current.match_range - best.match_range
-  if (matchRangeDelta !== 0) {
-    entries.push({ label: `Lệch số trận ${matchRangeDelta > 0 ? '+' : ''}${matchRangeDelta}`, delta: Math.abs(matchRangeDelta), worse: matchRangeDelta > 0 })
-  }
-  const pvnaDelta = current.pvna_diff - best.pvna_diff
-  if (Math.abs(pvnaDelta) >= 0.3) {
-    entries.push({ label: `PVNA ${pvnaDelta > 0 ? '+' : ''}${pvnaDelta.toFixed(1)}`, delta: Math.abs(pvnaDelta), worse: pvnaDelta > 0 })
-  }
-
-  // 1 stat xấu nhất + 1 stat tốt nhất nếu có cả 2 chiều, ngược lại 2 stat lớn nhất
-  const worse = entries.filter(e => e.worse).sort((a, b) => b.delta - a.delta)
-  const better = entries.filter(e => !e.worse).sort((a, b) => b.delta - a.delta)
-  if (worse.length > 0 && better.length > 0) {
-    return [worse[0].label, better[0].label]
-  }
-  return entries.sort((a, b) => b.delta - a.delta).slice(0, 2).map(e => e.label)
-}
-
-function AlternativeTabs({
-  alternatives,
-  audits,
-  alternativeOrder,
-  selectedIndex,
-  onSelect,
-  onOpenHistory,
-  onOpenRoster,
-  targetReachedLabel,
-}: {
-  alternatives: SuggestionAlternative[]
-  audits: AlternativeAudit[]
-  alternativeOrder: number[]
-  selectedIndex: number
-  onSelect: (index: number) => void
-  onOpenHistory: () => void
-  onOpenRoster: () => void
-  targetReachedLabel: string
-}) {
-  const theme = useAppTheme()
-  const bestOriginalIndex = alternativeOrder[0] ?? 0
-  const bestAudit = audits[bestOriginalIndex]
-  return (
-    <View style={{ marginTop: 18 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <Text style={eyebrowStyle(theme.outline)}>{alternatives.length} phương án · Đề xuất</Text>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <TouchableOpacity onPress={onOpenHistory}>
-            <Text style={eyebrowStyle(theme.primary)}>{targetReachedLabel}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity testID="nrv2-roster-link" onPress={onOpenRoster}>
-            <Text style={eyebrowStyle(theme.primary)}>Người chơi</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-      <View style={{ gap: 8 }}>
-        {alternativeOrder.slice(0, 3).map((originalIndex, displayIndex) => {
-          const alternative = alternatives[originalIndex]
-          const audit = audits[originalIndex]
-          if (!alternative || !audit) return null
-          const active = selectedIndex === originalIndex
-          const isBest = displayIndex === 0
-          const deltaLines = !isBest && bestAudit ? auditDeltaLines(bestAudit, audit) : []
-          const hasDelta = deltaLines.length > 0
-          return (
-            <TouchableOpacity
-              key={`alt-${originalIndex}`}
-              testID={`nrv2-alt-tab-${originalIndex}`}
-              onPress={() => onSelect(originalIndex)}
-              activeOpacity={0.9}
-              style={{
-                borderRadius: RADIUS.md,
-                borderWidth: BORDER.hairline,
-                borderColor: active ? theme.primary : theme.outlineVariant,
-                backgroundColor: active ? theme.primary : 'transparent',
-                paddingHorizontal: 12,
-                paddingVertical: hasDelta ? 8 : 0,
-                minHeight: 44,
-                flexDirection: 'row',
-                alignItems: hasDelta ? 'flex-start' : 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <View style={{ flex: 1, justifyContent: 'center', paddingVertical: hasDelta ? 2 : 0 }}>
-                <Text style={ctaTextStyle(active ? theme.onPrimary : theme.onSurface, 13)}>
-                  ALT {displayIndex + 1}
-                </Text>
-                {hasDelta ? (
-                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: active ? 'rgba(255,255,255,0.72)' : theme.outline, marginTop: 2, lineHeight: 14 }}>
-                    {deltaLines.join(' · ')}
-                  </Text>
-                ) : null}
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: hasDelta ? 2 : 0 }}>
-                <View
-                  style={{
-                    borderRadius: RADIUS.full,
-                    paddingHorizontal: 9,
-                    paddingVertical: 4,
-                    backgroundColor: active ? 'rgba(255,255,255,0.16)' : theme.secondaryContainer,
-                  }}
-                >
-                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: active ? theme.onPrimary : theme.primary }}>
-                    {audit.fairness_total}
-                  </Text>
-                </View>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: active ? theme.onPrimary : theme.outline }}>
-                  {isBest ? 'Tốt nhất' : `${(audit.fairness_total - (bestAudit?.fairness_total ?? 0)).toFixed(0)}`}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )
-        })}
-      </View>
-    </View>
-  )
-}
-
-function FairnessPreviewCard({ preview, onPress }: { preview: FairnessPreview; onPress: () => void }) {
-  const theme = useAppTheme()
-  const beforeTotal = preview.before_total
-  const afterTotal = preview.after_total
-  const delta = preview.delta_total
-  const tone = delta >= 0 ? theme.successText : theme.warningText
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={{ marginTop: 14 }}>
-      <Card style={{ borderRadius: RADIUS.md, padding: 14 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <View
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: RADIUS.md,
-              backgroundColor: delta >= 0 ? theme.successBg : theme.warningBg,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <ShieldCheck size={18} color={tone} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={eyebrowStyle(theme.outline)}>Dự kiến điểm vòng kế</Text>
-            <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>
-              {beforeTotal} → {afterTotal}
-            </Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline, marginTop: 4 }}>
-              Bấm để xem audit chi tiết: partner (đồng đội), đối thủ, nhịp nghỉ và áp lực lặp
-            </Text>
-          </View>
-          <View style={{ borderRadius: RADIUS.full, backgroundColor: delta >= 0 ? theme.successBg : theme.warningBg, paddingHorizontal: 10, paddingVertical: 5 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: tone }}>{delta >= 0 ? `+${delta}` : delta}</Text>
-          </View>
-        </View>
-      </Card>
-    </TouchableOpacity>
-  )
-}
-
-function FairnessPreviewSheet({ preview }: { preview: FairnessPreview | null }) {
-  const theme = useAppTheme()
-  if (!preview) {
-    return <SheetTitle title="Dự kiến điểm vòng kế" subtitle="Chưa có phương án vòng kế để đánh giá." />
-  }
-
-  const tone = preview.delta_total >= 0 ? theme.successText : theme.warningText
-  const summaryBg = preview.delta_total >= 0 ? theme.successBg : theme.warningBg
-  const pressureText = preview.pressure_after.repeat_risk === 'low'
-    ? 'Ít nguy cơ lặp partner (đồng đội) hoặc đối thủ.'
-    : preview.pressure_after.repeat_risk === 'medium'
-      ? 'Có thể bắt đầu lặp một vài partner (đồng đội) hoặc đối thủ.'
-      : 'Áp lực lặp partner (đồng đội) hoặc đối thủ đang cao.'
-  const availabilityText = preview.availability_after.churn_level === 'low'
-    ? 'Danh sách người chơi ổn định.'
-    : preview.availability_after.churn_level === 'medium'
-      ? 'Có thay đổi người chơi, điểm độ cân bằng (fairness) đã tính nhẹ hơn.'
-      : 'Người vào/ra nhiều, nên xem đây là kèo khó giữ đều tuyệt đối.'
-  return (
-    <View>
-      <SheetTitle title="Nếu bắt đầu vòng này" subtitle="Ước tính độ cân bằng sau khi lưu phương án đang chọn." />
-      <LinearGradient colors={[theme.heroGradientStart, theme.primaryContainer]} style={{ borderRadius: RADIUS.lg, padding: 16, marginBottom: 14 }}>
-        <Text style={eyebrowStyle(theme.heroCountdownText)}>Điểm dự kiến</Text>
-        <Text style={{ marginTop: 8, fontFamily: SCREEN_FONTS.headlineItalic, fontSize: 42, color: theme.surface }}>
-          {preview.before_total} → {preview.after_total}
-        </Text>
-        <View style={{ alignSelf: 'flex-start', marginTop: 8, backgroundColor: theme.heroPillBg, borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 5 }}>
-          <Text style={ctaTextStyle(theme.heroCountdownText, 12)}>
-            {preview.delta_total > 0 ? '+' : ''}{preview.delta_total}
-          </Text>
-        </View>
-      </LinearGradient>
-
-      <Card style={{ borderRadius: RADIUS.md, padding: 12, marginBottom: 12, backgroundColor: summaryBg }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: tone }}>
-          {preview.delta_total >= 0 ? 'Phương án này giữ độ cân bằng tốt' : 'Phương án này làm giảm độ cân bằng'}
-        </Text>
-        <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: tone }}>
-          Điểm thay đổi {preview.delta_total > 0 ? '+' : ''}{preview.delta_total}. {pressureText} {availabilityText}
-        </Text>
-      </Card>
-
-      <Card style={{ borderRadius: RADIUS.md, padding: 12, marginBottom: 12, backgroundColor: theme.secondaryContainer }}>
-        <Text style={eyebrowStyle(theme.primary)}>Các chỉ số nền</Text>
-        <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.onSurface }}>
-          Áp lực lặp partner (đồng đội) hoặc đối thủ: {repeatRiskLabel(preview.pressure_before.repeat_risk)} → {repeatRiskLabel(preview.pressure_after.repeat_risk)}.
-        </Text>
-        <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.onSurface }}>
-          Hệ số giảm phạt: {preview.pressure_before.penalty_multiplier.toFixed(2)} → {preview.pressure_after.penalty_multiplier.toFixed(2)}. Áp lực đối thủ: {preview.pressure_before.opponent_pressure.toFixed(2)} → {preview.pressure_after.opponent_pressure.toFixed(2)}.
-        </Text>
-        <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: theme.onSurface }}>
-          Biến động người chơi: {churnLevelLabel(preview.availability_before.churn_level)} → {churnLevelLabel(preview.availability_after.churn_level)}. Tỉ lệ người vào/ra: {(preview.availability_before.avg_churn_ratio * 100).toFixed(0)}% → {(preview.availability_after.avg_churn_ratio * 100).toFixed(0)}%.
-        </Text>
-      </Card>
-
-      <View style={{ gap: 8 }}>
-        {preview.rows.map(row => (
-          <Card key={`preview-row-${row.key}`} style={{ borderRadius: RADIUS.md, padding: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{row.label}</Text>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.outline }}>
-                {row.before} → {row.after}
-              </Text>
-              <Text style={{ width: 36, textAlign: 'right', fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: row.delta >= 0 ? theme.primary : tone }}>
-                {row.delta > 0 ? '+' : ''}{row.delta}
-              </Text>
-            </View>
-            <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 16, color: theme.outline }}>
-              {describePreviewRow(row)}
-            </Text>
-          </Card>
-        ))}
-      </View>
-    </View>
-  )
-}
-
-function describePreviewRow(row: FairnessPreview['rows'][number]) {
-  if (row.key === 'match_count') {
-    return row.delta < 0
-      ? 'Một số người sẽ lệch số trận sau vòng này. Nếu lệch chỉ 1 trận thì thường vẫn ổn.'
-      : 'Số trận giữa người chơi vẫn cân bằng.'
-  }
-  if (row.key === 'partner_diversity') {
-    return row.delta < 0
-      ? 'Có thêm cặp đánh chung bị lặp.'
-      : 'Không làm xấu độ đa dạng partner (đồng đội).'
-  }
-  if (row.key === 'opponent_diversity') {
-    return row.delta < 0
-      ? 'Có thêm đối thủ bị gặp lại.'
-      : 'Không làm xấu độ đa dạng đối thủ.'
-  }
-  if (row.key === 'rest') {
-    return row.delta < 0
-      ? 'Có người nghỉ liên tiếp hoặc nhịp nghỉ xấu hơn.'
-      : 'Nhịp nghỉ vẫn ổn.'
-  }
-  if (row.key === 'gender_prefs') {
-    return row.delta < 0
-      ? 'Một số sở thích giới tính không được đáp ứng trong vòng này.'
-      : 'Sở thích giới tính vẫn được giữ tốt.'
-  }
-  return row.detail
-}
-
-function EngineExplainCard({
-  alternative,
-  actions,
-  alternativeOrder,
-  expanded,
-  onToggle,
-  onApplyAction,
-  currentFairness,
-}: {
-  alternative: SuggestionAlternative
-  actions: SuggestedRoundAction[]
-  alternativeOrder: number[]
-  expanded: boolean
-  onToggle: () => void
-  onApplyAction: (action: SuggestedRoundAction) => void
-  currentFairness: number
-}) {
-  const theme = useAppTheme()
-  const betterAltAction = actions.find((a): a is Extract<SuggestedRoundAction, { type: 'select_alternative' }> => a.type === 'select_alternative')
-  const setupActions = actions.filter((a): a is Extract<SuggestedRoundAction, { type: 'set_pvna_tolerance' | 'set_courts' }> => a.type === 'set_pvna_tolerance' || a.type === 'set_courts')
-  const comparisonReasons = betterAltAction?.after ? improvementReasons(betterAltAction.before, betterAltAction.after) : []
-  const displayIndexOf = (originalIndex: number) => alternativeOrder.indexOf(originalIndex)
-
-  return (
-    <Card style={{ marginTop: 12, borderRadius: RADIUS.md, padding: 14, backgroundColor: theme.secondaryContainer }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <Sparkles size={16} color={theme.primary} />
-        <Text style={eyebrowStyle(theme.primary)}>Engine giải thích</Text>
-      </View>
-
-      {betterAltAction ? (
-        <>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.onSurface }}>
-            ALT {displayIndexOf(betterAltAction.alternative_index) + 1} tốt hơn phương án đang chọn
-          </Text>
-          {comparisonReasons.length > 0 ? (
-            <View style={{ marginTop: 8, gap: 4 }}>
-              {comparisonReasons.map((reason, i) => (
-                <View key={i} style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline }}>·</Text>
-                  <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurface, lineHeight: 17 }}>
-                    {reason}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-        </>
-      ) : (
-        <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, lineHeight: 19, color: theme.onSurface }}>
-          Đây là phương án tối ưu cho vòng này. Engine cân PVNA, hạn chế lặp partner/đối thủ, giữ nhịp nghỉ và tôn trọng group/sở thích.
-        </Text>
-      )}
-
-      <TouchableOpacity onPress={onToggle} style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Text style={ctaTextStyle(theme.outline, 11)}>Chi tiết điểm ghép</Text>
-        <ChevronDown size={14} color={theme.outline} />
-      </TouchableOpacity>
-      {expanded ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-          {[
-            ['Chênh PVNA', alternative.stats.pvna_diff.toFixed(2)],
-            ['Lặp partner', String(alternative.stats.partner_repeats)],
-            ['Lặp đối thủ', String(alternative.stats.opponent_repeats)],
-            ['Điểm ưu tiên group', String(alternative.stats.group_bonus)],
-            ['Sở thích giới tính', alternative.stats.gender_pref_penalty.toFixed(1)],
-            ['Điểm ghép tổng', alternative.score.toFixed(1)],
-          ].map(([label, value]) => (
-            <View key={label} style={{ width: '48%', backgroundColor: theme.surface, borderRadius: RADIUS.md, padding: 10, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant }}>
-              <Text style={eyebrowStyle(theme.outline, 9)}>{label}</Text>
-              <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface }}>{value}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
-
-      {betterAltAction ? (
-        <TouchableOpacity
-          onPress={() => onApplyAction(betterAltAction)}
-          style={{
-            marginTop: 12,
-            minHeight: 42,
-            borderRadius: RADIUS.md,
-            backgroundColor: theme.primary,
-            paddingHorizontal: 12,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Text style={ctaTextStyle(theme.surface, 13)}>
-            Chuyển sang ALT {displayIndexOf(betterAltAction.alternative_index) + 1}
-          </Text>
-        </TouchableOpacity>
-      ) : null}
-
-      {setupActions.length > 0 ? (
-        <View style={{ marginTop: 8, gap: 6 }}>
-          {setupActions.map(action => {
-            const impactLines = setupActionImpactLines(action, currentFairness)
-            return (
-              <TouchableOpacity
-                key={action.type}
-                onPress={() => onApplyAction(action)}
-                style={{
-                  minHeight: 38,
-                  borderRadius: RADIUS.md,
-                  backgroundColor: theme.surface,
-                  borderWidth: BORDER.hairline,
-                  borderColor: theme.outlineVariant,
-                  padding: 12,
-                  gap: 8,
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface, lineHeight: 16 }}>
-                    {action.label}
-                  </Text>
-                  <Text style={ctaTextStyle(theme.primary, 11)}>Đánh đổi</Text>
-                </View>
-                <View style={{ gap: 3 }}>
-                  {impactLines.map(line => (
-                    <Text key={line} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline, lineHeight: 15 }}>
-                      {line}
-                    </Text>
-                  ))}
-                </View>
-                <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.primary, lineHeight: 14 }}>
-                  Có thể hoàn tác sau khi áp dụng.
-                </Text>
-              </TouchableOpacity>
-            )
-          })}
-        </View>
-      ) : null}
-    </Card>
-  )
-}
-
-function setupActionImpactLines(
-  action: Extract<SuggestedRoundAction, { type: 'set_pvna_tolerance' | 'set_courts' }>,
-  currentFairness: number,
-): string[] {
-  const after = action.after
-  if (!after) return [action.detail]
-
-  const before = action.before
+function describeSuggestedMatchRepeats(
+  match: SuggestedLiveMatchRow,
+  state: SessionState,
+  playersById: Map<string, ArrangementPlayer>,
+) {
   const lines: string[] = []
-
-  // Fairness: hiện tại → sau vòng (không áp) vs sau vòng (áp dụng)
-  lines.push(`Fairness: ${currentFairness} → ${before.fairness_total} (không áp) / ${after.fairness_total} (áp dụng)`)
-
-  // Chỉ hiện các stats thực sự thay đổi khi áp đánh đổi
-  if (before.pvna_diff !== after.pvna_diff) {
-    lines.push(`Chênh PVNA vòng này: ${before.pvna_diff.toFixed(2)} → ${after.pvna_diff.toFixed(2)}`)
-  }
-  if (before.match_range !== after.match_range) {
-    lines.push(`Lệch số trận: ${before.match_range} → ${after.match_range}`)
-  }
-  if (before.max_opponent_burden !== after.max_opponent_burden) {
-    lines.push(`Tải lặp đối thủ tối đa: ${before.max_opponent_burden} → ${after.max_opponent_burden}`)
-  }
-  const repeatBefore = before.opponent_repeat_pairs + before.partner_repeat_pairs
-  const repeatAfter = after.opponent_repeat_pairs + after.partner_repeat_pairs
-  if (repeatBefore !== repeatAfter) {
-    lines.push(`Cặp lặp tổng: ${repeatBefore} → ${repeatAfter}`)
-  }
-  if (before.max_opponent_pair !== after.max_opponent_pair) {
-    lines.push(`Lặp đối thủ nhiều nhất: ${before.max_opponent_pair} → ${after.max_opponent_pair}`)
-  }
-  if (before.max_partner_pair !== after.max_partner_pair) {
-    lines.push(`Lặp partner nhiều nhất: ${before.max_partner_pair} → ${after.max_partner_pair}`)
+  for (const team of [match.team_a, match.team_b]) {
+    const count = (state.players.get(team[0])?.partner_counts.get(team[1]) ?? 0) + 1
+    if (count >= 2) {
+      lines.push(`${playerName(team[0], playersById)} và ${playerName(team[1], playersById)} làm đồng đội lần thứ ${count}`)
+    }
   }
 
-  return lines
+  for (const playerA of match.team_a) {
+    for (const playerB of match.team_b) {
+      const count = (state.players.get(playerA)?.opponent_counts.get(playerB) ?? 0) + 1
+      if (count >= 2) {
+        lines.push(`${playerName(playerA, playersById)} gặp lại ${playerName(playerB, playersById)} lần thứ ${count}`)
+      }
+    }
+  }
+
+  if (lines.length === 0) return 'Không lặp lại đối thủ/đồng đội.'
+  return lines.slice(0, 4).join('; ') + (lines.length > 4 ? `; +${lines.length - 4} lặp khác` : '.')
 }
 
-function improvementReasons(before: AlternativeAudit, after: AlternativeAudit): string[] {
-  const reasons: string[] = []
-  if (after.match_range < before.match_range)
-    reasons.push(`Số trận đều hơn: lệch ${before.match_range}→${after.match_range}`)
-  if (after.max_opponent_burden < before.max_opponent_burden)
-    reasons.push(`Gặp lại đối thủ: tối đa ${before.max_opponent_burden}→${after.max_opponent_burden}`)
-  if (after.max_opponent_pair < before.max_opponent_pair)
-    reasons.push(`Lặp đối thủ: ${before.max_opponent_pair}→${after.max_opponent_pair} lần`)
-  if (after.max_partner_pair < before.max_partner_pair)
-    reasons.push(`Lặp đồng đội: ${before.max_partner_pair}→${after.max_partner_pair} lần`)
-  if (after.opponent_repeat_pairs < before.opponent_repeat_pairs)
-    reasons.push(`Cặp đối thủ lặp: ${before.opponent_repeat_pairs}→${after.opponent_repeat_pairs}`)
-  if (after.partner_repeat_pairs < before.partner_repeat_pairs)
-    reasons.push(`Cặp đồng đội lặp: ${before.partner_repeat_pairs}→${after.partner_repeat_pairs}`)
-  if (after.fairness_total > before.fairness_total + 2)
-    reasons.push(`Điểm fairness: ${before.fairness_total}→${after.fairness_total}`)
-  return reasons
-}
-
-function MatchList({
-  title,
-  matches,
-  state,
-  playersById,
-  onPlayerPress,
-}: {
-  title: string
-  matches: Match[]
-  state: SessionState
-  playersById: Map<string, ArrangementPlayer>
-  onPlayerPress: (playerId: string) => void
-}) {
-  const theme = useAppTheme()
-  return (
-    <View style={{ marginTop: 16 }}>
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>{title}</Text>
-      <View style={{ gap: 10 }}>
-        {matches.map(match => (
-          <MatchTile
-            key={`match-${match.court_idx}-${match.team_a.join('-')}-${match.team_b.join('-')}`}
-            match={match}
-            state={state}
-            playersById={playersById}
-            onPlayerPress={onPlayerPress}
-          />
-        ))}
-      </View>
-    </View>
-  )
-}
-
-function MatchTile({
+function SuggestedLiveMatchSwapSheet({
   match,
   state,
   playersById,
-  onPlayerPress,
+  swapFromPlayerId,
+  setSwapFromPlayerId,
+  onSwap,
 }: {
-  match: Match
+  match: SuggestedLiveMatchRow
   state: SessionState
   playersById: Map<string, ArrangementPlayer>
-  onPlayerPress: (playerId: string) => void
+  swapFromPlayerId: string | null
+  setSwapFromPlayerId: (playerId: string) => void
+  onSwap: (fromId: string, toId: string) => void
 }) {
   const theme = useAppTheme()
-  const diff = useMemo(
-    () => Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state)),
-    [match.team_a, match.team_b, state],
-  )
-  const scored = useMemo(
-    () => match.stats && match.score != null ? { score: match.score, stats: match.stats } : scoreMatch(match.team_a, match.team_b, state),
-    [match, state],
-  )
-  return (
-    <Card style={{ padding: 12 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <View style={{ borderRadius: RADIUS.xs, backgroundColor: theme.secondaryContainer, paddingHorizontal: 8, paddingVertical: 5 }}>
-            <Text style={ctaTextStyle(theme.primary, 11)}>{match.court_idx + 1}</Text>
-          </View>
-          <Text style={eyebrowStyle(theme.outline)}>Sân {match.court_idx + 1}</Text>
-        </View>
-        <View style={{ borderRadius: RADIUS.full, backgroundColor: diff > 0.5 ? theme.warningBg : theme.secondaryContainer, paddingHorizontal: 9, paddingVertical: 5 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: diff > 0.5 ? theme.warningText : theme.primary }}>
-            Chênh {diff.toFixed(2)}
-          </Text>
-        </View>
-      </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <TeamBlock team={match.team_a} state={state} playersById={playersById} onPlayerPress={onPlayerPress} align="left" />
-        <View style={{ width: 30, height: 26, borderRadius: RADIUS.xs, backgroundColor: theme.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={ctaTextStyle(theme.outline, 10)}>VS</Text>
-        </View>
-        <TeamBlock team={match.team_b} state={state} playersById={playersById} onPlayerPress={onPlayerPress} align="right" />
-      </View>
-      <Text style={{ marginTop: 10, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-        Điểm ghép {Number.isFinite(scored.score) ? scored.score.toFixed(1) : '-'} · Partner lặp {scored.stats.partner_repeats} · Đối thủ lặp {scored.stats.opponent_repeats}
-      </Text>
-    </Card>
-  )
-}
-
-function TeamBlock({
-  team,
-  state,
-  playersById,
-  onPlayerPress,
-  align,
-}: {
-  team: [string, string]
-  state: SessionState
-  playersById: Map<string, ArrangementPlayer>
-  onPlayerPress: (playerId: string) => void
-  align: 'left' | 'right'
-}) {
-  const theme = useAppTheme()
-  const names = team.map(id => playerName(id, playersById))
-  return (
-    <View style={{ flex: 1, alignItems: align === 'right' ? 'flex-end' : 'flex-start' }}>
-      <View style={{ flexDirection: align === 'right' ? 'row-reverse' : 'row', marginBottom: 6 }}>
-        {team.map((id, index) => (
-          <TouchableOpacity key={id} onPress={() => onPlayerPress(id)} style={{ marginLeft: align === 'right' ? 0 : index === 0 ? 0 : -8, marginRight: align === 'right' && index > 0 ? -8 : 0 }}>
-            <PlayerAvatar name={playerName(id, playersById)} />
-          </TouchableOpacity>
-        ))}
-      </View>
-      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 17, color: theme.onSurface, textAlign: align }}>
-        {names.join(' · ')}
-      </Text>
-      <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-        TB PVNA {getTeamPvna(team, state).toFixed(2)}
-      </Text>
-    </View>
-  )
-}
-
-function RestingRow({ resting, playersById }: { resting: string[]; playersById: Map<string, ArrangementPlayer> }) {
-  const theme = useAppTheme()
-  const hasRest = resting.length > 0
-  return (
-    <View style={{ marginTop: 12, borderRadius: RADIUS.md, backgroundColor: hasRest ? theme.rescueSoft : theme.successBg, padding: 12, borderWidth: BORDER.hairline, borderColor: hasRest ? theme.rescueAccent : theme.secondaryContainer }}>
-      <Text style={eyebrowStyle(hasRest ? theme.rescueAccent : theme.successText)}>
-        {hasRest ? 'Nghỉ vòng này' : 'Không có người nghỉ'}
-      </Text>
-      {hasRest ? (
-        <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurface }}>
-          {resting.map(id => playerName(id, playersById)).join(', ')}
-        </Text>
-      ) : null}
-    </View>
-  )
-}
-
-const EMPTY_PLAN_TEXT = {
-  defaultTitle: 'Ch\u01b0a c\u00f3 g\u1ee3i \u00fd v\u00f2ng',
-  blockedTitle: 'Engine \u0111ang b\u1ecb k\u1eb9t r\u00e0ng bu\u1ed9c',
-  defaultBody: 'C\u1eadp nh\u1eadt danh s\u00e1ch ng\u01b0\u1eddi ch\u01a1i tr\u01b0\u1edbc, sau \u0111\u00f3 engine s\u1ebd t\u1ea1o ph\u01b0\u01a1ng \u00e1n cho v\u00f2ng k\u1ebf.',
-  capacityBody: (mustPlay: number, slots: number, courts: number) =>
-    `${mustPlay} ng\u01b0\u1eddi \u0111ang c\u1ea7n \u01b0u ti\u00ean ch\u01a1i, nh\u01b0ng ${courts} s\u00e2n ch\u1ec9 c\u00f3 ${slots} slot. N\u1ebfu b\u1eaft t\u1ea5t c\u1ea3 nh\u00f3m n\u00e0y c\u00f9ng ch\u01a1i th\u00ec kh\u00f4ng c\u00f3 t\u1ed5 h\u1ee3p h\u1ee3p l\u1ec7.`,
-  noMatchBody: 'Engine kh\u00f4ng t\u00ecm \u0111\u01b0\u1ee3c t\u1ed5 h\u1ee3p h\u1ee3p l\u1ec7 v\u1edbi roster v\u00e0 c\u00e0i \u0111\u1eb7t hi\u1ec7n t\u1ea1i.',
-  notEnoughBody: (eligible: number) =>
-    `Ch\u1ec9 c\u00f3 ${eligible} ng\u01b0\u1eddi c\u00f3 th\u1ec3 x\u1ebfp ch\u01a1i. C\u1ea7n t\u1ed1i thi\u1ec3u 4 ng\u01b0\u1eddi \u0111\u1ec3 t\u1ea1o 1 tr\u1eadn.`,
-  sectionTitle: 'C\u00e1ch x\u1eed l\u00fd',
-  increaseCourt: (courts: number) => `T\u0103ng l\u00ean ${courts} s\u00e2n n\u1ebfu mu\u1ed1n \u0111\u1ea3m b\u1ea3o nh\u00f3m \u01b0u ti\u00ean \u0111\u01b0\u1ee3c ch\u01a1i.`,
-  acceptRest: (resting: number) => `Gi\u1eef s\u1ed1 s\u00e2n hi\u1ec7n t\u1ea1i v\u00e0 ch\u1ea5p nh\u1eadn kho\u1ea3ng ${resting} ng\u01b0\u1eddi ngh\u1ec9 v\u00f2ng n\u00e0y.`,
-  openSettingsHint: 'M\u1edf c\u00e0i \u0111\u1eb7t \u0111\u1ec3 \u0111\u1ed5i s\u1ed1 s\u00e2n ho\u1eb7c n\u1edbi m\u1ee9c c\u00e2n PVNA.',
-  sync: 'C\u1eadp nh\u1eadt danh s\u00e1ch ng\u01b0\u1eddi ch\u01a1i',
-  settings: 'M\u1edf c\u00e0i \u0111\u1eb7t',
-  applyCourts: (courts: number) => `D\u00f9ng ${courts} s\u00e2n`,
-}
-
-function getEngineConstraintDiagnostic(
-  state: SessionState,
-  suggestion: SuggestionResult,
-  courtCount: number,
-  tierOverrides: Record<string, number>,
-) {
-  const eligiblePlayers = [...state.players.values()].filter(player => !player.checked_out_at && !player.opted_rest)
-  const eligibleCount = eligiblePlayers.length
-  const slots = Math.min(Math.max(1, courtCount) * 4, Math.floor(eligibleCount / 4) * 4)
-  const mustPlayIds = new Set(eligiblePlayers.filter(player => player.consecutive_rest >= 1).map(player => player.player_id))
-  for (const [playerId, tier] of Object.entries(tierOverrides)) {
-    if (tier === 0 && eligiblePlayers.some(player => player.player_id === playerId)) mustPlayIds.add(playerId)
-  }
-  const mustPlayCount = mustPlayIds.size
-  const hasCapacityWarning = suggestion.warnings.includes('MUST_PLAY_OVER_CAPACITY')
-  const hasNoMatchWarning = suggestion.warnings.includes('NO_VALID_MATCH')
-  const hasNotEnoughWarning = suggestion.warnings.includes('NOT_ENOUGH_PRESENT') || slots < 4
-  const requiredCourts = Math.max(courtCount + 1, Math.ceil(Math.max(4, mustPlayCount) / 4))
-  const restingCount = Math.max(0, eligibleCount - slots)
-  const isBlocked = hasCapacityWarning || hasNoMatchWarning || hasNotEnoughWarning
-  const body = hasCapacityWarning
-    ? EMPTY_PLAN_TEXT.capacityBody(mustPlayCount, slots, courtCount)
-    : hasNotEnoughWarning
-      ? EMPTY_PLAN_TEXT.notEnoughBody(eligibleCount)
-      : hasNoMatchWarning
-        ? EMPTY_PLAN_TEXT.noMatchBody
-        : EMPTY_PLAN_TEXT.defaultBody
-  const suggestions = hasCapacityWarning
-    ? [
-        EMPTY_PLAN_TEXT.increaseCourt(requiredCourts),
-        EMPTY_PLAN_TEXT.acceptRest(restingCount),
-        EMPTY_PLAN_TEXT.openSettingsHint,
-      ]
-    : hasNoMatchWarning
-      ? [EMPTY_PLAN_TEXT.openSettingsHint, EMPTY_PLAN_TEXT.acceptRest(restingCount)]
-      : []
-
-  return {
-    body,
-    hasCapacityWarning,
-    hasNoMatchWarning,
-    hasNotEnoughWarning,
-    isBlocked,
-    requiredCourts,
-    suggestions,
-  }
-}
-
-function EngineConstraintNotice({
-  state,
-  suggestion,
-  courtCount,
-  tierOverrides,
-  onSetCourtCount,
-  onOpenSettings,
-}: {
-  state: SessionState
-  suggestion: SuggestionResult
-  courtCount: number
-  tierOverrides: Record<string, number>
-  onSetCourtCount: (courts: number) => void
-  onOpenSettings: () => void
-}) {
-  const theme = useAppTheme()
-  const diagnostic = getEngineConstraintDiagnostic(state, suggestion, courtCount, tierOverrides)
-  if (!diagnostic.isBlocked) return null
-
-  return (
-    <Card style={{ marginTop: 12, padding: 12, borderRadius: RADIUS.md, backgroundColor: theme.warningBg, borderColor: theme.warningStrong }}>
-      <Text style={eyebrowStyle(theme.warningText)}>{EMPTY_PLAN_TEXT.blockedTitle}</Text>
-      <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText }}>
-        {diagnostic.body}
-      </Text>
-      {diagnostic.suggestions.length > 0 ? (
-        <View style={{ marginTop: 8, gap: 4 }}>
-          {diagnostic.suggestions.map((item, index) => (
-            <Text key={`engine-constraint-${index}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
-              {`\u2022 ${item}`}
-            </Text>
-          ))}
-        </View>
-      ) : null}
-      <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-        {diagnostic.hasCapacityWarning && diagnostic.requiredCourts > courtCount ? (
-          <TouchableOpacity
-            onPress={() => onSetCourtCount(diagnostic.requiredCourts)}
-            style={{ flex: 1, minHeight: 38, borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Text style={ctaTextStyle(theme.primary, 11)}>{EMPTY_PLAN_TEXT.applyCourts(diagnostic.requiredCourts)}</Text>
-          </TouchableOpacity>
-        ) : null}
-        <TouchableOpacity
-          onPress={onOpenSettings}
-          style={{ flex: 1, minHeight: 38, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Text style={ctaTextStyle(theme.primary, 11)}>{EMPTY_PLAN_TEXT.settings}</Text>
-        </TouchableOpacity>
-      </View>
-    </Card>
-  )
-}
-
-function EmptyPlanCard({
-  state,
-  suggestion,
-  courtCount,
-  tierOverrides,
-  onSetCourtCount,
-  onOpenSettings,
-  onSyncRoster,
-  busy,
-}: {
-  state: SessionState
-  suggestion: SuggestionResult
-  courtCount: number
-  tierOverrides: Record<string, number>
-  onSetCourtCount: (courts: number) => void
-  onOpenSettings: () => void
-  onSyncRoster: () => void
-  busy: boolean
-}) {
-  const theme = useAppTheme()
-  const diagnostic = getEngineConstraintDiagnostic(state, suggestion, courtCount, tierOverrides)
-
-  return (
-    <Card style={{ marginTop: 16, padding: 18, alignItems: 'stretch', borderColor: diagnostic.isBlocked ? theme.warningStrong : theme.outlineVariant }}>
-      <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: diagnostic.isBlocked ? theme.warningText : theme.onSurface, textAlign: 'center' }}>
-        {diagnostic.isBlocked ? EMPTY_PLAN_TEXT.blockedTitle : EMPTY_PLAN_TEXT.defaultTitle}
-      </Text>
-      <Text style={{ marginTop: 6, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: diagnostic.isBlocked ? theme.warningText : theme.outline, textAlign: 'center' }}>
-        {diagnostic.body}
-      </Text>
-
-      {diagnostic.suggestions.length > 0 ? (
-        <View style={{ marginTop: 14, borderRadius: RADIUS.md, backgroundColor: theme.warningBg, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, padding: 12 }}>
-          <Text style={eyebrowStyle(theme.warningText)}>{EMPTY_PLAN_TEXT.sectionTitle}</Text>
-          <View style={{ marginTop: 8, gap: 5 }}>
-            {diagnostic.suggestions.map((item, index) => (
-              <Text key={`empty-plan-suggestion-${index}`} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText }}>
-                {`\u2022 ${item}`}
-              </Text>
-            ))}
-          </View>
-        </View>
-      ) : null}
-
-      <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-        {diagnostic.hasCapacityWarning && diagnostic.requiredCourts > courtCount ? (
-          <TouchableOpacity
-            onPress={() => onSetCourtCount(diagnostic.requiredCourts)}
-            style={{ flex: 1, minHeight: 44, borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Text style={ctaTextStyle(theme.primary, 12)}>{EMPTY_PLAN_TEXT.applyCourts(diagnostic.requiredCourts)}</Text>
-          </TouchableOpacity>
-        ) : null}
-        <TouchableOpacity
-          onPress={onOpenSettings}
-          style={{ flex: 1, minHeight: 44, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Text style={ctaTextStyle(theme.primary, 12)}>{EMPTY_PLAN_TEXT.settings}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity
-        testID="nrv2-sync-btn"
-        onPress={onSyncRoster}
-        disabled={busy}
-        style={{ marginTop: 10, minHeight: 44, borderRadius: RADIUS.md, backgroundColor: theme.primary, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' }}
-      >
-        {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>{EMPTY_PLAN_TEXT.sync}</Text>}
-      </TouchableOpacity>
-    </Card>
-  )
-}
-
-type SettingsSnapshot = {
-  courtCount: number
-  courtPreset: CourtPreset
-  pvnaTolerance: number
-  courtDurationMin: number
-  targetRounds: number
-}
-
-function SettingsSheet({
-  playerCount,
-  initial,
-  onApply,
-}: {
-  playerCount: number
-  initial: SettingsSnapshot
-  onApply: (s: SettingsSnapshot) => void
-}) {
-  const theme = useAppTheme()
-  const [courtCount, setCourtCount] = useState(initial.courtCount)
-  const [courtPreset, setCourtPreset] = useState(initial.courtPreset)
-  const [pvnaTolerance, setPvnaTolerance] = useState(initial.pvnaTolerance)
-  const [courtDurationMin, setCourtDurationMin] = useState(initial.courtDurationMin)
-  const [targetRounds, setTargetRounds] = useState(initial.targetRounds)
-
-  const calculator = useMemo(() => calculateOptimalCourts({
-    n_players: playerCount,
-    session_duration_min: courtDurationMin,
-    match_duration_min: 15,
-    preset: courtPreset,
-  }), [playerCount, courtDurationMin, courtPreset])
-
-  const recommended = calculator.recommended
-  const warning = calculator.setup_warnings[0]
-
-  const applyCourtWarningAlternative = (alternative: CourtWarningAlternative) => {
-    if (alternative.action === 'set_duration' && alternative.duration_min) {
-      setCourtDurationMin(alternative.duration_min)
-      setTargetRounds(alternative.preview.rounds)
-      return
-    }
-    if (alternative.action === 'set_preset' && alternative.preset) {
-      setCourtPreset(alternative.preset)
-      setTargetRounds(alternative.preview.rounds)
-      return
-    }
-    if (alternative.action === 'set_courts' && alternative.courts) {
-      setCourtCount(alternative.courts)
-      setTargetRounds(alternative.preview.rounds)
-    }
-  }
+  const playingIds = [...match.team_a, ...match.team_b]
+  const targetIds = [...new Set([...playingIds, ...(match.resting ?? [])])]
+  const candidates = swapFromPlayerId
+    ? targetIds
+        .filter(playerId => playerId !== swapFromPlayerId)
+        .map(playerId => ({
+          playerId,
+          impact: buildSuggestedSwapImpact(match, swapFromPlayerId, playerId, state),
+        }))
+        .sort((left, right) => {
+          const qualityDiff = right.impact.qualityDelta - left.impact.qualityDelta
+          if (Math.abs(qualityDiff) > 0.001) return qualityDiff
+          const repeatDiff = left.impact.afterRepeatOver - right.impact.afterRepeatOver
+          if (repeatDiff !== 0) return repeatDiff
+          const pvnaDiff = left.impact.afterPvnaDiff - right.impact.afterPvnaDiff
+          if (Math.abs(pvnaDiff) > 0.001) return pvnaDiff
+          const leftPlaying = playingIds.includes(left.playerId)
+          const rightPlaying = playingIds.includes(right.playerId)
+          if (leftPlaying !== rightPlaying) return leftPlaying ? 1 : -1
+          return playerName(left.playerId, playersById).localeCompare(playerName(right.playerId, playersById))
+        })
+    : []
 
   return (
     <View>
-      <SheetTitle title="Cài đặt vòng" subtitle="Điều chỉnh setup trước khi start vòng kế." />
-      <LinearGradient colors={[theme.heroGradientStart, theme.primaryContainer]} style={{ borderRadius: RADIUS.lg, padding: 14, marginBottom: 14 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Zap size={18} color={theme.heroCountdownText} />
-          <View style={{ flex: 1 }}>
-            <Text style={eyebrowStyle(theme.heroCountdownText)}>Engine khuyến nghị</Text>
-            <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
-              Giữ setup gần gợi ý sân, chỉ mở dung sai PVNA khi áp lực lặp partner/đối thủ tăng.
-            </Text>
-          </View>
-        </View>
-      </LinearGradient>
-      <View style={{ marginBottom: 14, borderRadius: RADIUS.md, backgroundColor: theme.secondaryContainer, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.primary }}>
-          Gợi ý: {recommended.courts} sân
-        </Text>
-        <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.onSurface }}>
-          {calculator.reasoning}
-        </Text>
-      </View>
-      {warning ? (
-        <View style={{ marginBottom: 14, borderRadius: RADIUS.md, backgroundColor: theme.warningBg, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, padding: 12 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.warningText }}>{warning.message}</Text>
-          <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText }}>{warning.why}</Text>
-          {warning.alternatives.length > 0 ? (
-            <View style={{ marginTop: 10, gap: 8 }}>
-              {warning.alternatives.map((alternative, index) => (
-                <TouchableOpacity
-                  key={`${warning.type}-${alternative.action}-${index}`}
-                  onPress={() => applyCourtWarningAlternative(alternative)}
-                  style={{ borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 10 }}
-                >
-                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface }}>{alternative.label}</Text>
-                  <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>
-                    {alternative.expected_effect} · {alternative.tradeoff}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-      <CourtSuggestionOptions
-        options={calculator.alternatives}
-        selectedCourts={courtCount}
-        recommendedCourts={recommended.courts}
-        onSelect={setCourtCount}
-      />
-      <ChoiceRow label="Sân" options={[1, 2, 3, 4, 5, 6].map(value => ({ label: String(value), value }))} value={courtCount} onChange={setCourtCount} />
-      <ChoiceRow
-        label="Chế độ"
-        options={COURT_PRESET_OPTIONS.map(value => ({ label: PRESETS[value].label, value }))}
-        value={courtPreset}
-        onChange={setCourtPreset}
-      />
-      <ChoiceRow label="Dung sai PVNA" options={PVNA_TOLERANCE_OPTIONS.map(value => ({ label: `±${value}`, value }))} value={pvnaTolerance} onChange={setPvnaTolerance} />
-      <ChoiceRow label="Thời lượng" options={COURT_DURATION_OPTIONS.map(value => ({ label: `${value}p`, value }))} value={courtDurationMin} onChange={setCourtDurationMin} />
-      <ChoiceRow
-        label="Mục tiêu vòng"
-        options={[6, 8, 10, recommended.total_rounds].filter((v, i, arr) => arr.indexOf(v) === i).map(value => ({ label: `${value}`, value }))}
-        value={targetRounds}
-        onChange={setTargetRounds}
-      />
-      <TouchableOpacity
-        testID="nrv2-settings-apply"
-        onPress={() => onApply({ courtCount, courtPreset, pvnaTolerance, courtDurationMin, targetRounds })}
-        style={{ height: 52, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginTop: 10 }}
-      >
-        <Text style={ctaTextStyle(theme.onPrimary)}>Áp dụng</Text>
-      </TouchableOpacity>
-    </View>
-  )
-}
-
-function CourtSuggestionOptions({
-  options,
-  selectedCourts,
-  recommendedCourts,
-  onSelect,
-}: {
-  options: CourtOption[]
-  selectedCourts: number
-  recommendedCourts: number
-  onSelect: (courts: number) => void
-}) {
-  const theme = useAppTheme()
-  return (
-    <View style={{ marginBottom: 14 }}>
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Gợi ý số sân</Text>
-      <View style={{ gap: 8 }}>
-        {options.map(option => {
-          const selected = option.courts === selectedCourts
-          const recommended = option.courts === recommendedCourts
-          const disabled = option.feasibility === 'infeasible'
-          const toneColor = option.feasibility === 'optimal'
-            ? theme.primary
-            : option.feasibility === 'tight'
-              ? theme.warningText
-              : theme.outline
+      <SheetTitle title="Đổi người trận gợi ý" subtitle={`Sân ${(match.court_idx ?? 0) + 1}: đổi trực tiếp trong suggested live match đang chọn.`} />
+      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>1. Đổi ra</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
+        {playingIds.map(playerId => {
+          const active = swapFromPlayerId === playerId
           return (
             <TouchableOpacity
-              key={`court-option-${option.courts}`}
-              disabled={disabled}
-              onPress={() => onSelect(option.courts)}
+              key={playerId}
+              onPress={() => setSwapFromPlayerId(playerId)}
               style={{
-                borderRadius: RADIUS.md,
+                height: 44,
+                borderRadius: RADIUS.full,
+                backgroundColor: active ? theme.primary : theme.surface,
                 borderWidth: BORDER.hairline,
-                borderColor: selected ? theme.primary : theme.outlineVariant,
-                backgroundColor: selected ? theme.secondaryContainer : theme.surface,
-                padding: 12,
-                opacity: disabled ? 0.45 : 1,
+                borderColor: active ? theme.primary : theme.outlineVariant,
+                paddingHorizontal: 10,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 7,
               }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>
-                    {option.courts} sân · {option.avg_matches_per_player.toFixed(1)} trận/người
-                  </Text>
-                  <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                    {option.total_rounds} vòng · nghỉ {option.resting_per_round}/vòng · lặp {repeatRiskLabel(option.repeat_pressure.risk)}
-                  </Text>
-                  {option.warnings[0] ? (
-                    <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.warningText }}>
-                      {option.warnings[0]}
-                    </Text>
-                  ) : null}
-                </View>
-                <View style={{ borderRadius: RADIUS.full, backgroundColor: recommended ? theme.heroCountdownText : theme.surfaceContainerLow, paddingHorizontal: 9, paddingVertical: 5 }}>
-                  <Text style={ctaTextStyle(recommended ? theme.primaryContainer : toneColor, 10)}>
-                    {recommended ? 'Đề xuất' : feasibilityLabel(option.feasibility)}
-                  </Text>
-                </View>
-              </View>
+              <PlayerAvatar name={playerName(playerId, playersById)} size={24} />
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: active ? theme.onPrimary : theme.onSurface }}>
+                {playerName(playerId, playersById)}
+              </Text>
             </TouchableOpacity>
           )
         })}
-      </View>
-    </View>
-  )
-}
+      </ScrollView>
 
-function FairnessSheet({
-  score,
-  state,
-  warnings,
-  latestAudit,
-  groupSummaries,
-  playersById,
-}: {
-  score: SessionFairnessScore
-  state: SessionState
-  warnings: FairnessWarning[]
-  latestAudit: FairnessAudit | null
-  groupSummaries: GroupSummary[]
-  playersById: Map<string, ArrangementPlayer>
-}) {
-  const theme = useAppTheme()
-  const metrics = useMemo(() => ({
-    match: computeMatchCountMetrics(state),
-    partner: computePartnerDiversity(state),
-    opponent: computeOpponentDiversity(state),
-    rest: computeRestFairness(state),
-    gender: computeGenderPrefSatisfaction(state),
-    pressure: computeRepeatPressure(state),
-    burden: computeOpponentRepeatBurden(state),
-  }), [state])
-  const { match, partner, opponent, rest, gender, pressure, burden } = metrics
-  const rows = [
-    ['Số trận', score.breakdown.match_count, 25, `Chênh số trận ${match.range} · Trung bình ${match.avg.toFixed(1)} trận/người`],
-    ['Partner (đồng đội)', score.breakdown.partner_diversity, 20, `${partner.repeat_pairs.length} cặp lặp`],
-    ['Đối thủ', score.breakdown.opponent_diversity, 15, `${opponent.repeat_pairs.length} cặp lặp · Một người bị lặp nhiều nhất ${burden.max_repeated_opponents} đối thủ`],
-    ['Nghỉ', score.breakdown.rest, 20, `${rest.violations.length} vi phạm`],
-    ['Sở thích giới tính', score.breakdown.gender_prefs, 20, `${gender.satisfied_count}/${gender.total_pref_opportunities || 0} sở thích được đáp ứng`],
-  ] as const
-  return (
-    <View>
-      <LinearGradient colors={[theme.heroGradientStart, theme.primaryContainer]} style={{ borderRadius: RADIUS.lg, padding: 16, marginBottom: 14 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.headlineItalic, fontSize: 54, color: theme.surface }}>
-          {score.total}<Text style={{ fontSize: 20 }}>/100</Text>
-        </Text>
-        <View style={{ alignSelf: 'flex-start', backgroundColor: theme.heroPillBg, borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 5 }}>
-          <Text style={ctaTextStyle(theme.heroCountdownText, 12)}>{fairnessLabel(score)}</Text>
-        </View>
-        <Text style={{ marginTop: 9, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.heroBodyMuted }}>
-          Áp lực lặp {repeatRiskLabel(pressure.repeat_risk)} · Trung bình {match.avg.toFixed(1)} trận/người · Áp lực đối thủ {pressure.opponent_pressure.toFixed(2)}
-        </Text>
-      </LinearGradient>
-      {rows.map(([label, value, max, detail]) => (
-        <BreakdownRow key={label} label={label} value={value} max={max} detail={detail} />
-      ))}
-      <LatestFairnessAuditCard audit={latestAudit} />
-      <RepeatDetailsBlock
-        partnerPairs={partner.repeat_pairs}
-        opponentPairs={opponent.repeat_pairs}
-        playersById={playersById}
-      />
-      {warnings.length > 0 ? (
-        <View style={{ marginTop: 12, gap: 8 }}>
-          {warnings.map((warning, index) => {
-            const tone = warningTone(theme, warning.severity)
-            return (
-              <View key={`${warning.type}-${index}`} style={{ backgroundColor: tone.bg, borderRadius: RADIUS.md, padding: 10, borderWidth: BORDER.hairline, borderColor: tone.border }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: tone.text }}>{warningTitle(warning.type)}</Text>
-                <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: tone.text }}>{warning.message}</Text>
-              </View>
-            )
-          })}
-        </View>
-      ) : null}
-      <GroupAuditBlock state={state} groupSummaries={groupSummaries} playersById={playersById} />
-    </View>
-  )
-}
-
-function LatestFairnessAuditCard({ audit }: { audit: FairnessAudit | null }) {
-  const theme = useAppTheme()
-  if (!audit) return null
-  const tone = audit.delta_total >= 0 ? theme.successText : theme.warningText
-  return (
-    <View style={{ marginTop: 12, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, padding: 12 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: theme.onSurface }}>Audit điểm fairness</Text>
-          <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 11.5, color: theme.outline }}>
-            Sau vòng {audit.round_no}: {audit.before_total} → {audit.after_total}
-          </Text>
-        </View>
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: tone }}>
-          {audit.delta_total > 0 ? '+' : ''}{audit.delta_total}
-        </Text>
-      </View>
-      <View style={{ marginTop: 10, gap: 6 }}>
-        {audit.rows.map(row => (
-          <View key={row.key} style={{ borderRadius: RADIUS.xs, backgroundColor: theme.surfaceContainerLow, padding: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
-              <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.bold, fontSize: 11.5, color: theme.onSurface }}>{row.label}</Text>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: row.delta < 0 ? theme.warningText : theme.primary }}>
-                {row.before} → {row.after} ({row.delta > 0 ? '+' : ''}{row.delta})
-              </Text>
-            </View>
-            <Text style={{ marginTop: 3, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>{describePreviewRow(row)}</Text>
+      {swapFromPlayerId ? (
+        <>
+          <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>2. Đổi với</Text>
+          <View style={{ gap: 8 }}>
+            {candidates.map(({ playerId, impact }) => {
+              const impactColor = impact.label === 'Tốt hơn'
+                ? theme.primary
+                : impact.label === 'Giảm chất lượng'
+                  ? theme.dangerText
+                  : theme.outline
+              const pvnaText = `${impact.beforePvnaDiff.toFixed(2)} -> ${impact.afterPvnaDiff.toFixed(2)}`
+              const repeatText = describeSuggestedMatchRepeats(
+                swapPlayersInSuggestedMatch(match, swapFromPlayerId, playerId),
+                state,
+                playersById,
+              )
+              return (
+                <TouchableOpacity
+                  key={playerId}
+                  onPress={() => onSwap(swapFromPlayerId, playerId)}
+                  style={{
+                    minHeight: 58,
+                    borderRadius: RADIUS.md,
+                    backgroundColor: theme.surface,
+                    borderWidth: BORDER.hairline,
+                    borderColor: theme.outlineVariant,
+                    borderLeftWidth: 4,
+                    borderLeftColor: impactColor,
+                    padding: 10,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}
+                >
+                  <PlayerAvatar name={playerName(playerId, playersById)} />
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <Text numberOfLines={1} style={{ flex: 1, fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.onSurface }}>{playerName(playerId, playersById)}</Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.outline, fontWeight: '900' }}>
+                        PVNA {(state.players.get(playerId)?.pvna ?? 0).toFixed(2)}
+                      </Text>
+                    </View>
+                    <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.label, fontSize: 11, color: impactColor, fontWeight: '900' }}>
+                      {impact.label} · chênh PVNA {pvnaText}
+                    </Text>
+                    <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, lineHeight: 14, color: theme.outline }}>
+                      {repeatText}
+                    </Text>
+                  </View>
+                  <Text style={ctaTextStyle(impactColor, 12)}>
+                    Đổi
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
           </View>
-        ))}
-      </View>
+        </>
+      ) : null}
     </View>
   )
 }

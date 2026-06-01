@@ -1,5 +1,6 @@
 export type SessionStatus = 'waiting' | 'active' | 'paused' | 'ended'
 export type RoundStatus = 'proposed' | 'active' | 'completed'
+export type LiveMatchStatus = 'suggested' | 'live' | 'completed' | 'cancelled'
 export type Gender = 'M' | 'F' | null
 export type GenderPreference = 'any' | 'M' | 'F'
 
@@ -133,6 +134,25 @@ export type SessionRoundRow = {
   ended_at: string | null
 }
 
+export type SessionLiveMatchRow = {
+  id: string
+  session_id: string
+  sequence_no: number
+  round_no: number | null
+  court_idx: number | null
+  status: LiveMatchStatus
+  team_a: Team
+  team_b: Team
+  resting: string[]
+  score_a: number
+  score_b: number
+  suggested_at: string
+  started_at: string | null
+  ended_at: string | null
+  created_at?: string
+  updated_at?: string
+}
+
 export type HostCheckInRequest = {
   player_id: string
   group_with?: string[]
@@ -152,9 +172,40 @@ export type SuggestionAlternative = {
   resting: string[]
   score: number
   warnings: string[]
+  tradeoffs?: SuggestionTradeoff[]
+  approval_required?: boolean
   stats: MatchStats
   runtime_ms?: number
   iterations?: number
+}
+
+export type SuggestionTradeoff = {
+  type: 'pvna_tolerance_relaxed' | 'repeat_cap_relaxed'
+  severity: number
+  over_by?: number
+  affected_pairs?: number
+  affected_players?: number
+}
+
+export type SuggestionTradeoffChoiceId = 'balanced' | 'keep_pvna' | 'reduce_repeat'
+
+export type SuggestionTradeoffChoiceMetrics = {
+  pvna_gap: number
+  pvna_over_by: number
+  repeat_over_by: number
+  affected_pairs: number
+  affected_players: number
+  max_partner_pair: number
+  max_opponent_pair: number
+  total_cost: number
+}
+
+export type SuggestionTradeoffChoice = {
+  id: SuggestionTradeoffChoiceId
+  label: string
+  alternative: SuggestionAlternative
+  metrics: SuggestionTradeoffChoiceMetrics
+  explanation: string[]
 }
 
 export type SuggestionResult = {

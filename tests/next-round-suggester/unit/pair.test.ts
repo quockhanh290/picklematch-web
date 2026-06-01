@@ -1,4 +1,8 @@
-import { bestPartitioning, bestTeamSplit } from '../../../lib/next-round-suggester/pair'
+import {
+  bestPartitioning,
+  bestTeamSplit,
+  createPartitioningRuntimeCache,
+} from '../../../lib/next-round-suggester/pair'
 import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
 
 describe('bestTeamSplit', () => {
@@ -104,6 +108,24 @@ describe('bestPartitioning', () => {
 
     expect(result?.matches).toHaveLength(1)
     expect(result?.relaxed_tolerance).toBe(true)
+    expect(result?.stats.pvna_diff).toBeLessThanOrEqual(1.0)
+  })
+
+  it('relaxes intra-team gap before relaxing match PVNA tolerance', () => {
+    const players = [
+      createPlayer('p1', { pvna: 4.42 }),
+      createPlayer('p2', { pvna: 3.02 }),
+      createPlayer('p3', { pvna: 2.66 }),
+      createPlayer('p4', { pvna: 3.59 }),
+    ]
+
+    const result = bestPartitioning(players, createState({ players, pvnaTolerance: 0.5 }))
+
+    expect(result?.relaxed_tolerance).not.toBe(true)
+    expect(result?.intra_team_gap_overflow).toBe(true)
+    expect(result?.matches[0].team_a).toEqual(['p1', 'p3'])
+    expect(result?.matches[0].team_b).toEqual(['p2', 'p4'])
+    expect(Math.abs((result?.stats.pvna_diff ?? 0) - 0.47)).toBeLessThan(0.001)
   })
 
   it('skips court creation when fewer than four players are present', () => {
@@ -111,4 +133,17 @@ describe('bestPartitioning', () => {
 
     expect(bestPartitioning(players, createState({ players }))).toBeNull()
   })
+
+  it('returns the same partition with and without runtime cache', () => {
+    const players = Array.from({ length: 16 }, (_, index) =>
+      createPlayer(`p${String(index + 1).padStart(2, '0')}`, { pvna: 3.0 + index * 0.03 }),
+    )
+    const state = createState({ players, courts: 4 })
+
+    const uncached = bestPartitioning(players, state)
+    const cached = bestPartitioning(players, state, { cache: createPartitioningRuntimeCache() })
+
+    expect(cached).toEqual(uncached)
+  })
+
 })

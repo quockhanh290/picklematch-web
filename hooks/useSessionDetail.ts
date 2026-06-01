@@ -21,7 +21,6 @@ export type SessionPlayer = {
     reliability_score?: number | null
     sessions_joined?: number | null
     no_show_count?: number | null
-    sessions_joined?: number | null
     no_show_count_total?: number | null
   } | null
   check_in_status?: 'present' | 'no_show' | 'pending' | null
@@ -110,7 +109,28 @@ export type SessionMatch = {
   updated_at: string
 }
 
-export function useSessionDetail(id?: string, userId?: string | null) {
+type UseSessionDetailOptions = {
+  includeMatches?: boolean
+  includeViewerExtras?: boolean
+  traceLabel?: string
+}
+
+export type SessionDetailTiming = {
+  trace_label: string | null
+  include_matches: boolean
+  include_viewer_extras: boolean
+  session_detail_ms: number | null
+  matches_ms: number | null
+  viewer_profile_ms: number | null
+  ratings_ms: number | null
+  total_ms: number
+  measured_at: string
+}
+
+export function useSessionDetail(id?: string, userId?: string | null, options: UseSessionDetailOptions = {}) {
+  const includeMatches = options.includeMatches ?? true
+  const includeViewerExtras = options.includeViewerExtras ?? true
+  const traceLabel = options.traceLabel ?? null
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -120,14 +140,37 @@ export function useSessionDetail(id?: string, userId?: string | null) {
   const [hostResponseTemplate, setHostResponseTemplate] = useState<string | null>(null)
   const [introNote, setIntroNote] = useState('')
   const [matches, setMatches] = useState<SessionMatch[]>([])
+  const [lastTiming, setLastTiming] = useState<SessionDetailTiming | null>(null)
 
   const fetchSession = useCallback(async () => {
     if (!id) return
 
+    const startedAt = Date.now()
+    const measuredAt = new Date().toISOString()
+    const nextTiming: SessionDetailTiming = {
+      trace_label: traceLabel,
+      include_matches: includeMatches,
+      include_viewer_extras: includeViewerExtras,
+      session_detail_ms: null,
+      matches_ms: null,
+      viewer_profile_ms: null,
+      ratings_ms: null,
+      total_ms: 0,
+      measured_at: measuredAt,
+    }
+    const timed = async <T,>(key: keyof Pick<SessionDetailTiming, 'session_detail_ms' | 'matches_ms' | 'viewer_profile_ms' | 'ratings_ms'>, action: () => PromiseLike<T>) => {
+      const stepStartedAt = Date.now()
+      const result = await action()
+      nextTiming[key] = Date.now() - stepStartedAt
+      return result
+    }
+
     setError(null)
     const [sessionRes, matchesRes] = await Promise.all([
-      supabase.rpc('get_session_detail_overview', { p_session_id: id }),
-      supabase.rpc('get_session_matches', { p_session_id: id })
+      timed('session_detail_ms', () => supabase.rpc('get_session_detail_overview', { p_session_id: id })),
+      includeMatches
+        ? timed('matches_ms', () => supabase.rpc('get_session_matches', { p_session_id: id }))
+        : Promise.resolve({ data: [], error: null }),
     ])
 
     if (sessionRes.error) {
@@ -144,26 +187,34 @@ export function useSessionDetail(id?: string, userId?: string | null) {
     
     setMatches((matchesRes.data as SessionMatch[]) ?? [])
 
-    if (userId) {
-      const { data: viewerData } = await supabase.from('players').select('id, elo, current_elo').eq('id', userId).single()
+    if (userId && includeViewerExtras) {
+      const [viewerRes, ratingsRes] = await Promise.all([
+        timed('viewer_profile_ms', () => supabase.from('players').select('id, elo, current_elo').eq('id', userId).single()),
+        timed('ratings_ms', () =>
+          supabase
+            .from('ratings')
+            .select('id')
+            .eq('session_id', id)
+            .eq('rater_id', userId)
+            .limit(1),
+        ),
+      ])
+      const { data: viewerData } = viewerRes as { data: ViewerPlayer | null }
       setViewerPlayer((viewerData as ViewerPlayer | null) ?? null)
 
-      // Check if user has rated this session
-      const { data: ratingsData } = await supabase
-        .from('ratings')
-        .select('id')
-        .eq('session_id', id)
-        .eq('rater_id', userId)
-        .limit(1)
-      
       if (nextSession) {
-        nextSession.has_rated = (ratingsData?.length ?? 0) > 0
+        nextSession.has_rated = (((ratingsRes as { data?: unknown[] | null }).data)?.length ?? 0) > 0
         setSession({ ...nextSession })
       }
     } else {
       setViewerPlayer(null)
     }
-  }, [id, userId])
+    nextTiming.total_ms = Date.now() - startedAt
+    setLastTiming(nextTiming)
+    if (__DEV__ && traceLabel) {
+      console.log(`[${traceLabel}] session detail timing`, nextTiming)
+    }
+  }, [id, includeMatches, includeViewerExtras, traceLabel, userId])
 
   useEffect(() => {
     let mounted = true
@@ -202,5 +253,6 @@ export function useSessionDetail(id?: string, userId?: string | null) {
     fetchSession,
     onRefresh,
     error,
+    lastTiming,
   }
 }

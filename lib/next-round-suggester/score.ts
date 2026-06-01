@@ -19,7 +19,11 @@ const INFINITY_SCORE: MatchScore = {
   },
 }
 
-const INTRA_TEAM_PVNA_GAP_LIMIT = 1.5
+export const INTRA_TEAM_PVNA_GAP_LIMIT = 1.5
+export const MAX_PROJECTED_PARTNER_PAIR_COUNT = 2
+export const MAX_PROJECTED_OPPONENT_PAIR_COUNT = 2
+export const MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER = 2
+export const MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER = 2
 
 function emptyStats(pvnaDiff = 0): MatchStats {
   return {
@@ -34,7 +38,7 @@ function emptyStats(pvnaDiff = 0): MatchStats {
 function getPvna(team: Team, state: SessionState): number | null {
   const players = team.map((playerId) => state.players.get(playerId))
   if (players.some((player) => !player)) return null
-  return players.reduce((sum, player) => sum + (player?.pvna ?? 3.0), 0) / 2
+  return players.reduce((sum, player) => sum + (player?.pvna ?? 3.0), 0)
 }
 
 function getTeamGap(team: Team, state: SessionState): number | null {
@@ -42,6 +46,17 @@ function getTeamGap(team: Team, state: SessionState): number | null {
   const second = state.players.get(team[1])
   if (!first || !second) return null
   return Math.abs(first.pvna - second.pvna)
+}
+
+export function hasIntraTeamGapOverflow(teamA: Team, teamB: Team, state: SessionState): boolean {
+  const teamAGap = getTeamGap(teamA, state)
+  const teamBGap = getTeamGap(teamB, state)
+  return (
+    teamAGap === null ||
+    teamBGap === null ||
+    teamAGap > INTRA_TEAM_PVNA_GAP_LIMIT ||
+    teamBGap > INTRA_TEAM_PVNA_GAP_LIMIT
+  )
 }
 
 function getPartnerRepeats(team: Team, state: SessionState): number {
@@ -60,6 +75,120 @@ function getOpponentRepeats(teamA: Team, teamB: Team, state: SessionState): numb
   return total
 }
 
+export type ProjectedRepeatSummary = {
+  max_partner_pair_count: number
+  max_opponent_pair_count: number
+  max_repeated_partners_per_player: number
+  max_repeated_opponents_per_player: number
+  pair_over_by: number
+  player_over_by: number
+  affected_pairs: number
+  affected_players: number
+}
+
+function repeatedRelationCount(counts: Map<string, number>) {
+  return [...counts.values()].filter((count) => count >= 2).length
+}
+
+function cloneCountsForPlayer(
+  playerId: string,
+  state: SessionState,
+  field: 'partner_counts' | 'opponent_counts',
+) {
+  return new Map(state.players.get(playerId)?.[field] ?? [])
+}
+
+export function getProjectedRepeatSummary(teamA: Team, teamB: Team, state: SessionState): ProjectedRepeatSummary {
+  let maxPartnerPairCount = 0
+  let maxOpponentPairCount = 0
+  let pairOverBy = 0
+  let affectedPairs = 0
+  const playerIds = [...teamA, ...teamB]
+  const projectedPartnerCounts = new Map(playerIds.map((playerId) => [
+    playerId,
+    cloneCountsForPlayer(playerId, state, 'partner_counts'),
+  ]))
+  const projectedOpponentCounts = new Map(playerIds.map((playerId) => [
+    playerId,
+    cloneCountsForPlayer(playerId, state, 'opponent_counts'),
+  ]))
+
+  const incrementPair = (
+    playerA: string,
+    playerB: string,
+    countsByPlayer: Map<string, Map<string, number>>,
+  ) => {
+    const countsA = countsByPlayer.get(playerA)
+    const countsB = countsByPlayer.get(playerB)
+    const nextCount = (countsA?.get(playerB) ?? 0) + 1
+    if (countsA) countsA.set(playerB, nextCount)
+    if (countsB) countsB.set(playerA, nextCount)
+    return nextCount
+  }
+
+  const partnerPairs: Array<[string, string]> = [
+    [teamA[0], teamA[1]],
+    [teamB[0], teamB[1]],
+  ]
+  for (const [playerA, playerB] of partnerPairs) {
+    const projectedCount = incrementPair(playerA, playerB, projectedPartnerCounts)
+    maxPartnerPairCount = Math.max(maxPartnerPairCount, projectedCount)
+    const overBy = Math.max(0, projectedCount - MAX_PROJECTED_PARTNER_PAIR_COUNT)
+    if (overBy > 0) {
+      pairOverBy += overBy
+      affectedPairs += 1
+    }
+  }
+
+  for (const playerA of teamA) {
+    for (const playerB of teamB) {
+      const projectedCount = incrementPair(playerA, playerB, projectedOpponentCounts)
+      maxOpponentPairCount = Math.max(maxOpponentPairCount, projectedCount)
+      const overBy = Math.max(0, projectedCount - MAX_PROJECTED_OPPONENT_PAIR_COUNT)
+      if (overBy > 0) {
+        pairOverBy += overBy
+        affectedPairs += 1
+      }
+    }
+  }
+
+  let maxRepeatedPartnersPerPlayer = 0
+  let maxRepeatedOpponentsPerPlayer = 0
+  let playerOverBy = 0
+  let affectedPlayers = 0
+
+  for (const playerId of playerIds) {
+    const repeatedPartners = repeatedRelationCount(projectedPartnerCounts.get(playerId) ?? new Map())
+    const repeatedOpponents = repeatedRelationCount(projectedOpponentCounts.get(playerId) ?? new Map())
+    maxRepeatedPartnersPerPlayer = Math.max(maxRepeatedPartnersPerPlayer, repeatedPartners)
+    maxRepeatedOpponentsPerPlayer = Math.max(maxRepeatedOpponentsPerPlayer, repeatedOpponents)
+
+    const partnerOverBy = Math.max(0, repeatedPartners - MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER)
+    const opponentOverBy = Math.max(0, repeatedOpponents - MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER)
+    const totalPlayerOverBy = partnerOverBy + opponentOverBy
+    if (totalPlayerOverBy > 0) {
+      playerOverBy += totalPlayerOverBy
+      affectedPlayers += 1
+    }
+  }
+
+  return {
+    max_partner_pair_count: maxPartnerPairCount,
+    max_opponent_pair_count: maxOpponentPairCount,
+    max_repeated_partners_per_player: maxRepeatedPartnersPerPlayer,
+    max_repeated_opponents_per_player: maxRepeatedOpponentsPerPlayer,
+    pair_over_by: pairOverBy,
+    player_over_by: playerOverBy,
+    affected_pairs: affectedPairs,
+    affected_players: affectedPlayers,
+  }
+}
+
+export function hasRepeatOverflow(teamA: Team, teamB: Team, state: SessionState): boolean {
+  const summary = getProjectedRepeatSummary(teamA, teamB, state)
+  return summary.pair_over_by > 0 || summary.player_over_by > 0
+}
+
 function getGroupedPartnerCount(teamA: Team, teamB: Team, state: SessionState): number {
   return getGroupedTeamPairCount(teamA, state) + getGroupedTeamPairCount(teamB, state)
 }
@@ -69,9 +198,15 @@ function getGroupedTeamPairCount(team: Team, state: SessionState): number {
 
   for (let i = 0; i < team.length; i += 1) {
     for (let j = i + 1; j < team.length; j += 1) {
-      const groupA = state.players.get(team[i])?.group_id
-      const groupB = state.players.get(team[j])?.group_id
-      if (groupA && groupA === groupB) count += 1
+      const playerA = state.players.get(team[i])
+      const playerB = state.players.get(team[j])
+      if (
+        playerA?.group_id &&
+        playerA.group_id === playerB?.group_id &&
+        Math.abs(playerA.pvna - playerB.pvna) <= INTRA_TEAM_PVNA_GAP_LIMIT
+      ) {
+        count += 1
+      }
     }
   }
 
@@ -133,7 +268,12 @@ export function scoreMatch(
   teamA: Team,
   teamB: Team,
   state: SessionState,
-  options: { tolerance?: number; weights?: ScoringWeights } = {},
+  options: {
+    tolerance?: number
+    weights?: ScoringWeights
+    allowRepeatOverflow?: boolean
+    allowIntraTeamGapOverflow?: boolean
+  } = {},
 ): MatchScore {
   const allPlayers = [...teamA, ...teamB]
   const uniquePlayers = new Set(allPlayers)
@@ -150,20 +290,16 @@ export function scoreMatch(
   const teamBPvna = getPvna(teamB, state)
   if (teamAPvna === null || teamBPvna === null) return INFINITY_SCORE
 
-  const teamAGap = getTeamGap(teamA, state)
-  const teamBGap = getTeamGap(teamB, state)
-  if (
-    teamAGap === null ||
-    teamBGap === null ||
-    teamAGap > INTRA_TEAM_PVNA_GAP_LIMIT ||
-    teamBGap > INTRA_TEAM_PVNA_GAP_LIMIT
-  ) {
+  if (!options.allowIntraTeamGapOverflow && hasIntraTeamGapOverflow(teamA, teamB, state)) {
     return INFINITY_SCORE
   }
 
   const pvnaDiff = Math.abs(teamAPvna - teamBPvna)
   const tolerance = options.tolerance ?? state.config.pvna_tolerance
   if (pvnaDiff > tolerance) return INFINITY_SCORE
+  if (!options.allowRepeatOverflow && hasRepeatOverflow(teamA, teamB, state)) {
+    return INFINITY_SCORE
+  }
 
   const weights = options.weights ?? state.config.weights
   const stats = emptyStats(pvnaDiff)
@@ -173,7 +309,7 @@ export function scoreMatch(
   stats.gender_pref_penalty = genderPenalty(teamA, teamB, state, weights)
 
   const score =
-    (pvnaDiff / 0.5) * weights.pvna +
+    pvnaDiff * weights.pvna +
     stats.partner_repeats * weights.partner_repeat +
     stats.opponent_repeats * weights.opponent_repeat -
     stats.group_bonus * weights.group_bonus +

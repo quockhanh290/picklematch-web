@@ -35,6 +35,7 @@ export function NetworkStatusBanner() {
       style={[
         styles.container, 
         { 
+          position: Platform.OS === 'web' ? ('fixed' as any) : 'absolute',
           backgroundColor,
           paddingTop: Platform.OS === 'ios' ? insets.top : 8,
           transform: [{

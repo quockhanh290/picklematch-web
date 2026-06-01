@@ -181,7 +181,7 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
   // We overlay the loading/redirecting UI on top.
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      {children}
+      {shouldRenderChildren ? children : null}
       
       {(authStatus === 'loading' || !fontsLoaded || !shouldRenderChildren) && (
         <View style={{ 

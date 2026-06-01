@@ -120,6 +120,7 @@ export function HostRosterSection({
   const [removedPlayerIds, setRemovedPlayerIds] = React.useState<Set<string>>(new Set())
   const [isEditMode, setIsEditMode] = React.useState(false)
   const [showManualManagement, setShowManualManagement] = React.useState(false)
+  const layoutSignatureRef = React.useRef('')
 
   // Filter out locally removed players
   const activePlayers = useMemo(() => {
@@ -170,10 +171,13 @@ export function HostRosterSection({
   }, [players])
   // Add layout animation when players change
   React.useEffect(() => {
+    const nextSignature = activePlayers.map(player => player.id).join('|')
+    if (layoutSignatureRef.current === nextSignature) return
+    layoutSignatureRef.current = nextSignature
     if (Platform.OS !== 'web') {
       try { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut) } catch {}
     }
-  }, [players])
+  }, [activePlayers])
 
   const AVATAR_COLORS = [
     { bg: '#EDE4FE', text: '#5B2D9E' },
@@ -207,14 +211,28 @@ export function HostRosterSection({
       )
     }
 
-    const confirmed = activePlayers.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show' && p.checkInStatus !== 'pending')
-    const noShows = activePlayers.filter(p => p.checkInStatus === 'no_show' || p.checkInStatus === 'pending')
+    const getEffectiveCheckInStatus = (player: ArrangementPlayer) => (
+      localStatuses[player.id] || (player as any).checkInStatus || 'pending'
+    )
+
+    const confirmed = activePlayers.filter(p => {
+      const status = getEffectiveCheckInStatus(p)
+      return p.status === 'confirmed' && status !== 'no_show' && status !== 'pending'
+    })
+    const noShows = activePlayers.filter(p => {
+      const status = getEffectiveCheckInStatus(p)
+      return status === 'no_show' || status === 'pending'
+    })
     const waiting = activePlayers.filter(p => p.status === 'waiting')
 
-    const totalCount = activePlayers.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show' && p.checkInStatus !== 'pending').length
+    const totalCount = activePlayers.filter(p => {
+      const status = getEffectiveCheckInStatus(p)
+      return p.status === 'confirmed' && status !== 'no_show' && status !== 'pending'
+    }).length
     const femaleCount = activePlayers.filter(p => {
       const g = String(p.gender || '').toLowerCase()
-      return (g === 'female' || g === 'nữ') && p.status === 'confirmed' && p.checkInStatus !== 'no_show' && p.checkInStatus !== 'pending'
+      const status = getEffectiveCheckInStatus(p)
+      return (g === 'female' || g === 'nữ') && p.status === 'confirmed' && status !== 'no_show' && status !== 'pending'
     }).length
     const maleCount = totalCount - femaleCount
     const totalSkill = confirmed.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
@@ -325,7 +343,7 @@ export function HostRosterSection({
       const isFemale = gender === 'female' || gender === 'nữ'
       const { bg, text } = getAvatarColor(player.name || '')
       const skillLevel = Number(player.pvna || 0)
-      const checkInStatus = player.status === 'confirmed' ? localStatuses[player.id] || (player as any).checkInStatus || 'pending' : null
+      const checkInStatus = player.status === 'confirmed' ? getEffectiveCheckInStatus(player) : null
       const isHostPlayer = player.id === hostId
 
       return (
@@ -742,8 +760,8 @@ export function HostRosterSection({
             {teamKeys.map(teamId => {
               const teamPlayers = groups[teamId]
               const teamSkill = teamPlayers.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
-              const teamAvg = teamPlayers.length > 0 ? teamSkill / teamPlayers.length : 0
-              const diff = teamAvg - avgSkill
+              const targetTeamSkill = teamPlayers.length * avgSkill
+              const diff = teamSkill - targetTeamSkill
               
               const stripColor = '#0F6E56'
 

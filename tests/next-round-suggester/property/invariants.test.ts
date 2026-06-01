@@ -50,11 +50,11 @@ describe('Suggester invariants', () => {
 })
 
 function computeTeamDiff(match: Match, state: SessionState): number {
-  const teamA = average(match.team_a.map((playerId) => state.players.get(playerId)?.pvna ?? 3.0))
-  const teamB = average(match.team_b.map((playerId) => state.players.get(playerId)?.pvna ?? 3.0))
+  const teamA = sum(match.team_a.map((playerId) => state.players.get(playerId)?.pvna ?? 3.0))
+  const teamB = sum(match.team_b.map((playerId) => state.players.get(playerId)?.pvna ?? 3.0))
   return Math.abs(teamA - teamB)
 }
 
-function average(values: number[]): number {
-  return values.reduce((sum, value) => sum + value, 0) / values.length
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0)
 }

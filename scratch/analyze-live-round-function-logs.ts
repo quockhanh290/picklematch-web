@@ -1,11 +1,15 @@
 type FunctionTiming = {
   kind: 'start' | 'end'
+  versioned: boolean
   total: number
   auth?: number
   loadSessionState?: number
   dbWrites?: number
   correctForFairness?: number
   validateAndScoreBefore?: number
+  readBody?: number
+  createClient?: number
+  rpc?: number
   round?: number
 }
 
@@ -57,9 +61,11 @@ function summary(values: number[]) {
 }
 
 function parseFunctionTiming(message: string): FunctionTiming | null {
-  const kind = message.includes('[session-rounds-start] timing')
+  const versioned = message.includes('[session-rounds-start-versioned] timing')
+    || message.includes('[session-rounds-end-versioned] timing')
+  const kind = message.includes('[session-rounds-start] timing') || message.includes('[session-rounds-start-versioned] timing')
     ? 'start'
-    : message.includes('[session-rounds-end] timing')
+    : message.includes('[session-rounds-end] timing') || message.includes('[session-rounds-end-versioned] timing')
       ? 'end'
       : null
   if (!kind) return null
@@ -68,12 +74,16 @@ function parseFunctionTiming(message: string): FunctionTiming | null {
   if (total === undefined) return null
   return {
     kind,
+    versioned,
     total,
     auth: numberField(message, 'auth'),
     loadSessionState: numberField(message, 'loadSessionState'),
     dbWrites: numberField(message, 'dbWrites'),
     correctForFairness: numberField(message, 'correctForFairness'),
     validateAndScoreBefore: numberField(message, 'validateAndScoreBefore'),
+    readBody: numberField(message, 'readBody'),
+    createClient: numberField(message, 'createClient'),
+    rpc: numberField(message, 'rpc'),
     round: numberField(message, 'round'),
   }
 }
@@ -121,6 +131,9 @@ function printTiming(title: string, rows: FunctionTiming[]) {
     auth: summary(rows.map((row) => row.auth).filter((value): value is number => value !== undefined)),
     loadSessionState: summary(rows.map((row) => row.loadSessionState).filter((value): value is number => value !== undefined)),
     dbWrites: summary(rows.map((row) => row.dbWrites).filter((value): value is number => value !== undefined)),
+    readBody: summary(rows.map((row) => row.readBody).filter((value): value is number => value !== undefined)),
+    createClient: summary(rows.map((row) => row.createClient).filter((value): value is number => value !== undefined)),
+    rpc: summary(rows.map((row) => row.rpc).filter((value): value is number => value !== undefined)),
   })
 }
 
@@ -181,6 +194,8 @@ limit ${limit}
 
   printTiming('start timing', timings.filter((row) => row.kind === 'start'))
   printTiming('end timing', timings.filter((row) => row.kind === 'end'))
+  printTiming('versioned start timing', timings.filter((row) => row.kind === 'start' && row.versioned))
+  printTiming('versioned end timing', timings.filter((row) => row.kind === 'end' && row.versioned))
   printLoad('start loadSessionState detail', loads.filter((row) => row.kind === 'start'))
   printLoad('end loadSessionState detail', loads.filter((row) => row.kind === 'end'))
 

@@ -11,5 +11,25 @@ module.exports = async function (env, argv) {
     '@': path.resolve(__dirname),
   }
 
+  if (env.mode === 'production') {
+    config.optimization = {
+      ...config.optimization,
+      splitChunks: {
+        chunks: 'all',
+        maxInitialRequests: 5,
+        cacheGroups: {
+          vendor: {
+            test: /[\\/]node_modules[\\/]/,
+            name(module) {
+              const match = module.context.match(/[\\/]node_modules[\\/](.*?)([\\/]|$)/);
+              const packageName = match ? match[1] : 'vendor';
+              return `npm.${packageName.replace('@', '')}`;
+            },
+          },
+        },
+      },
+    }
+  }
+
   return config
 }

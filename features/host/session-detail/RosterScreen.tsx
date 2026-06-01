@@ -11,20 +11,35 @@ import type { SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
 
-import { invokeLiveSessionFunction } from './next-round-v2/api'
+import { invokeLiveSessionFunction, syncLiveRosterFromSessionPlayers } from './next-round-v2/api'
 import { RosterSheet } from './next-round-v2/flow-sheets'
-import { refreshBus } from './next-round-v2/refreshBus'
-import { useLiveRows } from './next-round-v2/useLiveRows'
+import { useQueryClient } from '@tanstack/react-query'
+import { liveSessionQueryKeys, useLiveSessionQuery } from './next-round-v2/queries'
+import type { LiveRows } from './next-round-v2/types'
+
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const message = (err as { message?: unknown }).message
+    if (typeof message === 'string') return message
+  }
+  if (typeof err === 'object' && err !== null && 'error' in err) {
+    const message = (err as { error?: unknown }).error
+    if (typeof message === 'string') return message
+  }
+  return String(err ?? '')
+}
 
 function toUserSafeError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err)
+  const message = getErrorMessage(err)
   if (message.includes('Request timed out') || message.includes('Temporary network issue')) return 'Lỗi kết nối mạng. Vui lòng thử lại.'
   if (message.startsWith('Could not ')) return 'Không thể thực hiện: ' + message
   return message || 'Thao tác thất bại. Vui lòng thử lại.'
 }
 
 function isTimeoutError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err)
+  const message = getErrorMessage(err)
   return message.includes('Request timed out') || message.includes('Temporary network issue')
 }
 
@@ -38,14 +53,29 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
   const [swapTarget, setSwapTarget] = useState<string | null>(null)
 
   const checkoutBatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const liveStateRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingCheckoutTargetsRef = useRef(new Map<string, boolean>())
   const pendingCheckoutPatchesRef = useRef(new Map<string, Partial<SessionPlayerStateRow>>())
+  const autoSyncAttemptedRef = useRef(false)
 
   const playersById = useMemo(
     () => new Map(players.map(p => [String(p.id), p])),
     [players],
   )
-  const { rows, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState, loading, refreshing } = useLiveRows(sessionId, playersById)
+  const queryClient = useQueryClient()
+  const { data: rowsData, isLoading: loading } = useLiveSessionQuery(sessionId, playersById)
+  const rows: LiveRows = rowsData || { playerRows: [], pairRows: [], roundRows: [], liveMatchRows: [], liveStateVersion: null }
+  const refreshing = loading
+  const loadLiveState = useCallback(async () => { await queryClient.invalidateQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) }) }, [queryClient, sessionId])
+  const applyLiveStateVersion = useCallback((_version: unknown) => { queryClient.invalidateQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) }) }, [queryClient, sessionId])
+  const patchPlayerRow = useCallback((playerId: string, patch: Partial<SessionPlayerStateRow>) => {
+    queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), (old: LiveRows | undefined) => {
+      if (!old) return old
+      return { ...old, playerRows: old.playerRows.map((row: SessionPlayerStateRow) => row.player_id === playerId ? { ...row, ...patch } : row) }
+    })
+  }, [queryClient, sessionId])
+  const settlePlayerPatch = useCallback((_playerId?: string, _patch?: Partial<SessionPlayerStateRow>) => {}, [])
+  const clearPlayerPatch = useCallback((_playerId?: string) => { queryClient.invalidateQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) }) }, [queryClient, sessionId])
 
   const rowsRef = useRef(rows)
   rowsRef.current = rows
@@ -53,24 +83,73 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
   const groupSummaries = useMemo(() => buildGroupSummaries(rows.playerRows), [rows.playerRows])
   const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
 
-  const activeRoundMatchIds = useMemo(() => {
+  const activeRoundMatchIds = useMemo<Set<string>>(() => {
     const activeRound = rows.roundRows.find(r => r.status === 'active')
     if (!activeRound?.matches?.length) return new Set<string>()
-    return new Set(activeRound.matches.flatMap(m => [...(m.team_a ?? []), ...(m.team_b ?? [])].map(String)))
+    return new Set(activeRound.matches.flatMap((match: { team_a?: string[]; team_b?: string[] }) => [...(match.team_a ?? []), ...(match.team_b ?? [])].map(String)))
   }, [rows.roundRows])
 
-  const swapCandidates = useMemo(() => {
+  const swapCandidates = useMemo<SessionPlayerStateRow[]>(() => {
     if (!swapTarget) return []
-    const outRow = rows.playerRows.find(r => r.player_id === swapTarget)
+    const outRow = rows.playerRows.find((row: SessionPlayerStateRow) => row.player_id === swapTarget)
     const outPvna = outRow?.players?.pvna ?? 3.0
     return rows.playerRows
-      .filter(r => r.player_id !== swapTarget && r.checked_out_at === null && !activeRoundMatchIds.has(r.player_id))
+      .filter((row: SessionPlayerStateRow) => row.player_id !== swapTarget && row.checked_out_at === null && !activeRoundMatchIds.has(row.player_id))
       .sort((a, b) => Math.abs((a.players?.pvna ?? 3.0) - outPvna) - Math.abs((b.players?.pvna ?? 3.0) - outPvna))
   }, [swapTarget, rows.playerRows, activeRoundMatchIds])
 
+  const applyMutationVersion = useCallback((payload: any) => {
+    applyLiveStateVersion(payload?.live_state_version)
+  }, [applyLiveStateVersion])
+
+  const getRosterSyncFallbackIds = useCallback(() => (
+    players
+      .filter(player => {
+        const status = player.checkInStatus
+        return player.status === 'confirmed' && status !== 'no_show'
+      })
+      .map(player => String(player.id))
+  ), [players])
+
+  const scheduleLiveStateRefresh = useCallback((delayMs = 450) => {
+    if (liveStateRefreshTimerRef.current) clearTimeout(liveStateRefreshTimerRef.current)
+    liveStateRefreshTimerRef.current = setTimeout(() => {
+      liveStateRefreshTimerRef.current = null
+      void loadLiveState()
+    }, delayMs)
+  }, [loadLiveState])
+
   useEffect(() => () => {
     if (checkoutBatchTimerRef.current) clearTimeout(checkoutBatchTimerRef.current)
+    if (liveStateRefreshTimerRef.current) clearTimeout(liveStateRefreshTimerRef.current)
   }, [])
+
+  const syncRoster = useCallback(async () => {
+    const fallbackIds = getRosterSyncFallbackIds()
+    if (fallbackIds.length === 0) return
+
+    setBusy('sync')
+    setError(null)
+    try {
+      const result = await syncLiveRosterFromSessionPlayers(sessionId, fallbackIds)
+      applyMutationVersion(result.payload)
+      await loadLiveState()
+    } catch (err) {
+      const msg = toUserSafeError(err)
+      setError(msg)
+      if (__DEV__) console.warn('[RosterScreen] roster sync failed', err)
+    } finally {
+      setBusy(null)
+    }
+  }, [applyMutationVersion, getRosterSyncFallbackIds, loadLiveState, sessionId])
+
+  useEffect(() => {
+    if (loading || autoSyncAttemptedRef.current || rows.playerRows.length > 0) return
+    if (getRosterSyncFallbackIds().length === 0) return
+
+    autoSyncAttemptedRef.current = true
+    void syncRoster()
+  }, [getRosterSyncFallbackIds, loading, rows.playerRows.length, syncRoster])
 
   const flushPendingCheckout = useCallback(async () => {
     const targets = new Map(pendingCheckoutTargetsRef.current)
@@ -83,12 +162,19 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     const checkinIds = [...targets.entries()].filter(([, out]) => !out).map(([id]) => id)
 
     try {
-      if (checkoutIds.length > 0) await invokeLiveSessionFunction('session-checkout', sessionId, { player_ids: checkoutIds })
-      if (checkinIds.length > 0) await invokeLiveSessionFunction('session-checkin', sessionId, { player_ids: checkinIds })
+      if (checkoutIds.length > 0) {
+        const payload = await invokeLiveSessionFunction('session-checkout', sessionId, { player_ids: checkoutIds })
+        applyMutationVersion(payload)
+      }
+      if (checkinIds.length > 0) {
+        const payload = await invokeLiveSessionFunction('session-checkin', sessionId, { player_ids: checkinIds })
+        applyMutationVersion(payload)
+      }
       targets.forEach((_, playerId) => {
         const patch = patches.get(playerId)
         if (patch) settlePlayerPatch(playerId, patch)
       })
+      scheduleLiveStateRefresh()
     } catch (err) {
       targets.forEach((_, playerId) => clearPlayerPatch(playerId))
       if (!isTimeoutError(err)) {
@@ -98,7 +184,7 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
       }
       await loadLiveState()
     }
-  }, [sessionId, settlePlayerPatch, clearPlayerPatch, loadLiveState])
+  }, [sessionId, applyMutationVersion, settlePlayerPatch, clearPlayerPatch, scheduleLiveStateRefresh, loadLiveState])
 
   const scheduleCheckoutFlush = useCallback(() => {
     if (checkoutBatchTimerRef.current) clearTimeout(checkoutBatchTimerRef.current)
@@ -140,7 +226,8 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     setBusy(`swap-${outPlayerId}`)
     setError(null)
     try {
-      await invokeLiveSessionFunction('session-rounds-swap-player', sessionId, { out_player_id: outPlayerId, in_player_id: inPlayerId })
+      const payload = await invokeLiveSessionFunction('session-rounds-swap-player', sessionId, { out_player_id: outPlayerId, in_player_id: inPlayerId })
+      applyMutationVersion(payload)
     } catch (err) {
       if (!isTimeoutError(err)) {
         setError(toUserSafeError(err))
@@ -149,21 +236,30 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
       await loadLiveState()
       setBusy(null)
     }
-  }, [swapTarget, sessionId, loadLiveState])
+  }, [swapTarget, sessionId, applyMutationVersion, loadLiveState])
 
   const toggleRest = useCallback(async (playerId: string, optedRest: boolean) => {
+    if (activeRoundMatchIds.has(String(playerId))) {
+      const msg = 'Người này đang trong live match. Hãy hoàn tất/hủy trận, hoặc dùng "Đổi người" trước khi cho xin nghỉ.'
+      setError(msg)
+      Alert.alert('Không thể xin nghỉ', msg)
+      return
+    }
+
     const patch: Partial<SessionPlayerStateRow> = { opted_rest: !optedRest }
     patchPlayerRow(playerId, patch)
     setError(null)
     try {
-      await invokeLiveSessionFunction('session-request-rest', sessionId, { player_id: playerId, opted_rest: !optedRest })
+      const payload = await invokeLiveSessionFunction('session-request-rest', sessionId, { player_id: playerId, opted_rest: !optedRest })
+      applyMutationVersion(payload)
       settlePlayerPatch(playerId, patch)
+      scheduleLiveStateRefresh()
     } catch (err) {
       clearPlayerPatch(playerId)
       if (!isTimeoutError(err)) setError(toUserSafeError(err))
       await loadLiveState()
     }
-  }, [sessionId, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState])
+  }, [activeRoundMatchIds, sessionId, applyMutationVersion, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, scheduleLiveStateRefresh, loadLiveState])
 
   const setGroupForPlayers = useCallback(async (playerIds: string[]) => {
     if (playerIds.length < 2) return
@@ -172,8 +268,10 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     playerIds.forEach(id => patchPlayerRow(id, patch))
     setBusy(`group-${playerIds.join('-')}`)
     try {
-      await invokeLiveSessionFunction('session-set-group', sessionId, { player_ids: playerIds })
+      const payload = await invokeLiveSessionFunction('session-set-group', sessionId, { player_ids: playerIds })
+      applyMutationVersion(payload)
       playerIds.forEach(id => settlePlayerPatch(id, patch))
+      scheduleLiveStateRefresh()
     } catch (err) {
       playerIds.forEach(id => clearPlayerPatch(id))
       if (!isTimeoutError(err)) setError(toUserSafeError(err))
@@ -181,37 +279,43 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     } finally {
       setBusy(null)
     }
-  }, [sessionId, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState])
+  }, [sessionId, applyMutationVersion, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, scheduleLiveStateRefresh, loadLiveState])
 
   const clearGroup = useCallback(async (playerId: string) => {
     const patch: Partial<SessionPlayerStateRow> = { group_id: null }
     patchPlayerRow(playerId, patch)
     try {
-      await invokeLiveSessionFunction('session-set-group', sessionId, { clear_player_id: playerId })
+      const payload = await invokeLiveSessionFunction('session-set-group', sessionId, { clear_player_id: playerId })
+      applyMutationVersion(payload)
       settlePlayerPatch(playerId, patch)
+      scheduleLiveStateRefresh()
     } catch (err) {
       clearPlayerPatch(playerId)
       if (!isTimeoutError(err)) setError(toUserSafeError(err))
       await loadLiveState()
     }
-  }, [sessionId, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState])
+  }, [sessionId, applyMutationVersion, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, scheduleLiveStateRefresh, loadLiveState])
 
   const clearWholeGroup = useCallback(async (groupId: string) => {
-    const groupPlayerIds = rowsRef.current.playerRows.filter(r => r.group_id === groupId).map(r => r.player_id)
+    const groupPlayerIds = rowsRef.current.playerRows
+      .filter((row: SessionPlayerStateRow) => row.group_id === groupId)
+      .map((row: SessionPlayerStateRow) => row.player_id)
     const patch: Partial<SessionPlayerStateRow> = { group_id: null }
-    groupPlayerIds.forEach(id => patchPlayerRow(id, patch))
+    groupPlayerIds.forEach((id: string) => patchPlayerRow(id, patch))
     setBusy(`group-clear-${groupId}`)
     try {
-      await invokeLiveSessionFunction('session-set-group', sessionId, { clear_group_id: groupId })
-      groupPlayerIds.forEach(id => settlePlayerPatch(id, patch))
+      const payload = await invokeLiveSessionFunction('session-set-group', sessionId, { clear_group_id: groupId })
+      applyMutationVersion(payload)
+      groupPlayerIds.forEach((id: string) => settlePlayerPatch(id, patch))
+      scheduleLiveStateRefresh()
     } catch (err) {
-      groupPlayerIds.forEach(id => clearPlayerPatch(id))
+      groupPlayerIds.forEach((id: string) => clearPlayerPatch(id))
       if (!isTimeoutError(err)) setError(toUserSafeError(err))
       await loadLiveState()
     } finally {
       setBusy(null)
     }
-  }, [sessionId, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, loadLiveState])
+  }, [sessionId, applyMutationVersion, patchPlayerRow, settlePlayerPatch, clearPlayerPatch, scheduleLiveStateRefresh, loadLiveState])
 
   const createGroupFromSelection = useCallback(async () => {
     if (groupSelection.length < 2) return
@@ -234,7 +338,7 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <SecondaryNavbar title="NGƯỜI CHƠI" onBackPress={() => {
-        refreshBus.emit()
+        queryClient.invalidateQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) })
         router.replace({ pathname: '/host/session/[id]/next-round', params: { id: sessionId } } as any)
       }} />
       {error ? (
@@ -255,7 +359,7 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
           onToggleRest={toggleRest}
           activeRoundIds={activeRoundMatchIds}
           onSwap={openSwap}
-          onRefreshRoster={loadLiveState}
+          onRefreshRoster={syncRoster}
           groupSelection={groupSelection}
           groupSummaries={groupSummaries}
           groupAliases={groupAliases}
@@ -328,10 +432,10 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
                 <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 14, color: theme.onSurfaceVariant, textAlign: 'center', paddingVertical: 24 }}>
                   Không có người nào đang nghỉ để thay thế.
                 </Text>
-              ) : swapCandidates.map(candidate => {
+              ) : swapCandidates.map((candidate: SessionPlayerStateRow) => {
                 const name = playersById.get(candidate.player_id)?.name ?? 'Người chơi'
                 const pvna = candidate.players?.pvna ?? 3.0
-                const outRow = rows.playerRows.find(r => r.player_id === swapTarget)
+                const outRow = rows.playerRows.find((row: SessionPlayerStateRow) => row.player_id === swapTarget)
                 const outPvna = outRow?.players?.pvna ?? 3.0
                 const diff = Math.abs(pvna - outPvna)
                 return (
