@@ -65,7 +65,8 @@ export default function LoginScreen() {
   const insets = useSafeAreaInsets()
   const isPlayerLoginDisabled = Platform.OS === 'web' && !__DEV__ // Enable on web during dev for testing profile
   const isE2E = process.env.EXPO_PUBLIC_E2E === '1'
-  const showDevOnlyUi = __DEV__ || isE2E
+  const isDevMode = process.env.EXPO_PUBLIC_DEV_MODE === '1'
+  const showDevOnlyUi = __DEV__ || isE2E || isDevMode
   const [phone, setPhone] = useState('')
   const [otp, setOtp] = useState('')
   const [step, setStep] = useState<'phone' | 'otp'>('phone')
