@@ -36,9 +36,20 @@ export type SuggestNextRoundOptions = {
   max_alternatives?: number
 }
 
+export type ExhaustiveFallbackDiagnostic = {
+  ran: boolean
+  timedOut: boolean
+  eligibleCount: number
+  combinationsEvaluated: number
+  bestPvnaDiff: number | null
+  bestHasTradeoffs: boolean
+  elapsedMs: number
+}
+
 export type SuggestNextMatchOptions = SuggestNextRoundOptions & {
   busy_player_ids?: Iterable<string>
   court_idx?: number
+  _exhaustiveDiag?: ExhaustiveFallbackDiagnostic
 }
 
 export type SuggestionDiagnostic = {
@@ -629,8 +640,14 @@ export function suggestNextMatch(
     topAlternative.warnings.includes('REPEAT_CAP_RELAXED')
   if (!shouldCheckFallback) return mappedResult
 
+  const diag: ExhaustiveFallbackDiagnostic = {
+    ran: false, timedOut: false, eligibleCount: 0,
+    combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+  }
+  if (options._exhaustiveDiag) Object.assign(options._exhaustiveDiag, diag)
   const fallback = suggestNextMatchExhaustiveFallback(matchState, {
     ...options,
+    _exhaustiveDiag: options._exhaustiveDiag ?? diag,
     court_idx: courtIdx,
     max_alternatives: options.max_alternatives ?? 1,
   })
@@ -706,6 +723,7 @@ function suggestNextMatchExhaustiveFallback(
     : createPartitioningRuntimeCache()
   const alternatives: SuggestionAlternative[] = []
   const seen = new Set<string>()
+  let combinationsEvaluated = 0
 
   const startMs = Date.now()
   const evaluateStage = (allowRelaxedTolerance: boolean, allowRepeatOverflow: boolean, enforceRequired = true) => {
@@ -720,7 +738,17 @@ function suggestNextMatchExhaustiveFallback(
       fallbackEligiblePlayers = [...required, ...sortedByExtreme].slice(0, 20)
     }
 
-    for (const selected of getAllCombinations(fallbackEligiblePlayers, 4)) {
+    // Pre-sort combinations by theoretical min pvna_diff so the best candidates
+    // are evaluated first — timeout no longer causes quality regression.
+    const combinations = getAllCombinations(fallbackEligiblePlayers, 4).sort((a, b) => {
+      const pvnaDiff = (group: typeof a) => {
+        const sorted = [...group].sort((x, y) => x.pvna - y.pvna)
+        return Math.abs(sorted[0].pvna + sorted[3].pvna - sorted[1].pvna - sorted[2].pvna) / 2
+      }
+      return pvnaDiff(a) - pvnaDiff(b)
+    })
+
+    for (const selected of combinations) {
       if (Date.now() - startMs > 2500) break
       if (
         enforceRequired &&
@@ -733,6 +761,7 @@ function suggestNextMatchExhaustiveFallback(
       }
       const key = `${combinationKey(selected)}|pvna:${allowRelaxedTolerance ? 'relaxed' : 'strict'}|repeat:${allowRepeatOverflow ? 'overflow' : 'cap'}`
       if (seen.has(key)) continue
+      combinationsEvaluated++
       const alternative = makeAlternative(
         selected,
         presentPlayers,
@@ -778,6 +807,18 @@ function suggestNextMatchExhaustiveFallback(
   }
 
   alternatives.sort(sortSingleMatchAlternatives)
+
+  const elapsedMs = Date.now() - startMs
+  if (options._exhaustiveDiag) {
+    const best = alternatives[0]
+    options._exhaustiveDiag.ran = true
+    options._exhaustiveDiag.timedOut = elapsedMs >= 2500
+    options._exhaustiveDiag.eligibleCount = eligiblePlayers.length
+    options._exhaustiveDiag.combinationsEvaluated = combinationsEvaluated
+    options._exhaustiveDiag.bestPvnaDiff = best?.matches[0]?.stats?.pvna_diff ?? null
+    options._exhaustiveDiag.bestHasTradeoffs = (best?.tradeoffs?.length ?? 0) > 0
+    options._exhaustiveDiag.elapsedMs = elapsedMs
+  }
 
   if (alternatives.length === 0) {
     return {

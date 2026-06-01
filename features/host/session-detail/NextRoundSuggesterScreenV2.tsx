@@ -766,6 +766,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       next.add(match.id)
       return next
     })
+    setSuggestedLiveMatches(current => current.filter(row => row.id !== match.id))
     setOptimisticLiveMatches(current => [
       ...current.filter(row => row.id !== match.id),
       optimisticMatch,
@@ -1352,15 +1353,52 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     () => buildPreviewBatchKey(sessionId, state, queueCourtCount, pvnaTolerance, fairnessAdjustment),
     [fairnessAdjustment, pvnaTolerance, queueCourtCount, sessionId, state],
   )
+  const previewRequestKey = useMemo(() => {
+    const liveRowsKey = effectiveLiveMatchRows
+      .map(match => [
+        match.id,
+        match.sequence_no,
+        match.round_no ?? '',
+        match.court_idx ?? '',
+        match.status,
+        match.team_a.join(':'),
+        match.team_b.join(':'),
+      ].join(':'))
+      .sort()
+      .join('|')
+    const completingKey = [...completingLiveMatchIds].sort().join(',')
+    const rowVersionKey = [
+      rows.liveStateVersion ?? 'noversion',
+      rows.playerRows.length,
+      rows.pairRows.length,
+      rows.roundRows.length,
+    ].join(':')
+    return [
+      previewBatchKey,
+      rowVersionKey,
+      liveRowsKey,
+      completingKey,
+      suggestedQueueCount,
+    ].join('||')
+  }, [
+    completingLiveMatchIds,
+    effectiveLiveMatchRows,
+    previewBatchKey,
+    rows.liveStateVersion,
+    rows.pairRows.length,
+    rows.playerRows.length,
+    rows.roundRows.length,
+    suggestedQueueCount,
+  ])
   React.useEffect(() => {
     if (previewBatchKeyRef.current === null) {
-      previewBatchKeyRef.current = previewBatchKey
+      previewBatchKeyRef.current = previewRequestKey
       return
     }
-    if (previewBatchKeyRef.current === previewBatchKey) return
-    previewBatchKeyRef.current = previewBatchKey
+    if (previewBatchKeyRef.current === previewRequestKey) return
+    previewBatchKeyRef.current = previewRequestKey
     setStartedPreviewIds(current => current.size === 0 ? current : new Set())
-  }, [previewBatchKey])
+  }, [previewRequestKey])
   const [suggestedLiveMatches, setSuggestedLiveMatches] = useState<SuggestedLiveMatchRow[]>([])
   const [isSuggestingPreview, setIsSuggestingPreview] = useState(false)
   const [edgeDebug, setEdgeDebug] = useState<any>(null)
@@ -1378,8 +1416,29 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   previewBodyRef.current = { effectiveLiveMatchRows, liveStateVersion: rows.liveStateVersion, completingLiveMatchIds, playersById, rows, queueCourtCount, pvnaTolerance, suggestedQueueCount, sessionId }
 
   useEffect(() => {
+    const previewReady = phase === 'plan'
+      && settingsHydrated
+      && rows.playerRows.length > 0
+
+    if (!previewReady) {
+      setSuggestedLiveMatches([])
+      suggestedPreviewBatchRef.current = null
+      return
+    }
+
+    if (suggestionIsUpdating) {
+      setSuggestedLiveMatches(prev => {
+        const newMatches = prev
+          .filter((match: SuggestedLiveMatchRow) => !startedPreviewIds.has(match.id))
+          .slice(0, suggestedQueueCount)
+        if (prev.length === newMatches.length && prev.every((m, i) => m.id === newMatches[i].id)) return prev
+        return newMatches
+      })
+      return
+    }
+
     const cachedBatch = suggestedPreviewBatchRef.current
-    if (cachedBatch?.key === previewBatchKey) {
+    if (cachedBatch?.key === previewRequestKey) {
       const newMatches = cachedBatch.matches
         .filter((match: SuggestedLiveMatchRow) => !startedPreviewIds.has(match.id))
         .slice(0, suggestedQueueCount)
@@ -1422,6 +1481,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         .then(res => {
           if (!isMounted) return
           setEdgeDebug(res.debug)
+          if (__DEV__) {
+            const riskyMatches = (res.payloads ?? []).filter((p: any) => p._exhaustive_diag)
+            riskyMatches.forEach((p: any) => {
+              console.log('[preview] vượt cap PVNA — exhaustive fallback diag', {
+                court: p.court_idx,
+                pvnaDiff: p._exhaustive_diag.bestPvnaDiff,
+                timedOut: p._exhaustive_diag.timedOut,
+                combinationsEvaluated: p._exhaustive_diag.combinationsEvaluated,
+                eligibleCount: p._exhaustive_diag.eligibleCount,
+                bestHasTradeoffs: p._exhaustive_diag.bestHasTradeoffs,
+                elapsedMs: p._exhaustive_diag.elapsedMs,
+              })
+            })
+          }
           const matches = res.payloads.map((match: any, index: number): SuggestedLiveMatchRow => ({
             ...match,
             id: `preview-${match.court_idx ?? index}-${match.team_a.join('-')}-${match.team_b.join('-')}`,
@@ -1439,7 +1512,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
             started_at: null,
             ended_at: null,
           }))
-          suggestedPreviewBatchRef.current = { key: previewBatchKey, matches }
+          suggestedPreviewBatchRef.current = { key: previewRequestKey, matches }
           setSuggestedLiveMatches(matches)
           if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch done', { totalMs: Math.round(nowMs() - previewT0), matchCount: matches.length })
         })
@@ -1455,7 +1528,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     }, 80)
 
     return () => { isMounted = false; clearTimeout(timer) }
-  }, [previewBatchKey, suggestedQueueCount, startedPreviewIds])
+  }, [phase, previewRequestKey, rows.playerRows.length, settingsHydrated, suggestedQueueCount, startedPreviewIds, suggestionIsUpdating])
   const liveLogicalRoundByMatchId = useMemo(
     () => buildLogicalRoundDisplayMap([...completedLiveMatches, ...activeLiveMatches], queueCourtCount),
     [activeLiveMatches, completedLiveMatches, queueCourtCount],
@@ -1740,4 +1813,3 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     </View>
   )
 }
-

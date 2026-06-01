@@ -575,11 +575,16 @@ export function buildSuggestedMatchPayloads({
       ...Object.fromEntries(requiredForThisCourt.map(playerId => [playerId, Tier.MUST_PLAY])),
     }
     
+    const exhaustiveDiag: import('./suggest.ts').ExhaustiveFallbackDiagnostic = {
+      ran: false, timedOut: false, eligibleCount: 0,
+      combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+    }
     const result = suggestNextMatch(suggestionState, {
       tier_overrides: tierOverrides as any,
       busy_player_ids: busyIds,
       court_idx: courtIdx,
       max_alternatives: LIVE_TRADEOFF_ALTERNATIVE_LIMIT,
+      _exhaustiveDiag: exhaustiveDiag,
     })
     
     suggestMs += nowMs() - suggestT0
@@ -609,8 +614,11 @@ export function buildSuggestedMatchPayloads({
       ? [...new Set([...alternative.warnings, 'PVNA_TOLERANCE_RELAXED'])]
       : alternative.warnings
       
-    if (typeof console !== 'undefined' && console.log && match.stats && match.stats.pvna_diff > 0.5) {
+    if (typeof console !== 'undefined' && console.log && (match.stats?.pvna_diff ?? 0) > 0.5) {
       const labels = (team: [string, string]) => team.map(playerId => playersById.get(playerId)?.name ?? playerId.slice(0, 8)).join('+')
+      console.log('[build-preview] risky suggested match', {
+        exhaustive: exhaustiveDiag,
+      })
       console.log('[build-preview] risky suggested match alternatives', {
         sessionId,
         courtIdx,
@@ -658,6 +666,7 @@ export function buildSuggestedMatchPayloads({
         : [],
       tradeoff_choices: tradeoffChoices?.choices,
       recommended_tradeoff_choice: tradeoffChoices?.recommended,
+      _exhaustive_diag: (match.stats?.pvna_diff ?? 0) > 0.5 ? exhaustiveDiag : undefined,
     })
     
     match.team_a.forEach(playerId => busyIds.add(playerId))
