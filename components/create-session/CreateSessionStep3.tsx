@@ -75,8 +75,8 @@ export function CreateSessionStep3({
     address: selectedCourt.city ? `${selectedCourt.address}, ${selectedCourt.city}` : selectedCourt.address,
     matchScore: 90,
     skillLabel: getSessionSkillLabel(
-      ELO_BANDS.find(b => b.levelId === `pvna_${minSkill}`)?.minElo ?? 1000,
-      ELO_BANDS.find(b => b.levelId === `pvna_${maxSkill}`)?.maxElo ?? 3000
+      (ELO_BANDS.find(b => b.levelId === `pvna_${minSkill}`) as any)?.minElo ?? 1000,
+      (ELO_BANDS.find(b => b.levelId === `pvna_${maxSkill}`) as any)?.maxElo ?? 3000
     ),
     timeLabel: formatHeroTimeLabel(selectedDate, startTime, endTime),
     priceLabel: formatPrice(pricePerPerson),
@@ -105,7 +105,7 @@ export function CreateSessionStep3({
     ],
     urgent: false,
     joined: true,
-  }
+  } as any
 
   const dayLabel = WEEKDAY_LONG[selectedDate.getDay()]
   const dd = pad2(selectedDate.getDate())

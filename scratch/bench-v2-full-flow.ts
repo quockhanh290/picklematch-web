@@ -3,12 +3,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import WebSocket from 'ws'
 
 import { calculateOptimalCourts, type CourtPreset } from '../lib/court-calculator'
+import { commitCompletedRound, pairHistoryRowsFromState } from '../lib/next-round-suggester/commit'
 import {
   suggestNextRoundExperimental,
   type ExperimentalDiagnostic,
   type ExperimentalSuggestOptions,
 } from '../features/host/session-detail/next-round-benchmark/experimental-suggest'
 import { applyFairnessAdjustment, correctForFairness } from '../lib/next-round-suggester/fairness/corrector'
+import { computeSessionFairness } from '../lib/next-round-suggester/fairness/metrics'
 import { loadSessionState } from '../lib/next-round-suggester/state'
 import { buildSessionStateFingerprint } from '../lib/next-round-suggester/state-version'
 import type { SessionState, SuggestionAlternative, SuggestionResult } from '../lib/next-round-suggester/types'
@@ -20,6 +22,7 @@ import type { SessionState, SuggestionAlternative, SuggestionResult } from '../l
 type Args = {
   yes: boolean
   autoCheckIn: boolean
+  transport: 'versioned-edge' | 'legacy-edge'
   candidateMode: NonNullable<ExperimentalSuggestOptions['mode']>
   candidateLimit: number
   perStrategyLimit: number
@@ -63,6 +66,19 @@ type PlanResult = {
 }
 
 type SupabaseAny = any
+
+type InvokeResult = {
+  ok: boolean
+  ms: number
+  status: number
+  error?: string
+  round_no?: number
+  round?: { round_no?: number }
+  live_state_version?: number
+  rpc_timing_ms?: Record<string, number>
+  changed_player_state?: unknown[]
+  changed_pair_history?: unknown[]
+}
 
 // ---------------------------------------------------------------------------
 // Env
@@ -120,10 +136,15 @@ function parseArgs(): Args {
     throw new Error('--candidate-mode must be global, per-strategy, adaptive, strategy-stop, or cached-production')
   }
   const courts = getValue('--courts')
+  const transport = (getValue('--transport') ?? 'versioned-edge') as Args['transport']
+  if (!['versioned-edge', 'legacy-edge'].includes(transport)) {
+    throw new Error('--transport must be versioned-edge or legacy-edge')
+  }
 
   return {
     yes: args.includes('--yes'),
     autoCheckIn: !args.includes('--no-auto-check-in'),
+    transport,
     candidateMode,
     candidateLimit: Math.max(1, Number(getValue('--candidate-limit') ?? '28')),
     perStrategyLimit: Math.max(1, Number(getValue('--per-strategy-limit') ?? '6')),
@@ -261,6 +282,17 @@ async function getActiveRound(service: SupabaseAny, sessionId: string): Promise<
   return data ? Number(data.round_no) : null
 }
 
+async function getLiveStateVersion(service: SupabaseAny, sessionId: string): Promise<number | null> {
+  const { data, error } = await service
+    .from('sessions')
+    .select('live_state_version')
+    .eq('id', sessionId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data || data.live_state_version === null || data.live_state_version === undefined) return null
+  return Number(data.live_state_version)
+}
+
 async function getPresentPlayerCount(service: SupabaseAny, sessionId: string): Promise<number> {
   const { data, error } = await service
     .from('session_player_state')
@@ -325,7 +357,7 @@ async function invoke(
   sessionId: string,
   body: Record<string, unknown>,
   query: Record<string, string | number> = {},
-): Promise<{ ok: boolean; ms: number; status: number; error?: string; round_no?: number }> {
+): Promise<InvokeResult> {
   const params = new URLSearchParams({ session_id: sessionId })
   for (const [key, value] of Object.entries(query)) params.set(key, String(value))
   const url = `${SUPABASE_URL}/functions/v1/${functionName}?${params.toString()}`
@@ -348,7 +380,7 @@ async function invoke(
     if (!response.ok || payload?.ok === false) {
       return { ok: false, ms, status, error: payload?.error ?? text }
     }
-    return { ok: true, ms, status, round_no: payload?.round?.round_no }
+    return { ok: true, ms, status, round_no: payload?.round?.round_no, ...payload }
   } catch (error) {
     return {
       ok: false,
@@ -425,6 +457,35 @@ async function buildPlan(
       total: performance.now() - totalT0,
     },
   }
+}
+
+function scoreAfterCompletedRound(plan: PlanResult, roundNo: number) {
+  const existingPairs = pairHistoryRowsFromState(plan.state)
+  const committed = commitCompletedRound(
+    plan.state,
+    {
+      round_no: roundNo,
+      matches: plan.alternative.matches,
+      resting: plan.alternative.resting,
+    },
+    existingPairs,
+  )
+  return computeSessionFairness({
+    ...plan.state,
+    current_round: Math.max(plan.state.current_round, roundNo + 1),
+    players: committed.players,
+    rounds: [
+      ...plan.state.rounds,
+      {
+        round_no: roundNo,
+        status: 'completed',
+        matches: plan.alternative.matches,
+        resting: plan.alternative.resting,
+        started_at: new Date(),
+        ended_at: new Date(),
+      },
+    ],
+  }).total
 }
 
 // ---------------------------------------------------------------------------
@@ -515,6 +576,7 @@ async function main() {
     courtsOverride: args.courtsOverride,
     courtPreset: args.courtPreset,
     candidateMode: args.candidateMode,
+    transport: args.transport,
     pvnaTolerance: args.pvnaTolerance,
   })
   console.log('')
@@ -552,20 +614,43 @@ async function main() {
 
     process.stdout.write(` ${plan.timings.total.toFixed(0)}ms  start...`)
 
-    const startResult = await invoke(
-      'session-rounds-start',
-      hostAuth.accessToken,
-      sessionId,
-      {
-        suggestion_idx: 0,
-        manual: plan.alternative.matches,
-        decision_mode: 'host_selected_alternative',
-        expected_state_fingerprint: buildSessionStateFingerprint(plan.state),
-        courts: plan.state.config.courts,
-        pvna_tolerance: plan.state.config.pvna_tolerance,
-        decision_context: { benchmark: true, source: 'scratch/bench-v2-full-flow.ts' },
-      },
-    )
+    const liveStateVersionBeforeStart = args.transport === 'versioned-edge'
+      ? await getLiveStateVersion(readClient, sessionId)
+      : null
+    const legacyStartBody = {
+      suggestion_idx: 0,
+      manual: plan.alternative.matches,
+      decision_mode: 'host_selected_alternative',
+      expected_state_fingerprint: buildSessionStateFingerprint(plan.state),
+      courts: plan.state.config.courts,
+      pvna_tolerance: plan.state.config.pvna_tolerance,
+      decision_context: { benchmark: true, source: 'scratch/bench-v2-full-flow.ts' },
+    }
+    const startResult = args.transport === 'versioned-edge'
+      ? await invoke(
+        'session-rounds-start-versioned',
+        hostAuth.accessToken,
+        sessionId,
+        {
+          expected_live_state_version: liveStateVersionBeforeStart,
+          round_no: plan.state.current_round,
+          matches: plan.alternative.matches,
+          resting: plan.alternative.resting,
+          audit_payload: {
+            benchmark: true,
+            source: 'scratch/bench-v2-full-flow.ts',
+            transport: args.transport,
+            client_request_id: `bench-start-${Date.now()}-${roundNo}`,
+            ...legacyStartBody,
+          },
+        },
+      )
+      : await invoke(
+        'session-rounds-start',
+        hostAuth.accessToken,
+        sessionId,
+        legacyStartBody,
+      )
 
     if (!startResult.ok) {
       const record: RoundRecord = {
@@ -609,13 +694,54 @@ async function main() {
       break
     }
 
-    const endResult = await invoke(
-      'session-rounds-end',
-      hostAuth.accessToken,
-      sessionId,
-      {},
-      { round_no: activeRoundNo },
-    )
+    const liveStateVersionBeforeEnd = args.transport === 'versioned-edge'
+      ? Number(startResult.live_state_version)
+      : null
+    if (args.transport === 'versioned-edge' && !Number.isFinite(liveStateVersionBeforeEnd)) {
+      const record: RoundRecord = {
+        round_no: roundNo,
+        gap_from_prev_ms,
+        plan_ms: plan.timings.total,
+        loadSessionState_ms: plan.timings.loadSessionState,
+        correctFairness_ms: plan.timings.correctForFairness,
+        suggestNextRound_ms: plan.timings.suggestNextRound,
+        startRound_ms: startResult.ms,
+        endRound_ms: 0,
+        total_ms: performance.now() - roundT0,
+        ok: false,
+        error: 'startRound did not return live_state_version',
+      }
+      records.push(record)
+      console.log(` FAIL: ${record.error}`)
+      break
+    }
+    const endResult = args.transport === 'versioned-edge'
+      ? await invoke(
+        'session-rounds-end-versioned',
+        hostAuth.accessToken,
+        sessionId,
+        {
+          expected_live_state_version: liveStateVersionBeforeEnd,
+          round_no: activeRoundNo,
+          player_state: [],
+          pair_history: [],
+          score_after: scoreAfterCompletedRound(plan, activeRoundNo),
+          audit_payload: {
+            benchmark: true,
+            source: 'scratch/bench-v2-full-flow.ts',
+            transport: args.transport,
+            client_request_id: `bench-end-${Date.now()}-${roundNo}`,
+          },
+        },
+        { round_no: activeRoundNo },
+      )
+      : await invoke(
+        'session-rounds-end',
+        hostAuth.accessToken,
+        sessionId,
+        {},
+        { round_no: activeRoundNo },
+      )
 
     const total_ms = performance.now() - roundT0
     prevEndAt = performance.now()
@@ -696,8 +822,13 @@ async function main() {
   }
 
   console.log('\n  Tip: correlate with Supabase logs by searching:')
-  console.log('    [session-rounds-start] timing')
-  console.log('    [session-rounds-end] timing')
+  if (args.transport === 'versioned-edge') {
+    console.log('    [session-rounds-start-versioned] timing')
+    console.log('    [session-rounds-end-versioned] timing')
+  } else {
+    console.log('    [session-rounds-start] timing')
+    console.log('    [session-rounds-end] timing')
+  }
 }
 
 main().catch((error) => {

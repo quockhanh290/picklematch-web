@@ -4,9 +4,9 @@ import { useAuth } from '@/lib/useAuth'
 import { AppLoading } from '@/components/design'
 
 export default function MySessionsRoute() {
-  const { userId, loading } = useAuth()
+  const { userId, isLoading } = useAuth()
 
-  if (loading) {
+  if (isLoading) {
     return <AppLoading fullScreen />
   }
 

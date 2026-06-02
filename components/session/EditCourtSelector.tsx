@@ -35,7 +35,7 @@ export function EditCourtSelector({ selectedCourt, onCourtSelect }: Props) {
         setIsChoosingCourt(false)
       }}
       onChangeCourt={() => setIsChoosingCourt((prev) => !prev)}
-      title={STRINGS.create_session.step1.court_title}
+      title={'Sân thi đấu'}
     />
   )
 }

@@ -135,7 +135,7 @@ export default function HostCreateSessionScreen() {
               onContinue={goToStep3}
               skillTolerance={skillTolerance}
               setTolerance={setSkillTolerance}
-              subCourtCount={selectedCourt?.sub_court_count || 1}
+              subCourtCount={(selectedCourt as any)?.sub_court_count || 1}
               selectedSubCourts={selectedSubCourts}
               onSubCourtsChange={setSelectedSubCourts}
               isNewbie={isNewbie}

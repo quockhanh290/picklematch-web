@@ -12,8 +12,8 @@ import { useAppTheme } from '@/lib/theme-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import {
     AlertTriangle,
-    CircleX,
-    LoaderCircle,
+    XCircle,
+    Loader,
     PencilLine,
     ShieldCheck,
     UserCheck,
@@ -599,7 +599,7 @@ export default function HostReviewCenterScreen() {
   if (!userId || userId !== session.host.id) {
     return (
       <SafeAreaView className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.background }}>
-        <CircleX size={28} color={theme.error} strokeWidth={ICON_STROKE} />
+        <XCircle size={48} color={theme.error} strokeWidth={1.5} />
         <Text className="mt-4 text-center" style={{ fontSize: 18, fontFamily: SCREEN_FONTS.headline, color: theme.onSurface }}>Bạn không có quyền truy cập</Text>
         <Text className="mt-2 text-center text-[14px] leading-6" style={{ color: theme.onSurfaceVariant }}>
           Chỉ host của kèo mới có thể xem và xử lý trung tâm duyệt yêu cầu này.
@@ -708,9 +708,9 @@ export default function HostReviewCenterScreen() {
               }}
             >
               {cancelling ? (
-                <LoaderCircle size={18} color={theme.onErrorContainer} strokeWidth={ICON_STROKE} />
+                <Loader size={18} color={theme.onErrorContainer} />
               ) : (
-                <CircleX size={18} color={theme.onErrorContainer} strokeWidth={ICON_STROKE} />
+                <XCircle size={18} color={theme.onErrorContainer} strokeWidth={ICON_STROKE} />
               )}
               <Text className="ml-2 text-[14px]" style={{ fontFamily: SCREEN_FONTS.headline, color: theme.onErrorContainer }}>
                 {cancelling ? 'ĐANG HỦY...' : 'HỦY KÈO'}

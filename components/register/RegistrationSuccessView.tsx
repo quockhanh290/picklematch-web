@@ -200,6 +200,7 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
           isHostDetail 
           isPreview={false} 
           fullCourtName={true}
+          actionLabel={'Vào kèo'}
         />
       </View>
 

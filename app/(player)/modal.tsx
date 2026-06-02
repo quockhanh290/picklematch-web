@@ -9,7 +9,7 @@ export default function ModalScreen() {
   return (
     <ThemedView style={styles.container}>
       <ThemedText type="title">Đây là màn hình hộp thoại</ThemedText>
-      <Link href="/" dismissTo style={styles.link}>
+      <Link href="/" replace style={styles.link}>
         <ThemedText type="link">Về trang chủ</ThemedText>
       </Link>
     </ThemedView>

@@ -115,7 +115,7 @@ export default function ProfileSetup() {
           </Text>
         </View>
 
-        <View style={{ px: 20, gap: 20, paddingHorizontal: 20 }}>
+        <View style={{ gap: 20, paddingHorizontal: 20 }}>
           <SectionCard 
             title="Thông tin định danh" 
             subtitle="Tên và thành phố giúp mọi người nhận ra bạn trên sân."

@@ -1,5 +1,5 @@
 import { AppButton, AppDialog, type AppDialogConfig, AppInput, StatusBadge } from '@/components/design'
-import { PROFILE_SKILL_HERO_TONE, ProfileSkillHero } from '@/components/profile/ProfileSections'
+import { ProfileSkillHero } from '@/components/profile/ProfileSections'
 import { useAppTheme } from '@/lib/theme-context'
 import { getEloBandByLevelId } from '@/lib/eloSystem'
 import { getSkillLevelById, getSkillLevelFromPlayer, type SkillAssessmentLevel } from '@/lib/skillAssessment'
@@ -445,7 +445,6 @@ export default function EditProfile() {
                 description={currentLevel?.description ?? ''}
                 contentRightInset={12}
                 levelId={selectedLevelId}
-                colors={PROFILE_SKILL_HERO_TONE}
               />
 
               <View style={{ marginTop: 20 }}>

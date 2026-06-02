@@ -81,7 +81,7 @@ const SessionStatusBanner = ({
   const borderColor = (isCancelled || isCancelledNoCheckin) ? theme.dangerBorderSoft : isNoData ? theme.outlineVariant : theme.dangerBorderSoft
   const textColor = (isCancelled || isCancelledNoCheckin) ? theme.dangerText : isNoData ? theme.onSurfaceVariant : theme.dangerText
 
-  let label = isInvalidPlayerCount ? STRINGS.session.labels.cancelled_no_players : STRINGS.session.labels.cancelled_generic
+  let label: string = isInvalidPlayerCount ? STRINGS.session.labels.cancelled_no_players : STRINGS.session.labels.cancelled_generic
   if (isCancelledNoCheckin) label = 'KÈO KHÔNG DIỄN RA (CHƯA CHECK-IN)'
   if (isNoData) label = 'KÈO ĐÃ KẾT THÚC (THIẾU DỮ LIỆU)'
 

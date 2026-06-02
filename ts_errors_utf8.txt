@@ -1,0 +1,472 @@
+﻿app/(player)/(tabs)/_layout.tsx(74,9): error TS2322: Type '{ headerShown: false; sceneStyle: { backgroundColor: string; }; tabBarActiveTintColor: string; tabBarInactiveTintColor: string; tabBarStyle: { borderRadius: 20; marginHorizontal: number; marginBottom: number; ... 13 more ...; backgroundColor: string; }; tabBarLabelStyle: { ...; }; }' is not assignable to type 'BottomTabNavigationOptions | ((props: { route: RouteProp<ParamListBase, string>; navigation: any; }) => BottomTabNavigationOptions) | undefined'.
+  Object literal may only specify known properties, and 'sceneStyle' does not exist in type 'BottomTabNavigationOptions | ((props: { route: RouteProp<ParamListBase, string>; navigation: any; }) => BottomTabNavigationOptions)'.
+app/(player)/court/[id].tsx(264,58): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: AnimateProps<ViewProps>): View', gave the following error.
+    Type '{ position: "absolute"; inset: number; backgroundColor: string; borderBottomWidth: number; borderBottomColor: string; }' is not assignable to type 'false | AnimateStyle<ViewStyle> | AnimateStyle<RegisteredStyle<ViewStyle>> | AnimateStyle<RecursiveArray<Falsy | ViewStyle | RegisteredStyle<...>>> | ... 4 more ... | undefined'.
+      Object literal may only specify known properties, and 'inset' does not exist in type 'AnimateStyle<ViewStyle> | AnimateStyle<RegisteredStyle<ViewStyle>> | AnimateStyle<RecursiveArray<Falsy | ViewStyle | RegisteredStyle<...>>> | RecursiveArray<...> | readonly (false | ... 5 more ... | undefined)[]'.
+  Overload 2 of 2, '(props: AnimateProps<ViewProps>, context: any): View', gave the following error.
+    Type '{ position: "absolute"; inset: number; backgroundColor: string; borderBottomWidth: number; borderBottomColor: string; }' is not assignable to type 'false | AnimateStyle<ViewStyle> | AnimateStyle<RegisteredStyle<ViewStyle>> | AnimateStyle<RecursiveArray<Falsy | ViewStyle | RegisteredStyle<...>>> | ... 4 more ... | undefined'.
+      Object literal may only specify known properties, and 'inset' does not exist in type 'AnimateStyle<ViewStyle> | AnimateStyle<RegisteredStyle<ViewStyle>> | AnimateStyle<RecursiveArray<Falsy | ViewStyle | RegisteredStyle<...>>> | RecursiveArray<...> | readonly (false | ... 5 more ... | undefined)[]'.
+app/(player)/court/[id].tsx(314,99): error TS2339: Property 'warningContainer' does not exist on type 'AppTheme'.
+app/(player)/court/[id].tsx(437,63): error TS2345: Argument of type '`/host/web-quick-start?step=create&courtId=${string}`' is not assignable to parameter of type 'StaticRoutes | RelativePathString | `http${string}`'.
+app/(player)/edit-profile.tsx(2,10): error TS2724: '"@/components/profile/ProfileSections"' has no exported member named 'PROFILE_SKILL_HERO_TONE'. Did you mean 'ProfileSkillHero'?
+app/(player)/edit-profile.tsx(444,17): error TS2322: Type '{ elo: number; title: string; subtitle: string; subtitleItalic: true; description: string; contentRightInset: number; levelId: EloLevelId; colors: any; }' is not assignable to type 'IntrinsicAttributes & { elo: number; title: string; subtitle: string; description?: string | undefined; levelId?: EloLevelId | null | undefined; }'.
+  Property 'subtitleItalic' does not exist on type 'IntrinsicAttributes & { elo: number; title: string; subtitle: string; description?: string | undefined; levelId?: EloLevelId | null | undefined; }'.
+app/(player)/modal.tsx(12,22): error TS2322: Type '{ children: Element; href: "/"; dismissTo: true; style: { marginTop: number; paddingVertical: number; }; }' is not assignable to type 'IntrinsicAttributes & LinkProps<"/"> & { children?: ReactNode; }'.
+  Property 'dismissTo' does not exist on type 'IntrinsicAttributes & LinkProps<"/"> & { children?: ReactNode; }'.
+app/(player)/onboarding.tsx(372,11): error TS2322: Type '{ onBackPress: () => void; title: string; rightElement: false | Element; }' is not assignable to type 'IntrinsicAttributes & SecondaryNavbarProps'.
+  Property 'rightElement' does not exist on type 'IntrinsicAttributes & SecondaryNavbarProps'.
+app/(player)/onboarding.tsx(1015,31): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: TextInputProps): TextInput', gave the following error.
+    Type '{ flex: number; color: string; fontSize: number; fontFamily: "PlusJakartaSans-Regular"; outlineStyle: any; }' is not assignable to type 'StyleProp<TextStyle>'.
+      Object literal may only specify known properties, and 'outlineStyle' does not exist in type 'TextStyle | RecursiveArray<Falsy | TextStyle | RegisteredStyle<TextStyle>>'.
+  Overload 2 of 2, '(props: TextInputProps, context: any): TextInput', gave the following error.
+    Type '{ flex: number; color: string; fontSize: number; fontFamily: "PlusJakartaSans-Regular"; outlineStyle: any; }' is not assignable to type 'StyleProp<TextStyle>'.
+      Object literal may only specify known properties, and 'outlineStyle' does not exist in type 'TextStyle | RecursiveArray<Falsy | TextStyle | RegisteredStyle<TextStyle>>'.
+app/(player)/onboarding.tsx(1044,31): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: TextInputProps): TextInput', gave the following error.
+    Type '{ flex: number; marginLeft: number; color: string; fontSize: number; fontFamily: "PlusJakartaSans-Regular"; outlineStyle: any; }' is not assignable to type 'StyleProp<TextStyle>'.
+      Object literal may only specify known properties, and 'outlineStyle' does not exist in type 'TextStyle | RecursiveArray<Falsy | TextStyle | RegisteredStyle<TextStyle>>'.
+  Overload 2 of 2, '(props: TextInputProps, context: any): TextInput', gave the following error.
+    Type '{ flex: number; marginLeft: number; color: string; fontSize: number; fontFamily: "PlusJakartaSans-Regular"; outlineStyle: any; }' is not assignable to type 'StyleProp<TextStyle>'.
+      Object literal may only specify known properties, and 'outlineStyle' does not exist in type 'TextStyle | RecursiveArray<Falsy | TextStyle | RegisteredStyle<TextStyle>>'.
+app/(player)/onboarding.tsx(1116,41): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: TouchableOpacityProps): TouchableOpacity', gave the following error.
+    Type '{ children: Element; dsadsw: true; onPress: () => Promise<void>; disabled: boolean; style: { alignSelf: "center"; }; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<TouchableOpacity> & Readonly<TouchableOpacityProps>'.
+      Property 'dsadsw' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<TouchableOpacity> & Readonly<TouchableOpacityProps>'.
+  Overload 2 of 2, '(props: TouchableOpacityProps, context: any): TouchableOpacity', gave the following error.
+    Type '{ children: Element; dsadsw: true; onPress: () => Promise<void>; disabled: boolean; style: { alignSelf: "center"; }; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<TouchableOpacity> & Readonly<TouchableOpacityProps>'.
+      Property 'dsadsw' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<TouchableOpacity> & Readonly<TouchableOpacityProps>'.
+app/(player)/profile-setup.tsx(118,24): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: ViewProps): View', gave the following error.
+    Type '{ px: number; gap: number; paddingHorizontal: number; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Object literal may only specify known properties, and 'px' does not exist in type 'ViewStyle | RecursiveArray<Falsy | ViewStyle | RegisteredStyle<ViewStyle>>'.
+  Overload 2 of 2, '(props: ViewProps, context: any): View', gave the following error.
+    Type '{ px: number; gap: number; paddingHorizontal: number; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Object literal may only specify known properties, and 'px' does not exist in type 'ViewStyle | RecursiveArray<Falsy | ViewStyle | RegisteredStyle<ViewStyle>>'.
+app/(player)/session/[id]/confirm-result.tsx(456,13): error TS2339: Property '_data' does not exist on type 'PostgrestSingleResponse<any>'.
+app/(player)/session/[id]/index.tsx(44,7): error TS2322: Type 'string | null | undefined' is not assignable to type 'string | null'.
+app/(player)/session/[id]/review.tsx(15,5): error TS2724: '"lucide-react-native"' has no exported member named 'CircleX'. Did you mean 'Circle'?
+app/(player)/session/[id]/review.tsx(16,5): error TS2305: Module '"lucide-react-native"' has no exported member 'LoaderCircle'.
+app/host/court-detail/[id].tsx(63,15): error TS2339: Property '_mode' does not exist on type '{ id: string; mode?: "claim" | undefined; }'.
+app/host/court-detail/[id].tsx(260,58): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: AnimateProps<ViewProps>): View', gave the following error.
+    Type '{ position: "absolute"; inset: number; backgroundColor: string; borderBottomWidth: number; borderBottomColor: string; }' is not assignable to type 'false | AnimateStyle<ViewStyle> | AnimateStyle<RegisteredStyle<ViewStyle>> | AnimateStyle<RecursiveArray<Falsy | ViewStyle | RegisteredStyle<...>>> | ... 4 more ... | undefined'.
+      Object literal may only specify known properties, and 'inset' does not exist in type 'AnimateStyle<ViewStyle> | AnimateStyle<RegisteredStyle<ViewStyle>> | AnimateStyle<RecursiveArray<Falsy | ViewStyle | RegisteredStyle<...>>> | RecursiveArray<...> | readonly (false | ... 5 more ... | undefined)[]'.
+  Overload 2 of 2, '(props: AnimateProps<ViewProps>, context: any): View', gave the following error.
+    Type '{ position: "absolute"; inset: number; backgroundColor: string; borderBottomWidth: number; borderBottomColor: string; }' is not assignable to type 'false | AnimateStyle<ViewStyle> | AnimateStyle<RegisteredStyle<ViewStyle>> | AnimateStyle<RecursiveArray<Falsy | ViewStyle | RegisteredStyle<...>>> | ... 4 more ... | undefined'.
+      Object literal may only specify known properties, and 'inset' does not exist in type 'AnimateStyle<ViewStyle> | AnimateStyle<RegisteredStyle<ViewStyle>> | AnimateStyle<RecursiveArray<Falsy | ViewStyle | RegisteredStyle<...>>> | RecursiveArray<...> | readonly (false | ... 5 more ... | undefined)[]'.
+app/host/court-detail/[id].tsx(310,99): error TS2339: Property 'warningContainer' does not exist on type 'AppTheme'.
+app/host/create-session.tsx(138,45): error TS2339: Property 'sub_court_count' does not exist on type 'NearByCourt'.
+app/host/session/[id]/arrangement.tsx(29,24): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'any[] | Record<string, any>'.
+  Property '0' does not exist on type 'any[] | Record<string, any>'.
+app/host/session/[id]/arrangement.tsx(35,118): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+app/host/session/[id]/roster.tsx(20,24): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'any[] | Record<string, any>'.
+  Property '0' does not exist on type 'any[] | Record<string, any>'.
+app/player-hub/my-sessions.tsx(7,19): error TS2339: Property 'loading' does not exist on type '{ userId: string | null | undefined; isLoading: boolean; }'.
+app/player-hub/my-sessions.tsx(13,28): error TS2322: Type '{ userId: string; }' is not assignable to type 'IntrinsicAttributes'.
+  Property 'userId' does not exist on type 'IntrinsicAttributes'.
+app/register/[id].tsx(184,26): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'any[] | Record<string, any>'.
+  Property '0' does not exist on type 'any[] | Record<string, any>'.
+app/register/[id].tsx(195,9): error TS2345: Argument of type '{ id: string; player_id: string; name: string; gender: any; pvna: any; elo: number | null | undefined; status: string; is_host: boolean; }' is not assignable to parameter of type 'SessionPlayer'.
+  Object literal may only specify known properties, and 'id' does not exist in type 'SessionPlayer'.
+app/register/[id].tsx(198,30): error TS2339: Property 'gender' does not exist on type '{ id: string; name: string; auto_accept?: boolean | null | undefined; elo?: number | null | undefined; current_elo?: number | null | undefined; self_assessed_level?: string | null | undefined; skill_label?: string | ... 1 more ... | undefined; reliability_score?: number | ... 1 more ... | undefined; sessions_joined?...'.
+app/register/[id].tsx(199,28): error TS2339: Property 'pvna' does not exist on type '{ id: string; name: string; auto_accept?: boolean | null | undefined; elo?: number | null | undefined; current_elo?: number | null | undefined; self_assessed_level?: string | null | undefined; skill_label?: string | ... 1 more ... | undefined; reliability_score?: number | ... 1 more ... | undefined; sessions_joined?...'.
+app/register/[id].tsx(208,22): error TS2339: Property 'title' does not exist on type 'SessionDetailRecord'.
+app/register/[id].tsx(226,65): error TS2345: Argument of type 'string' is not assignable to parameter of type '"open" | "cancelled" | "done" | "pending_completion" | "closed_recruitment"'.
+app/register/[id].tsx(436,10): error TS2741: Property 'actionLabel' is missing in type '{ item: MatchSession; variant: "standard"; showFullAddress: true; isHostDetail: true; isPreview: false; fullCourtName: true; showPlayerList: boolean; onTogglePlayerList: () => void; }' but required in type '{ item: MatchSession; variant: "standard" | "hero" | "smart"; actionLabel: string; accentMode?: "default" | "rescue" | undefined; showFullAddress?: boolean | undefined; ... 5 more ...; footer?: ReactNode; }'.
+app/register/[id].tsx(468,38): error TS2339: Property 'primaryLight' does not exist on type 'AppTheme'.
+app/register/[id].tsx(686,73): error TS2339: Property 'primaryLight' does not exist on type 'AppTheme'.
+app/register/[id].tsx(712,44): error TS2339: Property 'primaryLight' does not exist on type 'AppTheme'.
+components/auth/DevHostLoginSection.tsx(79,42): error TS1323: Dynamic imports are only supported when the '--module' flag is set to 'es2020', 'es2022', 'esnext', 'commonjs', 'amd', 'system', 'umd', 'node16', or 'nodenext'.
+components/create-session/CourtRow.tsx(58,22): error TS2339: Property 'rating' does not exist on type 'NearByCourt'.
+components/create-session/CourtRow.tsx(62,28): error TS2339: Property 'rating' does not exist on type 'NearByCourt'.
+components/create-session/CourtRow.tsx(65,29): error TS2339: Property 'rating_count' does not exist on type 'NearByCourt'.
+components/create-session/CreateSessionStep2.tsx(148,12): error TS2739: Type '{ maxPlayers: number; setMaxPlayers: (n: number) => void; }' is missing the following properties from type 'PlayerCountSelectorProps': playMode, setPlayMode, subCourtCount, selectedSubCourts, onSubCourtsChange
+components/create-session/CreateSessionStep3.tsx(78,62): error TS2339: Property 'minElo' does not exist on type 'EloBand'.
+components/create-session/CreateSessionStep3.tsx(79,62): error TS2339: Property 'maxElo' does not exist on type 'EloBand'.
+components/create-session/CreateSessionStep3.tsx(106,5): error TS2322: Type '{ id: string; title: string; bookingId: string; courtName: string; address: string; matchScore: number; skillLabel: string; timeLabel: string; priceLabel: string; openSlotsLabel: string; statusLabel: "─É├ú ─æß║╖t s├ón" | "Ch╞░a ─æß║╖t s├ón"; ... 9 more ...; joined: boolean; }' is not assignable to type 'MatchSession'.
+  Object literal may only specify known properties, and 'urgent' does not exist in type 'MatchSession'.
+components/create-session/SelectedCourtCard.tsx(117,24): error TS2339: Property 'rating' does not exist on type 'NearByCourt'.
+components/create-session/SelectedCourtCard.tsx(122,32): error TS2339: Property 'rating' does not exist on type 'NearByCourt'.
+components/create-session/SelectedCourtCard.tsx(125,33): error TS2339: Property 'rating_count' does not exist on type 'NearByCourt'.
+components/design/AppInput.tsx(34,11): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: ViewProps): View', gave the following error.
+    Type '{ flexDirection: "row"; itemsCenter: string; borderWidth: number; borderColor: string; borderRadius: 16; height: number; paddingHorizontal: number; backgroundColor: string; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Object literal may only specify known properties, and 'itemsCenter' does not exist in type 'ViewStyle | RecursiveArray<Falsy | ViewStyle | RegisteredStyle<ViewStyle>>'.
+  Overload 2 of 2, '(props: ViewProps, context: any): View', gave the following error.
+    Type '{ flexDirection: "row"; itemsCenter: string; borderWidth: number; borderColor: string; borderRadius: 16; height: number; paddingHorizontal: number; backgroundColor: string; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Object literal may only specify known properties, and 'itemsCenter' does not exist in type 'ViewStyle | RecursiveArray<Falsy | ViewStyle | RegisteredStyle<ViewStyle>>'.
+components/design/ScreenHeader.tsx(39,28): error TS2339: Property 'surfaceMuted' does not exist on type 'AppTheme'.
+components/design/ScreenHeader.tsx(42,24): error TS2339: Property 'shadow' does not exist on type 'AppTheme'.
+components/external-link.tsx(5,66): error TS2314: Generic type 'Href' requires 1 type argument(s).
+components/home/FamiliarCourtCard.tsx(36,42): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: ImageProps): Image', gave the following error.
+    Type '{ position: "absolute"; inset: number; }' is not assignable to type 'StyleProp<ImageStyle>'.
+      Object literal may only specify known properties, and 'inset' does not exist in type 'ImageStyle | RecursiveArray<Falsy | ImageStyle | RegisteredStyle<ImageStyle>>'.
+  Overload 2 of 2, '(props: ImageProps, context: any): Image', gave the following error.
+    Type '{ position: "absolute"; inset: number; }' is not assignable to type 'StyleProp<ImageStyle>'.
+      Object literal may only specify known properties, and 'inset' does not exist in type 'ImageStyle | RecursiveArray<Falsy | ImageStyle | RegisteredStyle<ImageStyle>>'.
+components/home/FamiliarCourtCard.tsx(43,13): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: ViewProps): View', gave the following error.
+    Type '{ position: "absolute"; inset: number; backgroundColor: string; padding: 20; justifyContent: "space-between"; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Object literal may only specify known properties, and 'inset' does not exist in type 'ViewStyle | RecursiveArray<Falsy | ViewStyle | RegisteredStyle<ViewStyle>>'.
+  Overload 2 of 2, '(props: ViewProps, context: any): View', gave the following error.
+    Type '{ position: "absolute"; inset: number; backgroundColor: string; padding: 20; justifyContent: "space-between"; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Object literal may only specify known properties, and 'inset' does not exist in type 'ViewStyle | RecursiveArray<Falsy | ViewStyle | RegisteredStyle<ViewStyle>>'.
+components/home/HomeCarouselSection.tsx(7,3): error TS2724: '"react-native-reanimated"' has no exported member named 'useScrollOffset'. Did you mean 'useScrollViewOffset'?
+components/home/HomeCarouselSection.tsx(103,18): error TS7006: Parameter 'event' implicitly has an 'any' type.
+components/home/match-card/player/PlayerSessionListCard.tsx(10,34): error TS2305: Module '"@/lib/home/matchCardHelpers"' has no exported member 'withAlpha'.
+components/home/match-card/player/PlayerSessionListCard.tsx(39,35): error TS2345: Argument of type 'string' is not assignable to parameter of type 'EloLevelId | null | undefined'.
+components/home/match-card/player/PlayerSessionListCard.tsx(75,54): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+components/home/match-card/player/PlayerSessionListCard.tsx(201,50): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+components/home/match-card/player/PlayerSuggestedSessionCard.tsx(32,31): error TS2339: Property 'carouselIndex' does not exist on type 'MatchSession'.
+components/home/match-card/player/PlayerSuggestedSessionCard.tsx(32,65): error TS2339: Property 'carouselTotal' does not exist on type 'MatchSession'.
+components/home/PostMatchActionsSection.tsx(70,44): error TS2345: Argument of type '{ pathname: never; params: { id: string; }; }' is not assignable to parameter of type 'never'.
+components/home/PostMatchInboxSection.tsx(166,87): error TS2339: Property 'warningContainer' does not exist on type 'AppTheme'.
+components/home/PostMatchInboxSection.tsx(167,65): error TS2339: Property 'onWarningContainer' does not exist on type 'AppTheme'.
+components/parallax-scroll-view.tsx(7,3): error TS2724: '"react-native-reanimated"' has no exported member named 'useScrollOffset'. Did you mean 'useScrollViewOffset'?
+components/profile/ProfileSections.tsx(333,42): error TS2345: Argument of type '{ pathname: string; params: { id: string; }; }' is not assignable to parameter of type 'never'.
+components/register/RegistrationSuccessView.tsx(196,10): error TS2741: Property 'actionLabel' is missing in type '{ item: MatchSession; variant: "standard"; showFullAddress: true; isHostDetail: true; isPreview: false; fullCourtName: true; }' but required in type '{ item: MatchSession; variant: "standard" | "hero" | "smart"; actionLabel: string; accentMode?: "default" | "rescue" | undefined; showFullAddress?: boolean | undefined; ... 5 more ...; footer?: ReactNode; }'.
+components/session/EditCourtSelector.tsx(38,37): error TS2339: Property 'step1' does not exist on type '{ readonly title: "Tß║áO K├êO Mß╗ÜI"; readonly actions: { readonly submit: "Tß║ío k├¿o"; readonly save: "L╞░u thay ─æß╗òi"; }; }'.
+components/session/HostRequestReview.tsx(1,31): error TS2724: '"lucide-react-native"' has no exported member named 'MessageSquareText'. Did you mean 'MessageSquare'?
+components/session/PlayerRosterSection.tsx(206,80): error TS2339: Property 'member' does not exist on type '{ readonly host: "Chß╗º k├¿o"; readonly player: "Th├ánh vi├¬n"; }'.
+components/session/SessionActionButtons.tsx(85,29): error TS2322: Type '"K├êO KH├öNG DIß╗äN RA (CH╞»A CHECK-IN)"' is not assignable to type '"K├¿o bß╗ï hß╗ºy do kh├┤ng ─æß╗º ng╞░ß╗¥i" | "K├¿o ─æ├ú bß╗ï hß╗ºy"'.
+components/session/SessionActionButtons.tsx(86,17): error TS2322: Type '"K├êO ─É├â Kß║╛T TH├ÜC (THIß║╛U Dß╗« LIß╗åU)"' is not assignable to type '"K├¿o bß╗ï hß╗ºy do kh├┤ng ─æß╗º ng╞░ß╗¥i" | "K├¿o ─æ├ú bß╗ï hß╗ºy"'.
+components/session/SessionMetaCard.tsx(5,24): error TS2724: '"lucide-react-native"' has no exported member named 'MessageSquareText'. Did you mean 'MessageSquare'?
+components/sessions/MySessionCard.tsx(113,5): error TS2322: Type '"Lß╗èCH Sß╗¼"' is not assignable to type '"Sß║«P ─É├üNH"'.
+components/sessions/MySessionCard.tsx(116,7): error TS2322: Type '"─É├â Hß╗ªY"' is not assignable to type '"Sß║«P ─É├üNH"'.
+components/sessions/MySessionCard.tsx(118,7): error TS2322: Type '"THß║«NG"' is not assignable to type '"Sß║«P ─É├üNH"'.
+components/sessions/MySessionCard.tsx(121,7): error TS2322: Type '"THUA"' is not assignable to type '"Sß║«P ─É├üNH"'.
+components/sessions/MySessionCard.tsx(125,5): error TS2322: Type '"CHß╗£ DUYß╗åT"' is not assignable to type '"Sß║«P ─É├üNH"'.
+components/sessions/MySessionCard.tsx(128,5): error TS2322: Type '"─É├â ─Éß║ªY"' is not assignable to type '"Sß║«P ─É├üNH"'.
+components/sessions/UpcomingSessionCard.tsx(51,35): error TS2339: Property 'owner_sessions' does not exist on type 'MySession'.
+components/sessions/UpcomingSessionCard.tsx(59,33): error TS2339: Property 'owner_sessions' does not exist on type 'MySession'.
+components/sessions/UpcomingSessionCard.tsx(85,43): error TS2345: Argument of type 'number | null' is not assignable to parameter of type 'number'.
+  Type 'null' is not assignable to type 'number'.
+constants/profileTheme.ts(247,28): error TS2339: Property 'dangerDeep' does not exist on type 'ProfileThemeColors'.
+e2e/next-round.spec.ts(135,37): error TS2367: This comparison appears to be unintentional because the types '"trace" | "info" | "warning" | "count" | "error" | "table" | "time" | "log" | "debug" | "dir" | "dirxml" | "clear" | "startGroup" | "startGroupCollapsed" | "endGroup" | "assert" | "profile" | "profileEnd" | "timeEnd"' and '"warn"' have no overlap.
+features/host/profile/HostProfileScreen.tsx(8,35): error TS2305: Module '"@/lib/skillAssessment"' has no exported member 'getEloBandByLevelId'.
+features/host/profile/HostProfileScreen.tsx(181,15): error TS2322: Type '{ title: string; brandedSubtitle: string; style: { paddingHorizontal: number; }; testID: string; }' is not assignable to type 'IntrinsicAttributes & MainHeaderProps'.
+  Property 'testID' does not exist on type 'IntrinsicAttributes & MainHeaderProps'.
+features/host/profile/HostProfileScreen.tsx(222,78): error TS2345: Argument of type 'ProfilePlayerStats | null' is not assignable to parameter of type '{ win_rate?: number | null | undefined; } | null'.
+features/host/session-detail/HostMatchScreen.tsx(570,46): error TS2339: Property 'matches' does not exist on type '{ players: ArrangementPlayer[]; quality: { runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; }; mode: "full" | "limited"; minGames: number; }'.
+features/host/session-detail/HostMatchScreen.tsx(570,58): error TS7006: Parameter 'match' implicitly has an 'any' type.
+features/host/session-detail/HostRosterSection.tsx(117,11): error TS2339: Property '_onOpenPlayerProfile' does not exist on type 'SessionNavigation'.
+features/host/session-detail/next-round-benchmark/experimental-pair.ts(401,29): error TS2339: Property 'matches' does not exist on type 'never'.
+features/host/session-detail/next-round-benchmark/experimental-pair.ts(402,27): error TS2339: Property 'score' does not exist on type 'never'.
+features/host/session-detail/next-round-benchmark/experimental-pair.ts(403,27): error TS2339: Property 'stats' does not exist on type 'never'.
+features/host/session-detail/next-round-benchmark/experimental-pair.ts(405,39): error TS2339: Property 'relaxed_tolerance' does not exist on type 'never'.
+features/host/session-detail/next-round-benchmark/experimental-pair.ts(423,27): error TS2339: Property 'matches' does not exist on type 'never'.
+features/host/session-detail/next-round-benchmark/experimental-pair.ts(424,25): error TS2339: Property 'score' does not exist on type 'never'.
+features/host/session-detail/next-round-benchmark/experimental-pair.ts(425,25): error TS2339: Property 'stats' does not exist on type 'never'.
+features/host/session-detail/next-round-benchmark/experimental-pair.ts(427,37): error TS2339: Property 'relaxed_tolerance' does not exist on type 'never'.
+features/host/session-detail/next-round-benchmark/NextRoundBenchmarkScreen.tsx(171,95): error TS2339: Property 'score' does not exist on type 'SessionFairnessScore'.
+features/host/session-detail/next-round-v2/components/ScreenComponents.tsx(874,84): error TS18047: 'delta' is possibly 'null'.
+features/host/session-detail/next-round-v2/components/ScreenComponents.tsx(2504,38): error TS2322: Type '{ rotate: any; }' is not assignable to type 'string'.
+features/host/session-detail/next-round-v2/components/ScreenComponents.tsx(2641,71): error TS2322: Type '{ rotate: string; }' is not assignable to type 'string'.
+features/host/session-detail/next-round-v2/mutations.ts(6,37): error TS2724: '"./api"' has no exported member named 'checkOutLiveSessionPlayers'. Did you mean 'checkInLiveSessionPlayers'?
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(207,71): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(209,90): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(230,65): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(250,44): error TS7006: Parameter 'max' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(250,49): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(252,61): error TS7006: Parameter 'm' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(257,46): error TS7006: Parameter 'm' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(267,46): error TS7006: Parameter 'm' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(267,77): error TS7006: Parameter 'a' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(267,80): error TS7006: Parameter 'b' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(271,46): error TS7006: Parameter 'm' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(279,15): error TS7006: Parameter 'r' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(280,12): error TS7006: Parameter 'r' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(283,17): error TS7006: Parameter 'r' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(284,14): error TS7006: Parameter 'r' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(303,21): error TS7006: Parameter 'p' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(308,18): error TS7006: Parameter 'p' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(327,13): error TS2345: Argument of type 'Set<unknown>' is not assignable to parameter of type 'Set<string>'.
+  Type 'unknown' is not assignable to type 'string'.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(346,12): error TS7006: Parameter 'r' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(350,12): error TS7006: Parameter 'r' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(357,12): error TS7006: Parameter 'r' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(456,26): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(463,71): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(466,65): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(574,82): error TS7006: Parameter 'current' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(576,56): error TS7006: Parameter 'm' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(587,82): error TS7006: Parameter 'current' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(593,82): error TS7006: Parameter 'current' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(596,36): error TS7006: Parameter 'r' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(597,37): error TS7006: Parameter 'r' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(608,82): error TS7006: Parameter 'current' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(611,35): error TS7006: Parameter 'r' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(614,36): error TS7006: Parameter 'p' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(616,55): error TS7006: Parameter 'p' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(628,82): error TS7006: Parameter 'current' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(630,56): error TS7006: Parameter 'm' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(633,36): error TS7006: Parameter 'p' implicitly has an 'any' type.
+features/host/session-detail/next-round-v2/useNextRoundModel.ts(635,55): error TS7006: Parameter 'p' implicitly has an 'any' type.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(622,56): error TS7006: Parameter 'match' implicitly has an 'any' type.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(715,16): error TS2554: Expected 0 arguments, but got 1.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(720,14): error TS2554: Expected 0 arguments, but got 1.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(732,16): error TS2554: Expected 0 arguments, but got 1.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(774,17): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(775,14): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(795,14): error TS2554: Expected 0 arguments, but got 1.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(828,16): error TS2554: Expected 0 arguments, but got 1.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(853,16): error TS2554: Expected 0 arguments, but got 1.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(995,16): error TS2554: Expected 0 arguments, but got 1.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(1156,16): error TS2554: Expected 0 arguments, but got 1.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(1399,34): error TS2554: Expected 0 arguments, but got 1.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(1688,45): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(1689,48): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(1712,55): error TS7006: Parameter 'row' implicitly has an 'any' type.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(1734,7): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: ViewProps): View', gave the following error.
+    Type '{ minHeight: number | "100dvh"; overflow?: "visible" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Type '{ minHeight: number | "100dvh"; overflow?: "visible" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'undefined'.
+  Overload 2 of 2, '(props: ViewProps, context: any): View', gave the following error.
+    Type '{ minHeight: number | "100dvh"; overflow?: "visible" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Type '{ minHeight: number | "100dvh"; overflow?: "visible" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'undefined'.
+features/host/session-detail/NextRoundSuggesterScreenV2.tsx(1794,11): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: ScrollViewProps): ScrollView', gave the following error.
+    Type '{ minHeight?: number | "100dvh" | undefined; flexGrow: number; padding: 20; paddingBottom: number; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Type '{ minHeight?: number | "100dvh" | undefined; flexGrow: number; padding: 20; paddingBottom: number; }' is not assignable to type 'undefined'.
+  Overload 2 of 2, '(props: ScrollViewProps, context: any): ScrollView', gave the following error.
+    Type '{ minHeight?: number | "100dvh" | undefined; flexGrow: number; padding: 20; paddingBottom: number; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Type '{ minHeight?: number | "100dvh" | undefined; flexGrow: number; padding: 20; paddingBottom: number; }' is not assignable to type 'undefined'.
+features/host/session-detail/TeamArrangementScreen.tsx(114,44): error TS2339: Property 'overallScore' does not exist on type '{ runtimeMs: number; score: number; }'.
+features/host/session-detail/TeamArrangementScreen.tsx(245,9): error TS2322: Type 'FixedTeamScheduledMatch[] | RotationScheduledMatch[]' is not assignable to type 'FixedTeamScheduledMatch[]'.
+  Type 'RotationScheduledMatch[]' is not assignable to type 'FixedTeamScheduledMatch[]'.
+    Type 'RotationScheduledMatch' is missing the following properties from type 'FixedTeamScheduledMatch': teamANo, teamBNo
+features/host/session-detail/TeamArrangementScreen.tsx(249,43): error TS2339: Property 'timedOut' does not exist on type '{ runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; pairingScore: number; } | { runtimeMs: number; score: number; overallScore: number; } | { runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; pairingScore: number; overallScore: any; }'.
+  Property 'timedOut' does not exist on type '{ runtimeMs: number; score: number; overallScore: number; }'.
+features/host/session-detail/TeamArrangementScreen.tsx(250,47): error TS2339: Property 'fallbackUsed' does not exist on type '{ runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; pairingScore: number; } | { runtimeMs: number; score: number; overallScore: number; } | { runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; pairingScore: number; overallScore: any; }'.
+  Property 'fallbackUsed' does not exist on type '{ runtimeMs: number; score: number; overallScore: number; }'.
+features/host/session-detail/TeamArrangementScreen.tsx(509,50): error TS2339: Property 'overallScore' does not exist on type '{ runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; pairingScore: number; } | { runtimeMs: number; score: number; overallScore: number; } | { runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; pairingScore: number; overallScore: any; }'.
+  Property 'overallScore' does not exist on type '{ runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; pairingScore: number; }'.
+features/host/session-detail/TeamArrangementScreen.tsx(832,17): error TS2322: Type '{ runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; pairingScore: number; } | { runtimeMs: number; score: number; overallScore: number; } | { runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; pairingScore: number; overallScore: any; }' is not assignable to type '{ runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; overallScore?: number | undefined; } | undefined'.
+  Type '{ runtimeMs: number; score: number; overallScore: number; }' is missing the following properties from type '{ runtimeMs: number; timedOut: boolean; fallbackUsed: boolean; overallScore?: number | undefined; }': timedOut, fallbackUsed
+features/host/session-detail/TeamArrangementScreen.tsx(840,64): error TS2349: This expression is not callable.
+  Each member of the union type '{ <S extends RotationScheduledMatch>(predicate: (value: RotationScheduledMatch, index: number, array: RotationScheduledMatch[]) => value is S, thisArg?: any): S[]; (predicate: (value: RotationScheduledMatch, index: number, array: RotationScheduledMatch[]) => unknown, thisArg?: any): RotationScheduledMatch[]; } | { ....' has signatures, but none of those signatures are compatible with each other.
+features/host/session-detail/TeamArrangementScreen.tsx(840,71): error TS7006: Parameter 'm' implicitly has an 'any' type.
+features/host/session-detail/TeamArrangementScreen.tsx(840,100): error TS7006: Parameter 'a' implicitly has an 'any' type.
+features/host/session-detail/TeamArrangementScreen.tsx(840,103): error TS7006: Parameter 'b' implicitly has an 'any' type.
+features/host/session-detail/TeamArrangementScreen.tsx(847,46): error TS7006: Parameter 'match' implicitly has an 'any' type.
+features/host/session-detail/TeamArrangementScreen.tsx(847,53): error TS7006: Parameter 'mIdx' implicitly has an 'any' type.
+features/host/session-detail/TeamArrangementScreen.tsx(848,65): error TS7006: Parameter 'id' implicitly has an 'any' type.
+features/host/session-detail/TeamArrangementScreen.tsx(849,65): error TS7006: Parameter 'id' implicitly has an 'any' type.
+features/player/auth/AuthGate.tsx(245,34): error TS2339: Property 'warningContainer' does not exist on type 'AppTheme'.
+features/player/auth/AuthGate.tsx(259,26): error TS2339: Property 'onWarningContainer' does not exist on type 'AppTheme'.
+features/player/court/api.ts(123,26): error TS2339: Property 'amenities' does not exist on type '{ id: any; name: any; address: any; city: any; district: any; thumbnail_url: any; images: any; rating: any; rating_count: any; google_maps_url: any; phone: any; reviews_data: any; hours_open: any; hours_close: any; owner_id: any; sub_court_count: any; }'.
+features/player/court/api.ts(124,10): error TS2339: Property 'amenities' does not exist on type '{ id: any; name: any; address: any; city: any; district: any; thumbnail_url: any; images: any; rating: any; rating_count: any; google_maps_url: any; phone: any; reviews_data: any; hours_open: any; hours_close: any; owner_id: any; sub_court_count: any; }'.
+features/player/court/api.ts(155,21): error TS2339: Property 'highlight' does not exist on type '{ id: any; name: any; address: any; city: any; district: any; thumbnail_url: any; images: any; rating: any; rating_count: any; google_maps_url: any; phone: any; reviews_data: any; hours_open: any; hours_close: any; owner_id: any; sub_court_count: any; }'.
+features/player/court/api.ts(156,23): error TS2339: Property 'description' does not exist on type '{ id: any; name: any; address: any; city: any; district: any; thumbnail_url: any; images: any; rating: any; rating_count: any; google_maps_url: any; phone: any; reviews_data: any; hours_open: any; hours_close: any; owner_id: any; sub_court_count: any; }'.
+features/player/court/api.ts(158,23): error TS2339: Property 'booking_url' does not exist on type '{ id: any; name: any; address: any; city: any; district: any; thumbnail_url: any; images: any; rating: any; rating_count: any; google_maps_url: any; phone: any; reviews_data: any; hours_open: any; hours_close: any; owner_id: any; sub_court_count: any; }'.
+features/player/court/api.ts(162,25): error TS2339: Property 'popular_times' does not exist on type '{ id: any; name: any; address: any; city: any; district: any; thumbnail_url: any; images: any; rating: any; rating_count: any; google_maps_url: any; phone: any; reviews_data: any; hours_open: any; hours_close: any; owner_id: any; sub_court_count: any; }'.
+features/player/create-session/hooks/useCreateSessionController.ts(105,38): error TS2345: Argument of type 'string | null' is not assignable to parameter of type 'string'.
+  Type 'null' is not assignable to type 'string'.
+features/player/create-session/hooks/useCreateSessionController.ts(166,60): error TS2554: Expected 1 arguments, but got 2.
+features/player/create-session/hooks/useCreateSessionController.ts(167,60): error TS2554: Expected 1 arguments, but got 2.
+features/player/find-session/components/SmartQueueBanner.tsx(52,37): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: ViewProps): View', gave the following error.
+    Type '{ flex: number; pr: number; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Object literal may only specify known properties, and 'pr' does not exist in type 'ViewStyle | RecursiveArray<Falsy | ViewStyle | RegisteredStyle<ViewStyle>>'.
+  Overload 2 of 2, '(props: ViewProps, context: any): View', gave the following error.
+    Type '{ flex: number; pr: number; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Object literal may only specify known properties, and 'pr' does not exist in type 'ViewStyle | RecursiveArray<Falsy | ViewStyle | RegisteredStyle<ViewStyle>>'.
+features/player/find-session/FindSessionScreen.tsx(57,5): error TS2339: Property '_setPreferredCourtFilter' does not exist on type '{ sessions: Session[]; userLocation: LocationObject | null; loading: boolean; isFirstLoad: boolean; dialogConfig: AppDialogConfig | null; ... 21 more ...; filteredSessions: Session[]; }'.
+features/player/find-session/FindSessionScreen.tsx(280,11): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: ViewProps): View', gave the following error.
+    Type '{ minHeight?: "100dvh" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Type '{ minHeight?: "100dvh" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'undefined'.
+  Overload 2 of 2, '(props: ViewProps, context: any): View', gave the following error.
+    Type '{ minHeight?: "100dvh" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Type '{ minHeight?: "100dvh" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'undefined'.
+features/player/find-session/FindSessionScreen.tsx(453,15): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: FlatListProps<Session>): FlatList<Session>', gave the following error.
+    Type 'false | Element' is not assignable to type 'ComponentType<any> | ReactElement<any, string | JSXElementConstructor<any>> | null | undefined'.
+      Type 'false' is not assignable to type 'ComponentType<any> | ReactElement<any, string | JSXElementConstructor<any>> | null | undefined'.
+  Overload 2 of 2, '(props: FlatListProps<Session>, context: any): FlatList<Session>', gave the following error.
+    Type 'false | Element' is not assignable to type 'ComponentType<any> | ReactElement<any, string | JSXElementConstructor<any>> | null | undefined'.
+features/player/find-session/FindSessionScreen.tsx(502,8): error TS2741: Property 'visible' is missing in type '{ config: AppDialogConfig | null; onClose: () => void; }' but required in type 'Props'.
+features/player/find-session/hooks/useFindSessionController.ts(79,43): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'string | null'.
+  Type 'undefined' is not assignable to type 'string | null'.
+features/player/find-session/hooks/useFindSessionController.ts(219,75): error TS2367: This comparison appears to be unintentional because the types 'EloLevelId' and '"level_3"' have no overlap.
+features/player/find-session/hooks/useFindSessionController.ts(252,64): error TS2367: This comparison appears to be unintentional because the types 'EloLevelId' and '"level_3"' have no overlap.
+features/player/find-session/utils.ts(35,21): error TS2367: This comparison appears to be unintentional because the types 'EloLevelId' and '"level_3"' have no overlap.
+features/player/home/HomeScreen.tsx(29,77): error TS2339: Property 'joined' does not exist on type 'MatchSession'.
+features/player/home/HomeScreen.tsx(33,74): error TS2339: Property 'joined' does not exist on type 'MatchSession'.
+features/player/home/HomeScreen.tsx(183,13): error TS2322: Type '{ name: string; role: "player"; onRoleChange: () => Promise<void>; profilePhotoUrl: any; }' is not assignable to type 'IntrinsicAttributes & { name: string; role?: "player" | "host" | undefined; profilePhotoUrl?: string | null | undefined; onPhotoPress?: (() => void) | undefined; rating?: number | undefined; sessionCount?: number | undefined; isProfessional?: boolean | undefined; }'.
+  Property 'onRoleChange' does not exist on type 'IntrinsicAttributes & { name: string; role?: "player" | "host" | undefined; profilePhotoUrl?: string | null | undefined; onPhotoPress?: (() => void) | undefined; rating?: number | undefined; sessionCount?: number | undefined; isProfessional?: boolean | undefined; }'.
+features/player/home/HomeScreen.tsx(183,33): error TS2554: Expected 2-3 arguments, but got 0.
+features/player/home/HomeScreen.tsx(184,39): error TS2339: Property 'avatar_url' does not exist on type 'HomeProfile'.
+features/player/my-sessions/MySessionsScreen.tsx(223,75): error TS7053: Element implicitly has an 'any' type because expression of type '"pending" | "upcoming"' can't be used to index type '{ upcoming: MySession[]; history: MySession[]; }'.
+  Property 'pending' does not exist on type '{ upcoming: MySession[]; history: MySession[]; }'.
+features/player/my-sessions/MySessionsScreen.tsx(228,7): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: ViewProps): View', gave the following error.
+    Type '{ minHeight?: "100dvh" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Type '{ minHeight?: "100dvh" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'undefined'.
+  Overload 2 of 2, '(props: ViewProps, context: any): View', gave the following error.
+    Type '{ minHeight?: "100dvh" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'StyleProp<ViewStyle>'.
+      Type '{ minHeight?: "100dvh" | undefined; flex: number; backgroundColor: string; }' is not assignable to type 'undefined'.
+features/player/my-sessions/MySessionsScreen.tsx(238,36): error TS2339: Property 'avatar_url' does not exist on type 'ProfilePlayer'.
+features/player/my-sessions/MySessionsScreen.tsx(241,67): error TS2345: Argument of type 'ProfilePlayerStats | null' is not assignable to parameter of type '{ win_rate?: number | null | undefined; } | null'.
+features/player/my-sessions/MySessionsScreen.tsx(252,107): error TS2339: Property 'id' does not exist on type 'never'.
+features/player/my-sessions/MySessionsScreen.tsx(421,20): error TS2741: Property 'formatTimeRange' is missing in type '{ item: MySession; tab: SessionTab; onShare: (session?: MySession | undefined) => Promise<void>; }' but required in type '{ item: MySession; tab: SessionTab; onShare: (session?: MySession | undefined) => void | Promise<void>; formatTimeRange: (start: string, end: string) => string; }'.
+features/player/notifications/utils.ts(9,5): error TS2724: '"lucide-react-native"' has no exported member named 'MessageCircleMore'. Did you mean 'MessageCircle'?
+features/player/profile/api.ts(33,5): error TS2739: Type '{ loggedIn: false; player: null; playerStats: null; ratingTags: {}; achievements: never[]; history: never[]; hostedSessionsCount: number; isOwner: false; }' is missing the following properties from type 'ProfileDataSnapshot': name, skillLabel, currentElo, winStreak
+features/player/profile/ProfileScreen.tsx(9,5): error TS2724: '"@/components/profile/ProfileSections"' has no exported member named 'PROFILE_SKILL_HERO_TONE'. Did you mean 'ProfileSkillHero'?
+features/player/profile/ProfileScreen.tsx(16,35): error TS2305: Module '"@/lib/skillAssessment"' has no exported member 'getEloBandByLevelId'.
+features/player/profile/ProfileScreen.tsx(388,78): error TS2345: Argument of type 'ProfilePlayerStats | null' is not assignable to parameter of type '{ win_rate?: number | null | undefined; } | null'.
+  Type 'ProfilePlayerStats' has no properties in common with type '{ win_rate?: number | null | undefined; }'.
+hooks/useSessionArrangement.ts(26,53): error TS2345: Argument of type 'SessionDetailRecord' is not assignable to parameter of type 'ArrangementSession'.
+  Types of property 'owner_sessions' are incompatible.
+    Type 'any[] | Record<string, any> | null | undefined' is not assignable to type '{ host_is_playing?: boolean | undefined; } | undefined'.
+      Type 'null' is not assignable to type '{ host_is_playing?: boolean | undefined; } | undefined'.
+hooks/useSessionArrangement.ts(93,57): error TS2448: Block-scoped variable 'teamA' used before its declaration.
+hooks/useSessionArrangement.ts(93,57): error TS2454: Variable 'teamA' is used before being assigned.
+hooks/useSessionArrangement.ts(93,64): error TS2448: Block-scoped variable 'teamB' used before its declaration.
+hooks/useSessionArrangement.ts(93,64): error TS2454: Variable 'teamB' is used before being assigned.
+lib/designSystem.ts(39,32): error TS2339: Property 'warningSoft' does not exist on type 'AppTheme'.
+lib/designSystem.ts(40,26): error TS2551: Property 'warning' does not exist on type 'AppTheme'. Did you mean 'warningBg'?
+lib/designSystem.ts(41,28): error TS2551: Property 'warning' does not exist on type 'AppTheme'. Did you mean 'warningBg'?
+lib/designSystem.ts(42,38): error TS2551: Property 'warning' does not exist on type 'AppTheme'. Did you mean 'warningBg'?
+lib/designSystem.ts(47,32): error TS2339: Property 'dangerSoft' does not exist on type 'AppTheme'.
+lib/designSystem.ts(48,26): error TS2551: Property 'danger' does not exist on type 'AppTheme'. Did you mean 'dangerBg'?
+lib/designSystem.ts(49,28): error TS2551: Property 'danger' does not exist on type 'AppTheme'. Did you mean 'dangerBg'?
+lib/designSystem.ts(50,38): error TS2551: Property 'danger' does not exist on type 'AppTheme'. Did you mean 'dangerBg'?
+lib/designSystem.ts(55,32): error TS2339: Property 'infoSoft' does not exist on type 'AppTheme'.
+lib/designSystem.ts(56,26): error TS2339: Property 'info' does not exist on type 'AppTheme'.
+lib/designSystem.ts(57,28): error TS2339: Property 'info' does not exist on type 'AppTheme'.
+lib/designSystem.ts(58,38): error TS2339: Property 'info' does not exist on type 'AppTheme'.
+lib/designSystem.ts(79,30): error TS2339: Property 'surfaceMuted' does not exist on type 'AppTheme'.
+lib/designSystem.ts(100,26): error TS2339: Property 'shadow' does not exist on type 'AppTheme'.
+lib/designSystem.ts(109,24): error TS2339: Property 'shadow' does not exist on type 'AppTheme'.
+lib/home/courts.ts(142,90): error TS2339: Property 'images' does not exist on type 'FavoriteCourtMeta'.
+lib/home/courts.ts(142,112): error TS2339: Property 'thumbnail_url' does not exist on type 'FavoriteCourtMeta'.
+lib/home/courts.ts(151,69): error TS2339: Property 'thumbnail_url' does not exist on type 'FavoriteCourtMeta'.
+lib/home/mapping.ts(105,91): error TS2367: This comparison appears to be unintentional because the types '"open" | "cancelled" | "closed_recruitment"' and '"pending_results"' have no overlap.
+lib/home/mapping.ts(112,5): error TS2322: Type '"Hß╗ºy - Thiß║┐u ng╞░ß╗¥i"' is not assignable to type '"─É├ú ─æß║╖t s├ón" | "Ch╞░a ─æß║╖t s├ón"'.
+lib/home/mapping.ts(114,5): error TS2322: Type '"─É├ú hß╗ºy"' is not assignable to type '"─É├ú ─æß║╖t s├ón" | "Ch╞░a ─æß║╖t s├ón"'.
+lib/home/mapping.ts(128,25): error TS2339: Property 'total_cost' does not exist on type 'HomeSessionRecord'.
+lib/home/mapping.ts(129,34): error TS2339: Property 'total_cost' does not exist on type 'HomeSessionRecord'.
+lib/home/mapping.ts(134,5): error TS2322: Type '{ id: string; title: string; bookingId: string; courtName: string; address: string; matchScore: number; skillLabel: string; timeLabel: string; startTime: string | undefined; endTime: string | undefined; ... 19 more ...; court: Court | ... 1 more ... | undefined; }' is not assignable to type 'MatchSession'.
+  Object literal may only specify known properties, and 'countdownLabel' does not exist in type 'MatchSession'.
+lib/home/mapping.ts(303,5): error TS2322: Type '{ id: string; title: string; bookingId: string; courtName: string; address: string; matchScore: number; skillLabel: string; timeLabel: string; priceLabel: string; openSlotsLabel: string; slotsLeft: number; ... 14 more ...; isHighlyRated: true; }' is not assignable to type 'MatchSession'.
+  Object literal may only specify known properties, and 'countdownLabel' does not exist in type 'MatchSession'.
+lib/next-round-suggester/alternatives.ts(1,177): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/alternatives.ts(2,39): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/alternatives.ts(3,46): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/alternatives.ts(4,34): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/alternatives.ts(5,58): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/fairness/audit.ts(15,8): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/fairness/group-audit.ts(1,58): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/live-preview.ts(590,34): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/live-preview.ts(681,7): error TS2345: Argument of type '{ court_idx: number; team_a: Team; team_b: Team; resting: string[]; round_no: number; preview_live_state_version: number | null | undefined; preview_countable_match_count: number; ... 9 more ...; _exhaustive_diag: ExhaustiveFallbackDiagnostic | undefined; }' is not assignable to parameter of type 'Pick<SuggestedLiveMatchRow, "round_no" | "resting" | "warnings" | "court_idx" | "team_a" | "team_b" | "preview_live_state_version" | "preview_countable_match_count" | ... 7 more ... | "recommended_tradeoff_choice">'.
+  Object literal may only specify known properties, and '_exhaustive_diag' does not exist in type 'Pick<SuggestedLiveMatchRow, "round_no" | "resting" | "warnings" | "court_idx" | "team_a" | "team_b" | "preview_live_state_version" | "preview_countable_match_count" | ... 7 more ... | "recommended_tradeoff_choice">'.
+lib/next-round-suggester/manual-swap.ts(1,57): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/manual-swap.ts(2,28): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/manual-swap.ts(3,77): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/suggest.ts(7,8): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/next-round-suggester/suggest.ts(30,8): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/onboardingAssessment.ts(149,3): error TS2322: Type 'EloLevelId' is not assignable to type '"level_1" | "level_3" | "level_2" | "level_4" | "level_5"'.
+  Type '"pvna_1"' is not assignable to type '"level_1" | "level_3" | "level_2" | "level_4" | "level_5"'.
+lib/scheduler/socialOptimizer.ts(298,14): error TS2339: Property 'genderPreference' does not exist on type 'ArrangementPlayer'.
+lib/scheduler/socialOptimizer.ts(298,68): error TS2339: Property 'genderPreference' does not exist on type 'ArrangementPlayer'.
+lib/scheduler/socialOptimizer.ts(299,14): error TS2339: Property 'genderPreference' does not exist on type 'ArrangementPlayer'.
+lib/scheduler/socialOptimizer.ts(299,68): error TS2339: Property 'genderPreference' does not exist on type 'ArrangementPlayer'.
+lib/scheduler/socialOptimizer.ts(303,14): error TS2339: Property 'genderPreference' does not exist on type 'ArrangementPlayer'.
+lib/scheduler/socialOptimizer.ts(303,68): error TS2339: Property 'genderPreference' does not exist on type 'ArrangementPlayer'.
+lib/scheduler/socialOptimizer.ts(304,14): error TS2339: Property 'genderPreference' does not exist on type 'ArrangementPlayer'.
+lib/scheduler/socialOptimizer.ts(304,68): error TS2339: Property 'genderPreference' does not exist on type 'ArrangementPlayer'.
+lib/scheduler/socialOptimizer.ts(333,7): error TS2322: Type '{ runtimeMs: number; score: number; overallScore: number; }' is not assignable to type '{ runtimeMs: number; score: number; }'.
+  Object literal may only specify known properties, and 'overallScore' does not exist in type '{ runtimeMs: number; score: number; }'.
+lib/sessionDetail.ts(97,16): error TS2322: Type 'EloLevelId | "level_1"' is not assignable to type 'EloLevelId'.
+  Type '"level_1"' is not assignable to type 'EloLevelId'.
+lib/sessionDetail.ts(103,3): error TS2322: Type 'EloLevelId | "level_1"' is not assignable to type 'EloLevelId'.
+scratch/analyze-live-round-function-logs.ts(184,61): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/analyze-live-round-function-logs.ts(185,55): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/analyze-live-round-function-logs.ts(195,47): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/analyze-live-round-function-logs.ts(196,45): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/analyze-live-round-function-logs.ts(197,57): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/analyze-live-round-function-logs.ts(198,55): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/analyze-live-round-function-logs.ts(199,60): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/analyze-live-round-function-logs.ts(200,58): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/analyze-live-suggest-options.ts(272,9): error TS2741: Property 'consecutive_play_penalty' is missing in type '{ pvna_diff: number; partner_repeats: number; opponent_repeats: number; group_bonus: number; gender_pref_penalty: number; }' but required in type 'MatchStats'.
+scratch/analyze-live-suggest-options.ts(283,7): error TS2741: Property 'consecutive_play_penalty' is missing in type '{ pvna_diff: number; partner_repeats: number; opponent_repeats: number; group_bonus: number; gender_pref_penalty: number; }' but required in type 'MatchStats'.
+scratch/analyze-live-suggest-options.ts(291,40): error TS2345: Argument of type '{ matches: { court_idx: number; team_a: Team; team_b: Team; stats: { pvna_diff: number; partner_repeats: number; opponent_repeats: number; group_bonus: number; gender_pref_penalty: number; }; }[]; resting: string[]; score: number; warnings: never[]; stats: { ...; }; }' is not assignable to parameter of type 'SuggestionAlternative'.
+  Types of property 'matches' are incompatible.
+    Type '{ court_idx: number; team_a: Team; team_b: Team; stats: { pvna_diff: number; partner_repeats: number; opponent_repeats: number; group_bonus: number; gender_pref_penalty: number; }; }[]' is not assignable to type 'Match[]'.
+      Type '{ court_idx: number; team_a: Team; team_b: Team; stats: { pvna_diff: number; partner_repeats: number; opponent_repeats: number; group_bonus: number; gender_pref_penalty: number; }; }' is not assignable to type 'Match'.
+        Types of property 'stats' are incompatible.
+          Property 'consecutive_play_penalty' is missing in type '{ pvna_diff: number; partner_repeats: number; opponent_repeats: number; group_bonus: number; gender_pref_penalty: number; }' but required in type 'MatchStats'.
+scratch/analyze-r2-gap.ts(106,3): error TS2322: Type '{ player_id: any; metadata: any; players: { pvna: any; current_elo: any; elo: any; gender: any; partner_gender_pref: any; opponent_gender_pref: any; }[]; }[]' is not assignable to type 'SessionPlayerPreferenceRow[]'.
+  Type '{ player_id: any; metadata: any; players: { pvna: any; current_elo: any; elo: any; gender: any; partner_gender_pref: any; opponent_gender_pref: any; }[]; }' is not assignable to type 'SessionPlayerPreferenceRow'.
+    Types of property 'players' are incompatible.
+      Type '{ pvna: any; current_elo: any; elo: any; gender: any; partner_gender_pref: any; opponent_gender_pref: any; }[]' has no properties in common with type '{ pvna?: number | null | undefined; current_elo?: number | null | undefined; elo?: number | null | undefined; gender?: string | null | undefined; partner_gender_pref?: string | null | undefined; opponent_gender_pref?: string | ... 1 more ... | undefined; }'.
+scratch/bench-cloned-live-match-flow.ts(161,40): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/bench-live-session-flow.ts(259,33): error TS7006: Parameter 'item' implicitly has an 'any' type.
+scratch/bench-v2-full-flow.ts(315,12): error TS2322: Type 'unknown[]' is not assignable to type 'string[]'.
+  Type 'unknown' is not assignable to type 'string'.
+scratch/benchmark-next-match-roster-mutations.ts(292,48): error TS2554: Expected 0-2 arguments, but got 3.
+scratch/check_schema.ts(1,26): error TS2307: Cannot find module './lib/supabase' or its corresponding type declarations.
+scratch/compare-actual-live-to-current-suggest.ts(40,5): error TS2741: Property 'consecutive_play_penalty' is missing in type '{ pvna_diff: number; partner_repeats: number; opponent_repeats: number; group_bonus: number; gender_pref_penalty: number; }' but required in type 'MatchStats'.
+scratch/compare-next-round-benchmark.ts(321,33): error TS2345: Argument of type 'SupabaseClient<any, "public", "public", any, any>' is not assignable to parameter of type 'SupabaseClient<unknown, { PostgrestVersion: string; }, never, never, { PostgrestVersion: string; }>'.
+  Type 'string' is not assignable to type 'never'.
+scratch/compare-next-round-benchmark.ts(321,63): error TS2345: Argument of type 'SupabaseClient<any, "public", "public", any, any>' is not assignable to parameter of type 'SupabaseClient<unknown, { PostgrestVersion: string; }, never, never, { PostgrestVersion: string; }>'.
+scratch/inspect_table.ts(1,26): error TS2307: Cannot find module './lib/supabase' or its corresponding type declarations.
+scratch/measure-live-mutations-edge-vs-rpc.ts(261,67): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+scratch/measure-live-mutations-edge-vs-rpc.ts(272,69): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+scratch/simulate-next-round-session.ts(172,51): error TS2322: Type 'string' is not assignable to type 'null'.
+scratch/test-live-state-version-mutation-paths.ts(203,35): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/test-live-state-version-mutation-paths.ts(203,77): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/test-live-state-version-mutation-paths.ts(204,38): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/test-live-state-version-mutation-paths.ts(204,80): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/test-live-state-version-mutation-paths.ts(483,78): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+scratch/test-preview-batch-starts.ts(104,40): error TS7006: Parameter 'row' implicitly has an 'any' type.
+scratch/test-preview-batch-starts.ts(195,51): error TS2554: Expected 1 arguments, but got 2.
+scratch/test-preview-batch-starts.ts(199,10): error TS2339: Property 'optimal' does not exist on type 'CourtCalculatorOutput'.
+scratch/test-preview.ts(1,45): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+scratch/test-preview.ts(38,3): error TS2322: Type '{ session_id: string; status: string; current_round: number; config: { courts: number; pvna_tolerance: number; weights: { pvna: number; partner_repeat: number; opponent_repeat: number; group_bonus: number; partner_gender_pref: number; opponent_gender_pref: number; }; }; players: Map<...>; rounds: never[]; }' is not assignable to type 'SessionState'.
+  Types of property 'status' are incompatible.
+    Type 'string' is not assignable to type 'SessionStatus'.
+scratch/test-stale-preview-guard.ts(15,31): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+scratch/test_undef.tsx(3,3): error TS2552: Cannot find name 'safeStorageSetItem'. Did you mean 'safeStorageGetItem'?
+tests/court-calculator/calculator.test.ts(120,21): error TS2551: Property 'toBeDefined' does not exist on type 'JestMatcher'. Did you mean 'toBeUndefined'?
+tests/court-calculator/calculator.test.ts(137,21): error TS2551: Property 'toBeDefined' does not exist on type 'JestMatcher'. Did you mean 'toBeUndefined'?
+tests/court-calculator/calculator.test.ts(165,21): error TS2551: Property 'toBeDefined' does not exist on type 'JestMatcher'. Did you mean 'toBeUndefined'?
+tests/jest.setup.ts(2,1): error TS2708: Cannot use namespace 'jest' as a value.
+tests/jest.setup.ts(20,1): error TS2708: Cannot use namespace 'jest' as a value.
+tests/next-round-suggester/simulation/ab-comparison.test.ts(22,5): error TS2554: Expected 2 arguments, but got 3.
+tests/next-round-suggester/simulation/ab-comparison.test.ts(33,5): error TS2554: Expected 2 arguments, but got 3.
+tests/next-round-suggester/simulation/stress.test.ts(21,5): error TS2554: Expected 2 arguments, but got 3.
+tests/next-round-suggester/simulation/stress.test.ts(37,5): error TS2554: Expected 2 arguments, but got 3.
+tests/next-round-suggester/simulation/stress.test.ts(54,5): error TS2554: Expected 2 arguments, but got 3.
+tests/next-round-suggester/simulation/stress.test.ts(78,5): error TS2554: Expected 2 arguments, but got 3.
+tests/next-round-suggester/simulation/stress.test.ts(100,5): error TS2554: Expected 2 arguments, but got 3.
+tests/next-round-suggester/unit/suggest.test.ts(117,16): error TS2339: Property 'objectContaining' does not exist on type '{ (value: unknown): JestMatcher; arrayContaining(values: unknown[]): unknown; extend(matchers: Record<string, unknown>): void; }'.
+tests/next-round-suggester/unit/suggest.test.ts(119,27): error TS2339: Property 'any' does not exist on type '{ (value: unknown): JestMatcher; arrayContaining(values: unknown[]): unknown; extend(matchers: Record<string, unknown>): void; }'.
+tests/next-round-suggester/unit/suggest.test.ts(120,34): error TS2339: Property 'any' does not exist on type '{ (value: unknown): JestMatcher; arrayContaining(values: unknown[]): unknown; extend(matchers: Record<string, unknown>): void; }'.
+tests/snapshots.test.tsx(2,31): error TS7016: Could not find a declaration file for module 'react-test-renderer'. 'D:/picklematch-web/node_modules/react-test-renderer/index.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/react-test-renderer` if it exists or add a new declaration (.d.ts) file containing `declare module 'react-test-renderer';`
+tests/snapshots.test.tsx(7,1): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(26,1): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(28,11): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(29,14): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(30,11): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(40,18): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(41,18): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(42,22): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(43,18): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(44,20): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(45,20): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(46,24): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(47,16): error TS2708: Cannot use namespace 'jest' as a value.
+tests/snapshots.test.tsx(51,3): error TS2582: Cannot find name 'test'. Do you need to install type definitions for a test runner? Try `npm i --save-dev @types/jest` or `npm i --save-dev @types/mocha`.
+tests/snapshots.test.tsx(77,27): error TS2339: Property 'toMatchSnapshot' does not exist on type 'JestMatcher'.
+tests/snapshots.test.tsx(80,3): error TS2582: Cannot find name 'test'. Do you need to install type definitions for a test runner? Try `npm i --save-dev @types/jest` or `npm i --save-dev @types/mocha`.
+tests/snapshots.test.tsx(100,27): error TS2339: Property 'toMatchSnapshot' does not exist on type 'JestMatcher'.

@@ -181,7 +181,7 @@ export default function ZaloRegisterScreen() {
   const previewMatch: MatchSession = useMemo(() => {
     if (!session) return null as any
 
-    const ownerDetails = session.owner_sessions?.[0] || session.owner_sessions || {}
+    const ownerDetails = (session.owner_sessions as any)?.[0] || session.owner_sessions || {}
     const subCourts = session.sub_court_numbers || ownerDetails.sub_court_numbers || []
     
     // Ensure host is in the participants list for display
@@ -195,17 +195,17 @@ export default function ZaloRegisterScreen() {
         id: session.host.id,
         player_id: session.host.id,
         name: session.host.name || 'Chủ kèo',
-        gender: session.host.gender,
-        pvna: session.host.pvna,
+        gender: (session.host as any).gender,
+        pvna: (session.host as any).pvna,
         elo: session.host.elo,
         status: 'confirmed',
         is_host: true
-      })
+      } as any)
     }
 
     return {
       id: session.id,
-      title: session.title || 'Kèo chủ sân',
+      title: (session as any).title || 'Kèo chủ sân',
       bookingId: session.booking_reference || 'OWNER',
       courtName: session.slot.court.name,
       courtId: session.slot.court.id,
@@ -223,7 +223,7 @@ export default function ZaloRegisterScreen() {
         (session.slot.price / (session.max_players || 4))
       ),
       openSlotsLabel: `Đã có ${displayPlayers.length} người tham gia`,
-      statusLabel: getStatusLabel(session.court_booking_status, session.status),
+      statusLabel: getStatusLabel(session.court_booking_status, session.status as any),
       courtBookingConfirmed: session.court_booking_status === 'confirmed',
       isBooked: true,
       isRanked: session.is_ranked,
@@ -442,6 +442,7 @@ export default function ZaloRegisterScreen() {
           fullCourtName={true}
           showPlayerList={showPlayerList}
           onTogglePlayerList={() => setShowPlayerList(!showPlayerList)}
+          actionLabel={'Vào kèo'}
         />
 
         {/* NEW FORM CARD */}
@@ -465,7 +466,7 @@ export default function ZaloRegisterScreen() {
           }}>
             <View style={{
               width: 30, height: 30, borderRadius: 8,
-              backgroundColor: theme.primaryLight,
+              backgroundColor: theme.primarySoft,
               alignItems: 'center', justifyContent: 'center',
             }}>
               <Text style={{ fontSize: 14 }}>👤</Text>
@@ -683,7 +684,7 @@ export default function ZaloRegisterScreen() {
                     onPress={toggleNewbie}
                     activeOpacity={0.8}
                     style={{
-                      backgroundColor: isNewbie ? theme.primary : theme.primaryLight,
+                      backgroundColor: isNewbie ? theme.primary : theme.primarySoft,
                       borderWidth: 1.5,
                       borderColor: theme.primary,
                       paddingHorizontal: 12,
@@ -709,7 +710,7 @@ export default function ZaloRegisterScreen() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   {/* Value badge */}
                   <View style={{
-                    backgroundColor: theme.primaryLight,
+                    backgroundColor: theme.primarySoft,
                     paddingHorizontal: 10, paddingVertical: 2, borderRadius: 6,
                   }}>
                     <Text style={{

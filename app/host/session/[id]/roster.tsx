@@ -18,6 +18,7 @@ export default function RosterRoute() {
   if (loading) return <AppLoading fullScreen />
 
   const ownerDetails = session?.owner_sessions?.[0] || session?.owner_sessions || {}
+  const formatType = (ownerDetails as any)?.[0]?.format_type || 'social'
   const players = session ? buildArrangementPlayers({ ...session, owner_sessions: ownerDetails }) : []
 
   return (

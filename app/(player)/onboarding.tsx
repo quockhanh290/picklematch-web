@@ -369,7 +369,7 @@ export default function OnboardingScreen() {
         <SecondaryNavbar
           onBackPress={handleBack}
           title={sectionTitle}
-          rightElement={authStep === 'none' && !showQuizIntro && (
+          rightSlot={authStep === 'none' && !showQuizIntro && (
             <NavbarStepCounter
               current={sectionCurrent}
               total={sectionTotal}
@@ -1012,7 +1012,7 @@ export default function OnboardingScreen() {
                               flex: 1,
                               color: theme.onSurface, fontSize: 16,
                               fontFamily: SCREEN_FONTS.body,
-                              outlineStyle: 'none' as any
+                              ...(Platform.OS === 'web' ? { outlineStyle: 'none' } as any : {})
                             }}
                           />
                         </View>
@@ -1041,7 +1041,7 @@ export default function OnboardingScreen() {
                               flex: 1, marginLeft: 12,
                               color: theme.onSurface, fontSize: 16,
                               fontFamily: SCREEN_FONTS.body,
-                              outlineStyle: 'none' as any
+                              ...(Platform.OS === 'web' ? { outlineStyle: 'none' } as any : {})
                             }}
                           />
                         </View>
@@ -1113,7 +1113,7 @@ export default function OnboardingScreen() {
                         style={{ height: 1, opacity: 0 }}
                       />
 
-                      <TouchableOpacity dsadsw
+                      <TouchableOpacity
                         onPress={sendOTP}
                         disabled={submitting}
                         style={{ alignSelf: 'center' }}

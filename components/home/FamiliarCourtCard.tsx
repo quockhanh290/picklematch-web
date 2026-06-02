@@ -32,15 +32,14 @@ export function FamiliarCourtCard({ item, onPress }: { item: FamiliarCourt; onPr
           source={imageUrl}
           placeholder={item.thumbnail_url}
           contentFit="cover"
-          transition={300}
-          style={{ position: 'absolute', inset: 0 }}
+          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}
         />
         
         {/* Dark Overlay for text legibility */}
         <View 
           style={{ 
             position: 'absolute', 
-            inset: 0, 
+            top: 0, bottom: 0, left: 0, right: 0, 
             backgroundColor: 'rgba(0,0,0,0.15)',
             padding: SPACING.xl,
             justifyContent: 'space-between'

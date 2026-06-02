@@ -244,7 +244,7 @@ export function getCommunityFeedbackPalette(tone: 'positive' | 'negative', count
   }
 
   return {
-    backgroundColor: theme.dangerDeep || '#7a1f1f', // Fallback if semantic not merged
+    backgroundColor: (theme as any).dangerDeep || '#7a1f1f', // Fallback if semantic not merged
     borderColor: theme.error,
     textColor: theme.onError,
     iconColor: theme.onError,

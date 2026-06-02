@@ -31,7 +31,7 @@ export function AppInput({ label, hint, leftIcon, ...props }: Props) {
       <View 
         style={{ 
           flexDirection: 'row', 
-          itemsCenter: 'center', 
+          alignItems: 'center', 
           borderWidth: 1, 
           borderColor: theme.outlineVariant,
           borderRadius: RADIUS.lg, 

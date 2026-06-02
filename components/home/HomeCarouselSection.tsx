@@ -4,7 +4,7 @@ import { Dimensions, Text, View } from 'react-native'
 import Animated, {
   useAnimatedRef,
   useAnimatedStyle,
-  useScrollOffset,
+  useScrollViewOffset,
   type SharedValue,
 } from 'react-native-reanimated'
 
@@ -85,7 +85,7 @@ function SwipeStack<T>({
   onIndexChange?: (index: number) => void
 }) {
   const scrollRef = useAnimatedRef<Animated.ScrollView>()
-  const scrollOffset = useScrollOffset(scrollRef)
+  const scrollOffset = useScrollViewOffset(scrollRef)
   const [measuredHeight, setMeasuredHeight] = useState(0)
 
   return (

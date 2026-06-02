@@ -29,6 +29,7 @@ export default function TeamArrangementRoute() {
   const ownerDetails = session?.owner_sessions?.[0] || session?.owner_sessions || {}
   const processedPlayers = session ? buildArrangementPlayers({ ...session, owner_sessions: ownerDetails }) : []
 
+  const formatType = (ownerDetails as any)?.format_type || 'social'
   const startTs = session?.slot?.start_time ? new Date(session.slot.start_time).getTime() : 0
   const isWayPastStart = startTs > 0 && (Date.now() - startTs) > (12 * 3600000)
   const isAfterEnd = (session?.slot?.end_time ? new Date(session.slot.end_time).getTime() <= Date.now() : false) || 

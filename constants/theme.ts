@@ -23,6 +23,20 @@ export type AppTheme = ProfileThemeColors & ProfileThemeSemantic & {
   primaryStrong: string;
   primarySoft: string;
   primaryContrast: string;
+  surfaceMuted: string;
+  shadow: string;
+  warningSoft: string;
+  warning: string;
+  warningContainer: string;
+  dangerSoft: string;
+  danger: string;
+  dangerContainer: string;
+  infoSoft: string;
+  info: string;
+  infoContainer: string;
+  successSoft: string;
+  success: string;
+  successContainer: string;
   radiusSm: number;
   radiusMd: number;
   radiusLg: number;
@@ -45,6 +59,20 @@ function createAppThemeFromProfile(id: string, name: string, p: ProfileThemeColo
     primaryStrong: p.primaryContainer,
     primarySoft: p.secondaryContainer,
     primaryContrast: p.onPrimary,
+    surfaceMuted: p.surfaceContainerHigh,
+    shadow: '#000000',
+    warningSoft: s.warningBg,
+    warning: s.warningStrong,
+    warningContainer: s.warningBg,
+    dangerSoft: s.dangerBg,
+    danger: s.dangerStrong,
+    dangerContainer: s.dangerBg,
+    infoSoft: s.infoBg,
+    info: s.infoText,
+    infoContainer: s.infoBg,
+    successSoft: s.successBg,
+    success: s.successText,
+    successContainer: s.successBg,
     radiusSm: 18,
     radiusMd: 28,
     radiusLg: 32,

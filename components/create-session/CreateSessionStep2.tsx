@@ -145,7 +145,15 @@ export function CreateSessionStep2({
 
           <SectionDivider index="01" title="Cấu hình trận đấu" />
 
-          <PlayerCountSelector maxPlayers={maxPlayers} setMaxPlayers={setMaxPlayers} />
+          <PlayerCountSelector 
+            maxPlayers={maxPlayers} 
+            setMaxPlayers={setMaxPlayers} 
+            playMode={'doubles'}
+            setPlayMode={() => {}}
+            subCourtCount={1}
+            selectedSubCourts={['1']}
+            onSubCourtsChange={() => {}}
+          />
 
           <SessionToggles
             isRanked={isRanked}

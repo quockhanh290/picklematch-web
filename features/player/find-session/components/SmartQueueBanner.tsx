@@ -49,7 +49,7 @@ export function SmartQueueBanner({
           style={{ padding: 18 }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View style={{ flex: 1, pr: 16 }}>
+            <View style={{ flex: 1, paddingRight: 16 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                 <View style={{ 
                   width: 24, height: 24, borderRadius: 12, 

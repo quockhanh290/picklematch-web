@@ -261,7 +261,7 @@ export default function CourtDetailScreen() {
         
         {/* Floating Header */}
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100, height: insets.top + 60 }}>
-          <Animated.View style={[{ position: 'absolute', inset: 0, backgroundColor: theme.surface, borderBottomWidth: 1, borderBottomColor: theme.outlineVariant }, headerAnimatedStyle]} />
+          <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: theme.surface, borderBottomWidth: 1, borderBottomColor: theme.outlineVariant }, headerAnimatedStyle]} />
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.lg, paddingTop: insets.top }}>
             <TouchableOpacity onPress={() => router.back()}>
               <Animated.View style={[{ width: 40, height: 40, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' }, backButtonBackgroundStyle]}>
@@ -434,7 +434,7 @@ export default function CourtDetailScreen() {
                   <AppButton 
                     label="Tạo kèo ngay" 
                     variant="secondary"
-                    onPress={() => { if (__DEV__) router.push(`/host/web-quick-start?step=create&courtId=${id}`) }}
+                    onPress={() => { if (__DEV__) router.push(`/host/web-quick-start?step=create&courtId=${id}` as any) }}
                     style={{ marginTop: 24, backgroundColor: 'white' }}
                   />
                 </View>
