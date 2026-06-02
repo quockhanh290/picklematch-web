@@ -4,6 +4,7 @@ import type { SessionLiveMatchRow, SessionPairHistoryRow, SessionPlayerStateRow 
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { getPlayerPvna, normalizeRoundRow, type RawRoundRow } from './helpers'
 import type { LiveRows, RegisteredSessionPlayerRow } from './types'
+import { markNextRoundStage } from './telemetry'
 
 export const liveSessionQueryKeys = {
   all: ['liveSession'] as const,
@@ -20,6 +21,8 @@ export function useLiveSessionQuery(sessionId: string, playersById: Map<string, 
     retry: 1,
     retryDelay: 600,
     queryFn: async () => {
+      const requestStartedAt = Date.now()
+      markNextRoundStage(sessionId, 'rows_request_start')
       const snapshotRes = await supabase.rpc('get_live_session_snapshot_versioned', {
         p_session_id: sessionId,
       })
@@ -55,7 +58,7 @@ export function useLiveSessionQuery(sessionId: string, playersById: Map<string, 
         },
       }))
 
-      return {
+      const liveRows = {
         playerRows: serverPlayerRows,
         registeredPlayerRows: (raw.registered_player_rows ?? []) as RegisteredSessionPlayerRow[],
         pairRows: (raw.pair_rows ?? []) as SessionPairHistoryRow[],
@@ -70,6 +73,16 @@ export function useLiveSessionQuery(sessionId: string, playersById: Map<string, 
         })),
         liveStateVersion,
       }
+      markNextRoundStage(sessionId, 'rows_loaded', {
+        rpc_ms: Date.now() - requestStartedAt,
+        player_rows: liveRows.playerRows.length,
+        registered_player_rows: liveRows.registeredPlayerRows.length,
+        pair_rows: liveRows.pairRows.length,
+        round_rows: liveRows.roundRows.length,
+        live_match_rows: liveRows.liveMatchRows.length,
+        live_state_version: liveRows.liveStateVersion,
+      })
+      return liveRows
     },
     enabled: !!sessionId,
   })

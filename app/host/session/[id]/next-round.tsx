@@ -3,6 +3,7 @@ import { useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
 
 import { NextRoundSuggesterScreenV2 } from '@/features/host/session-detail/NextRoundSuggesterScreenV2'
+import { resetNextRoundTelemetry } from '@/features/host/session-detail/next-round-v2/telemetry'
 import { useAppTheme } from '@/lib/theme-context'
 
 export default function NextRoundRoute() {
@@ -13,6 +14,10 @@ export default function NextRoundRoute() {
   const firstReadyMsRef = React.useRef<number | null>(null)
 
   if (firstReadyMsRef.current === null) {
+    resetNextRoundTelemetry(id!, {
+      bootstrap_variant: useFullBootstrap ? 'full' : 'light',
+      optimization_variant: 'next-round-v2-shell',
+    })
     firstReadyMsRef.current = Date.now() - routeStartedAtRef.current
     if (__DEV__) {
       console.log('[next-round-route] bootstrap timing', {

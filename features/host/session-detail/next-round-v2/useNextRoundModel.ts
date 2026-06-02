@@ -28,6 +28,7 @@ import { loadNextRoundSessionSettings, saveNextRoundSessionSettings, type Persis
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { getComparableElo, getReliability, getSkillLevelId, getSkillTag } from '@/lib/sessionDetail'
 import { getLevelIdForElo } from '@/lib/eloSystem'
+import { markNextRoundStage } from './telemetry'
 
 function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): SuggestionAlternative | null {
   if (!alternative) return null
@@ -426,14 +427,27 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     return `${engineLiveStateVersion ?? 'noversion'}__${players}__${pairs}__${rounds}__${liveMatches}`
   }, [enrichedPlayerRows, engineLiveStateVersion, deferredRows.liveMatchRows, deferredRows.pairRows, stateRoundRows])
 
-  const rawState = useMemo(() => mapRowsToSessionState({
-    sessionId,
-    playerRows: enrichedPlayerRowsRef.current,
-    pairRows: pairRowsRef.current,
-    roundRows: roundRowsRef.current,
-    courts: engineCourtCount,
-    pvnaTolerance,
-  }), [rowsFingerprint, engineCourtCount, pvnaTolerance, sessionId])
+  const rawState = useMemo(() => {
+    const startedAt = Date.now()
+    const mapped = mapRowsToSessionState({
+      sessionId,
+      playerRows: enrichedPlayerRowsRef.current,
+      pairRows: pairRowsRef.current,
+      roundRows: roundRowsRef.current,
+      courts: engineCourtCount,
+      pvnaTolerance,
+    })
+    if (engineLiveStateVersion != null) {
+      markNextRoundStage(sessionId, 'state_mapped', {
+        map_ms: Date.now() - startedAt,
+        player_count: mapped.players.size,
+        round_count: mapped.rounds.length,
+        court_count: engineCourtCount,
+        live_state_version: engineLiveStateVersion,
+      })
+    }
+    return mapped
+  }, [rowsFingerprint, engineCourtCount, pvnaTolerance, sessionId, engineLiveStateVersion])
 
   const baseWeights = useMemo(() => ({
     ...rawState.config.weights,
@@ -458,8 +472,16 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     const startedAt = Date.now()
     const result = suggestNextRound(deferredState, { tier_overrides: deferredTierOverrides })
     lastSuggestMsRef.current = Date.now() - startedAt
+    if (deferredRows.liveStateVersion != null) {
+      markNextRoundStage(sessionId, 'suggestion_ready', {
+        suggest_ms: lastSuggestMsRef.current,
+        alternatives: result.alternatives.length,
+        player_count: deferredState.players.size,
+        live_state_version: deferredRows.liveStateVersion,
+      })
+    }
     return result
-  }, [deferredState, deferredTierOverrides])
+  }, [deferredRows.liveStateVersion, deferredState, deferredTierOverrides, sessionId])
   const selected = suggestion.alternatives[selectedAlternative] ?? suggestion.alternatives[0]
   const workingAlternative = manualAlternative ?? selected
   const hasManualSwapHardGuard = Boolean(workingAlternative?.warnings.includes('MANUAL_SWAP_HARD_GUARD'))

@@ -124,6 +124,7 @@ import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
 import { checkInLiveSessionPlayers, invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent, repairLiveSessionPlayerStateFromRounds } from './next-round-v2/api'
+import { getNextRoundTelemetry, markNextRoundStage } from './next-round-v2/telemetry'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
 import { ChoiceRow, NavbarRightActions, StickyRoundCta } from './next-round-v2/controls'
@@ -538,6 +539,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     undoRoundSelection,
     workingAlternative,
   } = model
+  useEffect(() => {
+    markNextRoundStage(sessionId, 'screen_shell_paint', {
+      loading,
+    })
+  }, [loading, sessionId])
 
   const lastBusRefreshRef = useRef(0)
   const liveStateVersionRef = useRef<number | null>(rows.liveStateVersion ?? null)
@@ -1585,10 +1591,18 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
 
     let isMounted = true
     setIsSuggestingPreview(true)
+    markNextRoundStage(sessionId, 'preview_request_scheduled', {
+      suggested_queue_count: suggestedQueueCount,
+      live_state_version: rows.liveStateVersion,
+    })
 
     const previewT0 = nowMs()
     const timer = setTimeout(() => {
       if (!isMounted) return
+      markNextRoundStage(sessionId, 'preview_request_start', {
+        suggested_queue_count: suggestedQueueCount,
+        live_state_version: rows.liveStateVersion,
+      })
       if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch start', { suggestedQueueCount, liveStateVersion: rows.liveStateVersion })
 
       const snap = previewBodyRef.current
@@ -1643,6 +1657,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           suggestedPreviewBatchRef.current = { key: previewRequestKey, matches }
           setSuggestedLiveMatches(matches)
           setCompletingLiveMatchIds(new Set())
+          markNextRoundStage(sessionId, 'preview_ready', {
+            preview_ms: Math.round(nowMs() - previewT0),
+            match_count: matches.length,
+            live_state_version: rows.liveStateVersion,
+          })
+          if (__DEV__) console.log('[NextRoundSuggesterV2] browser telemetry', getNextRoundTelemetry(sessionId).stageDurationsMs)
           if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch done', { totalMs: Math.round(nowMs() - previewT0), matchCount: matches.length })
         })
         .catch(err => {

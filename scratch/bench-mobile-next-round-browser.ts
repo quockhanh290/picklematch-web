@@ -313,6 +313,15 @@ async function main() {
       encodedBodySize: entry.encodedBodySize,
     } : null
   })
+  const browserTelemetry = await page.evaluate(() => {
+    const telemetry = (globalThis as any).__NEXT_ROUND_V2_TELEMETRY__
+    if (!telemetry) return null
+    return {
+      sessionId: telemetry.sessionId,
+      stageDurationsMs: telemetry.stageDurationsMs,
+      events: Array.isArray(telemetry.events) ? telemetry.events.slice(-20) : [],
+    }
+  }).catch(() => null)
   const visibleTestIds = await page.locator('[data-testid]').evaluateAll(nodes =>
     nodes
       .filter(node => {
@@ -352,6 +361,7 @@ async function main() {
       transferSize: nav.transferSize,
       encodedBodySize: nav.encodedBodySize,
     } : null,
+    browserTelemetry,
     visibleTestIds,
     bodyPreview: bodyText.slice(0, 1200),
     console: consoleRows.slice(-20),
