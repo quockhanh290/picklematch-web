@@ -1779,8 +1779,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
             ...(isWeb
               ? {
                   overflowY: 'auto',
-                  WebkitOverflowScrolling: 'touch',
-                  overscrollBehavior: 'contain',
                   overflowAnchor: 'none',
                   touchAction: 'pan-y',
                 }
@@ -1850,31 +1848,29 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                   </TouchableOpacity>
                 </Card>
               ) : null}
-              <View style={{ borderWidth: isWeb ? 2 : 0, borderColor: 'red' }}>
-                <LiveMatchBoard
-                  key={liveBoardRenderKey}
-                  liveMatches={activeLiveMatches}
-                  suggestedMatches={suggestedLiveMatches}
-                  completedMatches={completedLiveMatches}
-                  roundSize={queueCourtCount}
-                  targetRounds={effectiveTargetRounds}
-                  roundPace={15}
-                  busy={busy}
-                  startingPreviewIds={startingPreviewIds}
-                  endingLiveMatchIds={endingLiveMatchIds}
-                  completingMatchIds={completingLiveMatchIds}
-                  isSuggestingPreview={isSuggestingPreview}
-                  state={state}
-                  pvnaTolerance={pvnaTolerance}
-                  playersById={playersById}
-                  onStartMatch={startLiveMatch}
-                  onCompleteMatch={completeLiveMatch}
-                  onCancelMatch={cancelLiveMatch}
-                  onPlayerPress={openSwapForPlayer}
-                  onOpenSettings={() => setSheet('settings')}
-                  onOpenSwap={(match) => { setSuggestedSwapMatch(match); setSwapFromPlayerId(null); setSheet('swap') }}
-                />
-              </View>
+              <LiveMatchBoard
+                key={liveBoardRenderKey}
+                liveMatches={activeLiveMatches}
+                suggestedMatches={suggestedLiveMatches}
+                completedMatches={completedLiveMatches}
+                roundSize={queueCourtCount}
+                targetRounds={effectiveTargetRounds}
+                roundPace={15}
+                busy={busy}
+                startingPreviewIds={startingPreviewIds}
+                endingLiveMatchIds={endingLiveMatchIds}
+                completingMatchIds={completingLiveMatchIds}
+                isSuggestingPreview={isSuggestingPreview}
+                state={state}
+                pvnaTolerance={pvnaTolerance}
+                playersById={playersById}
+                onStartMatch={startLiveMatch}
+                onCompleteMatch={completeLiveMatch}
+                onCancelMatch={cancelLiveMatch}
+                onPlayerPress={openSwapForPlayer}
+                onOpenSettings={() => setSheet('settings')}
+                onOpenSwap={(match) => { setSuggestedSwapMatch(match); setSwapFromPlayerId(null); setSheet('swap') }}
+              />
               {suggestedLiveMatches.length === 0 ? (
                 planningInProgress || isSuggestingPreview || activeLiveMatches.length > 0 ? (
                   <PlanningRoundCard syncingRoster={busy === 'sync' || isSuggestingPreview} />
