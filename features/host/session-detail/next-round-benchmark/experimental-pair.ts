@@ -30,6 +30,7 @@ function addStats(a: MatchScore['stats'], b: MatchScore['stats']): MatchScore['s
     opponent_repeats: a.opponent_repeats + b.opponent_repeats,
     group_bonus: a.group_bonus + b.group_bonus,
     gender_pref_penalty: a.gender_pref_penalty + b.gender_pref_penalty,
+    consecutive_play_penalty: a.consecutive_play_penalty + b.consecutive_play_penalty,
   }
 }
 
@@ -40,6 +41,7 @@ function zeroStats(): MatchScore['stats'] {
     opponent_repeats: 0,
     group_bonus: 0,
     gender_pref_penalty: 0,
+    consecutive_play_penalty: 0,
   }
 }
 

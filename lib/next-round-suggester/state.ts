@@ -18,6 +18,7 @@ export const DEFAULT_SCORING_WEIGHTS = {
   group_bonus: 6,
   partner_gender_pref: 4,
   opponent_gender_pref: 2,
+  consecutive_play: 4,
 }
 
 export type QueryResult<T> = {

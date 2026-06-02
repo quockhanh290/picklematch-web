@@ -194,6 +194,7 @@ function roundWeights(weights: ScoringWeights): ScoringWeights {
     group_bonus: round(weights.group_bonus),
     partner_gender_pref: round(weights.partner_gender_pref),
     opponent_gender_pref: round(weights.opponent_gender_pref),
+    consecutive_play: round(weights.consecutive_play),
   }
 }
 

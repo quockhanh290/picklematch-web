@@ -11,6 +11,7 @@ export type ScoringWeights = {
   group_bonus: number
   partner_gender_pref: number
   opponent_gender_pref: number
+  consecutive_play: number
 }
 
 export type PlayerSessionState = {
@@ -47,6 +48,7 @@ export type MatchStats = {
   opponent_repeats: number
   group_bonus: number
   gender_pref_penalty: number
+  consecutive_play_penalty: number
 }
 
 export type MatchScore = {

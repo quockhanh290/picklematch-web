@@ -16,6 +16,7 @@ const INFINITY_SCORE: MatchScore = {
     opponent_repeats: 0,
     group_bonus: 0,
     gender_pref_penalty: 0,
+    consecutive_play_penalty: 0,
   },
 }
 
@@ -32,7 +33,21 @@ function emptyStats(pvnaDiff = 0): MatchStats {
     opponent_repeats: 0,
     group_bonus: 0,
     gender_pref_penalty: 0,
+    consecutive_play_penalty: 0,
   }
+}
+
+function getConsecutivePlayPenalty(allPlayers: string[], state: SessionState, weight: number): number {
+  let penalty = 0
+  for (const playerId of allPlayers) {
+    const consecutive = state.players.get(playerId)?.consecutive_play ?? 0
+    if (consecutive >= 2) {
+      // Quadratic penalty: (consecutive-1)^2 × weight per player
+      // consecutive=2 → 1×weight, consecutive=3 → 4×weight, consecutive=4 → 9×weight
+      penalty += Math.pow(consecutive - 1, 2) * weight
+    }
+  }
+  return penalty
 }
 
 function getPvna(team: Team, state: SessionState): number | null {
@@ -307,13 +322,15 @@ export function scoreMatch(
   stats.opponent_repeats = getOpponentRepeats(teamA, teamB, state)
   stats.group_bonus = getGroupedPartnerCount(teamA, teamB, state)
   stats.gender_pref_penalty = genderPenalty(teamA, teamB, state, weights)
+  stats.consecutive_play_penalty = getConsecutivePlayPenalty([...teamA, ...teamB], state, weights.consecutive_play ?? 4)
 
   const score =
     pvnaDiff * weights.pvna +
     stats.partner_repeats * weights.partner_repeat +
     stats.opponent_repeats * weights.opponent_repeat -
     stats.group_bonus * weights.group_bonus +
-    stats.gender_pref_penalty
+    stats.gender_pref_penalty +
+    stats.consecutive_play_penalty
 
   return {
     score,

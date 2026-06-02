@@ -70,6 +70,7 @@ function makeResult(): SimulationResult {
           group_bonus: 0.5,
           partner_gender_pref: 4,
           opponent_gender_pref: 2,
+          consecutive_play: 4,
         },
       },
       players: new Map([

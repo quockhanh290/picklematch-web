@@ -1,6 +1,6 @@
 import { auditAlternative, type AlternativeAudit } from './alternatives.ts'
 import { scoreMatch } from './score.ts'
-import type { Match, SessionState, SuggestionAlternative } from './types.ts'
+import type { Match, MatchStats, SessionState, SuggestionAlternative } from './types.ts'
 
 export type ManualSwapAudit = {
   alternative: SuggestionAlternative
@@ -90,13 +90,14 @@ function rescoreAlternative(
   }
 }
 
-function emptyMatchStats(): Match['stats'] {
+function emptyMatchStats(): MatchStats {
   return {
     pvna_diff: 0,
     partner_repeats: 0,
     opponent_repeats: 0,
     group_bonus: 0,
     gender_pref_penalty: 0,
+    consecutive_play_penalty: 0,
   }
 }
 
@@ -107,5 +108,6 @@ function addMatchStats(a: NonNullable<Match['stats']>, b: NonNullable<Match['sta
     opponent_repeats: a.opponent_repeats + b.opponent_repeats,
     group_bonus: a.group_bonus + b.group_bonus,
     gender_pref_penalty: a.gender_pref_penalty + b.gender_pref_penalty,
+    consecutive_play_penalty: a.consecutive_play_penalty + b.consecutive_play_penalty,
   }
 }

@@ -71,6 +71,7 @@ function emptyStats(): MatchStats {
     opponent_repeats: 0,
     group_bonus: 0,
     gender_pref_penalty: 0,
+    consecutive_play_penalty: 0,
   }
 }
 
