@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { buildSuggestedMatchPayloads as buildPreviewPayloads } from '../preview'
-import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, AppState, Dimensions, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -110,8 +110,6 @@ const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_REPEAT_COST_WEIGHT = 3
 const BALANCED_AFFECTED_PLAYER_COST_WEIGHT = 1
-const IS_WEB = Platform.OS === 'web'
-const ROUNDED_CARD_OVERFLOW = IS_WEB ? 'visible' : 'hidden'
 
 function fairnessLabel(score: SessionFairnessScore) {
   if (score.grade === 'excellent') return 'Rất đều'
@@ -1739,7 +1737,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     tradeoffSummaryLines.push(`lặp +${repeatTradeoff.over_by}`)
   }
   return (
-    <View style={{ borderRadius: 16, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border, overflow: ROUNDED_CARD_OVERFLOW }}>
+    <View style={{ borderRadius: 16, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
         <SuggestedMatchTile
           match={toMatch(activeMatch)}
@@ -1960,7 +1958,7 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
   const elapsedLabel = `${Math.floor(elapsed / 60).toString().padStart(2, '0')}:${(elapsed % 60).toString().padStart(2, '0')}`
 
   return (
-    <View style={{ backgroundColor: theme.surface, borderRadius: RADIUS.xl, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, overflow: ROUNDED_CARD_OVERFLOW, ...LAYOUT_SHADOW.sm }}>
+    <View style={{ backgroundColor: theme.surface, borderRadius: RADIUS.xl, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, overflow: 'hidden', ...LAYOUT_SHADOW.sm }}>
       <View style={{ backgroundColor: theme.surfaceContainerLow, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: BORDER.hairline, borderBottomColor: theme.outlineVariant }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.primary }} />

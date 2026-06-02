@@ -1,6 +1,6 @@
 import React from 'react'
 import { router } from 'expo-router'
-import { ActivityIndicator, Pressable, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Pressable, Text, TouchableOpacity, View, Platform } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MoreHorizontal, RefreshCcw } from 'lucide-react-native'
@@ -76,7 +76,7 @@ export function StickyRoundCta({
     <LinearGradient
       pointerEvents="box-none"
       colors={['rgba(255,251,245,0)', theme.background]}
-      style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 26, paddingHorizontal: 16, paddingBottom: 16 + insets.bottom }}
+      style={{ position: (Platform.OS === 'web' ? 'fixed' : 'absolute') as any, left: 0, right: 0, bottom: 0, paddingTop: 26, paddingHorizontal: 16, paddingBottom: 16 + insets.bottom }}
     >
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <TouchableOpacity
