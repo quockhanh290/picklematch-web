@@ -1,5 +1,4 @@
 import React from 'react'
-import { router } from 'expo-router'
 import { ActivityIndicator, Pressable, Text, TouchableOpacity, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -10,26 +9,10 @@ import { useAppTheme } from '@/lib/theme-context'
 
 import { ctaTextStyle, eyebrowStyle } from './helpers'
 
-export function NavbarRightActions({ sessionId, onRefresh, refreshing }: { sessionId: string; onRefresh: () => void; refreshing?: boolean }) {
+export function NavbarRightActions({ onRefresh, refreshing }: { onRefresh: () => void; refreshing?: boolean }) {
   const theme = useAppTheme()
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-      <Pressable
-        onPress={() => router.push({ pathname: '/host/session/[id]/next-round', params: { id: sessionId, ui: 'legacy' } })}
-        style={{
-          height: 36,
-          minWidth: 46,
-          borderRadius: RADIUS.full,
-          borderWidth: BORDER.hairline,
-          borderColor: theme.outlineVariant,
-          backgroundColor: theme.surface,
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingHorizontal: 10,
-        }}
-      >
-        <Text style={ctaTextStyle(theme.primary, 11)}>Legacy</Text>
-      </Pressable>
       <Pressable
         onPress={onRefresh}
         style={{

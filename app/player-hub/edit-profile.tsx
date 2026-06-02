@@ -1,3 +1,2 @@
-import EditProfile from '../(player)/edit-profile'
-
-export default EditProfile
+import EditProfileScreen from '@/features/player/profile/EditProfileScreen'
+export default EditProfileScreen

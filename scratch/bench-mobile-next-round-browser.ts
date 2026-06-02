@@ -156,7 +156,33 @@ async function completeFirstVisibleMatch(page: Page) {
   await button.click({ force: true, timeout: 10_000 })
   const clickMs = now() - t0
   await page.getByText(/ĐANG KẾT THÚC/i).first().waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {})
-  await page.getByText(/ĐANG KẾT THÚC/i).first().waitFor({ state: 'hidden', timeout: 45_000 })
+  await page.waitForFunction(
+    () => {
+      const text = document.body.innerText.toUpperCase()
+      return !text.includes('ĐANG KẾT THÚC') && !text.includes('TRẬN ĐANG ĐÁNH')
+    },
+    undefined,
+    { timeout: 45_000 },
+  )
+  return {
+    before,
+    clickMs,
+    settledMs: now() - t0,
+  }
+}
+
+async function startFirstSuggestedMatch(page: Page) {
+  const button = page.getByText(/BẮT ĐẦU TRẬN/i).first()
+  const before = await button.textContent().catch(() => null)
+  const t0 = now()
+  await button.scrollIntoViewIfNeeded().catch(() => {})
+  await button.click({ force: true, timeout: 10_000 })
+  const clickMs = now() - t0
+  await page.waitForFunction(
+    () => document.body.innerText.toUpperCase().includes('TRẬN ĐANG ĐÁNH'),
+    undefined,
+    { timeout: 45_000 },
+  )
   return {
     before,
     clickMs,
@@ -227,11 +253,22 @@ async function main() {
   if (args.mutate || args.flow === 'one-match') {
     const startCount = await page.getByText(/BẮT ĐẦU TRẬN/i).count().catch(() => 0)
     if (startCount > 0) {
-      const start = await clickTextAndMeasure(page, /BẮT ĐẦU TRẬN/i, /KẾT THÚC TRẬN/i)
+      const preCleanup: Array<Record<string, unknown>> = []
+      while (await page.getByText(/KẾT THÚC TRẬN/i).count().catch(() => 0) > 0) {
+        const cleanup = await completeFirstVisibleMatch(page)
+        preCleanup.push({
+          ...cleanup,
+          clickMs: Math.round(cleanup.clickMs),
+          settledMs: Math.round(cleanup.settledMs),
+        })
+        await page.waitForTimeout(500)
+      }
+      const start = await startFirstSuggestedMatch(page)
       await page.waitForTimeout(600)
       const complete = await completeFirstVisibleMatch(page)
       mutateResult = {
         flow: 'one-match',
+        preCleanup,
         start: {
           ...start,
           clickMs: Math.round(start.clickMs),

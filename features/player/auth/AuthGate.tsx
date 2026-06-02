@@ -37,12 +37,12 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
   
   // Route categorizations
   const isHostLoginRoute = firstSegment === 'host' && secondSegment === 'login'
-  const isRegisterRoute = firstSegment === 'register' || (firstSegment === '(player)' && secondSegment === 'register')
-  const isOnboardingRoute = firstSegment === 'onboarding' || (firstSegment === '(player)' && secondSegment === 'onboarding')
-  const isPublicRoute = firstSegment === 'login' || (firstSegment === '(player)' && secondSegment === 'login') || isHostLoginRoute || isRegisterRoute || isOnboardingRoute
-  const isProfileSetupRoute = firstSegment === 'profile-setup' || (firstSegment === '(player)' && secondSegment === 'profile-setup')
+  const isRegisterRoute = firstSegment === 'register' || (firstSegment === '(auth)' && secondSegment === 'register')
+  const isOnboardingRoute = firstSegment === 'onboarding' || (firstSegment === '(auth)' && secondSegment === 'onboarding')
+  const isPublicRoute = firstSegment === 'login' || (firstSegment === '(auth)' && secondSegment === 'login') || isHostLoginRoute || isRegisterRoute || isOnboardingRoute
+  const isProfileSetupRoute = firstSegment === 'profile-setup' || (firstSegment === '(auth)' && secondSegment === 'profile-setup')
   const isHostRoute = firstSegment === 'host'
-  const isPlayerRoute = firstSegment === '(player)' || firstSegment === '(tabs)'
+  const isPlayerRoute = firstSegment === 'player-hub'
 
   // 1. Auth Bootstrap Guard (Slow Connection Indicator)
   useEffect(() => {

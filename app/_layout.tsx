@@ -54,9 +54,9 @@ export default function RootLayout() {
     onOpenSession: (id) => router.push({ pathname: '/host/session/[id]', params: { id } } as any),
     onEditSession: (id) => router.push({ pathname: '/host/create-session', params: { editSessionId: id } }),
     onViewMatchResult: (id) => router.push({ pathname: '/host/match-result/[id]', params: { id } } as any),
-    onRateSession: (id) => router.push(`/rate-session/${id}` as any),
-    onConfirmResult: (id) => router.push(`/session/${id}/confirm-result` as any),
-    onReviewSession: (id) => router.push(`/session/${id}/review` as any),
+    onRateSession: (id) => router.push(`/player-hub/rate-session/${id}` as any),
+    onConfirmResult: (id) => router.push(`/player-hub/session/${id}/confirm-result` as any),
+    onReviewSession: (id) => router.push(`/player-hub/session/${id}/review` as any),
     onOpenPlayerProfile: (id) => router.push({ pathname: '/player/[id]', params: { id } } as any),
     onOpenCourt: (id) => router.push({ pathname: '/host/court-config', params: { id } } as any),
   }
@@ -71,7 +71,8 @@ export default function RootLayout() {
               <SessionNavContext.Provider value={sessionNav}>
                 <AuthGate fontsLoaded={fontsReadyForRender}>
                   <Stack screenOptions={{ headerShown: false }}>
-                    <Stack.Screen name="(player)" options={{ headerShown: false }} />
+                    <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                    <Stack.Screen name="player-hub" options={{ headerShown: false }} />
                     <Stack.Screen name="host" options={{ headerShown: false }} />
                     <Stack.Screen name="player/[id]" options={{ headerShown: false }} />
                   </Stack>

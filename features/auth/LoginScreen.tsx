@@ -63,7 +63,6 @@ function OTPDots({ value }: { value: string }) {
 export default function LoginScreen() {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
-  const isPlayerLoginDisabled = Platform.OS === 'web' && !__DEV__ // Enable on web during dev for testing profile
   const isE2E = process.env.EXPO_PUBLIC_E2E === '1'
   const isDevMode = process.env.EXPO_PUBLIC_DEV_MODE === '1'
   const showDevOnlyUi = __DEV__ || isE2E || isDevMode
@@ -80,15 +79,6 @@ export default function LoginScreen() {
 }
 
 async function sendOTP() {
-  if (isPlayerLoginDisabled) {
-    setDialogConfig({
-      title: 'Tạm khóa đăng nhập người chơi',
-      message: 'Phiên bản web hiện chỉ hỗ trợ flow Host. Vui lòng đăng nhập ở màn Host.',
-      actions: [{ label: 'Đi tới Host', onPress: () => router.replace('/host/login') }],
-    })
-    return
-  }
-
   if (!phone || phone.replace(/\D/g, '').length < 9) {
     setDialogConfig({
       title: 'Lỗi',
@@ -123,15 +113,6 @@ async function sendOTP() {
 }
 
 async function verifyOTP() {
-  if (isPlayerLoginDisabled) {
-    setDialogConfig({
-      title: 'Tạm khóa đăng nhập người chơi',
-      message: 'Phiên bản web hiện chỉ hỗ trợ flow Host. Vui lòng đăng nhập ở màn Host.',
-      actions: [{ label: 'Đi tới Host', onPress: () => router.replace('/host/login') }],
-    })
-    return
-  }
-
   if (!otp || otp.length < 6) {
     setDialogConfig({
       title: 'Lỗi',
@@ -273,37 +254,7 @@ const sanitizedPhone = phone.replace(/\D/g, '')
               ...SHADOW.md,
             }}
           >
-            <View style={{ 
-              flexDirection: 'row', 
-              backgroundColor: theme.surfaceContainerLow, 
-              borderRadius: RADIUS.lg, 
-              padding: 4,
-              marginBottom: 32
-            }}>
-              <TouchableOpacity 
-                activeOpacity={1}
-                style={{ 
-                  flex: 1, 
-                  paddingVertical: 10, 
-                  alignItems: 'center',
-                  backgroundColor: 'white',
-                  borderRadius: RADIUS.md,
-                  ...SHADOW.xs
-                }}
-              >
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: theme.primary }}>NGƯỜI CHƠI</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={() => router.push('/host/login')}
-                style={{ 
-                  flex: 1, 
-                  paddingVertical: 10, 
-                  alignItems: 'center'
-                }}
-              >
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: theme.onSurfaceVariant }}>HOST</Text>
-              </TouchableOpacity>
-            </View>
+
 
             <View style={{ marginBottom: 24 }}>
               <Text style={{ 
@@ -405,15 +356,15 @@ const sanitizedPhone = phone.replace(/\D/g, '')
 
             <TouchableOpacity
               onPress={primaryAction}
-              disabled={loading || isPlayerLoginDisabled}
+              disabled={loading}
               style={{
                 marginTop: 32,
                 height: 56,
                 borderRadius: RADIUS.md,
-                backgroundColor: isPlayerLoginDisabled ? theme.outlineVariant : theme.primary,
+                backgroundColor: theme.primary,
                 alignItems: 'center',
                 justifyContent: 'center',
-                opacity: loading || isPlayerLoginDisabled ? 0.7 : 1,
+                opacity: loading ? 0.7 : 1,
               }}
             >
               <Text style={{ 
@@ -423,13 +374,11 @@ const sanitizedPhone = phone.replace(/\D/g, '')
                 textTransform: 'uppercase',
                 letterSpacing: 1
               }}>
-                {isPlayerLoginDisabled
-                  ? 'WEB CHỈ HỖ TRỢ CHỦ SÂN'
-                  : loading
-                    ? STRINGS.auth.processing
-                    : step === 'phone'
-                      ? STRINGS.auth.submit_phone
-                      : STRINGS.auth.submit_otp}
+                {loading
+                  ? STRINGS.auth.processing
+                  : step === 'phone'
+                    ? STRINGS.auth.submit_phone
+                    : STRINGS.auth.submit_otp}
               </Text>
             </TouchableOpacity>
 
@@ -479,19 +428,7 @@ const sanitizedPhone = phone.replace(/\D/g, '')
               <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.headline }}>{STRINGS.auth.join_now}</Text>
             </Text>
 
-            <TouchableOpacity 
-              onPress={() => router.push('/host/login')}
-              style={{ marginTop: 12 }}
-            >
-              <Text style={{ 
-                color: theme.onSurfaceVariant, 
-                fontFamily: SCREEN_FONTS.label,
-                fontSize: 13,
-                textDecorationLine: 'underline'
-              }}>
-                {STRINGS.host_flow.login_link}
-              </Text>
-            </TouchableOpacity>
+
             
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 24, opacity: 0.5 }}>
               <Text style={{ color: theme.outline, fontSize: 10, fontFamily: SCREEN_FONTS.label }}>ĐIỀU KHOẢN</Text>

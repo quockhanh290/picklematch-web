@@ -1718,7 +1718,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     })
   }, [busy, rows.playerRows, players])
 
-  const navbarRightSlot = <NavbarRightActions sessionId={sessionId} onRefresh={loadLiveState} refreshing={refreshing} />
+  const navbarRightSlot = <NavbarRightActions onRefresh={loadLiveState} refreshing={refreshing} />
 
   if (loading) {
     return (

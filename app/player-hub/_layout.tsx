@@ -20,9 +20,9 @@ export default function PlayerHubLayout() {
     onOpenSession: (id: string) => router.push({ pathname: '/player-hub/session/[id]', params: { id } } as any),
     onEditSession: (id: string) => router.push({ pathname: '/host/create-session', params: { editSessionId: id } } as any),
     onViewMatchResult: (id: string) => router.push({ pathname: '/host/match-result/[id]', params: { id } } as any),
-    onRateSession: (id: string) => router.push({ pathname: '/rate-session/[id]', params: { id } } as any),
-    onConfirmResult: (id: string) => router.push({ pathname: '/session/[id]/confirm-result', params: { id } } as any),
-    onReviewSession: (id: string) => router.push({ pathname: '/session/[id]/review', params: { id } } as any),
+    onRateSession: (id: string) => router.push({ pathname: '/player-hub/rate-session/[id]', params: { id } } as any),
+    onConfirmResult: (id: string) => router.push({ pathname: '/player-hub/session/[id]/confirm-result', params: { id } } as any),
+    onReviewSession: (id: string) => router.push({ pathname: '/player-hub/session/[id]/review', params: { id } } as any),
     onOpenPlayerProfile: () => {},
     onOpenCourt: (id: string) => router.push({ pathname: '/player-hub/court/[id]', params: { id } } as any),
   }

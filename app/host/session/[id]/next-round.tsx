@@ -3,7 +3,6 @@ import { useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
 
 import { AppLoading } from '@/components/design'
-import { NextRoundSuggesterScreen } from '@/features/host/session-detail/NextRoundSuggesterScreen'
 import { NextRoundSuggesterScreenV2 } from '@/features/host/session-detail/NextRoundSuggesterScreenV2'
 import { useSessionDetail } from '@/hooks/useSessionDetail'
 import { buildArrangementPlayers } from '@/lib/sessionDetail'
@@ -11,7 +10,7 @@ import { useAuth } from '@/lib/useAuth'
 import { useAppTheme } from '@/lib/theme-context'
 
 export default function NextRoundRoute() {
-  const { id, ui, bootstrap, report } = useLocalSearchParams<{ id: string; ui?: string; bootstrap?: string; report?: string }>()
+  const { id, bootstrap, report } = useLocalSearchParams<{ id: string; bootstrap?: string; report?: string }>()
   const { userId } = useAuth()
   const theme = useAppTheme()
   const useFullBootstrap = bootstrap === 'full'
@@ -46,15 +45,10 @@ export default function NextRoundRoute() {
     route_bootstrap_ms: firstReadyMsRef.current,
     session_detail: lastTiming,
   }
-  const useLegacyUi = ui === 'legacy' || ui === 'v1'
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      {useLegacyUi ? (
-        <NextRoundSuggesterScreen sessionId={id!} players={players} courts={courts} />
-      ) : (
-        <NextRoundSuggesterScreenV2 sessionId={id!} players={players} courts={courts} bootstrapTelemetry={bootstrapTelemetry} initialShowReport={report === '1'} />
-      )}
+      <NextRoundSuggesterScreenV2 sessionId={id!} players={players} courts={courts} bootstrapTelemetry={bootstrapTelemetry} initialShowReport={report === '1'} />
     </View>
   )
 }
