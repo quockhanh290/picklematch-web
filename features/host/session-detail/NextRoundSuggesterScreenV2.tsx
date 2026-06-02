@@ -423,7 +423,7 @@ type SuggestedPreviewBatch = {
 
 
 
-export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstrapTelemetry = null, initialShowReport = false }: NextRoundSuggesterV2Props) {
+export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bootstrapTelemetry = null, initialShowReport = false }: NextRoundSuggesterV2Props) {
   const checkInMutation = useCheckInMutation(sessionId)
   const checkOutMutation = useCheckOutMutation(sessionId)
   const startMatchMutation = useStartMatchMutation(sessionId)
@@ -508,6 +508,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     rememberRoundSelection,
     reportState,
     reportReady,
+    rosterPlayers,
     rows,
     selectAlternativeForRound,
     selectedAlternative,
@@ -1710,20 +1711,23 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   }, [activeLiveMatches, isWeb, rows.liveStateVersion, suggestedLiveMatches])
   const lateArrivalPlayers = useMemo(() => {
     const livePlayerIds = new Set(rows.playerRows.map(row => String(row.player_id)))
-    return players.filter(player => {
+    return rosterPlayers.filter(player => {
       const playerId = String(player.id)
       if (player.status && player.status !== 'confirmed') return false
       const status = player.checkInStatus
       return (status === 'pending' || status === 'no_show') && (!livePlayerIds.has(playerId) || busy === `late-${playerId}`)
     })
-  }, [busy, rows.playerRows, players])
+  }, [busy, rows.playerRows, rosterPlayers])
 
   const navbarRightSlot = <NavbarRightActions onRefresh={loadLiveState} refreshing={refreshing} />
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={theme.primary} />
+      <View testID="nrv2-screen" style={{ flex: 1, backgroundColor: theme.background }}>
+        <SecondaryNavbar title="QUẢN LÝ TRẬN ĐẤU" rightSlot={navbarRightSlot} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={theme.primary} />
+        </View>
       </View>
     )
   }

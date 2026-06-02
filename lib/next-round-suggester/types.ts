@@ -92,6 +92,7 @@ export type SessionPlayerStateRow = {
   consecutive_play: number
   opted_rest: boolean
   players?: {
+    name?: string | null
     pvna?: number | null
     current_elo?: number | null
     elo?: number | null
@@ -100,6 +101,8 @@ export type SessionPlayerStateRow = {
     opponent_gender_pref?: string | null
   } | null
   session_players?: {
+    status?: string | null
+    check_in_status?: string | null
     metadata?: Record<string, unknown> | null
   } | null
 }

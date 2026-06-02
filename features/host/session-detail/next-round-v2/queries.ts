@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import type { SessionLiveMatchRow, SessionPairHistoryRow, SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { getPlayerPvna, normalizeRoundRow, type RawRoundRow } from './helpers'
-import type { LiveRows } from './types'
+import type { LiveRows, RegisteredSessionPlayerRow } from './types'
 
 export const liveSessionQueryKeys = {
   all: ['liveSession'] as const,
@@ -17,6 +17,8 @@ export function useLiveSessionQuery(sessionId: string, playersById: Map<string, 
     queryKey: liveSessionQueryKeys.detail(sessionId),
     refetchInterval: POLL_INTERVAL_MS,
     refetchIntervalInBackground: false,
+    retry: 1,
+    retryDelay: 600,
     queryFn: async () => {
       const snapshotRes = await supabase.rpc('get_live_session_snapshot_versioned', {
         p_session_id: sessionId,
@@ -29,6 +31,7 @@ export function useLiveSessionQuery(sessionId: string, playersById: Map<string, 
       const raw = snapshotRes.data as {
         live_state_version: unknown
         player_rows?: SessionPlayerStateRow[]
+        registered_player_rows?: RegisteredSessionPlayerRow[]
         pair_rows?: SessionPairHistoryRow[]
         round_rows?: RawRoundRow[]
         live_match_rows?: SessionLiveMatchRow[]
@@ -41,19 +44,20 @@ export function useLiveSessionQuery(sessionId: string, playersById: Map<string, 
       const serverPlayerRows = ((raw.player_rows ?? []) as SessionPlayerStateRow[]).map(row => ({
         ...row,
         players: {
-          pvna: getPlayerPvna(playersById.get(row.player_id)) ?? 0,
-          elo: playersById.get(row.player_id)?.elo,
-          gender: playersById.get(row.player_id)?.gender,
-          partner_gender_pref: playersById.get(row.player_id)?.metadata?.partner_gender_pref,
-          opponent_gender_pref: playersById.get(row.player_id)?.metadata?.opponent_gender_pref,
+          pvna: getPlayerPvna(playersById.get(row.player_id)) ?? row.players?.pvna ?? 0,
+          elo: playersById.get(row.player_id)?.elo ?? row.players?.elo ?? row.players?.current_elo,
+          gender: playersById.get(row.player_id)?.gender ?? row.players?.gender,
+          partner_gender_pref: playersById.get(row.player_id)?.metadata?.partner_gender_pref ?? row.players?.partner_gender_pref,
+          opponent_gender_pref: playersById.get(row.player_id)?.metadata?.opponent_gender_pref ?? row.players?.opponent_gender_pref,
         },
         session_players: {
-          metadata: playersById.get(row.player_id)?.metadata ?? null,
+          metadata: playersById.get(row.player_id)?.metadata ?? row.session_players?.metadata ?? null,
         },
       }))
 
       return {
         playerRows: serverPlayerRows,
+        registeredPlayerRows: (raw.registered_player_rows ?? []) as RegisteredSessionPlayerRow[],
         pairRows: (raw.pair_rows ?? []) as SessionPairHistoryRow[],
         roundRows: ((raw.round_rows ?? []) as RawRoundRow[]).map(normalizeRoundRow),
         liveMatchRows: ((raw.live_match_rows ?? []) as SessionLiveMatchRow[]).map(row => ({
@@ -67,6 +71,6 @@ export function useLiveSessionQuery(sessionId: string, playersById: Map<string, 
         liveStateVersion,
       }
     },
-    enabled: !!sessionId && playersById.size > 0, // only fetch if we have player data
+    enabled: !!sessionId,
   })
 }

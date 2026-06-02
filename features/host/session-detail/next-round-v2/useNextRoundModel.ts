@@ -22,9 +22,12 @@ import {
 import { buildFairnessWarningsForBanner } from './fairness-warnings'
 import type { NextRoundSuggesterV2Props, RoundSelectionSnapshot, SheetKey } from './types'
 import { useLiveSessionQuery, liveSessionQueryKeys } from './queries'
-import type { LiveRows } from './types'
+import type { LiveRows, RegisteredSessionPlayerRow } from './types'
 import { safeStorageGetItem, safeStorageSetItem } from '@/lib/storage'
 import { loadNextRoundSessionSettings, saveNextRoundSessionSettings, type PersistedNextRoundSettings } from './api'
+import type { ArrangementPlayer } from '@/lib/sessionDetail'
+import { getComparableElo, getReliability, getSkillLevelId, getSkillTag } from '@/lib/sessionDetail'
+import { getLevelIdForElo } from '@/lib/eloSystem'
 
 function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): SuggestionAlternative | null {
   if (!alternative) return null
@@ -46,6 +49,47 @@ function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): 
 
 function normalizeCourtCount(value: number) {
   return Math.max(1, Math.floor(value || 1))
+}
+
+function arrangementPlayerFromRow(row: SessionPlayerStateRow): ArrangementPlayer | null {
+  const player = row.players
+  if (!player) return null
+  const elo = Number(player.current_elo ?? player.elo ?? 0)
+  return {
+    id: row.player_id,
+    name: player.name ?? row.player_id.slice(0, 8),
+    elo,
+    team: 0,
+    reliability: null,
+    levelId: getLevelIdForElo(elo),
+    skillTag: 'PVNA',
+    gender: player.gender,
+    pvna: player.pvna,
+    status: 'confirmed',
+    checkInStatus: row.checked_out_at ? 'checked_out' : 'present',
+    metadata: row.session_players?.metadata ?? null,
+  }
+}
+
+function arrangementPlayerFromRegisteredRow(row: RegisteredSessionPlayerRow): ArrangementPlayer | null {
+  const player = row.players
+  if (!player) return null
+  return {
+    ...(player as any),
+    id: row.player_id,
+    name: player.name ?? row.player_id.slice(0, 8),
+    elo: getComparableElo(player),
+    reliability: getReliability(player),
+    levelId: getSkillLevelId(player),
+    skillTag: getSkillTag(player),
+    gender: player.gender,
+    pvna: player.pvna,
+    team: row.team_no || 0,
+    status: row.status || 'confirmed',
+    noShowCount: player.no_show_count,
+    checkInStatus: row.check_in_status,
+    metadata: row.metadata,
+  }
 }
 
 function withoutRestPenalty(alternative: SuggestionAlternative | null | undefined): SuggestionAlternative | null {
@@ -95,9 +139,11 @@ function isCourtPreset(value: unknown): value is CourtPreset {
   return value === 'balanced' || value === 'play_more' || value === 'relaxed'
 }
 
-export function useNextRoundModel({ sessionId, players, courts, initialShowReport = false }: NextRoundSuggesterV2Props) {
+export function useNextRoundModel({ sessionId, players = [], courts, initialShowReport = false }: NextRoundSuggesterV2Props) {
   const queryClient = useQueryClient()
-  const sessionCourtSetup = useMemo(() => normalizeCourtCount(courts), [courts])
+  const sessionCourtSetup = useMemo(() => (
+    typeof courts === 'number' && Number.isFinite(courts) ? normalizeCourtCount(courts) : null
+  ), [courts])
   const [selectedAlternative, setSelectedAlternative] = useState(0)
   const [manualAlternative, setManualAlternative] = useState<SuggestionAlternative | null>(null)
   const [selectionUndo, setSelectionUndo] = useState<RoundSelectionSnapshot | null>(null)
@@ -174,18 +220,39 @@ export function useNextRoundModel({ sessionId, players, courts, initialShowRepor
     })
   }, [courtCountOverride, courtDurationMin, courtPreset, pvnaTolerance, sessionId, settingsHydrated, settingsStorageKey, targetRounds])
 
+  const routePlayersById = useMemo(() => new Map(players.map(player => [String(player.id), player])), [players])
+  const { data: rowsData, isLoading: loading, error: queryError } = useLiveSessionQuery(sessionId, routePlayersById)
+  const rows: LiveRows = rowsData || { playerRows: [], registeredPlayerRows: [], pairRows: [], roundRows: [], liveMatchRows: [], liveStateVersion: null }
+  const playersById = useMemo(() => {
+    const merged = new Map(routePlayersById)
+    for (const row of rows.registeredPlayerRows) {
+      if (merged.has(row.player_id)) continue
+      const player = arrangementPlayerFromRegisteredRow(row)
+      if (player) merged.set(row.player_id, player)
+    }
+    for (const row of rows.playerRows) {
+      if (merged.has(row.player_id)) continue
+      const player = arrangementPlayerFromRow(row)
+      if (player) merged.set(row.player_id, player)
+    }
+    return merged
+  }, [routePlayersById, rows.playerRows, rows.registeredPlayerRows])
+  const rosterPlayers = useMemo(() => [...playersById.values()], [playersById])
   const confirmedPlayers = useMemo(
-    () => players.filter(player => player.status === 'confirmed' || !player.status),
-    [players],
+    () => rosterPlayers.filter(player => player.status === 'confirmed' || !player.status),
+    [rosterPlayers],
   )
   const checkedInPlayers = useMemo(() => {
     const explicitlyPresent = confirmedPlayers.filter(isRosterSyncEligible)
     return explicitlyPresent.length > 0 ? explicitlyPresent : confirmedPlayers.filter(isConfirmedNonNoShow)
   }, [confirmedPlayers])
-  const playersById = useMemo(() => new Map(players.map(player => [String(player.id), player])), [players])
-  const { data: rowsData, isLoading: loading, error: queryError } = useLiveSessionQuery(sessionId, playersById)
-  const rows = rowsData || { playerRows: [], pairRows: [], roundRows: [], liveMatchRows: [], liveStateVersion: null }
-  const liveRows = { rows, loading, error: queryError ? queryError.message : null, lastLoadStateMsRef: { current: null }, refreshing: loading }
+  const liveRows: {
+    rows: LiveRows
+    loading: boolean
+    error: string | null
+    lastLoadStateMsRef: { current: number | null }
+    refreshing: boolean
+  } = { rows, loading, error: queryError ? queryError.message : null, lastLoadStateMsRef: { current: null }, refreshing: loading }
   const deferredRows = useDeferredValue(rows)
 
   // Đóng băng player rows cho engine khi sheet roster đang mở.
@@ -569,6 +636,7 @@ export function useNextRoundModel({ sessionId, players, courts, initialShowRepor
     pvnaTolerance,
     reportState,
     reportReady,
+    rosterPlayers,
     rows: liveRows.rows,
     applyLiveMatches: useCallback((matches: SessionLiveMatchRow[], version?: number | null) => {
       queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), current => {
