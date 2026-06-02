@@ -767,11 +767,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       next.add(match.id)
       return next
     })
-    setSuggestedLiveMatches(current => current.filter(row => row.id !== match.id))
-    setOptimisticLiveMatches(current => [
-      ...current.filter(row => row.id !== match.id),
-      optimisticMatch,
-    ])
     await waitForUiFrame()
 
     const executeStart = async () => {
@@ -820,6 +815,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           next.add(match.id)
           return next
         })
+        setSuggestedLiveMatches(prev => prev.filter(row => row.id !== match.id))
         setOptimisticLiveMatches(current => [
           ...current.filter(row => row.id !== match.id && row.id !== payload.match.id),
           {
@@ -1341,9 +1337,15 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     )
   }, [liveMatchDisplayKeys, optimisticLiveMatches, rows.liveMatchRows])
   const activeLiveMatches = useMemo(
-    () => effectiveLiveMatchRows.filter(match => match.status === 'live' && !completingLiveMatchIds.has(match.id)),
-    [completingLiveMatchIds, effectiveLiveMatchRows],
+    () => effectiveLiveMatchRows.filter(match => match.status === 'live'),
+    [effectiveLiveMatchRows],
   )
+
+  useEffect(() => {
+    if (!isSuggestingPreview && completingLiveMatchIds.size > 0) {
+      setCompletingLiveMatchIds(new Set())
+    }
+  }, [isSuggestingPreview, completingLiveMatchIds.size])
   const capacityOccupyingLiveMatchCount = useMemo(
     () => effectiveLiveMatchRows.filter(match => match.status === 'live').length,
     [effectiveLiveMatchRows],
@@ -1673,6 +1675,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                 busy={busy}
                 startingPreviewIds={startingPreviewIds}
                 endingLiveMatchIds={endingLiveMatchIds}
+                completingMatchIds={completingLiveMatchIds}
+                isSuggestingPreview={isSuggestingPreview}
                 state={state}
                 pvnaTolerance={pvnaTolerance}
                 playersById={playersById}

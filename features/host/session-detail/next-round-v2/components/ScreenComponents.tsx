@@ -1404,6 +1404,8 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   busy,
   startingPreviewIds,
   endingLiveMatchIds,
+  completingMatchIds,
+  isSuggestingPreview,
   state,
   pvnaTolerance,
   playersById,
@@ -1423,6 +1425,8 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   busy: string | null
   startingPreviewIds: Set<string>
   endingLiveMatchIds: Set<string>
+  completingMatchIds: Set<string>
+  isSuggestingPreview: boolean
   state: SessionState
   pvnaTolerance: number
   playersById: Map<string, ArrangementPlayer>
@@ -1452,6 +1456,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
                     match={match}
                     busy={busy === `complete-match-${match.id}` || endingLiveMatchIds.has(match.id)}
                     cancelBusy={busy === `cancel-match-${match.id}`}
+                    searchingNext={completingMatchIds.has(match.id) && !endingLiveMatchIds.has(match.id) && isSuggestingPreview}
                     state={state}
                     playersById={playersById}
                     onComplete={onCompleteMatch}
@@ -1885,7 +1890,12 @@ export function SuggestedLiveMatchCard({
           disabled={startDisabled}
           style={{ flex: 1, height: 46, borderRadius: RADIUS.lg, backgroundColor: startDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
         >
-          {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Bắt đầu trận</Text>}
+          {busy ? (
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={theme.onPrimary} />
+              <Text style={ctaTextStyle(theme.onPrimary, 13)}>Đang bắt đầu trận</Text>
+            </View>
+          ) : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Bắt đầu trận</Text>}
         </TouchableOpacity>
       </View>
       <TouchableOpacity
@@ -1903,6 +1913,7 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
   match,
   busy,
   cancelBusy,
+  searchingNext,
   state,
   playersById,
   onComplete,
@@ -1911,6 +1922,7 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
   match: SessionLiveMatchRow
   busy: boolean
   cancelBusy: boolean
+  searchingNext: boolean
   state: SessionState
   playersById: Map<string, ArrangementPlayer>
   onComplete: (match: SessionLiveMatchRow, score: { a: number; b: number }) => void
@@ -1989,17 +2001,29 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
           >
             {cancelBusy ? <ActivityIndicator color={theme.dangerText} /> : <Text style={ctaTextStyle(theme.dangerText, 12)}>Hủy trận</Text>}
           </Pressable>
-          <Pressable
-            onPress={() => {
-              if (__DEV__) console.log('[NextRoundSuggesterV2] complete button tapped', { matchId: match.id })
-              onComplete(match, score)
-            }}
-            hitSlop={8}
-            disabled={busy || cancelBusy}
-            style={{ flex: 2, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', ...LAYOUT_SHADOW.sm }}
-          >
-            {busy ? <ActivityIndicator color={theme.onPrimary} /> : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Kết thúc trận</Text>}
-          </Pressable>
+          {searchingNext ? (
+            <View style={{ flex: 2, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.surfaceVariant, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
+              <ActivityIndicator size="small" color={theme.primary} />
+              <Text style={ctaTextStyle(theme.primary, 12)}>Tạo trận tiếp theo...</Text>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => {
+                if (__DEV__) console.log('[NextRoundSuggesterV2] complete button tapped', { matchId: match.id })
+                onComplete(match, score)
+              }}
+              hitSlop={8}
+              disabled={busy || cancelBusy || searchingNext}
+              style={{ flex: 2, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', ...LAYOUT_SHADOW.sm }}
+            >
+              {busy ? (
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={theme.onPrimary} />
+                  <Text style={ctaTextStyle(theme.onPrimary, 12)}>Đang kết thúc...</Text>
+                </View>
+              ) : <Text style={ctaTextStyle(theme.onPrimary, 12)}>Kết thúc trận</Text>}
+            </Pressable>
+          )}
         </View>
       </View>
     </View>
@@ -2007,6 +2031,7 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
 }, (prev, next) =>
   prev.busy === next.busy &&
   prev.cancelBusy === next.cancelBusy &&
+  prev.searchingNext === next.searchingNext &&
   prev.match.id === next.match.id &&
   prev.match.status === next.match.status &&
   prev.match.court_idx === next.match.court_idx &&
