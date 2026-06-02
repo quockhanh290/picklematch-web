@@ -1649,7 +1649,7 @@ function getRepeatDetailLines(
   }
 }
 
-export function SuggestedLiveMatchCard({
+export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard({
   match,
   busy,
   state,
@@ -1907,7 +1907,18 @@ export function SuggestedLiveMatchCard({
       </TouchableOpacity>
     </View>
   )
-}
+}, (prev, next) =>
+  prev.busy === next.busy &&
+  prev.match.id === next.match.id &&
+  prev.match.team_a === next.match.team_a &&
+  prev.match.team_b === next.match.team_b &&
+  prev.match.court_idx === next.match.court_idx &&
+  prev.match.round_no === next.match.round_no &&
+  prev.pvnaTolerance === next.pvnaTolerance &&
+  prev.roundPace === next.roundPace &&
+  prev.state === next.state &&
+  prev.playersById === next.playersById
+)
 
 export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
   match,
