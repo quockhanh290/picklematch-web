@@ -221,6 +221,94 @@ describe('scoreMatch', () => {
     expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], state).score).toBe(Infinity)
   })
 
+  it('adds no consecutive_play penalty for consecutive_play = 0 or 1', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1', { consecutive_play: 0 }),
+        createPlayer('p2', { consecutive_play: 1 }),
+        createPlayer('p3', { consecutive_play: 0 }),
+        createPlayer('p4', { consecutive_play: 1 }),
+      ],
+    })
+
+    const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], state)
+    expect(result.stats.consecutive_play_penalty).toBe(0)
+    expect(result.score).toBe(0)
+  })
+
+  it('adds quadratic penalty for consecutive_play = 2 (trận thứ 3 liên tiếp): (2-1)² × 4 = 4', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1', { consecutive_play: 2 }),
+        createPlayer('p2'),
+        createPlayer('p3'),
+        createPlayer('p4'),
+      ],
+    })
+
+    const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], state)
+    expect(result.stats.consecutive_play_penalty).toBe(4)
+    expect(result.score).toBe(4)
+  })
+
+  it('adds quadratic penalty for consecutive_play = 3 (trận thứ 4 liên tiếp): (3-1)² × 4 = 16', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1', { consecutive_play: 3 }),
+        createPlayer('p2'),
+        createPlayer('p3'),
+        createPlayer('p4'),
+      ],
+    })
+
+    const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], state)
+    expect(result.stats.consecutive_play_penalty).toBe(16)
+    expect(result.score).toBe(16)
+  })
+
+  it('accumulates consecutive_play penalty across multiple players in the match', () => {
+    // p1: consecutive=3 → (3-1)²×4=16, p2: consecutive=2 → (2-1)²×4=4, total=20
+    const state = createState({
+      players: [
+        createPlayer('p1', { consecutive_play: 3 }),
+        createPlayer('p2', { consecutive_play: 2 }),
+        createPlayer('p3'),
+        createPlayer('p4'),
+      ],
+    })
+
+    const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], state)
+    expect(result.stats.consecutive_play_penalty).toBe(20)
+    expect(result.score).toBe(20)
+  })
+
+  it('consecutive_play penalty is much larger than a typical partner_repeat penalty', () => {
+    const withConsecutive3 = createState({
+      players: [
+        createPlayer('p1', { consecutive_play: 3 }),
+        createPlayer('p2'),
+        createPlayer('p3'),
+        createPlayer('p4'),
+      ],
+    })
+    const withPartnerRepeat = createState({
+      players: [
+        createPlayer('p1'),
+        createPlayer('p2'),
+        createPlayer('p3'),
+        createPlayer('p4'),
+      ],
+    })
+    setPartnerRepeats(withPartnerRepeat.players.get('p1')!, withPartnerRepeat.players.get('p2')!, 1)
+
+    const consecutivePenaltyScore = scoreMatch(['p1', 'p2'], ['p3', 'p4'], withConsecutive3).score
+    const partnerRepeatScore = scoreMatch(['p1', 'p2'], ['p3', 'p4'], withPartnerRepeat, { allowRepeatOverflow: true }).score
+
+    // consecutive=3 penalty (16) >> partner_repeat penalty (3)
+    expect(consecutivePenaltyScore).toBeGreaterThan(partnerRepeatScore)
+    expect(consecutivePenaltyScore - partnerRepeatScore).toBe(13)
+  })
+
   it('can relax intra-team PVNA gap without relaxing match PVNA tolerance', () => {
     const state = createState({
       pvnaTolerance: 0.5,
