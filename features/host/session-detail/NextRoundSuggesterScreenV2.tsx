@@ -1686,11 +1686,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                 onOpenSettings={() => setSheet('settings')}
                 onOpenSwap={(match) => { setSuggestedSwapMatch(match); setSwapFromPlayerId(null); setSheet('swap') }}
               />
-              {suggestedLiveMatches.length === 0 && activeLiveMatches.length === 0 ? (
+              {suggestedLiveMatches.length === 0 ? (
                 <View style={{ flex: 1, minHeight: 320 }}>
                   {planningInProgress || isSuggestingPreview ? (
                     <PlanningRoundCard syncingRoster={busy === 'sync' || isSuggestingPreview} />
-                  ) : (
+                  ) : activeLiveMatches.length === 0 ? (
                     <EmptyPlanCard
                       state={state}
                       suggestion={nextMatchSuggestion}
@@ -1701,7 +1701,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                       onSyncRoster={syncRoster}
                       busy={busy === 'sync'}
                     />
-                  )}
+                  ) : null}
                 </View>
               ) : null}
             </>
