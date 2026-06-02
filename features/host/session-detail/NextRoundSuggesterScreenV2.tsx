@@ -1343,11 +1343,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     [effectiveLiveMatchRows, completingLiveMatchIds],
   )
 
-  useEffect(() => {
-    if (!isSuggestingPreview && completingLiveMatchIds.size > 0) {
-      setCompletingLiveMatchIds(new Set())
-    }
-  }, [isSuggestingPreview, completingLiveMatchIds.size])
   const capacityOccupyingLiveMatchCount = useMemo(
     () => effectiveLiveMatchRows.filter(match => match.status === 'live').length,
     [effectiveLiveMatchRows],
@@ -1535,10 +1530,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           }))
           suggestedPreviewBatchRef.current = { key: previewRequestKey, matches }
           setSuggestedLiveMatches(matches)
+          setCompletingLiveMatchIds(new Set())
           if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch done', { totalMs: Math.round(nowMs() - previewT0), matchCount: matches.length })
         })
         .catch(err => {
           setIsSuggestingPreview(false)
+          setCompletingLiveMatchIds(new Set())
           setEdgeDebug(`ERROR: ${err.message || 'Unknown error'}`)
           console.warn('[NextRoundSuggesterV2] Live preview fetch failed', err)
           Alert.alert('Lỗi gợi ý trận đấu', err.message || 'Không thể lấy gợi ý trận đấu từ server')
