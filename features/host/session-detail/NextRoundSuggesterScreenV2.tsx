@@ -577,6 +577,37 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     }
   }, [isWeb, updateScrollDebugMetrics])
   React.useEffect(() => {
+    if (!isWeb || typeof document === 'undefined') return
+
+    const html = document.documentElement
+    const body = document.body
+    const previous = {
+      htmlHeight: html.style.height,
+      htmlOverflow: html.style.overflow,
+      htmlOverscrollBehavior: html.style.overscrollBehavior,
+      bodyHeight: body.style.height,
+      bodyOverflow: body.style.overflow,
+      bodyOverscrollBehavior: body.style.overscrollBehavior,
+    }
+
+    html.style.height = '100%'
+    html.style.overflow = 'hidden'
+    html.style.overscrollBehavior = 'none'
+    body.style.height = '100%'
+    body.style.overflow = 'hidden'
+    body.style.overscrollBehavior = 'none'
+
+    return () => {
+      html.style.height = previous.htmlHeight
+      html.style.overflow = previous.htmlOverflow
+      html.style.overscrollBehavior = previous.htmlOverscrollBehavior
+      body.style.height = previous.bodyHeight
+      body.style.overflow = previous.bodyOverflow
+      body.style.overscrollBehavior = previous.bodyOverscrollBehavior
+    }
+  }, [isWeb])
+
+  React.useEffect(() => {
     autoRepairStateAttemptedRef.current = false
     suggestedPreviewBatchRef.current = null
     previewBatchKeyRef.current = null
@@ -1720,7 +1751,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         backgroundColor: theme.background,
         ...(isWeb
           ? {
-              minHeight: webViewportHeight ?? '100dvh',
+              height: webViewportHeight ?? '100dvh',
+              maxHeight: webViewportHeight ?? '100dvh',
+              overflow: 'hidden',
             }
           : null),
       }}
@@ -1740,10 +1773,18 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         />
       ) : (
         <ScrollView
-          scrollEnabled={!isWeb}
           style={{
             flex: 1,
             minHeight: 0,
+            ...(isWeb
+              ? {
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  overscrollBehavior: 'contain',
+                  overflowAnchor: 'none',
+                  touchAction: 'pan-y',
+                }
+              : null),
           }}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={scrollDebugEnabled ? 100 : undefined}
@@ -1809,29 +1850,31 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                   </TouchableOpacity>
                 </Card>
               ) : null}
-              <LiveMatchBoard
-                key={liveBoardRenderKey}
-                liveMatches={activeLiveMatches}
-                suggestedMatches={suggestedLiveMatches}
-                completedMatches={completedLiveMatches}
-                roundSize={queueCourtCount}
-                targetRounds={effectiveTargetRounds}
-                roundPace={15}
-                busy={busy}
-                startingPreviewIds={startingPreviewIds}
-                endingLiveMatchIds={endingLiveMatchIds}
-                completingMatchIds={completingLiveMatchIds}
-                isSuggestingPreview={isSuggestingPreview}
-                state={state}
-                pvnaTolerance={pvnaTolerance}
-                playersById={playersById}
-                onStartMatch={startLiveMatch}
-                onCompleteMatch={completeLiveMatch}
-                onCancelMatch={cancelLiveMatch}
-                onPlayerPress={openSwapForPlayer}
-                onOpenSettings={() => setSheet('settings')}
-                onOpenSwap={(match) => { setSuggestedSwapMatch(match); setSwapFromPlayerId(null); setSheet('swap') }}
-              />
+              <View style={{ borderWidth: isWeb ? 2 : 0, borderColor: 'red' }}>
+                <LiveMatchBoard
+                  key={liveBoardRenderKey}
+                  liveMatches={activeLiveMatches}
+                  suggestedMatches={suggestedLiveMatches}
+                  completedMatches={completedLiveMatches}
+                  roundSize={queueCourtCount}
+                  targetRounds={effectiveTargetRounds}
+                  roundPace={15}
+                  busy={busy}
+                  startingPreviewIds={startingPreviewIds}
+                  endingLiveMatchIds={endingLiveMatchIds}
+                  completingMatchIds={completingLiveMatchIds}
+                  isSuggestingPreview={isSuggestingPreview}
+                  state={state}
+                  pvnaTolerance={pvnaTolerance}
+                  playersById={playersById}
+                  onStartMatch={startLiveMatch}
+                  onCompleteMatch={completeLiveMatch}
+                  onCancelMatch={cancelLiveMatch}
+                  onPlayerPress={openSwapForPlayer}
+                  onOpenSettings={() => setSheet('settings')}
+                  onOpenSwap={(match) => { setSuggestedSwapMatch(match); setSwapFromPlayerId(null); setSheet('swap') }}
+                />
+              </View>
               {suggestedLiveMatches.length === 0 ? (
                 planningInProgress || isSuggestingPreview || activeLiveMatches.length > 0 ? (
                   <PlanningRoundCard syncingRoster={busy === 'sync' || isSuggestingPreview} />
@@ -1894,7 +1937,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         <View
           pointerEvents="none"
           style={{
-            position: (isWeb ? 'fixed' : 'absolute') as any,
+            position: 'absolute',
             left: 8,
             bottom: 8 + insets.bottom,
             zIndex: 9999,
