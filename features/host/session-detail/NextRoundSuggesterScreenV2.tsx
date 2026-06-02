@@ -1418,6 +1418,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   }, [previewRequestKey])
   const [suggestedLiveMatches, setSuggestedLiveMatches] = useState<SuggestedLiveMatchRow[]>([])
   const [isSuggestingPreview, setIsSuggestingPreview] = useState(false)
+  const lastSuggestedMatchesRef = useRef<SuggestedLiveMatchRow[]>([])
+  if (suggestedLiveMatches.length > 0) lastSuggestedMatchesRef.current = suggestedLiveMatches
+  const displaySuggestedMatches = suggestedLiveMatches.length > 0
+    ? suggestedLiveMatches
+    : (isSuggestingPreview ? lastSuggestedMatchesRef.current : [])
   const [edgeDebug, setEdgeDebug] = useState<any>(null)
   const previewBodyRef = useRef({
     effectiveLiveMatchRows,
@@ -1663,31 +1668,32 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                   </TouchableOpacity>
                 </Card>
               ) : null}
-              <LiveMatchBoard
-                liveMatches={activeLiveMatches}
-                suggestedMatches={suggestedLiveMatches}
-                completedMatches={completedLiveMatches}
-                roundSize={queueCourtCount}
-                targetRounds={effectiveTargetRounds}
-                roundPace={15}
-                busy={busy}
-                startingPreviewIds={startingPreviewIds}
-                endingLiveMatchIds={endingLiveMatchIds}
-                state={state}
-                pvnaTolerance={pvnaTolerance}
-                playersById={playersById}
-                onStartMatch={startLiveMatch}
-                onCompleteMatch={completeLiveMatch}
-                onCancelMatch={cancelLiveMatch}
-                onPlayerPress={openSwapForPlayer}
-                onOpenSettings={() => setSheet('settings')}
-                onOpenSwap={(match) => { setSuggestedSwapMatch(match); setSwapFromPlayerId(null); setSheet('swap') }}
-              />
-              {suggestedLiveMatches.length === 0 && activeLiveMatches.length === 0 ? (
-                planningInProgress || isSuggestingPreview ? (
-                  <PlanningRoundCard syncingRoster={busy === 'sync' || isSuggestingPreview} />
-                ) : (
-                  <EmptyPlanCard
+              <View style={{ opacity: isSuggestingPreview ? 0.45 : 1 }} pointerEvents={isSuggestingPreview ? 'none' : 'box-none'}>
+                <LiveMatchBoard
+                  liveMatches={activeLiveMatches}
+                  suggestedMatches={displaySuggestedMatches}
+                  completedMatches={completedLiveMatches}
+                  roundSize={queueCourtCount}
+                  targetRounds={effectiveTargetRounds}
+                  roundPace={15}
+                  busy={busy}
+                  startingPreviewIds={startingPreviewIds}
+                  endingLiveMatchIds={endingLiveMatchIds}
+                  state={state}
+                  pvnaTolerance={pvnaTolerance}
+                  playersById={playersById}
+                  onStartMatch={startLiveMatch}
+                  onCompleteMatch={completeLiveMatch}
+                  onCancelMatch={cancelLiveMatch}
+                  onPlayerPress={openSwapForPlayer}
+                  onOpenSettings={() => setSheet('settings')}
+                  onOpenSwap={(match) => { setSuggestedSwapMatch(match); setSwapFromPlayerId(null); setSheet('swap') }}
+                />
+                {displaySuggestedMatches.length === 0 && activeLiveMatches.length === 0 ? (
+                  planningInProgress || isSuggestingPreview ? (
+                    <PlanningRoundCard syncingRoster={busy === 'sync' || isSuggestingPreview} />
+                  ) : (
+                    <EmptyPlanCard
                     state={state}
                     suggestion={nextMatchSuggestion}
                     courtCount={1}
@@ -1699,6 +1705,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                   />
                 )
               ) : null}
+              </View>
+              {isSuggestingPreview && displaySuggestedMatches.length > 0 && (
+                <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+                  <ActivityIndicator size="small" color={theme.primary} />
+                </View>
+              )}
             </>
           )}
 
