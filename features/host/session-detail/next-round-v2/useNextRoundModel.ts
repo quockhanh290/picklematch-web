@@ -56,6 +56,27 @@ function withoutRestPenalty(alternative: SuggestionAlternative | null | undefine
   }
 }
 
+function sortLiveMatchesBySequence(matches: SessionLiveMatchRow[]): SessionLiveMatchRow[] {
+  return [...matches].sort((a, b) => {
+    if (a.sequence_no !== b.sequence_no) return a.sequence_no - b.sequence_no
+    return (a.court_idx ?? 0) - (b.court_idx ?? 0)
+  })
+}
+
+function buildCompletedRoundResting(
+  matches: SessionLiveMatchRow[],
+  playedIds: Set<string>,
+  fallbackPresentIds: string[],
+  fallbackOptedRestPlayerIds: Set<string>,
+): string[] {
+  const finalRoundSnapshot = sortLiveMatchesBySequence(matches).at(-1)?.resting ?? []
+  const source = finalRoundSnapshot.length > 0
+    ? finalRoundSnapshot
+    : fallbackPresentIds.filter(id => !fallbackOptedRestPlayerIds.has(id))
+
+  return [...new Set(source)].filter(id => !playedIds.has(id))
+}
+
 const SETTINGS_STORAGE_PREFIX = 'next-round-v2-settings'
 
 type PersistedSettings = {
@@ -266,7 +287,8 @@ export function useNextRoundModel({ sessionId, players, courts, initialShowRepor
     const liveRoundRows = [...byRound.entries()]
       .sort(([a], [b]) => a - b)
       .filter(([, matches]) => matches.length >= engineCourtCount)
-      .map(([, matches], index) => {
+      .map(([, unsortedMatches], index) => {
+        const matches = sortLiveMatchesBySequence(unsortedMatches)
         const playedIds = new Set(matches.flatMap(m => [...m.team_a, ...m.team_b]))
         const roundStartedAt = matches.map(m => m.started_at).filter(Boolean).sort()[0]
         const roundEndedAt = matches.map(m => m.ended_at).filter(Boolean).sort().reverse()[0]
@@ -298,9 +320,12 @@ export function useNextRoundModel({ sessionId, players, courts, initialShowRepor
             team_a: m.team_a,
             team_b: m.team_b,
           })),
-          resting: matches.length >= engineCourtCount
-            ? roundPresentIds.filter(id => !playedIds.has(id) && !optedRestPlayerIds.has(id))
-            : [],
+          resting: buildCompletedRoundResting(
+            matches,
+            playedIds,
+            roundPresentIds,
+            optedRestPlayerIds,
+          ),
           started_at: roundStartedAt ?? null,
           ended_at: roundEndedAt ?? null,
         }
