@@ -50,7 +50,7 @@ import {
 
 import { buildPreviewBatchKey } from './next-round-v2/preview'
 import { fetchLiveMatchesPreview } from './next-round-v2/api'
-import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native'
+import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -157,6 +157,37 @@ const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_REPEAT_COST_WEIGHT = 3
 const BALANCED_AFFECTED_PLAYER_COST_WEIGHT = 1
+
+function getWebVisualViewportHeight() {
+  if (Platform.OS !== 'web') return null
+  if (typeof window === 'undefined') return null
+  const visualViewportHeight = window.visualViewport?.height
+  if (typeof visualViewportHeight === 'number' && Number.isFinite(visualViewportHeight)) {
+    return Math.round(visualViewportHeight)
+  }
+  return Math.round(window.innerHeight || Dimensions.get('window').height)
+}
+
+function isScrollDebugEnabled() {
+  if (Platform.OS !== 'web') return false
+  if (typeof window === 'undefined') return false
+  try {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('debugScroll') === '1' || window.localStorage?.getItem('nrv2ScrollDebug') === '1'
+  } catch {
+    return false
+  }
+}
+
+type ScrollDebugMetrics = {
+  viewportHeight: number | null
+  visualViewportHeight: number | null
+  innerHeight: number | null
+  layoutHeight: number | null
+  contentHeight: number | null
+  scrollY: number
+  distanceToBottom: number | null
+}
 
 function fairnessLabel(score: SessionFairnessScore) {
   if (score.grade === 'excellent') return 'Rất đều'
@@ -382,8 +413,19 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   const endActiveRoundMutation = useEndActiveRoundMutation(sessionId)
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
-  const windowDimensions = useWindowDimensions()
   const isWeb = Platform.OS === 'web'
+  const [webViewportHeight, setWebViewportHeight] = useState<number | null>(() => getWebVisualViewportHeight())
+  const scrollDebugEnabled = useMemo(() => isScrollDebugEnabled(), [])
+  const [scrollDebugMetrics, setScrollDebugMetrics] = useState<ScrollDebugMetrics>({
+    viewportHeight: getWebVisualViewportHeight(),
+    visualViewportHeight: null,
+    innerHeight: null,
+    layoutHeight: null,
+    contentHeight: null,
+    scrollY: 0,
+    distanceToBottom: null,
+  })
+  const scrollDebugMetricsRef = useRef(scrollDebugMetrics)
   const isFirstFocusRef = useRef(true)
   const [busy, setBusy] = useState<string | null>(null)
   const actionInFlightRef = useRef(false)
@@ -484,6 +526,83 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   React.useEffect(() => {
     liveStateVersionRef.current = rows.liveStateVersion ?? null
   }, [rows.liveStateVersion])
+  const updateScrollDebugMetrics = useCallback((patch: Partial<ScrollDebugMetrics>) => {
+    if (!scrollDebugEnabled) return
+    const visualViewportHeight = typeof window !== 'undefined' && typeof window.visualViewport?.height === 'number'
+      ? Math.round(window.visualViewport.height)
+      : null
+    const innerHeight = typeof window !== 'undefined' ? Math.round(window.innerHeight || 0) : null
+    const next = {
+      ...scrollDebugMetricsRef.current,
+      viewportHeight: getWebVisualViewportHeight(),
+      visualViewportHeight,
+      innerHeight,
+      ...patch,
+    }
+    next.distanceToBottom = next.contentHeight != null && next.layoutHeight != null
+      ? Math.round(next.contentHeight - next.layoutHeight - next.scrollY)
+      : null
+    scrollDebugMetricsRef.current = next
+    setScrollDebugMetrics(next)
+  }, [scrollDebugEnabled])
+  React.useEffect(() => {
+    if (!isWeb || typeof window === 'undefined') return
+
+    let frame: number | null = null
+    const updateViewportHeight = () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        frame = null
+        const nextHeight = getWebVisualViewportHeight()
+        setWebViewportHeight(current => current === nextHeight ? current : nextHeight)
+        updateScrollDebugMetrics({ viewportHeight: nextHeight })
+      })
+    }
+
+    updateViewportHeight()
+    window.addEventListener('resize', updateViewportHeight)
+    window.addEventListener('orientationchange', updateViewportHeight)
+    window.visualViewport?.addEventListener('resize', updateViewportHeight)
+    window.visualViewport?.addEventListener('scroll', updateViewportHeight)
+
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      window.removeEventListener('resize', updateViewportHeight)
+      window.removeEventListener('orientationchange', updateViewportHeight)
+      window.visualViewport?.removeEventListener('resize', updateViewportHeight)
+      window.visualViewport?.removeEventListener('scroll', updateViewportHeight)
+    }
+  }, [isWeb, updateScrollDebugMetrics])
+  React.useEffect(() => {
+    if (!isWeb || typeof document === 'undefined') return
+
+    const html = document.documentElement
+    const body = document.body
+    const previous = {
+      htmlHeight: html.style.height,
+      htmlOverflow: html.style.overflow,
+      htmlOverscrollBehavior: html.style.overscrollBehavior,
+      bodyHeight: body.style.height,
+      bodyOverflow: body.style.overflow,
+      bodyOverscrollBehavior: body.style.overscrollBehavior,
+    }
+
+    html.style.height = '100%'
+    html.style.overflow = 'hidden'
+    html.style.overscrollBehavior = 'none'
+    body.style.height = '100%'
+    body.style.overflow = 'hidden'
+    body.style.overscrollBehavior = 'none'
+
+    return () => {
+      html.style.height = previous.htmlHeight
+      html.style.overflow = previous.htmlOverflow
+      html.style.overscrollBehavior = previous.htmlOverscrollBehavior
+      body.style.height = previous.bodyHeight
+      body.style.overflow = previous.bodyOverflow
+      body.style.overscrollBehavior = previous.bodyOverscrollBehavior
+    }
+  }, [isWeb])
   React.useEffect(() => {
     autoRepairStateAttemptedRef.current = false
     suggestedPreviewBatchRef.current = null
@@ -1610,11 +1729,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       testID="nrv2-screen"
       style={{
         flex: 1,
+        minHeight: 0,
         backgroundColor: theme.background,
         ...(isWeb
           ? {
-              height: windowDimensions.height,
-              minHeight: '100dvh',
+              height: webViewportHeight ?? '100dvh',
+              maxHeight: webViewportHeight ?? '100dvh',
               overflow: 'hidden',
             }
           : null),
@@ -1637,6 +1757,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         <ScrollView
           style={{
             flex: 1,
+            minHeight: 0,
             ...(isWeb
               ? {
                   overflowY: 'auto',
@@ -1646,6 +1767,21 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
               : null),
           }}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={scrollDebugEnabled ? 100 : undefined}
+          onLayout={scrollDebugEnabled ? (event) => {
+            updateScrollDebugMetrics({ layoutHeight: Math.round(event.nativeEvent.layout.height) })
+          } : undefined}
+          onContentSizeChange={scrollDebugEnabled ? (_width, height) => {
+            updateScrollDebugMetrics({ contentHeight: Math.round(height) })
+          } : undefined}
+          onScroll={scrollDebugEnabled ? (event) => {
+            const nativeEvent = event.nativeEvent
+            updateScrollDebugMetrics({
+              scrollY: Math.round(nativeEvent.contentOffset.y),
+              layoutHeight: Math.round(nativeEvent.layoutMeasurement.height),
+              contentHeight: Math.round(nativeEvent.contentSize.height),
+            })
+          } : undefined}
           contentContainerStyle={{
             flexGrow: 1,
             padding: SPACING.xl,
@@ -1773,6 +1909,32 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
           ) : null}
         </ScrollView>
       )}
+
+      {scrollDebugEnabled ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: 8,
+            bottom: 8 + insets.bottom,
+            zIndex: 9999,
+            borderRadius: RADIUS.sm,
+            backgroundColor: 'rgba(0,0,0,0.72)',
+            paddingHorizontal: 8,
+            paddingVertical: 6,
+          }}
+        >
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, lineHeight: 13, color: '#fff' }}>
+            vh {scrollDebugMetrics.viewportHeight ?? '-'} / vv {scrollDebugMetrics.visualViewportHeight ?? '-'} / in {scrollDebugMetrics.innerHeight ?? '-'}
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, lineHeight: 13, color: '#fff' }}>
+            layout {scrollDebugMetrics.layoutHeight ?? '-'} / content {scrollDebugMetrics.contentHeight ?? '-'}
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, lineHeight: 13, color: '#fff' }}>
+            y {scrollDebugMetrics.scrollY} / bottom {scrollDebugMetrics.distanceToBottom ?? '-'}
+          </Text>
+        </View>
+      ) : null}
 
       {phase !== 'recap' && phase === 'active' && (
         <StickyRoundCta
