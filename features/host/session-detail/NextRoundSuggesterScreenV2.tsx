@@ -182,6 +182,21 @@ function isScrollDebugEnabled() {
   }
 }
 
+function getWebDocumentScrollMetrics(): Partial<ScrollDebugMetrics> {
+  if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') return {}
+  const doc = document.documentElement
+  const body = document.body
+  const layoutHeight = Math.round(window.visualViewport?.height ?? window.innerHeight ?? doc.clientHeight ?? 0)
+  const contentHeight = Math.round(Math.max(
+    doc.scrollHeight,
+    body?.scrollHeight ?? 0,
+    doc.offsetHeight,
+    body?.offsetHeight ?? 0,
+  ))
+  const scrollY = Math.round(window.scrollY ?? doc.scrollTop ?? body?.scrollTop ?? 0)
+  return { layoutHeight, contentHeight, scrollY }
+}
+
 type ScrollDebugMetrics = {
   viewportHeight: number | null
   visualViewportHeight: number | null
@@ -558,12 +573,13 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         frame = null
         const nextHeight = getWebVisualViewportHeight()
         setWebViewportHeight(current => current === nextHeight ? current : nextHeight)
-        updateScrollDebugMetrics({ viewportHeight: nextHeight })
+        updateScrollDebugMetrics({ viewportHeight: nextHeight, ...getWebDocumentScrollMetrics() })
       })
     }
 
     updateViewportHeight()
     window.addEventListener('resize', updateViewportHeight)
+    window.addEventListener('scroll', updateViewportHeight, { passive: true })
     window.addEventListener('orientationchange', updateViewportHeight)
     window.visualViewport?.addEventListener('resize', updateViewportHeight)
     window.visualViewport?.addEventListener('scroll', updateViewportHeight)
@@ -571,42 +587,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     return () => {
       if (frame !== null) cancelAnimationFrame(frame)
       window.removeEventListener('resize', updateViewportHeight)
+      window.removeEventListener('scroll', updateViewportHeight)
       window.removeEventListener('orientationchange', updateViewportHeight)
       window.visualViewport?.removeEventListener('resize', updateViewportHeight)
       window.visualViewport?.removeEventListener('scroll', updateViewportHeight)
     }
   }, [isWeb, updateScrollDebugMetrics])
-  React.useEffect(() => {
-    if (!isWeb || typeof document === 'undefined') return
-
-    const html = document.documentElement
-    const body = document.body
-    const previous = {
-      htmlHeight: html.style.height,
-      htmlOverflow: html.style.overflow,
-      htmlOverscrollBehavior: html.style.overscrollBehavior,
-      bodyHeight: body.style.height,
-      bodyOverflow: body.style.overflow,
-      bodyOverscrollBehavior: body.style.overscrollBehavior,
-    }
-
-    html.style.height = '100%'
-    html.style.overflow = 'hidden'
-    html.style.overscrollBehavior = 'none'
-    body.style.height = '100%'
-    body.style.overflow = 'hidden'
-    body.style.overscrollBehavior = 'none'
-
-    return () => {
-      html.style.height = previous.htmlHeight
-      html.style.overflow = previous.htmlOverflow
-      html.style.overscrollBehavior = previous.htmlOverscrollBehavior
-      body.style.height = previous.bodyHeight
-      body.style.overflow = previous.bodyOverflow
-      body.style.overscrollBehavior = previous.bodyOverscrollBehavior
-    }
-  }, [isWeb])
-
   React.useEffect(() => {
     autoRepairStateAttemptedRef.current = false
     suggestedPreviewBatchRef.current = null
@@ -1751,9 +1737,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         backgroundColor: theme.background,
         ...(isWeb
           ? {
-              height: webViewportHeight ?? '100dvh',
-              maxHeight: webViewportHeight ?? '100dvh',
-              overflow: 'hidden',
+              minHeight: webViewportHeight ?? '100dvh',
+              overflow: 'visible',
             }
           : null),
       }}
@@ -1774,15 +1759,19 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       ) : (
         <ScrollView
           style={{
-            flex: 1,
-            minHeight: 0,
             ...(isWeb
               ? {
-                  overflowY: 'auto',
+                  flexGrow: 0,
+                  flexShrink: 0,
+                  overflow: 'visible',
+                  overflowY: 'visible',
                   overflowAnchor: 'none',
                   touchAction: 'pan-y',
                 }
-              : null),
+              : {
+                  flex: 1,
+                  minHeight: 0,
+                }),
           }}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={scrollDebugEnabled ? 100 : undefined}
@@ -1804,7 +1793,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
             flexGrow: 1,
             padding: SPACING.xl,
             paddingBottom: 126 + insets.bottom,
-            ...(isWeb ? { minHeight: '100%' } : null),
+            ...(isWeb ? { minHeight: webViewportHeight ?? '100dvh' } : null),
           }}
         >
           <SessionDashboardCard
