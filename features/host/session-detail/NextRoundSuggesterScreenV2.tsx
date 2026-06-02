@@ -129,13 +129,10 @@ import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
 import { ChoiceRow, NavbarRightActions, StickyRoundCta } from './next-round-v2/controls'
 import {
-  BreakdownRow,
-  GroupAuditBlock,
   HistorySheet as HistorySheetView,
   LateArrivalsSheet as LateArrivalsSheetView,
   MoreSheet as MoreSheetView,
   RecapView as RecapViewModule,
-  RepeatDetailsBlock,
   SwapSheet as SwapSheetView,
 } from './next-round-v2/flow-sheets'
 import {
@@ -1743,7 +1740,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
 
   if (loading) {
     return (
-      <View testID="nrv2-screen" style={{ flex: 1, backgroundColor: theme.background }}>
+      <View
+        testID="nrv2-screen"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          backgroundColor: theme.background,
+          ...(isWeb
+            ? {
+                minHeight: webViewportHeight ?? '100dvh',
+                overflow: 'visible',
+              }
+            : null),
+        }}
+      >
         <SecondaryNavbar title="QUẢN LÝ TRẬN ĐẤU" rightSlot={navbarRightSlot} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={theme.primary} />
