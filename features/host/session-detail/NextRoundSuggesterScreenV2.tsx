@@ -1337,8 +1337,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
     )
   }, [liveMatchDisplayKeys, optimisticLiveMatches, rows.liveMatchRows])
   const activeLiveMatches = useMemo(
-    () => effectiveLiveMatchRows.filter(match => match.status === 'live'),
-    [effectiveLiveMatchRows],
+    () => effectiveLiveMatchRows.filter(match =>
+      match.status === 'live' || completingLiveMatchIds.has(match.id)
+    ),
+    [effectiveLiveMatchRows, completingLiveMatchIds],
   )
 
   useEffect(() => {
