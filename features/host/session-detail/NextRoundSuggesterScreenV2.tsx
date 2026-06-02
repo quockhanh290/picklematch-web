@@ -1767,7 +1767,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                   overflowY: 'visible',
                   overflowAnchor: 'none',
                   touchAction: 'pan-y',
-                }
+                  willChange: 'transform',
+                  transform: [{ translateZ: 0 }],
+                } as any
               : {
                   flex: 1,
                   minHeight: 0,
