@@ -1514,8 +1514,15 @@ function groupMatchesByLogicalRound<TMatch extends SessionLiveMatchRow>(
 
 export function buildLogicalRoundDisplayMap(matches: SessionLiveMatchRow[], roundSize: number) {
   const safeRoundSize = Math.max(1, Math.floor(roundSize))
-  const countableMatches = [...matches]
-    .filter(match => match.status !== 'cancelled')
+  const uniqueMatchesById = new Map<string, SessionLiveMatchRow>()
+  for (const match of matches) {
+    if (match.status === 'cancelled') continue
+    const existing = uniqueMatchesById.get(match.id)
+    if (!existing || existing.status !== 'completed') {
+      uniqueMatchesById.set(match.id, match)
+    }
+  }
+  const countableMatches = [...uniqueMatchesById.values()]
     .sort((left, right) => left.sequence_no - right.sequence_no)
   return new Map(countableMatches.map((match, index) => [
     match.id,
