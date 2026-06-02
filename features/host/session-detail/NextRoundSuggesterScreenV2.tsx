@@ -1838,7 +1838,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
                 </Card>
               ) : null}
               <LiveMatchBoard
-                key={liveBoardRenderKey}
                 liveMatches={activeLiveMatches}
                 suggestedMatches={suggestedLiveMatches}
                 completedMatches={completedLiveMatches}
