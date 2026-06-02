@@ -173,7 +173,10 @@ function isScrollDebugEnabled() {
   if (typeof window === 'undefined') return false
   try {
     const params = new URLSearchParams(window.location.search)
-    return params.get('debugScroll') === '1' || window.localStorage?.getItem('nrv2ScrollDebug') === '1'
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+    return params.get('debugScroll') === '1'
+      || hashParams.get('debugScroll') === '1'
+      || window.localStorage?.getItem('nrv2ScrollDebug') === '1'
   } catch {
     return false
   }
