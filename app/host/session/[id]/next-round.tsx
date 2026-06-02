@@ -46,10 +46,11 @@ export default function NextRoundRoute() {
     route_bootstrap_ms: firstReadyMsRef.current,
     session_detail: lastTiming,
   }
+  const useLegacyUi = ui === 'legacy' || ui === 'v1'
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      {ui === 'v1' ? (
+      {useLegacyUi ? (
         <NextRoundSuggesterScreen sessionId={id!} players={players} courts={courts} />
       ) : (
         <NextRoundSuggesterScreenV2 sessionId={id!} players={players} courts={courts} bootstrapTelemetry={bootstrapTelemetry} initialShowReport={report === '1'} />

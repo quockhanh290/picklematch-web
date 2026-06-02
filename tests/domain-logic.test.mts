@@ -10,18 +10,18 @@ function run(name: string, fn: () => void) {
 }
 
 run('elo mapping uses the shared master table', () => {
-  assert.equal(getLevelIdForElo(800), 'level_1')
-  assert.equal(getLevelIdForElo(1000), 'level_2')
-  assert.equal(getLevelIdForElo(1100), 'level_3')
-  assert.equal(getLevelIdForElo(1200), 'level_4')
-  assert.equal(getLevelIdForElo(1375), 'level_5')
+  assert.equal(getLevelIdForElo(800), 'pvna_1')
+  assert.equal(getLevelIdForElo(1000), 'pvna_2')
+  assert.equal(getLevelIdForElo(1100), 'pvna_3')
+  assert.equal(getLevelIdForElo(1200), 'pvna_4')
+  assert.equal(getLevelIdForElo(1375), 'pvna_5')
 
   assert.equal(getTierForElo(1200), 'upper_intermediate')
 })
 
 run('tier mapping preserves the level 4 distinction', () => {
-  assert.equal(getEloBandByTier('upper_intermediate')?.levelId, 'level_4')
-  assert.equal(getEloBandByTier('intermediate')?.levelId, 'level_3')
+  assert.equal(getEloBandByTier('upper_intermediate')?.levelId, 'pvna_4')
+  assert.equal(getEloBandByTier('intermediate')?.levelId, 'pvna_3')
 })
 
 run('matchmaking helper returns the expected join state', () => {

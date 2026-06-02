@@ -15,7 +15,7 @@ export function NavbarRightActions({ sessionId, onRefresh, refreshing }: { sessi
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
       <Pressable
-        onPress={() => router.push({ pathname: '/host/session/[id]/next-round', params: { id: sessionId, ui: 'v1' } })}
+        onPress={() => router.push({ pathname: '/host/session/[id]/next-round', params: { id: sessionId, ui: 'legacy' } })}
         style={{
           height: 36,
           minWidth: 46,
@@ -28,7 +28,7 @@ export function NavbarRightActions({ sessionId, onRefresh, refreshing }: { sessi
           paddingHorizontal: 10,
         }}
       >
-        <Text style={ctaTextStyle(theme.primary, 11)}>V1</Text>
+        <Text style={ctaTextStyle(theme.primary, 11)}>Legacy</Text>
       </Pressable>
       <Pressable
         onPress={onRefresh}
