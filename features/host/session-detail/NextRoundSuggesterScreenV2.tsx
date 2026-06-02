@@ -50,7 +50,7 @@ import {
 
 import { buildPreviewBatchKey } from './next-round-v2/preview'
 import { fetchLiveMatchesPreview } from './next-round-v2/api'
-import { ActivityIndicator, Alert, AppState, Dimensions, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -382,6 +382,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   const endActiveRoundMutation = useEndActiveRoundMutation(sessionId)
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
+  const windowDimensions = useWindowDimensions()
+  const isWeb = Platform.OS === 'web'
   const isFirstFocusRef = useRef(true)
   const [busy, setBusy] = useState<string | null>(null)
   const actionInFlightRef = useRef(false)
@@ -1604,7 +1606,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
   }
 
   return (
-    <View testID="nrv2-screen" style={{ flex: 1, backgroundColor: theme.background }}>
+    <View
+      testID="nrv2-screen"
+      style={{
+        flex: 1,
+        backgroundColor: theme.background,
+        ...(isWeb
+          ? {
+              height: windowDimensions.height,
+              minHeight: '100dvh',
+              overflow: 'hidden',
+            }
+          : null),
+      }}
+    >
       <SecondaryNavbar title={phase === 'recap' ? 'BÁO CÁO TRẬN ĐẤU' : 'QUẢN LÝ TRẬN ĐẤU'} rightSlot={navbarRightSlot} />
       {phase === 'recap' ? (
         <RecapViewModule
@@ -1620,8 +1635,23 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
         />
       ) : (
         <ScrollView
+          style={{
+            flex: 1,
+            ...(isWeb
+              ? {
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  overscrollBehavior: 'contain',
+                }
+              : null),
+          }}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ flexGrow: 1, padding: SPACING.xl, paddingBottom: 126 + insets.bottom }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            padding: SPACING.xl,
+            paddingBottom: 126 + insets.bottom,
+            ...(isWeb ? { minHeight: '100%' } : null),
+          }}
         >
           <SessionDashboardCard
             phase={phase}
