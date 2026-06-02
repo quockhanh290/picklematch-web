@@ -1620,7 +1620,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players, courts, bootstr
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 126 + insets.bottom }}
+          contentContainerStyle={{ flexGrow: 1, padding: SPACING.xl, paddingBottom: 126 + insets.bottom }}
         >
           <SessionDashboardCard
             phase={phase}
