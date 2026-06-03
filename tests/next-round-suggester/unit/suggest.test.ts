@@ -143,7 +143,57 @@ describe('suggestNextRound', () => {
     expect(result.alternatives[0]?.approval_required).toBe(false)
   })
 
-  it('finds an in-cap match when priority candidates need intra-team relaxation', () => {
+  it('adds a tradeoff cost when intra-team gap must be relaxed', () => {
+    const state = createState({
+      courts: 1,
+      pvnaTolerance: 10,
+      players: [
+        createPlayer('p1', { pvna: 2.0 }),
+        createPlayer('p2', { pvna: 3.2 }),
+        createPlayer('p3', { pvna: 4.4 }),
+        createPlayer('p4', { pvna: 5.6 }),
+      ],
+    })
+
+    const result = suggestNextMatch(state)
+
+    expect(result.alternatives).toHaveLength(1)
+    expect(result.alternatives[0]?.warnings).toContain('INTRA_TEAM_GAP_RELAXED')
+    expect(result.alternatives[0]?.tradeoffs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'intra_team_gap_relaxed',
+          severity: expect.any(Number),
+          over_by: expect.any(Number),
+          affected_pairs: expect.any(Number),
+        }),
+      ]),
+    )
+  })
+
+  it('warns but does not add hard cost when intra-team gap relaxes within 1.0', () => {
+    const state = createState({
+      courts: 1,
+      players: [
+        createPlayer('p1', { pvna: 3.0 }),
+        createPlayer('p2', { pvna: 3.8 }),
+        createPlayer('p3', { pvna: 3.1 }),
+        createPlayer('p4', { pvna: 3.9 }),
+      ],
+    })
+
+    const result = suggestNextMatch(state)
+
+    expect(result.alternatives).toHaveLength(1)
+    expect(result.alternatives[0]?.warnings).toContain('INTRA_TEAM_GAP_RELAXED')
+    expect(result.alternatives[0]?.tradeoffs ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'intra_team_gap_relaxed' }),
+      ]),
+    )
+  })
+
+  it('finds an in-cap match when priority candidates would need intra-team relaxation', () => {
     const players = createPlayers(28)
     const fallbackIds = new Set(['p25', 'p26', 'p27', 'p28'])
     for (const player of players) {
@@ -160,9 +210,14 @@ describe('suggestNextRound', () => {
     const match = result.alternatives[0]?.matches[0]
 
     expect(result.alternatives).toHaveLength(1)
-    expect(result.alternatives[0]?.warnings).toContain('INTRA_TEAM_GAP_RELAXED')
+    expect(result.alternatives[0]?.warnings).not.toContain('INTRA_TEAM_GAP_RELAXED')
     expect(result.alternatives[0]?.warnings).not.toContain('PVNA_TOLERANCE_RELAXED')
     expect(result.alternatives[0]?.warnings).not.toContain('REPEAT_CAP_RELAXED')
+    expect(result.alternatives[0]?.tradeoffs ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'intra_team_gap_relaxed' }),
+      ]),
+    )
     expect(match?.stats?.pvna_diff).toBeLessThanOrEqual(0.5)
   })
 })

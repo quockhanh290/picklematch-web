@@ -150,7 +150,7 @@ const HostFinalizedSessionView = ({ id, theme }: { id: string; theme: any }) => 
   return (
     <View style={{ flexDirection: 'row', gap: 10, width: '100%' }}>
       <TouchableOpacity 
-        onPress={() => router.push(`/host/session/${id}/matches` as any)}
+        onPress={() => router.push(`/host/session/${id}/next-round` as any)}
         activeOpacity={0.84}
         style={{
           flex: 1,
@@ -245,7 +245,7 @@ const HostAwaitingResultView = ({ id, isPartial, count, max, theme }: any) => {
       {isPartial && <PartialPlayerWarning count={count} max={max} theme={theme} />}
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <TouchableOpacity 
-          onPress={() => router.push(`/host/session/${id}/matches` as any)}
+          onPress={() => router.push(`/host/session/${id}/next-round` as any)}
           activeOpacity={0.84}
           style={{
             flex: 1,

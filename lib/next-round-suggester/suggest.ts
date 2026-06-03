@@ -26,6 +26,7 @@ import {
   MAX_PROJECTED_PARTNER_PAIR_COUNT,
   MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER,
   MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER,
+  INTRA_TEAM_PVNA_GAP_LIMIT,
   getProjectedRepeatSummary,
 } from './score.ts'
 
@@ -236,6 +237,7 @@ const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
 const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
 const PVNA_TRADEOFF_WEIGHT = 10
 const REPEAT_TRADEOFF_WEIGHT = 1
+const INTRA_TEAM_GAP_TRADEOFF_WEIGHT = 25
 
 export function detectGenderConflicts(players: PlayerSessionState[]): string[] {
   const counts = {
@@ -307,9 +309,41 @@ function getPvnaTradeoff(matches: Match[], state: SessionState): SuggestionTrade
   }
 }
 
+function getTeamPvnaGap(team: [string, string], state: SessionState): number {
+  const first = state.players.get(team[0])
+  const second = state.players.get(team[1])
+  if (!first || !second) return Number.POSITIVE_INFINITY
+  return Math.abs(first.pvna - second.pvna)
+}
+
+function getIntraTeamGapTradeoff(matches: Match[], state: SessionState): SuggestionTradeoff | null {
+  let maxOverBy = 0
+  let affectedPairs = 0
+
+  for (const match of matches) {
+    for (const team of [match.team_a, match.team_b]) {
+      const overBy = Math.max(0, getTeamPvnaGap(team, state) - INTRA_TEAM_PVNA_GAP_LIMIT)
+      if (overBy > 0) {
+        affectedPairs += 1
+        maxOverBy = Math.max(maxOverBy, overBy)
+      }
+    }
+  }
+
+  if (maxOverBy <= 0) return null
+  return {
+    type: 'intra_team_gap_relaxed',
+    severity: maxOverBy * INTRA_TEAM_GAP_TRADEOFF_WEIGHT,
+    over_by: maxOverBy,
+    affected_pairs: affectedPairs,
+    affected_players: affectedPairs * 2,
+  }
+}
+
 function buildTradeoffs(partition: { matches: Match[] }, state: SessionState): SuggestionTradeoff[] {
   return [
     getPvnaTradeoff(partition.matches, state),
+    getIntraTeamGapTradeoff(partition.matches, state),
     getRepeatCapTradeoff(partition.matches, state),
   ].filter((tradeoff): tradeoff is SuggestionTradeoff => Boolean(tradeoff))
 }
@@ -345,7 +379,7 @@ function makeAlternative(
     ...warnings,
     ...(partition.relaxed_tolerance ? ['PVNA_TOLERANCE_RELAXED'] : []),
     ...(partition.repeat_overflow ? ['REPEAT_CAP_RELAXED'] : []),
-    ...(partition.intra_team_gap_overflow ? ['INTRA_TEAM_GAP_RELAXED'] : []),
+    ...(partition.intra_team_gap_relaxed ? ['INTRA_TEAM_GAP_RELAXED'] : []),
     ...(repeatCapReached && !partition.repeat_overflow ? ['REPEAT_CAP_REACHED'] : []),
   ])]
 

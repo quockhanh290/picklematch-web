@@ -545,8 +545,8 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
           
           {previewExpanded && (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', marginBottom: 24 }}>
-            {teamOptions.map((t) => {
-              const ps = getTeamPlayers(t)
+            {teamOptions.map((tOption) => {
+              const ps = getTeamPlayers(tOption)
               const teamSkill = ps.reduce((acc, p) => acc + Number(p.pvna || 0), 0)
               const balance = teamSkill - targetBalance
               const isEmpty = ps.length === 0
@@ -558,7 +558,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                 : { bg: theme.surfaceContainerHighest, color: theme.onSurfaceVariant, label: t('team_arrangement.balanced') }
               
               return (
-                <View key={t} style={{ 
+                <View key={tOption} style={{ 
                   width: '48.5%', 
                   backgroundColor: isEmpty ? theme.surfaceContainerLowest : theme.surface, 
                   borderRadius: 12, 
@@ -577,7 +577,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                       fontSize: 11, 
                       color: theme.surface,
                       fontWeight: '700'
-                    }}>{t('team_arrangement.team_label', { num: t })}</Text>
+                    }}>{t('team_arrangement.team_label', { num: tOption })}</Text>
                   </View>
                   
                   {isEmpty ? (
@@ -628,7 +628,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                           const avatar = getAvatarColor(player.name || '')
                           return (
                             <View
-                              key={player.id || `team-${t}-p-${idx}`}
+                              key={player.id || `team-${tOption}-p-${idx}`}
                               style={{
                                 flexDirection: 'row',
                                 alignItems: 'center',

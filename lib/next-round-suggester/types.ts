@@ -185,7 +185,7 @@ export type SuggestionAlternative = {
 }
 
 export type SuggestionTradeoff = {
-  type: 'pvna_tolerance_relaxed' | 'repeat_cap_relaxed'
+  type: 'pvna_tolerance_relaxed' | 'repeat_cap_relaxed' | 'intra_team_gap_relaxed'
   severity: number
   over_by?: number
   affected_pairs?: number
@@ -197,6 +197,8 @@ export type SuggestionTradeoffChoiceId = 'balanced' | 'keep_pvna' | 'reduce_repe
 export type SuggestionTradeoffChoiceMetrics = {
   pvna_gap: number
   pvna_over_by: number
+  intra_team_gap: number
+  intra_team_over_by: number
   repeat_over_by: number
   affected_pairs: number
   affected_players: number

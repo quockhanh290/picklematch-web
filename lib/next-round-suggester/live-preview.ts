@@ -5,7 +5,7 @@ import type { FairnessWarning } from './fairness/detector.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { computeAvailabilityMetrics } from './fairness/metrics.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { getProjectedRepeatSummary } from './score.ts'
+import { INTRA_TEAM_PVNA_GAP_LIMIT, getProjectedRepeatSummary } from './score.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { suggestNextMatch } from './suggest.ts'
 import type {
@@ -21,6 +21,7 @@ import type {
 
 const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
 const BALANCED_PVNA_COST_WEIGHT = 10
+const BALANCED_INTRA_TEAM_GAP_COST_WEIGHT = 25
 const BALANCED_REPEAT_COST_WEIGHT = 3
 const BALANCED_AFFECTED_PLAYER_COST_WEIGHT = 1
 
@@ -246,17 +247,35 @@ export function getAlternativeRepeatMetrics(alternative: SuggestionAlternative, 
   })
 }
 
+export function getAlternativeIntraTeamGap(alternative: SuggestionAlternative, state: SessionState) {
+  return Math.max(
+    0,
+    ...alternative.matches.flatMap(match =>
+      [match.team_a, match.team_b].map(team => {
+        const first = state.players.get(team[0])
+        const second = state.players.get(team[1])
+        if (!first || !second) return Number.POSITIVE_INFINITY
+        return Math.abs(first.pvna - second.pvna)
+      }),
+    ),
+  )
+}
+
 export function getTradeoffChoiceMetrics(
   alternative: SuggestionAlternative,
   state: SessionState,
   configuredPvnaTolerance: number,
 ): SuggestionTradeoffChoice['metrics'] {
   const pvnaGap = getAlternativePvnaGap(alternative)
+  const intraTeamGap = getAlternativeIntraTeamGap(alternative, state)
   const repeat = getAlternativeRepeatMetrics(alternative, state)
   const pvnaOverBy = Math.max(0, pvnaGap - configuredPvnaTolerance)
+  const intraTeamOverBy = Math.max(0, intraTeamGap - INTRA_TEAM_PVNA_GAP_LIMIT)
   return {
     pvna_gap: pvnaGap,
     pvna_over_by: pvnaOverBy,
+    intra_team_gap: intraTeamGap,
+    intra_team_over_by: intraTeamOverBy,
     repeat_over_by: repeat.repeat_over_by,
     affected_pairs: repeat.affected_pairs,
     affected_players: repeat.affected_players,
@@ -264,6 +283,7 @@ export function getTradeoffChoiceMetrics(
     max_opponent_pair: repeat.max_opponent_pair,
     total_cost:
       pvnaOverBy * BALANCED_PVNA_COST_WEIGHT +
+      intraTeamOverBy * BALANCED_INTRA_TEAM_GAP_COST_WEIGHT +
       repeat.repeat_over_by * BALANCED_REPEAT_COST_WEIGHT +
       repeat.affected_players * BALANCED_AFFECTED_PLAYER_COST_WEIGHT,
   }
@@ -271,6 +291,10 @@ export function getTradeoffChoiceMetrics(
 
 function formatNumber(value: number, fractionDigits = 1) {
   return Number.isFinite(value) ? value.toFixed(fractionDigits) : '0'
+}
+
+function hasTradeoffMetric(metrics: SuggestionTradeoffChoice['metrics']) {
+  return metrics.pvna_over_by > 0 || metrics.intra_team_over_by > 0 || metrics.repeat_over_by > 0
 }
 
 export function compareByNumber(left: number, right: number) {
@@ -328,9 +352,7 @@ export function buildLiveTradeoffChoices(
     }))
   if (candidates.length < 2) return null
 
-  const hasMeaningfulTradeoff = candidates.some(({ metrics }) =>
-    metrics.pvna_over_by > 0 || metrics.repeat_over_by > 0,
-  )
+  const hasMeaningfulTradeoff = candidates.some(({ metrics }) => hasTradeoffMetric(metrics))
   if (!hasMeaningfulTradeoff) return null
 
   const pickBest = (
@@ -345,12 +367,12 @@ export function buildLiveTradeoffChoices(
     {
       id: 'balanced' as const,
       label: 'Cân bằng',
-      item: pickBest(['total_cost', 'pvna_over_by', 'repeat_over_by']),
+      item: pickBest(['total_cost', 'intra_team_over_by', 'pvna_over_by', 'repeat_over_by']),
     },
     {
       id: 'keep_pvna' as const,
       label: 'Giữ PVNA',
-      item: pickBest(['pvna_over_by', 'pvna_gap', 'repeat_over_by']),
+      item: pickBest(['intra_team_over_by', 'pvna_over_by', 'pvna_gap', 'repeat_over_by']),
     },
     {
       id: 'reduce_repeat' as const,
@@ -376,12 +398,17 @@ export function buildLiveTradeoffChoices(
   })
 
   if (choices.length < 2) return null
-  if (!choices.some(choice => choice.metrics.pvna_over_by > 0 || choice.metrics.repeat_over_by > 0)) {
+  if (!choices.some(choice => hasTradeoffMetric(choice.metrics))) {
+    return null
+  }
+  const recommended = choices.some(choice => choice.id === 'balanced') ? 'balanced' : choices[0].id
+  const recommendedChoice = choices.find(choice => choice.id === recommended) ?? choices[0]
+  if (!hasTradeoffMetric(recommendedChoice.metrics)) {
     return null
   }
   return {
     choices,
-    recommended: choices.some(choice => choice.id === 'balanced') ? 'balanced' : choices[0].id,
+    recommended,
   }
 }
 

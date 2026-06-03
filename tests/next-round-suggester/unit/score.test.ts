@@ -207,7 +207,7 @@ describe('scoreMatch', () => {
     expect(rejected.score).toBe(Infinity)
   })
 
-  it('returns Infinity when intra-team PVNA gap is over 300', () => {
+  it('returns Infinity when intra-team PVNA gap is over 1.0', () => {
     const state = createState({
       pvnaTolerance: 10,
       players: [

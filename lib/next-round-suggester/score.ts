@@ -20,7 +20,8 @@ const INFINITY_SCORE: MatchScore = {
   },
 }
 
-export const INTRA_TEAM_PVNA_GAP_LIMIT = 1.5
+export const PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT = 0.75
+export const INTRA_TEAM_PVNA_GAP_LIMIT = 1.0
 export const MAX_PROJECTED_PARTNER_PAIR_COUNT = 2
 export const MAX_PROJECTED_OPPONENT_PAIR_COUNT = 2
 export const MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER = 2
@@ -63,14 +64,19 @@ function getTeamGap(team: Team, state: SessionState): number | null {
   return Math.abs(first.pvna - second.pvna)
 }
 
-export function hasIntraTeamGapOverflow(teamA: Team, teamB: Team, state: SessionState): boolean {
+export function hasIntraTeamGapOverflow(
+  teamA: Team,
+  teamB: Team,
+  state: SessionState,
+  limit = INTRA_TEAM_PVNA_GAP_LIMIT,
+): boolean {
   const teamAGap = getTeamGap(teamA, state)
   const teamBGap = getTeamGap(teamB, state)
   return (
     teamAGap === null ||
     teamBGap === null ||
-    teamAGap > INTRA_TEAM_PVNA_GAP_LIMIT ||
-    teamBGap > INTRA_TEAM_PVNA_GAP_LIMIT
+    teamAGap > limit ||
+    teamBGap > limit
   )
 }
 
@@ -288,6 +294,7 @@ export function scoreMatch(
     weights?: ScoringWeights
     allowRepeatOverflow?: boolean
     allowIntraTeamGapOverflow?: boolean
+    intraTeamGapLimit?: number
   } = {},
 ): MatchScore {
   const allPlayers = [...teamA, ...teamB]
@@ -305,7 +312,12 @@ export function scoreMatch(
   const teamBPvna = getPvna(teamB, state)
   if (teamAPvna === null || teamBPvna === null) return INFINITY_SCORE
 
-  if (!options.allowIntraTeamGapOverflow && hasIntraTeamGapOverflow(teamA, teamB, state)) {
+  if (!options.allowIntraTeamGapOverflow && hasIntraTeamGapOverflow(
+    teamA,
+    teamB,
+    state,
+    options.intraTeamGapLimit ?? PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
+  )) {
     return INFINITY_SCORE
   }
 

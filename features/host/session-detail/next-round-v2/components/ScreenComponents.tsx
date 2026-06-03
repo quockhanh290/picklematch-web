@@ -34,6 +34,8 @@ import {
   MAX_PROJECTED_PARTNER_PAIR_COUNT,
   MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER,
   MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER,
+  INTRA_TEAM_PVNA_GAP_LIMIT,
+  PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
   getProjectedRepeatSummary,
   scoreMatch,
 } from '@/lib/next-round-suggester/score'
@@ -1681,13 +1683,19 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
 }) {
   const theme = useAppTheme()
   const cancelBusy = false
-  const tradeoffChoices = match.tradeoff_choices ?? []
+  const rawTradeoffChoices = match.tradeoff_choices ?? []
+  const hasMeaningfulTradeoffChoices = rawTradeoffChoices.some(choice =>
+    choice.metrics.pvna_over_by > 0 ||
+    choice.metrics.intra_team_over_by > 0 ||
+    choice.metrics.repeat_over_by > 0
+  )
+  const tradeoffChoices = hasMeaningfulTradeoffChoices ? rawTradeoffChoices : []
   const [selectedChoiceId, setSelectedChoiceId] = useState<SuggestionTradeoffChoiceId>(
     match.recommended_tradeoff_choice ?? tradeoffChoices[0]?.id ?? 'balanced',
   )
   useEffect(() => {
     setSelectedChoiceId(match.recommended_tradeoff_choice ?? match.tradeoff_choices?.[0]?.id ?? 'balanced')
-  }, [match.id, match.recommended_tradeoff_choice])
+  }, [hasMeaningfulTradeoffChoices, match.id, match.recommended_tradeoff_choice])
   const selectedChoice = tradeoffChoices.find(choice => choice.id === selectedChoiceId) ?? tradeoffChoices[0]
   const activeMatch = useMemo<SuggestedLiveMatchRow>(() => {
     if (!selectedChoice) return match
@@ -1716,6 +1724,11 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   const effectivePvnaTolerance = activeMatch.effective_pvna_tolerance ?? state.config.pvna_tolerance
   const configuredPvnaTolerance = activeMatch.configured_pvna_tolerance ?? pvnaTolerance
   const autoPvnaRelaxed = effectivePvnaTolerance > configuredPvnaTolerance && Boolean(pvnaTradeoff)
+  const intraTeamRelaxed = activeMatch.warnings?.includes('INTRA_TEAM_GAP_RELAXED') ?? false
+  const maxIntraTeamGap = useMemo(() => Math.max(
+    Math.abs((state.players.get(activeMatch.team_a[0])?.pvna ?? 0) - (state.players.get(activeMatch.team_a[1])?.pvna ?? 0)),
+    Math.abs((state.players.get(activeMatch.team_b[0])?.pvna ?? 0) - (state.players.get(activeMatch.team_b[1])?.pvna ?? 0)),
+  ), [activeMatch.team_a, activeMatch.team_b, state])
   const fairnessReasonText = activeMatch.fairness_reasons?.length ? activeMatch.fairness_reasons.join(', ') : null
   const fairnessReasonDetails = activeMatch.fairness_reason_details ?? []
   const hasPvnaTradeoff = pvnaCapExceeded || Boolean(pvnaTradeoff)
@@ -1737,6 +1750,9 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   const startDisabled = busy
   const tradeoffSummaryLines: string[] = []
   const visiblePvnaOverBy = pvnaTradeoff?.over_by ?? pvnaOverBy
+  if (intraTeamRelaxed) {
+    tradeoffSummaryLines.push(`intra-team ${formatNumber(maxIntraTeamGap, 2)} / preferred ${formatNumber(PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT, 2)}`)
+  }
   if (visiblePvnaOverBy > 0) {
     tradeoffSummaryLines.push(`PVNA +${formatNumber(visiblePvnaOverBy, 2)} so với cap ${formatNumber(configuredPvnaTolerance, 2)}`)
   }

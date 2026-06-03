@@ -8,9 +8,9 @@ import { createPlayer, createState, setPartnerRepeats } from '../helpers/factori
 describe('bestTeamSplit', () => {
   it('finds the most balanced PVNA split', () => {
     const players = [
-      createPlayer('p1', { pvna: 4.0 }),
-      createPlayer('p2', { pvna: 3.8 }),
-      createPlayer('p3', { pvna: 3.2 }),
+      createPlayer('p1', { pvna: 3.75 }),
+      createPlayer('p2', { pvna: 3.5 }),
+      createPlayer('p3', { pvna: 3.25 }),
       createPlayer('p4', { pvna: 3.0 }),
     ]
 
@@ -21,7 +21,7 @@ describe('bestTeamSplit', () => {
     expect(split?.stats.pvna_diff).toBe(0)
   })
 
-  it('hard rejects when every valid-looking split has intra-team PVNA gap > 1.5', () => {
+  it('hard rejects when every valid-looking split has intra-team PVNA gap > 1.0', () => {
     const players = [
       createPlayer('p1', { pvna: 2.0 }),
       createPlayer('p2', { pvna: 3.6 }),

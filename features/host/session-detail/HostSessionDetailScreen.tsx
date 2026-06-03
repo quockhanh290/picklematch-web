@@ -397,23 +397,6 @@ export function HostSessionDetailScreen({
                 alignItems: 'center', 
                 justifyContent: 'center',
                 gap: 8, 
-                backgroundColor: '#0F6E56', 
-                paddingVertical: 12, 
-                borderRadius: RADIUS.lg,
-                borderWidth: 1,
-                borderColor: '#0F6E56'
-              }}
-            >
-              <Sparkles size={18} color="white" />
-              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: 'white' }}>TEST NEXT ROUND</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={() => router.push(`/host/session/${id}/matches` as any)}
-              style={{ 
-                flexDirection: 'row', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                gap: 8, 
                 backgroundColor: theme.primary, 
                 paddingVertical: 12, 
                 borderRadius: RADIUS.lg,
