@@ -1,6 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient'
 import type { LucideIcon } from 'lucide-react-native'
-import {
 import { Activity, AlertCircle, CalendarDays, CircleDollarSign, MapPin, ShieldCheck, Target, Users } from 'lucide-react-native'
 import { Pressable, Text, View } from 'react-native'
 import { useTranslation } from 'react-i18next'

@@ -65,7 +65,7 @@ import { useSessionNav } from '@/lib/navigation/SessionNavContext'
 import { useAppNav } from '@/lib/navigation/AppNavContext'
 import { fetchCourtDetailApi } from '@/features/player/court/api'
 import { getSessionSkillLabel } from '@/lib/skillAssessment'
-import { NextSessionCard } from '@/components/sessions/NextSessionCard'
+import { FeaturedSessionCard, ListSessionCard } from '@/components/sessions/v2/SessionCards'
 import { formatRelativeDate } from '@/utils/formatters'
 import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
 import { DashboardStatsStrip, buildDashboardStats } from '@/components/dashboard/DashboardStatsStrip'
@@ -737,7 +737,7 @@ export default function HostDashboardScreen() {
               <View style={{ flex: 1, height: 1, backgroundColor: theme.primary, opacity: 0.2 }} />
             </View>
             
-            <NextSessionCard 
+            <FeaturedSessionCard 
               session={nextSession}
               isHost={true}
               onPress={(id) => onOpenSession(id)}
@@ -888,7 +888,7 @@ export default function HostDashboardScreen() {
                           </Text>
                         </View>
                         <View style={{ gap: 4 }}>
-                          {groupSessions.map(renderSessionCard)}
+                          {groupSessions.map(s => <ListSessionCard key={s.id} session={s} isHost={true} onPress={(id) => onOpenSession(id)} />)}
                         </View>
                       </View>
                     )
@@ -935,7 +935,7 @@ export default function HostDashboardScreen() {
                     <View style={{ flex: 1, height: 1, backgroundColor: theme.outlineVariant, opacity: 0.5 }} />
                   </View>
                   <View style={{ gap: 8 }}>
-                    {data.map(renderSessionCard)}
+                    {data.map(s => <ListSessionCard key={s.id} session={s} isHost={true} onPress={(id) => onOpenSession(id)} />)}
                   </View>
                 </View>
               )

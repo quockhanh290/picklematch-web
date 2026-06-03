@@ -1,5 +1,5 @@
 import React from 'react'
-import { PlayerSessionCard } from './PlayerSessionCard'
+import { ListSessionCard } from '@/components/sessions/v2/SessionCards'
 import { useSessionNav } from '@/lib/navigation/SessionNavContext'
 import { Session } from '../types'
 
@@ -12,8 +12,9 @@ export function SearchResultCard({ session }: SearchResultCardProps) {
   const { onOpenSession } = useSessionNav()
   
   return (
-    <PlayerSessionCard
+    <ListSessionCard
       session={session}
+      isHost={false}
       onPress={() => onOpenSession(session.id)}
     />
   )

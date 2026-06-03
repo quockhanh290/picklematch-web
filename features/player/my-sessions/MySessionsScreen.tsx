@@ -21,8 +21,8 @@ import { MainHeader, AppLoading } from '@/components/design'
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, SPACING, BORDER } from '@/constants/screenLayout'
-import { MySessionCard, type SessionTab } from '@/components/sessions/MySessionCard'
-import { NextSessionCard } from '@/components/sessions/NextSessionCard'
+import { FeaturedSessionCard, ListSessionCard } from '@/components/sessions/v2/SessionCards'
+export type SessionTab = 'upcoming' | 'history'
 import { MySessionsEmptyState } from '@/components/sessions/MySessionsEmptyState'
 import { ExpandingCreateButton } from '@/components/sessions/ExpandingCreateButton'
 import { BrandedFooter } from '@/components/design/BrandedFooter'
@@ -361,8 +361,9 @@ export function MySessionsScreen() {
                       </Text>
                       <View style={{ flex: 1, height: 1, backgroundColor: theme.primary, opacity: 0.2 }} />
                     </View>
-                    <NextSessionCard 
+                    <FeaturedSessionCard 
                       session={item.session}
+                      isHost={false}
                       onPress={(id) => router.push({ pathname: '/player-hub/session/[id]', params: { id } } as any)}
                     />
                   </View>
@@ -418,10 +419,10 @@ export function MySessionsScreen() {
 
               return (
                 <View style={{ marginBottom: 8 }}>
-                  <MySessionCard 
-                    item={item.session}
-                    tab={activeTab}
-                    onShare={handleShare}
+                  <ListSessionCard 
+                    session={item.session}
+                    isHost={false}
+                    onPress={(id) => router.push({ pathname: '/player-hub/session/[id]', params: { id } } as any)}
                   />
                 </View>
               )
