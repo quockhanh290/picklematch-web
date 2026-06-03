@@ -6,12 +6,10 @@ import type { FairnessWarning } from './fairness/detector.ts'
 import { computeAvailabilityMetrics } from './fairness/metrics.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import {
-  INTRA_TEAM_PVNA_GAP_LIMIT,
   PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
   RECENT_GROUP_REMATCH_BLOCK_ROUNDS,
   getMatchGroupKey,
   getProjectedRepeatSummary,
-  scoreMatch,
   withRecentGroupRematchKeys,
 } from './score.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
@@ -29,10 +27,9 @@ import type {
 
 const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
 const BALANCED_PVNA_COST_WEIGHT = 10
-const BALANCED_INTRA_TEAM_GAP_COST_WEIGHT = 25
-const BALANCED_REPEAT_COST_WEIGHT = 3
+const BALANCED_INTRA_TEAM_GAP_COST_WEIGHT = 8
+const BALANCED_REPEAT_COST_WEIGHT = 15
 const BALANCED_AFFECTED_PLAYER_COST_WEIGHT = 1
-const MAX_REPAIR_CLUSTER_MATCHES = 2
 
 export type BuildSuggestedMatchOptions = {
   courtIdx?: number
@@ -181,6 +178,25 @@ export function buildProjectedStateAfterLiveMatch(
       ]
 
   return { ...state, players, rounds }
+}
+
+export function buildProjectedStateAfterCompletedLiveRound(
+  state: SessionState,
+  playedIds: Set<string>,
+): SessionState {
+  const players = new Map(state.players)
+
+  players.forEach((player, playerId) => {
+    if (playedIds.has(playerId) || player.checked_out_at !== null) return
+    players.set(playerId, {
+      ...player,
+      consecutive_rest: player.consecutive_rest + 1,
+      consecutive_play: 0,
+      opted_rest: false,
+    })
+  })
+
+  return { ...state, players }
 }
 
 export function buildPreviewBatchKey(
@@ -440,350 +456,6 @@ export function buildLiveTradeoffChoices(
   }
 }
 
-function getTeamPvna(team: [string, string], state: SessionState) {
-  return (state.players.get(team[0])?.pvna ?? 0) + (state.players.get(team[1])?.pvna ?? 0)
-}
-
-function getTeamIntraGap(team: [string, string], state: SessionState) {
-  return Math.abs((state.players.get(team[0])?.pvna ?? 0) - (state.players.get(team[1])?.pvna ?? 0))
-}
-
-function getMatchMaxIntraGap(match: Pick<SuggestedLiveMatchRow, 'team_a' | 'team_b'>, state: SessionState) {
-  return Math.max(getTeamIntraGap(match.team_a, state), getTeamIntraGap(match.team_b, state))
-}
-
-function toRepairAlternative(
-  match: Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting'>,
-  state: SessionState,
-  configuredPvnaTolerance: number,
-): SuggestionAlternative {
-  const scored = scoreMatch(match.team_a, match.team_b, state, {
-    tolerance: Number.POSITIVE_INFINITY,
-    allowRepeatOverflow: true,
-    allowIntraTeamGapOverflow: true,
-  })
-  const pvnaDiff = Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state))
-  const maxIntraGap = getMatchMaxIntraGap(match, state)
-  const repeat = getProjectedRepeatSummary(match.team_a, match.team_b, state)
-  const warnings = [
-    ...(maxIntraGap > PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT ? ['INTRA_TEAM_GAP_RELAXED'] : []),
-    ...(pvnaDiff > configuredPvnaTolerance ? ['PVNA_TOLERANCE_RELAXED'] : []),
-    ...(repeat.pair_over_by + repeat.player_over_by > 0 ? ['REPEAT_CAP_RELAXED'] : []),
-  ]
-  const tradeoffs: SuggestionTradeoff[] = [
-    ...(maxIntraGap > INTRA_TEAM_PVNA_GAP_LIMIT
-      ? [{
-          type: 'intra_team_gap_relaxed' as const,
-          severity: maxIntraGap - INTRA_TEAM_PVNA_GAP_LIMIT,
-          over_by: maxIntraGap - INTRA_TEAM_PVNA_GAP_LIMIT,
-        }]
-      : []),
-    ...(pvnaDiff > configuredPvnaTolerance
-      ? [{
-          type: 'pvna_tolerance_relaxed' as const,
-          severity: pvnaDiff - configuredPvnaTolerance,
-          over_by: pvnaDiff - configuredPvnaTolerance,
-        }]
-      : []),
-    ...(repeat.pair_over_by + repeat.player_over_by > 0
-      ? [{
-          type: 'repeat_cap_relaxed' as const,
-          severity: repeat.pair_over_by + repeat.player_over_by,
-          over_by: repeat.pair_over_by + repeat.player_over_by,
-          affected_pairs: repeat.affected_pairs,
-          affected_players: repeat.affected_players,
-        }]
-      : []),
-  ]
-  return {
-    matches: [{
-      court_idx: match.court_idx ?? 0,
-      team_a: match.team_a,
-      team_b: match.team_b,
-      score: scored.score,
-      stats: {
-        ...scored.stats,
-        pvna_diff: pvnaDiff,
-      },
-    }],
-    resting: match.resting,
-    score: Number.isFinite(scored.score) ? scored.score : pvnaDiff,
-    warnings,
-    tradeoffs,
-    approval_required: tradeoffs.some(tradeoff => tradeoff.type !== 'intra_team_gap_relaxed' || (tradeoff.over_by ?? 0) > 0),
-    stats: {
-      ...scored.stats,
-      pvna_diff: pvnaDiff,
-    },
-  }
-}
-
-function buildSamePlayersTradeoffChoices(
-  payload: SuggestedMatchPayload,
-  state: SessionState,
-  configuredPvnaTolerance: number,
-): { choices: SuggestionTradeoffChoice[]; recommended: SuggestionTradeoffChoiceId } | null {
-  const [a, b] = payload.team_a
-  const [c, d] = payload.team_b
-  const alternatives = [
-    toRepairAlternative({ ...payload, team_a: [a, b], team_b: [c, d] }, state, configuredPvnaTolerance),
-    toRepairAlternative({ ...payload, team_a: [a, c], team_b: [b, d] }, state, configuredPvnaTolerance),
-    toRepairAlternative({ ...payload, team_a: [a, d], team_b: [b, c] }, state, configuredPvnaTolerance),
-  ]
-  const choices = buildLiveTradeoffChoices(alternatives, state, configuredPvnaTolerance)
-  if (!choices) return null
-  const currentKey = `${payload.team_a.join(':')}|${payload.team_b.join(':')}`
-  const currentChoice = choices.choices.find(choice => {
-    const match = choice.alternative.matches[0]
-    return match && `${match.team_a.join(':')}|${match.team_b.join(':')}` === currentKey
-  })
-  return {
-    ...choices,
-    recommended: currentChoice?.id ?? choices.recommended,
-  }
-}
-
-type RepairCandidateMatch = {
-  team_a: [string, string]
-  team_b: [string, string]
-  score: number
-  pvnaGap: number
-  maxIntraGap: number
-  repeatOverBy: number
-}
-
-type RepairMetrics = {
-  hardIntraCount: number
-  pvnaOverCount: number
-  preferredIntraCount: number
-  repeatOverBy: number
-  maxHardIntraOverBy: number
-  maxPvnaOverBy: number
-  maxPreferredIntraOverBy: number
-  totalIntraGap: number
-  totalPvnaGap: number
-  totalScore: number
-}
-
-function compareRepairMetrics(left: RepairMetrics, right: RepairMetrics) {
-  const fields: Array<keyof RepairMetrics> = [
-    'hardIntraCount',
-    'pvnaOverCount',
-    'preferredIntraCount',
-    'repeatOverBy',
-    'maxHardIntraOverBy',
-    'maxPvnaOverBy',
-    'maxPreferredIntraOverBy',
-    'totalIntraGap',
-    'totalPvnaGap',
-    'totalScore',
-  ]
-  for (const field of fields) {
-    const diff = compareByNumber(left[field], right[field])
-    if (diff !== 0) return diff
-  }
-  return 0
-}
-
-function evaluateRepairMatches(matches: RepairCandidateMatch[], configuredPvnaTolerance: number): RepairMetrics {
-  return matches.reduce((summary, match) => {
-    const hardIntraOverBy = Math.max(0, match.maxIntraGap - INTRA_TEAM_PVNA_GAP_LIMIT)
-    const preferredIntraOverBy = Math.max(0, match.maxIntraGap - PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT)
-    const pvnaOverBy = Math.max(0, match.pvnaGap - configuredPvnaTolerance)
-    return {
-      hardIntraCount: summary.hardIntraCount + (hardIntraOverBy > 0 ? 1 : 0),
-      pvnaOverCount: summary.pvnaOverCount + (pvnaOverBy > 0 ? 1 : 0),
-      preferredIntraCount: summary.preferredIntraCount + (preferredIntraOverBy > 0 ? 1 : 0),
-      repeatOverBy: summary.repeatOverBy + match.repeatOverBy,
-      maxHardIntraOverBy: Math.max(summary.maxHardIntraOverBy, hardIntraOverBy),
-      maxPvnaOverBy: Math.max(summary.maxPvnaOverBy, pvnaOverBy),
-      maxPreferredIntraOverBy: Math.max(summary.maxPreferredIntraOverBy, preferredIntraOverBy),
-      totalIntraGap: summary.totalIntraGap + match.maxIntraGap,
-      totalPvnaGap: summary.totalPvnaGap + match.pvnaGap,
-      totalScore: summary.totalScore + match.score,
-    }
-  }, {
-    hardIntraCount: 0,
-    pvnaOverCount: 0,
-    preferredIntraCount: 0,
-    repeatOverBy: 0,
-    maxHardIntraOverBy: 0,
-    maxPvnaOverBy: 0,
-    maxPreferredIntraOverBy: 0,
-    totalIntraGap: 0,
-    totalPvnaGap: 0,
-    totalScore: 0,
-  })
-}
-
-function combinations<T>(items: T[], size: number): T[][] {
-  if (size === 0) return [[]]
-  if (items.length < size) return []
-  const [first, ...rest] = items
-  return [
-    ...combinations(rest, size - 1).map(combo => [first, ...combo]),
-    ...combinations(rest, size),
-  ]
-}
-
-function buildRepairCandidateMatches(playerIds: string[], state: SessionState): RepairCandidateMatch[] {
-  return combinations(playerIds, 4).flatMap(group => {
-    const [a, b, c, d] = group
-    const splits: Array<[[string, string], [string, string]]> = [
-      [[a, b], [c, d]],
-      [[a, c], [b, d]],
-      [[a, d], [b, c]],
-    ]
-    return splits.map(([teamA, teamB]) => {
-      const scored = scoreMatch(teamA, teamB, state, {
-        tolerance: Number.POSITIVE_INFINITY,
-        allowRepeatOverflow: true,
-        allowIntraTeamGapOverflow: true,
-      })
-      const repeat = getProjectedRepeatSummary(teamA, teamB, state)
-      return {
-        team_a: teamA,
-        team_b: teamB,
-        score: Number.isFinite(scored.score) ? scored.score : scored.stats.pvna_diff,
-        pvnaGap: Math.abs(getTeamPvna(teamA, state) - getTeamPvna(teamB, state)),
-        maxIntraGap: Math.max(getTeamIntraGap(teamA, state), getTeamIntraGap(teamB, state)),
-        repeatOverBy: repeat.pair_over_by + repeat.player_over_by,
-      }
-    })
-  })
-}
-
-function findBestRepairArrangement(
-  payloads: SuggestedMatchPayload[],
-  state: SessionState,
-  configuredPvnaTolerance: number,
-): RepairCandidateMatch[] | null {
-  const playerIds = [...new Set(payloads.flatMap(payload => [...payload.team_a, ...payload.team_b]))]
-  if (playerIds.length !== payloads.length * 4) return null
-  const originalMatches: RepairCandidateMatch[] = payloads.map(payload => {
-    const alternative = toRepairAlternative(payload, state, configuredPvnaTolerance)
-    const match = alternative.matches[0]
-    const repeat = getProjectedRepeatSummary(payload.team_a, payload.team_b, state)
-    return {
-      team_a: payload.team_a,
-      team_b: payload.team_b,
-      score: alternative.score,
-      pvnaGap: match?.stats?.pvna_diff ?? Math.abs(getTeamPvna(payload.team_a, state) - getTeamPvna(payload.team_b, state)),
-      maxIntraGap: getMatchMaxIntraGap(payload, state),
-      repeatOverBy: repeat.pair_over_by + repeat.player_over_by,
-    }
-  })
-  const originalMetrics = evaluateRepairMatches(originalMatches, configuredPvnaTolerance)
-  let bestMatches: RepairCandidateMatch[] | null = null
-  let bestMetrics: RepairMetrics | null = null
-  const buildCandidatesForGroup = (group: string[]): RepairCandidateMatch[] => {
-    const [a, b, c, d] = group
-    return buildRepairCandidateMatches([a, b, c, d], state)
-  }
-  const walk = (remainingIds: string[], selected: RepairCandidateMatch[]) => {
-    if (selected.length === payloads.length) {
-      const metrics = evaluateRepairMatches(selected, configuredPvnaTolerance)
-      if (compareRepairMetrics(metrics, originalMetrics) >= 0) return
-      if (!bestMetrics || compareRepairMetrics(metrics, bestMetrics) < 0) {
-        bestMetrics = metrics
-        bestMatches = selected
-      }
-      return
-    }
-    const [anchor, ...rest] = remainingIds
-    for (const companions of combinations(rest, 3)) {
-      const group = [anchor, ...companions]
-      const groupIds = new Set(group)
-      const nextRemainingIds = remainingIds.filter(playerId => !groupIds.has(playerId))
-      for (const candidate of buildCandidatesForGroup(group)) {
-        walk(nextRemainingIds, [...selected, candidate])
-      }
-    }
-  }
-  walk(playerIds, [])
-  return bestMatches
-}
-
-function withRepairMetadata(
-  payload: SuggestedMatchPayload,
-  match: Pick<SuggestedLiveMatchRow, 'team_a' | 'team_b'>,
-  state: SessionState,
-  configuredPvnaTolerance: number,
-): SuggestedMatchPayload {
-  const alternative = toRepairAlternative({
-    court_idx: payload.court_idx,
-    team_a: match.team_a,
-    team_b: match.team_b,
-    resting: payload.resting,
-  }, state, configuredPvnaTolerance)
-  const nextPayload = {
-    ...payload,
-    team_a: match.team_a,
-    team_b: match.team_b,
-    warnings: alternative.warnings,
-    tradeoffs: alternative.tradeoffs,
-    approval_required: alternative.approval_required,
-  }
-  const tradeoffChoices = alternative.warnings.includes('INTRA_TEAM_GAP_RELAXED')
-    ? buildSamePlayersTradeoffChoices(nextPayload, state, configuredPvnaTolerance)
-    : null
-  return {
-    ...nextPayload,
-    tradeoff_choices: tradeoffChoices?.choices,
-    recommended_tradeoff_choice: tradeoffChoices?.recommended,
-  }
-}
-
-export function repairIntraTeamWarningClusters(
-  payloads: SuggestedMatchPayload[],
-  state: SessionState,
-  configuredPvnaTolerance: number,
-): SuggestedMatchPayload[] {
-  const next = [...payloads]
-  const indexesByRound = new Map<number, number[]>()
-  next.forEach((payload, index) => {
-    if (!payload.warnings?.includes('INTRA_TEAM_GAP_RELAXED')) return
-    const roundNo = payload.round_no ?? 0
-    const indexes = indexesByRound.get(roundNo) ?? []
-    indexes.push(index)
-    indexesByRound.set(roundNo, indexes)
-  })
-  for (const indexes of indexesByRound.values()) {
-    for (let offset = 0; offset < indexes.length; offset += MAX_REPAIR_CLUSTER_MATCHES) {
-      const clusterIndexes = indexes.slice(offset, offset + MAX_REPAIR_CLUSTER_MATCHES)
-      if (clusterIndexes.length < 2) {
-        const index = clusterIndexes[0]
-        if (index !== undefined) {
-          next[index] = withRepairMetadata(next[index], next[index], state, configuredPvnaTolerance)
-        }
-        continue
-      }
-      const clusterPayloads = clusterIndexes.map(index => next[index])
-      const clusterHasHardViolation = clusterPayloads.some(payload =>
-        payload.tradeoffs?.some(t => t.type === 'intra_team_gap_relaxed'),
-      )
-      if (!clusterHasHardViolation) {
-        clusterIndexes.forEach(index => {
-          next[index] = withRepairMetadata(next[index], next[index], state, configuredPvnaTolerance)
-        })
-        continue
-      }
-      const repaired = findBestRepairArrangement(clusterPayloads, state, configuredPvnaTolerance)
-      if (!repaired) {
-        clusterIndexes.forEach(index => {
-          next[index] = withRepairMetadata(next[index], next[index], state, configuredPvnaTolerance)
-        })
-        continue
-      }
-      clusterIndexes.forEach((index, repairedIndex) => {
-        const repairedMatch = repaired[repairedIndex]
-        next[index] = withRepairMetadata(next[index], repairedMatch, state, configuredPvnaTolerance)
-      })
-    }
-  }
-  return next
-}
-
 function getBlockedRecentGroupRematchKeys(
   completedMatchGroups: CompletedMatchGroup[],
   projectedRoundNo: number,
@@ -924,14 +596,24 @@ export function buildSuggestedMatchPayloads({
     || match.status === 'suggested'
     || completingLiveMatchIds.has(match.id),
   )
+  const projectedExistingRoundNos = new Set<number>()
   for (const match of projectedExistingMatches) {
+    const projectedRoundNo = logicalRoundByMatchId.get(match.id) ?? match.round_no ?? match.sequence_no
+    projectedExistingRoundNos.add(projectedRoundNo)
     suggestionState = buildProjectedStateAfterLiveMatch(
       suggestionState,
       match,
-      logicalRoundByMatchId.get(match.id) ?? match.round_no ?? match.sequence_no,
+      projectedRoundNo,
     )
   }
-  const repairBaseState = suggestionState
+  for (const roundNo of projectedExistingRoundNos) {
+    if ((roundCounts.get(roundNo) ?? 0) >= courtCapacity) {
+      suggestionState = buildProjectedStateAfterCompletedLiveRound(
+        suggestionState,
+        playerIdsByRound.get(roundNo) ?? new Set<string>(),
+      )
+    }
+  }
   const getInitialRoundCourtIdxs = (roundNo: number) => {
     const existingRoundCourtIdxs = courtIdxsByRound.get(roundNo)
     return new Set([
@@ -1139,6 +821,9 @@ export function buildSuggestedMatchPayloads({
       team_a: projectedMatch.team_a,
       team_b: projectedMatch.team_b,
     })
+    if (projectedRoundMatchCount >= courtCapacity) {
+      suggestionState = buildProjectedStateAfterCompletedLiveRound(suggestionState, roundBusyIds)
+    }
     projectMs += nowMs() - projectT0
   }
   
@@ -1155,5 +840,5 @@ export function buildSuggestedMatchPayloads({
       totalMs: Math.round(nowMs() - buildT0),
     })
   }
-  return repairIntraTeamWarningClusters(payloads, repairBaseState, pvnaTolerance)
+  return payloads
 }

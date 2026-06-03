@@ -26,7 +26,7 @@ import {
   MAX_PROJECTED_PARTNER_PAIR_COUNT,
   MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER,
   MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER,
-  INTRA_TEAM_PVNA_GAP_LIMIT,
+  PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
   getProjectedRepeatSummary,
 } from './score.ts'
 
@@ -236,8 +236,8 @@ const MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY = 8
 const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
 const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
 const PVNA_TRADEOFF_WEIGHT = 10
-const REPEAT_TRADEOFF_WEIGHT = 1
-const INTRA_TEAM_GAP_TRADEOFF_WEIGHT = 25
+const REPEAT_TRADEOFF_WEIGHT = 15
+const INTRA_TEAM_GAP_TRADEOFF_WEIGHT = 8
 
 export function detectGenderConflicts(players: PlayerSessionState[]): string[] {
   const counts = {
@@ -322,7 +322,7 @@ function getIntraTeamGapTradeoff(matches: Match[], state: SessionState): Suggest
 
   for (const match of matches) {
     for (const team of [match.team_a, match.team_b]) {
-      const overBy = Math.max(0, getTeamPvnaGap(team, state) - INTRA_TEAM_PVNA_GAP_LIMIT)
+      const overBy = Math.max(0, getTeamPvnaGap(team, state) - PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT)
       if (overBy > 0) {
         affectedPairs += 1
         maxOverBy = Math.max(maxOverBy, overBy)

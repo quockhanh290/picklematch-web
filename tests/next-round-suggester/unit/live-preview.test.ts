@@ -1,9 +1,10 @@
 import {
+  buildProjectedStateAfterCompletedLiveRound,
+  buildProjectedStateAfterLiveMatch,
   buildLiveTradeoffChoices,
-  repairIntraTeamWarningClusters,
 } from '../../../lib/next-round-suggester/live-preview'
-import type { SuggestionAlternative } from '../../../lib/next-round-suggester/types'
-import { createPlayer, createState } from '../helpers/factories'
+import type { SessionLiveMatchRow, SuggestionAlternative } from '../../../lib/next-round-suggester/types'
+import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
 
 function alternative(teamA: [string, string], teamB: [string, string], pvnaDiff: number): SuggestionAlternative {
   return {
@@ -35,6 +36,53 @@ function alternative(teamA: [string, string], teamB: [string, string], pvnaDiff:
   }
 }
 
+function liveMatch(teamA: [string, string], teamB: [string, string], roundNo = 0): SessionLiveMatchRow {
+  return {
+    id: `match-${roundNo}-${teamA.join('-')}-${teamB.join('-')}`,
+    session_id: 'session-test',
+    sequence_no: roundNo,
+    round_no: roundNo,
+    court_idx: 0,
+    status: 'completed',
+    team_a: teamA,
+    team_b: teamB,
+    resting: [],
+    score_a: 0,
+    score_b: 0,
+    suggested_at: new Date('2026-05-14T12:00:00.000Z').toISOString(),
+    started_at: null,
+    ended_at: null,
+  }
+}
+
+describe('projected live match state', () => {
+  it('counts rest only when the projected logical round is finalized', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1'),
+        createPlayer('p2'),
+        createPlayer('p3'),
+        createPlayer('p4'),
+        createPlayer('p5'),
+      ],
+    })
+
+    const afterMatch = buildProjectedStateAfterLiveMatch(state, liveMatch(['p1', 'p2'], ['p3', 'p4']), 0)
+
+    expect(afterMatch.players.get('p5')?.consecutive_rest).toBe(0)
+    expect(afterMatch.players.get('p1')?.consecutive_play).toBe(1)
+
+    const afterRound = buildProjectedStateAfterCompletedLiveRound(
+      afterMatch,
+      new Set(['p1', 'p2', 'p3', 'p4']),
+    )
+
+    expect(afterRound.players.get('p5')?.consecutive_rest).toBe(1)
+    expect(afterRound.players.get('p5')?.consecutive_play).toBe(0)
+    expect(afterRound.players.get('p1')?.consecutive_rest).toBe(0)
+  })
+})
+
 describe('buildLiveTradeoffChoices', () => {
   it('does not show tradeoff choices when displayed options are all within caps', () => {
     const players = [
@@ -55,83 +103,26 @@ describe('buildLiveTradeoffChoices', () => {
 
     expect(choices).toBeNull()
   })
-})
 
-describe('repairIntraTeamWarningClusters', () => {
-  function payload(courtIdx: number, teamA: [string, string], teamB: [string, string]) {
-    return {
-      court_idx: courtIdx,
-      team_a: teamA,
-      team_b: teamB,
-      resting: [],
-      round_no: 0,
-      preview_live_state_version: 1,
-      preview_countable_match_count: 0,
-      warnings: ['INTRA_TEAM_GAP_RELAXED'],
-      tradeoffs: [],
-      approval_required: false,
-      configured_pvna_tolerance: 0.5,
-      effective_pvna_tolerance: 0.5,
-      fairness_reasons: [],
-      fairness_reason_details: [],
-      tradeoff_choices: undefined,
-      recommended_tradeoff_choice: undefined,
-    }
-  }
+  it('prefers a soft intra-team gap over a repeat overflow for the balanced choice', () => {
+    const p1 = createPlayer('p1', { pvna: 3.0 })
+    const p2 = createPlayer('p2', { pvna: 3.4 })
+    const p3 = createPlayer('p3', { pvna: 3.7 })
+    const p4 = createPlayer('p4', { pvna: 4.1 })
+    setPartnerRepeats(p1, p2, 2)
+    const state = createState({ players: [p1, p2, p3, p4], pvnaTolerance: 2.0 })
+    const softIntraNoRepeat = alternative(['p1', 'p4'], ['p2', 'p3'], 0)
+    const cleanIntraRepeat = alternative(['p1', 'p2'], ['p3', 'p4'], 0)
 
-  it('repairs a warning cluster when the pooled players can make clean matches', () => {
-    const players = [
-      createPlayer('ngtr', { pvna: 3.39 }),
-      createPlayer('ngomai', { pvna: 2.52 }),
-      createPlayer('volinh', { pvna: 2.45 }),
-      createPlayer('hbao', { pvna: 3.42 }),
-      createPlayer('vviet', { pvna: 3.65 }),
-      createPlayer('ngohuong', { pvna: 2.96 }),
-      createPlayer('vquynh', { pvna: 2.83 }),
-      createPlayer('hquan', { pvna: 3.80 }),
-    ]
-    const state = createState({ players, pvnaTolerance: 0.5 })
+    const choices = buildLiveTradeoffChoices([
+      cleanIntraRepeat,
+      softIntraNoRepeat,
+    ], state, 2.0)
+    const balanced = choices?.choices.find(choice => choice.id === 'balanced')
 
-    const repaired = repairIntraTeamWarningClusters([
-      payload(4, ['ngtr', 'ngomai'], ['volinh', 'hbao']),
-      payload(5, ['vviet', 'ngohuong'], ['vquynh', 'hquan']),
-    ], state, 0.5)
-
-    expect(repaired).toHaveLength(2)
-    expect(repaired.flatMap(match => [...match.team_a, ...match.team_b]).sort()).toEqual(
-      players.map(player => player.player_id).sort(),
-    )
-    expect(repaired.some(match => match.warnings?.includes('INTRA_TEAM_GAP_RELAXED'))).toBe(false)
-    expect(repaired.every(match => {
-      const teamA = match.team_a.reduce((sum, playerId) => sum + (state.players.get(playerId)?.pvna ?? 0), 0)
-      const teamB = match.team_b.reduce((sum, playerId) => sum + (state.players.get(playerId)?.pvna ?? 0), 0)
-      return Math.abs(teamA - teamB) <= 0.5
-    })).toBe(true)
-  })
-
-  it('keeps an unrepairable single warning match but adds same-player tradeoff choices', () => {
-    const players = [
-      createPlayer('tp', { pvna: 4.85 }),
-      createPlayer('ny', { pvna: 3.88 }),
-      createPlayer('vt', { pvna: 4.58 }),
-      createPlayer('lt', { pvna: 4.14 }),
-    ]
-    const state = createState({ players, pvnaTolerance: 0.5 })
-
-    const repaired = repairIntraTeamWarningClusters([
-      payload(3, ['tp', 'ny'], ['vt', 'lt']),
-    ], state, 0.5)
-
-    expect(repaired[0].team_a).toEqual(['tp', 'ny'])
-    expect(repaired[0].team_b).toEqual(['vt', 'lt'])
-    expect(repaired[0].warnings).toContain('INTRA_TEAM_GAP_RELAXED')
-    expect(repaired[0].tradeoff_choices?.length).toBeGreaterThan(1)
-    expect(repaired[0].tradeoff_choices?.some(choice => choice.metrics.pvna_over_by > 0)).toBe(true)
-    expect(repaired[0].tradeoff_choices?.some(choice => choice.metrics.intra_team_over_by > 0)).toBe(true)
-    expect(repaired[0].tradeoff_choices?.map(choice => choice.label)).toEqual(
-      expect.arrayContaining(['Giảm intra-team', 'Giữ PVNA']),
-    )
-    expect(repaired[0].tradeoff_choices?.some(choice => choice.label === 'Giảm lặp')).toBe(false)
-    expect(repaired[0].tradeoff_choices?.flatMap(choice => choice.explanation).some(line => line.includes('cap lặp'))).toBe(false)
+    expect(choices?.recommended).toBe('balanced')
+    expect(balanced?.alternative).toBe(softIntraNoRepeat)
+    expect(balanced?.metrics.intra_team_over_by).toBeCloseTo(0.35)
+    expect(balanced?.metrics.repeat_over_by).toBe(0)
   })
 })

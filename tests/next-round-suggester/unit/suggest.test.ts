@@ -112,15 +112,11 @@ describe('suggestNextRound', () => {
     expect(result.alternatives).toHaveLength(1)
     expect(result.alternatives[0]?.warnings).toContain('REPEAT_CAP_RELAXED')
     expect(result.alternatives[0]?.approval_required).toBe(true)
-    expect(result.alternatives[0]?.tradeoffs).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'repeat_cap_relaxed',
-          over_by: expect.any(Number),
-          affected_pairs: expect.any(Number),
-        }),
-      ]),
-    )
+    const tradeoff = result.alternatives[0]?.tradeoffs?.find(item => item.type === 'repeat_cap_relaxed')
+
+    expect(tradeoff?.over_by).toBeGreaterThan(0)
+    expect(tradeoff?.affected_pairs).toBeGreaterThan(0)
+    expect(tradeoff?.severity).toBeCloseTo((tradeoff?.over_by ?? 0) * 15)
   })
 
   it('warns when a repeat reaches the cap without requiring approval', () => {
@@ -159,19 +155,14 @@ describe('suggestNextRound', () => {
 
     expect(result.alternatives).toHaveLength(1)
     expect(result.alternatives[0]?.warnings).toContain('INTRA_TEAM_GAP_RELAXED')
-    expect(result.alternatives[0]?.tradeoffs).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'intra_team_gap_relaxed',
-          severity: expect.any(Number),
-          over_by: expect.any(Number),
-          affected_pairs: expect.any(Number),
-        }),
-      ]),
-    )
+    const tradeoff = result.alternatives[0]?.tradeoffs?.find(item => item.type === 'intra_team_gap_relaxed')
+
+    expect(tradeoff?.over_by).toBeGreaterThan(0)
+    expect(tradeoff?.affected_pairs).toBeGreaterThan(0)
+    expect(tradeoff?.severity).toBeCloseTo((tradeoff?.over_by ?? 0) * 8)
   })
 
-  it('warns but does not add hard cost when intra-team gap relaxes within 1.0', () => {
+  it('adds a tradeoff cost when intra-team gap exceeds preferred limit within hard limit', () => {
     const state = createState({
       courts: 1,
       players: [
@@ -186,11 +177,10 @@ describe('suggestNextRound', () => {
 
     expect(result.alternatives).toHaveLength(1)
     expect(result.alternatives[0]?.warnings).toContain('INTRA_TEAM_GAP_RELAXED')
-    expect(result.alternatives[0]?.tradeoffs ?? []).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: 'intra_team_gap_relaxed' }),
-      ]),
-    )
+    const tradeoff = result.alternatives[0]?.tradeoffs?.find(item => item.type === 'intra_team_gap_relaxed')
+    expect(tradeoff?.over_by).toBeGreaterThan(0)
+    expect(tradeoff?.affected_pairs).toBeGreaterThan(0)
+    expect(tradeoff?.severity).toBeCloseTo((tradeoff?.over_by ?? 0) * 8)
   })
 
   it('finds an in-cap match when priority candidates would need intra-team relaxation', () => {

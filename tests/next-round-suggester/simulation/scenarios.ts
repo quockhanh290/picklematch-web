@@ -18,6 +18,14 @@ export const BASELINE_SCENARIOS: SimulationConfig[] = [
   scenario('gender_impossible_8', 8, 2, 6, 'wide', 0.25, 0.8, 0, [2, 3]),
   scenario('long_session_8', 8, 2, 15, 'tight', 0.5, 0.2, 0, [2, 3]),
   scenario('long_session_20', 20, 5, 20, 'wide', 0.5, 0.3, 2, [3, 4]),
+  // 40-50 player profiles
+  scenario('bimodal_40', 40, 10, 15, 'bimodal', 0.4, 0.2, 4, [3, 5]),
+  scenario('bimodal_40_long', 40, 10, 20, 'bimodal', 0.4, 0.2, 4, [3, 5]),
+  scenario('rotate_40_tight', 40, 8, 15, 'tight', 0.4, 0.2, 4, [3, 5]),
+  scenario('wide_44', 44, 11, 12, 'wide', 0.4, 0.2, 5, [2, 5]),
+  scenario('wide_48', 48, 12, 10, 'wide', 0.35, 0.15, 5, [2, 4]),
+  scenario('rotate_50', 50, 12, 15, 'wide', 0.45, 0.2, 6, [2, 5]),
+  scenario('extreme_40', 40, 10, 12, 'extreme', 0.4, 0.15, 3, [4, 6]),
 ]
 
 export const FAIRNESS_TARGETS: Record<string, { min: number; ideal: number }> = {
@@ -38,6 +46,13 @@ export const FAIRNESS_TARGETS: Record<string, { min: number; ideal: number }> = 
   gender_impossible_8: { min: 55, ideal: 68 },
   long_session_8: { min: 60, ideal: 72 },
   long_session_20: { min: 55, ideal: 68 },
+  bimodal_40: { min: 55, ideal: 68 },
+  bimodal_40_long: { min: 50, ideal: 65 },
+  rotate_40_tight: { min: 55, ideal: 68 },
+  wide_44: { min: 55, ideal: 68 },
+  wide_48: { min: 55, ideal: 68 },
+  rotate_50: { min: 50, ideal: 65 },
+  extreme_40: { min: 45, ideal: 60 },
 }
 
 export const PERFORMANCE_TARGETS = {
