@@ -8,8 +8,11 @@ import { computeAvailabilityMetrics } from './fairness/metrics.ts'
 import {
   INTRA_TEAM_PVNA_GAP_LIMIT,
   PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
+  RECENT_GROUP_REMATCH_BLOCK_ROUNDS,
+  getMatchGroupKey,
   getProjectedRepeatSummary,
   scoreMatch,
+  withRecentGroupRematchKeys,
 } from './score.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { suggestNextMatch } from './suggest.ts'
@@ -61,6 +64,12 @@ export type SuggestedPreviewBatch = {
 }
 
 type SuggestedMatchPayload = Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice'>
+
+type CompletedMatchGroup = {
+  round_no: number
+  team_a: [string, string]
+  team_b: [string, string]
+}
 
 export type PreviewPlayerInfo = { name: string }
 
@@ -766,6 +775,20 @@ export function repairIntraTeamWarningClusters(
   return next
 }
 
+function getBlockedRecentGroupRematchKeys(
+  completedMatchGroups: CompletedMatchGroup[],
+  projectedRoundNo: number,
+) {
+  return new Set(
+    completedMatchGroups
+      .filter(match =>
+        projectedRoundNo > match.round_no
+        && projectedRoundNo <= match.round_no + RECENT_GROUP_REMATCH_BLOCK_ROUNDS,
+      )
+      .map(match => getMatchGroupKey(match.team_a, match.team_b)),
+  )
+}
+
 export function nowMs() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now()
 }
@@ -848,6 +871,13 @@ export function buildSuggestedMatchPayloads({
     match.team_b.forEach(playerId => playerIds.add(playerId))
     playerIdsByRound.set(roundNo, playerIds)
   })
+  const completedMatchGroups: CompletedMatchGroup[] = countableMatches
+    .filter(match => match.status === 'completed')
+    .map((match, matchIndex) => ({
+      round_no: logicalRoundByMatchId.get(match.id) ?? match.round_no ?? Math.floor(matchIndex / courtCapacity),
+      team_a: match.team_a,
+      team_b: match.team_b,
+    }))
   const hasCompletedRounds = suggestionState.rounds.some(round => round.status === 'completed')
   const getRoundRequiredIds = (roundNo: number, remainingCourts: number, busyIds: Set<string>) => {
     const remainingRoundSlots = Math.max(0, remainingCourts * 4)
@@ -973,7 +1003,11 @@ export function buildSuggestedMatchPayloads({
       ran: false, timedOut: false, eligibleCount: 0,
       combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
     }
-    const result = suggestNextMatch(suggestionState, {
+    const suggestionStateForCourt = withRecentGroupRematchKeys(
+      suggestionState,
+      getBlockedRecentGroupRematchKeys(completedMatchGroups, projectedRoundNo),
+    )
+    const result = suggestNextMatch(suggestionStateForCourt, {
       tier_overrides: tierOverrides as any,
       busy_player_ids: busyIds,
       court_idx: courtIdx,
@@ -983,7 +1017,7 @@ export function buildSuggestedMatchPayloads({
     
     suggestMs += nowMs() - suggestT0
     const configuredPvnaTolerance = pvnaTolerance
-    const tradeoffChoices = buildLiveTradeoffChoices(result.alternatives, suggestionState, configuredPvnaTolerance)
+    const tradeoffChoices = buildLiveTradeoffChoices(result.alternatives, suggestionStateForCourt, configuredPvnaTolerance)
     const recommendedChoice = tradeoffChoices?.choices.find(choice => choice.id === tradeoffChoices.recommended)
       ?? tradeoffChoices?.choices[0]
     const alternative = recommendedChoice?.alternative ?? result.alternatives[0]
@@ -1074,7 +1108,7 @@ export function buildSuggestedMatchPayloads({
     projectedRoundMatchCount += 1
     
     const projectT0 = nowMs()
-    suggestionState = buildProjectedStateAfterLiveMatch(suggestionState, {
+    const projectedMatch = {
       id: `preview-projected-${index}`,
       session_id: sessionId,
       sequence_no: index,
@@ -1089,7 +1123,13 @@ export function buildSuggestedMatchPayloads({
       suggested_at: new Date().toISOString(),
       started_at: null,
       ended_at: null,
-    }, projectedRoundNo)
+    }
+    suggestionState = buildProjectedStateAfterLiveMatch(suggestionState, projectedMatch, projectedRoundNo)
+    completedMatchGroups.push({
+      round_no: projectedRoundNo,
+      team_a: projectedMatch.team_a,
+      team_b: projectedMatch.team_b,
+    })
     projectMs += nowMs() - projectT0
   }
   

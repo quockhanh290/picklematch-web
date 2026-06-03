@@ -26,6 +26,8 @@ export const MAX_PROJECTED_PARTNER_PAIR_COUNT = 2
 export const MAX_PROJECTED_OPPONENT_PAIR_COUNT = 2
 export const MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER = 2
 export const MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER = 2
+export const RECENT_GROUP_REMATCH_BLOCK_ROUNDS = 2
+const RECENT_GROUP_REMATCH_KEYS_FIELD = '__recent_group_rematch_keys'
 
 function emptyStats(pvnaDiff = 0): MatchStats {
   return {
@@ -55,6 +57,33 @@ function getPvna(team: Team, state: SessionState): number | null {
   const players = team.map((playerId) => state.players.get(playerId))
   if (players.some((player) => !player)) return null
   return players.reduce((sum, player) => sum + (player?.pvna ?? 3.0), 0)
+}
+
+export function getMatchGroupKey(teamA: Team, teamB: Team) {
+  return [...teamA, ...teamB].sort().join(':')
+}
+
+function getInjectedRecentGroupRematchKeys(state: SessionState): Set<string> | null {
+  const keys = (state as unknown as Record<string, unknown>)[RECENT_GROUP_REMATCH_KEYS_FIELD]
+  return keys instanceof Set ? keys as Set<string> : null
+}
+
+export function withRecentGroupRematchKeys(state: SessionState, keys: Set<string>): SessionState {
+  return Object.assign({ ...state }, { [RECENT_GROUP_REMATCH_KEYS_FIELD]: keys })
+}
+
+export function hasRecentGroupRematch(teamA: Team, teamB: Team, state: SessionState): boolean {
+  const matchGroupKey = getMatchGroupKey(teamA, teamB)
+  const injectedKeys = getInjectedRecentGroupRematchKeys(state)
+  if (injectedKeys) return injectedKeys.has(matchGroupKey)
+
+  const completedRounds = state.rounds.filter(round => round.status === 'completed')
+  const currentRoundNo = state.current_round
+  return completedRounds.some(round =>
+    currentRoundNo > round.round_no
+    && currentRoundNo <= round.round_no + RECENT_GROUP_REMATCH_BLOCK_ROUNDS
+    && round.matches.some(match => getMatchGroupKey(match.team_a, match.team_b) === matchGroupKey),
+  )
 }
 
 function getTeamGap(team: Team, state: SessionState): number | null {
@@ -294,6 +323,7 @@ export function scoreMatch(
     weights?: ScoringWeights
     allowRepeatOverflow?: boolean
     allowIntraTeamGapOverflow?: boolean
+    allowRecentGroupRematch?: boolean
     intraTeamGapLimit?: number
   } = {},
 ): MatchScore {
@@ -305,6 +335,10 @@ export function scoreMatch(
   }
 
   if (allPlayers.some((playerId) => !state.players.has(playerId))) {
+    return INFINITY_SCORE
+  }
+
+  if (!options.allowRecentGroupRematch && hasRecentGroupRematch(teamA, teamB, state)) {
     return INFINITY_SCORE
   }
 

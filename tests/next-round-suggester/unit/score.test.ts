@@ -1,4 +1,5 @@
 import { genderPenalty, scoreMatch } from '../../../lib/next-round-suggester/score'
+import type { Match } from '../../../lib/next-round-suggester/types'
 import { createPlayer, createState, setOpponentRepeats, setPartnerRepeats } from '../helpers/factories'
 
 describe('scoreMatch', () => {
@@ -328,5 +329,62 @@ describe('scoreMatch', () => {
     expect(strict.score).toBe(Infinity)
     expect(Math.abs(relaxedIntra.stats.pvna_diff - 0.47)).toBeLessThan(0.001)
     expect(Math.abs(relaxedIntra.score - 0.47)).toBeLessThan(0.001)
+  })
+
+  it('blocks same four-player rematches for the next two rounds even when partners change', () => {
+    const players = [
+      createPlayer('p1', { pvna: 3.0 }),
+      createPlayer('p2', { pvna: 3.1 }),
+      createPlayer('p3', { pvna: 3.2 }),
+      createPlayer('p4', { pvna: 3.3 }),
+      createPlayer('p5', { pvna: 3.4 }),
+    ]
+    const previousMatch: Match = {
+      court_idx: 0,
+      team_a: ['p1', 'p2'],
+      team_b: ['p3', 'p4'],
+    }
+    const state = {
+      ...createState({ players, currentRound: 2, pvnaTolerance: 10 }),
+      rounds: [{
+        session_id: 'session-test',
+        round_no: 0,
+        status: 'completed' as const,
+        matches: [previousMatch],
+        resting: [],
+        started_at: null,
+        ended_at: null,
+      }],
+    }
+
+    expect(scoreMatch(['p1', 'p3'], ['p2', 'p4'], state).score).toBe(Infinity)
+    expect(scoreMatch(['p1', 'p3'], ['p2', 'p5'], state).score).not.toBe(Infinity)
+  })
+
+  it('allows same four-player groups after the two-round block window', () => {
+    const players = [
+      createPlayer('p1', { pvna: 3.0 }),
+      createPlayer('p2', { pvna: 3.1 }),
+      createPlayer('p3', { pvna: 3.2 }),
+      createPlayer('p4', { pvna: 3.3 }),
+    ]
+    const state = {
+      ...createState({ players, currentRound: 3, pvnaTolerance: 10 }),
+      rounds: [{
+        session_id: 'session-test',
+        round_no: 0,
+        status: 'completed' as const,
+        matches: [{
+          court_idx: 0,
+          team_a: ['p1', 'p2'] as [string, string],
+          team_b: ['p3', 'p4'] as [string, string],
+        }],
+        resting: [],
+        started_at: null,
+        ended_at: null,
+      }],
+    }
+
+    expect(scoreMatch(['p1', 'p3'], ['p2', 'p4'], state).score).not.toBe(Infinity)
   })
 })
