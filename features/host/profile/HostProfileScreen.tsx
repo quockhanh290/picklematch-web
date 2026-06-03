@@ -8,6 +8,7 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import { getSkillLevelFromPlayer, getEloBandByLevelId } from '@/lib/skillAssessment'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
+import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
 import { router } from 'expo-router'
 import {
     AlertCircle,
@@ -73,6 +74,7 @@ export function HostProfileScreen() {
   const [_history, setHistory] = useState<SessionHistory[]>([])
   const [loading, setLoading] = useState(false)
   const [dialogConfig, setDialogConfig] = useState<AppDialogConfig | null>(null)
+  const { switchToPlayer } = useRoleSwitcher()
 
   const init = useCallback(async () => {
     setLoading(true)
@@ -109,6 +111,10 @@ export function HostProfileScreen() {
         },
       ],
     })
+  }
+
+  async function handleSwitchToPlayer() {
+    await switchToPlayer()
   }
 
   if (checking) {
@@ -282,7 +288,7 @@ export function HostProfileScreen() {
                 <ProfileSectionDivider index="03" title="QUẢN LÝ TÀI KHOẢN" theme={theme} />
                 <View style={{ gap: 10 }}>
                   <TouchableOpacity
-                    onPress={() => router.replace('/player-hub/profile')}
+                    onPress={handleSwitchToPlayer}
                     activeOpacity={0.8}
                     style={{ backgroundColor: theme.primary, borderRadius: RADIUS.lg, padding: 12, alignItems: 'center', justifyContent: 'center', ...SHADOW.xs }}
                   >

@@ -31,10 +31,9 @@ export function parseSessionForCard(session: any, isHost: boolean): SessionDispl
   const formatLabel = fmt === 'round_robin' ? 'ROUND ROBIN' : (fmt === 'open_play' ? 'OPEN PLAY' : 'GIAO LƯU SOCIAL')
   const title = session.title || formatLabel
 
-  const confirmedCount = isHost 
-    ? (session.session_players?.filter((p: any) => p.status === 'confirmed' || p.status === 'checked_in').length || 0)
+  const confirmedCount = Array.isArray(session.session_players)
+    ? session.session_players.filter((p: any) => p.status === 'confirmed' || p.status === 'checked_in').length
     : (session.player_count || 0)
-    
   const maxPlayers = session.is_unlimited ? 16 : (session.max_players || 16)
   const price = ownerDetails.format_metadata?.cost_per_person ?? ownerDetails.total_cost ?? session.total_cost ?? 0
   

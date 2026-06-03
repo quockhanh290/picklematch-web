@@ -3,7 +3,7 @@ import { usePathname, useRootNavigationState, useRouter, useSegments } from 'exp
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/useAuth'
 import { safeStorageGetItem, safeStorageSetItem, checkStoragePersistence } from '@/lib/storage'
-import { Platform, View, Text, TouchableOpacity } from 'react-native'
+import { Platform, View, Text, TouchableOpacity, DeviceEventEmitter } from 'react-native'
 import { useAppTheme } from '@/lib/theme-context'
 import { AlertTriangle, X } from 'lucide-react-native'
 import { SCREEN_FONTS } from '@/constants/typography'
@@ -28,6 +28,7 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
   const navReady = Boolean(rootNavigationState?.key)
   const [authStatus, setAuthStatus] = useState<AuthStatus>('loading')
   const [userRole, setUserRole] = useState<UserRole>(null)
+  const [roleVersion, setRoleVersion] = useState(0)
   const [persistenceWarning, setPersistenceWarning] = useState(false)
   const { isOnline, status, reportDegraded, retry } = useNetworkState()
   const theme = useAppTheme()
@@ -56,6 +57,15 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
     }, 10000)
     return () => clearTimeout(guardTimer)
   }, [authStatus, fontsLoaded, isLoading, isOnline, reportDegraded])
+
+  // Listen to Role Changes
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('role_changed', () => {
+      setAuthStatus('loading')
+      setRoleVersion(v => v + 1)
+    })
+    return () => sub.remove()
+  }, [])
 
   // 2. Storage Persistence Check
   useEffect(() => {
@@ -130,7 +140,7 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
     }
 
     checkStatus()
-  }, [isLoading, fontsLoaded, userId])
+  }, [isLoading, fontsLoaded, userId, roleVersion])
 
   // 4. Handle Redirects
   useEffect(() => {
@@ -140,11 +150,7 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
     const replaceIfNeeded = (target: string) => {
       if (pathname === target) return
       console.log(`[AuthGate] Redirecting to ${target}`)
-      if (isWeb && typeof window !== 'undefined') {
-        window.location.replace(target)
-      } else {
-        router.replace(target as any)
-      }
+      router.replace(target as any)
     }
 
     if (authStatus === 'unauthenticated' && !isPublicRoute) {
@@ -159,16 +165,20 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
         // Don't auto-redirect from host login if we are already there and just became ready
         if (isWeb && (isHostLoginRoute || isRegisterRoute)) return
         
-        if (isWeb || userRole === 'host') {
+        if (userRole === 'host') {
           replaceIfNeeded('/host/dashboard')
         } else {
-          replaceIfNeeded('/player-hub/find-session')
+          replaceIfNeeded(isWeb ? '/player-hub/profile' : '/player-hub/find-session')
         }
       } 
       // Cross-role protection
       else if (userRole === 'host' && isPlayerRoute) {
         console.log('[AuthGate] Forced redirect: Host on Player route')
         replaceIfNeeded('/host/dashboard')
+      }
+      else if (userRole === 'player' && isHostRoute) {
+        console.log('[AuthGate] Forced redirect: Player on Host route')
+        replaceIfNeeded(isWeb ? '/player-hub/profile' : '/player-hub/find-session')
       }
     }
   }, [authStatus, fontsLoaded, navReady, pathname, segments, userRole, router, isWeb, isPublicRoute, isProfileSetupRoute, isHostRoute, isOnboardingRoute, isHostLoginRoute, isRegisterRoute, isPlayerRoute])
@@ -185,7 +195,7 @@ export function AuthGate({ children, fontsLoaded }: AuthGateProps) {
   // We overlay the loading/redirecting UI on top.
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      {shouldRenderChildren ? children : null}
+      {children}
       
       {(authStatus === 'loading' || !fontsLoaded || !shouldRenderChildren) && (
         <View style={{ 

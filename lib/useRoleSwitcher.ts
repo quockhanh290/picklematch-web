@@ -1,11 +1,8 @@
-import { useRouter } from 'expo-router'
 import { safeStorageSetItem } from './storage'
 import { supabase } from './supabase'
-import { Platform } from 'react-native'
+import { DeviceEventEmitter } from 'react-native'
 
 export function useRoleSwitcher() {
-  const router = useRouter()
-
   const switchToHost = async (userId: string, isAlreadyHost: boolean, onConfirmRequired?: () => Promise<boolean>) => {
     if (!isAlreadyHost && onConfirmRequired) {
       const confirmed = await onConfirmRequired()
@@ -24,16 +21,12 @@ export function useRoleSwitcher() {
     }
 
     await safeStorageSetItem('user_role', 'host')
-    router.replace('/host/dashboard' as any)
+    DeviceEventEmitter.emit('role_changed')
   }
 
   const switchToPlayer = async () => {
     await safeStorageSetItem('user_role', 'player')
-    if (Platform.OS === 'web') {
-      router.replace('/player-hub/profile' as any)
-    } else {
-      router.replace('/player-hub/find-session' as any)
-    }
+    DeviceEventEmitter.emit('role_changed')
   }
 
   return { switchToHost, switchToPlayer }
