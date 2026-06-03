@@ -1789,6 +1789,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
             {tradeoffChoices.map(choice => {
               const selected = choice.id === selectedChoice?.id
               const overPvna = choice.metrics.pvna_over_by > 0
+              const overIntraTeam = choice.metrics.intra_team_over_by > 0
               const overRepeat = choice.metrics.repeat_over_by > 0
               return (
                 <Pressable
@@ -1808,7 +1809,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
                       {choice.label}{choice.id === match.recommended_tradeoff_choice ? ' · Đề xuất' : ''}
                     </Text>
                     <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: selected ? theme.primary : theme.outline }}>
-                      PVNA {formatNumber(choice.metrics.pvna_gap, 2)}
+                      PVNA {formatNumber(choice.metrics.pvna_gap, 2)}{overIntraTeam ? ` / intra +${formatNumber(choice.metrics.intra_team_over_by, 2)}` : ''}
                     </Text>
                   </View>
                   <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: selected ? theme.onSurface : theme.outline }}>
