@@ -32,7 +32,7 @@ const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_INTRA_TEAM_GAP_COST_WEIGHT = 25
 const BALANCED_REPEAT_COST_WEIGHT = 3
 const BALANCED_AFFECTED_PLAYER_COST_WEIGHT = 1
-const MAX_REPAIR_CLUSTER_MATCHES = 3
+const MAX_REPAIR_CLUSTER_MATCHES = 2
 
 export type BuildSuggestedMatchOptions = {
   courtIdx?: number
@@ -759,6 +759,15 @@ export function repairIntraTeamWarningClusters(
         continue
       }
       const clusterPayloads = clusterIndexes.map(index => next[index])
+      const clusterHasHardViolation = clusterPayloads.some(payload =>
+        payload.tradeoffs?.some(t => t.type === 'intra_team_gap_relaxed'),
+      )
+      if (!clusterHasHardViolation) {
+        clusterIndexes.forEach(index => {
+          next[index] = withRepairMetadata(next[index], next[index], state, configuredPvnaTolerance)
+        })
+        continue
+      }
       const repaired = findBestRepairArrangement(clusterPayloads, state, configuredPvnaTolerance)
       if (!repaired) {
         clusterIndexes.forEach(index => {
