@@ -146,7 +146,7 @@ import {
 } from './next-round-v2/helpers'
 import type { NextRoundSuggesterV2Props } from './next-round-v2/types'
 import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
-import { useCheckInMutation, useCheckOutMutation, useStartMatchMutation, useCompleteMatchMutation, useEndActiveRoundMutation } from './next-round-v2/mutations'
+import { useCheckInMutation, useCheckOutMutation, useStartMatchMutation, useCompleteMatchMutation } from './next-round-v2/mutations'
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const LIVE_SCORE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 90 : SCREEN_WIDTH > 360 ? 80 : 72
 const LIVE_SCORE_CARD_HEIGHT = LIVE_SCORE_CARD_WIDTH * 1.25
@@ -426,7 +426,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
   const checkOutMutation = useCheckOutMutation(sessionId)
   const startMatchMutation = useStartMatchMutation(sessionId)
   const completeMatchMutation = useCompleteMatchMutation(sessionId)
-  const endActiveRoundMutation = useEndActiveRoundMutation(sessionId)
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
   const isWeb = Platform.OS === 'web'

@@ -13,14 +13,14 @@ import {
 import * as Haptics from 'expo-haptics'
 
 import {  BrandedFooter } from '../design'
-import { MatchSessionCard } from '../home/MatchSessionCard'
+import { FeaturedSessionCard } from '@/components/sessions/v2/SessionCards'
 import { useAppTheme } from '@/lib/theme-context'
 import { RADIUS, SPACING, SHADOW } from '@/constants/screenLayout'
 import { SCREEN_FONTS, AppFontSet } from '@/constants/typography'
 import { MatchSession } from '@/lib/homeFeed'
 
 interface RegistrationSuccessViewProps {
-  session: MatchSession
+  session: any
   onBackHome?: () => void
   status?: string | null
 }
@@ -31,8 +31,8 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
   const isWaiting = status === 'waiting'
   
   // Calculate enrolled count and waitlist position
-  const enrolledCount = session.activePlayers || session.players?.length || 0
-  const maxPlayers = session.maxPlayers || 4
+  const enrolledCount = session.session_players?.filter((p: any) => p.status === 'confirmed' || p.status === 'checked_in').length || 0
+  const maxPlayers = session.max_players || 4
   const waitlistPosition = isWaiting ? Math.max(1, enrolledCount - maxPlayers) : 0
 
   useEffect(() => {
@@ -44,10 +44,14 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
 
   const handleShare = async () => {
     try {
+      const startTime = new Date(session.start_time || session.slot?.start_time || Date.now())
+      const endTime = new Date(session.end_time || session.slot?.end_time || Date.now())
+      const timeStr = `${startTime.getHours()}:${startTime.getMinutes().toString().padStart(2, '0')} - ${endTime.getHours()}:${endTime.getMinutes().toString().padStart(2, '0')}`
+
       const message = t('registration.share_message', {
-        title: session.title,
-        court: session.courtName,
-        time: session.timeLabel
+        title: session.title || 'Kèo Pickleball',
+        court: session.court_name || session.slot?.court?.name || 'Sân Pickleball',
+        time: timeStr
       })
       await Share.share({
         message,
@@ -199,15 +203,7 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
 
       {/* 2. REGISTRATION CARD (Session Info) */}
       <View style={{ marginBottom: 24, marginHorizontal: 16 }}>
-        <MatchSessionCard 
-          item={session} 
-          variant="standard" 
-          showFullAddress 
-          isHostDetail 
-          isPreview={false} 
-          fullCourtName={true}
-          actionLabel={t('registration.action_enter')}
-        />
+        <FeaturedSessionCard session={session} />
       </View>
 
       {/* 3. ACTION BUTTONS */}

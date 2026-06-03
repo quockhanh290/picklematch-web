@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { liveSessionQueryKeys } from './queries'
 import type { LiveRows } from './types'
-import type { SessionLiveMatchRow, SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
+import type { SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
 import { checkInLiveSessionPlayers, checkOutLiveSessionPlayers } from './api'
 
 export function useCheckInMutation(sessionId: string) {
@@ -47,41 +47,6 @@ export function useCheckOutMutation(sessionId: string) {
           ...previousState,
           playerRows: previousState.playerRows.map(row => 
             idSet.has(row.player_id) ? { ...row, checked_out_at: new Date().toISOString() } : row
-          ),
-        })
-      }
-      return { previousState }
-    },
-    onError: (err, variables, context) => {
-      if (context?.previousState) {
-        queryClient.setQueryData(liveSessionQueryKeys.detail(sessionId), context.previousState)
-      }
-    },
-    // onSettled removed to prevent race condition with Realtime
-  })
-}
-
-export function useUpdateScoreMutation(sessionId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ matchId, scoreA, scoreB }: { matchId: string; scoreA: number; scoreB: number }) => {
-      const { data, error } = await supabase.rpc('update_live_session_match_score', {
-        p_session_id: sessionId,
-        p_match_id: matchId,
-        p_score_a: scoreA,
-        p_score_b: scoreB,
-      })
-      if (error) throw error
-      return data
-    },
-    onMutate: async ({ matchId, scoreA, scoreB }) => {
-      await queryClient.cancelQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) })
-      const previousState = queryClient.getQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId))
-      if (previousState) {
-        queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), {
-          ...previousState,
-          liveMatchRows: previousState.liveMatchRows.map(row =>
-            row.id === matchId ? { ...row, score_a: scoreA, score_b: scoreB } : row
           ),
         })
       }
@@ -149,18 +114,6 @@ export function useCompleteMatchMutation(sessionId: string) {
       if (context?.previousState) {
         queryClient.setQueryData(liveSessionQueryKeys.detail(sessionId), context.previousState)
       }
-    },
-    // onSettled removed to prevent race condition with Realtime
-  })
-}
-
-export function useEndActiveRoundMutation(sessionId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ rpcPayload }: { rpcPayload: any }) => {
-      const { data, error } = await supabase.rpc('session-rounds-end-versioned', rpcPayload)
-      if (error) throw error
-      return data
     },
     // onSettled removed to prevent race condition with Realtime
   })

@@ -1,5 +1,5 @@
 import { ScreenHeader } from '@/components/design'
-import { MatchSessionCard } from '@/components/home/MatchSessionCard'
+import { FeaturedSessionCard } from '@/components/sessions/v2/SessionCards'
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { type MatchSession, getStatusLabel } from '@/lib/homeFeed'
@@ -160,14 +160,9 @@ export function HostCreateSessionStep3({
             XEM TRƯỚC
           </Text>
           <View pointerEvents="none">
-            <MatchSessionCard 
-              item={previewMatch} 
-              variant="standard" 
-              actionLabel={'Vào kèo'} 
-              showFullAddress={true} 
-              isHostDetail={true}
-              isPreview={true}
-              fullCourtName={true}
+            <FeaturedSessionCard 
+              session={previewMatch} 
+              isHost={true}
             />
           </View>
         </View>

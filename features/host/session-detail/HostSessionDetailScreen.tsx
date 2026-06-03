@@ -10,7 +10,7 @@ import { STRINGS } from '@/constants/strings'
 
 import { AppDialog, type AppDialogConfig, SecondaryNavbar } from '@/components/design'
 import { useAppTheme } from '@/lib/theme-context'
-import { MatchSessionCard } from '@/components/home/MatchSessionCard'
+import { FeaturedSessionCard } from '@/components/sessions/v2/SessionCards'
 import { getStatusLabel, type MatchSession } from '@/lib/homeFeed'
 import { HostRosterSection } from './HostRosterSection'
 import { SessionActionButtons } from '@/components/session/SessionActionButtons'
@@ -210,33 +210,7 @@ export function HostSessionDetailScreen({
     return `${Math.round(pricePerPerson / 1000)}K`
   }
 
-  const previewMatch: MatchSession = {
-    id: session.id,
-    title: session.title || 'Kèo chủ sân',
-    bookingId: session.booking_reference || 'Host',
-    courtName: session.slot.court.name,
-    courtId: session.slot.court.id,
-    address: session.slot.court.city ? `${session.slot.court.address}, ${session.slot.court.city}` : session.slot.court.address,
-    matchScore: 100,
-    matchHint: FORMAT_LABELS[HostDetails.format_type || 'social'],
-    skillLabel: sessionSkillLabel,
-    timeLabel: formatTimeRange(session.slot.start_time, session.slot.end_time),
-    priceLabel: formatPrice(Number(HostDetails.total_cost ?? session.total_cost ?? 0)),
-    openSlotsLabel: `Đã có ${session.session_players?.length || 0} người tham gia`,
-    statusLabel: isAfterEnd ? 'KẾT THÚC' : getStatusLabel(session.court_booking_status, session.status),
-    courtBookingConfirmed: session.court_booking_status === 'confirmed',
-    isBooked: true,
-    isRanked: session.is_ranked,
-    requireApproval: HostDetails.require_approval || session.require_approval,
-    activePlayers: session.session_players?.length || 0,
-    maxPlayers: session.max_players,
-    levelId: getEloBandForSessionRange(session.elo_min, session.elo_max).levelId,
-    host: session.host,
-    players: session.session_players || [],
-    urgent: false,
-    joined: false,
-    subCourtLabel: subCourts.length > 0 ? `Sân ${subCourts.join(', ')}` : '',
-  } as any
+  // Removed previewMatch as FeaturedSessionCard now parses the raw session directly
 
   const handleShare = async () => {
     const url = Linking.createURL(`/register/${id}`)
@@ -334,13 +308,9 @@ export function HostSessionDetailScreen({
           </TouchableOpacity>
         )}
 
-        <MatchSessionCard
-          item={previewMatch}
-          variant="standard"
-          actionLabel={isHost ? "QUẢN LÝ KÈO" : "THAM GIA NGAY"}
-          showFullAddress={true}
-          isHostDetail
-          fullCourtName={true}
+        <FeaturedSessionCard
+          session={session}
+          isHost={isHost}
         />
 
         {/* Format Selector REMOVED */}

@@ -15,7 +15,7 @@ import { useLocalSearchParams, router } from 'expo-router'
 import { safeStorageSetItem, safeStorageGetItem, safeStorageRemoveItem } from '@/lib/storage'
 
 import { AppButton, AppLoading, SecondaryNavbar, BrandedFooter } from '@/components/design'
-import { MatchSessionCard } from '@/components/home/MatchSessionCard'
+import { FeaturedSessionCard } from '@/components/sessions/v2/SessionCards'
 import { useAppTheme } from '@/lib/theme-context'
 import { useSessionDetail } from '@/hooks/useSessionDetail'
 import { useAuth } from '@/lib/useAuth'
@@ -167,77 +167,7 @@ export default function ZaloRegisterScreen() {
     }
   }
 
-  const FORMAT_LABELS: Record<string, string> = {
-    social: 'SOCIAL FUN',
-    round_robin: 'ROUND ROBIN',
-    open_play: 'OPEN PLAY',
-  }
-
-  const formatPrice = (pricePerPerson: number) => {
-    if (pricePerPerson <= 0) return 'Miễn phí'
-    return `${Math.round(pricePerPerson / 1000)}K`
-  }
-
-  const previewMatch: MatchSession = useMemo(() => {
-    if (!session) return null as any
-
-    const ownerDetails = (session.owner_sessions as any)?.[0] || session.owner_sessions || {}
-    const subCourts = session.sub_court_numbers || ownerDetails.sub_court_numbers || []
-    
-    // Ensure host is in the participants list for display
-    const rawPlayers = session.session_players || []
-    const hostId = session.host?.id
-    const isHostInPlayers = rawPlayers.some((p: any) => (p.player_id === hostId || p.id === hostId))
-    
-    const displayPlayers = [...rawPlayers]
-    if (session.host && !isHostInPlayers) {
-      displayPlayers.unshift({
-        id: session.host.id,
-        player_id: session.host.id,
-        name: session.host.name || 'Chủ kèo',
-        gender: (session.host as any).gender,
-        pvna: (session.host as any).pvna,
-        elo: session.host.elo,
-        status: 'confirmed',
-        is_host: true
-      } as any)
-    }
-
-    return {
-      id: session.id,
-      title: (session as any).title || 'Kèo chủ sân',
-      bookingId: session.booking_reference || 'OWNER',
-      courtName: session.slot.court.name,
-      courtId: session.slot.court.id,
-      address: session.slot.court.city
-        ? `${session.slot.court.address}, ${session.slot.court.city}`
-        : session.slot.court.address,
-      matchScore: 100,
-      matchHint: FORMAT_LABELS[ownerDetails.format_type || 'social'],
-      skillLabel: sessionSkillLabel,
-      timeLabel: formatTimeRange(session.slot.start_time, session.slot.end_time),
-      priceLabel: formatPrice(
-        session.total_cost || 
-        ownerDetails.total_cost || 
-        ownerDetails.format_metadata?.cost_per_person || 
-        (session.slot.price / (session.max_players || 4))
-      ),
-      openSlotsLabel: `Đã có ${displayPlayers.length} người tham gia`,
-      statusLabel: getStatusLabel(session.court_booking_status, session.status as any),
-      courtBookingConfirmed: session.court_booking_status === 'confirmed',
-      isBooked: true,
-      isRanked: session.is_ranked,
-      requireApproval: ownerDetails.require_approval || session.require_approval,
-      activePlayers: displayPlayers.length,
-      maxPlayers: session.max_players,
-      levelId: getEloBandForSessionRange(session.elo_min, session.elo_max).levelId,
-      host: session.host,
-      players: displayPlayers,
-      urgent: false,
-      joined: false,
-      subCourtLabel: subCourts.length > 0 ? `Sân ${subCourts.join(', ')}` : '',
-    } as any
-  }, [session, sessionSkillLabel])
+  // Removed previewMatch as FeaturedSessionCard now parses the raw session directly
 
   const [regStatus, setRegStatus] = useState<string | null>(null)
 
@@ -417,7 +347,7 @@ export default function ZaloRegisterScreen() {
       <View style={{ flex: 1, backgroundColor: theme.background }}>
         <SecondaryNavbar title={STRINGS.register.success_title} onBackPress={() => router.replace('/')} />
         <RegistrationSuccessView 
-          session={previewMatch} 
+          session={session} 
           onBackHome={() => router.replace('/')} 
           status={regStatus}
         />
@@ -433,17 +363,7 @@ export default function ZaloRegisterScreen() {
       <SecondaryNavbar title={STRINGS.register.title} onBackPress={() => router.back()} />
 
       <ScrollView contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 100 }}>
-        <MatchSessionCard 
-          item={previewMatch} 
-          variant="standard" 
-          showFullAddress 
-          isHostDetail 
-          isPreview={false}
-          fullCourtName={true}
-          showPlayerList={showPlayerList}
-          onTogglePlayerList={() => setShowPlayerList(!showPlayerList)}
-          actionLabel={'Vào kèo'}
-        />
+        <FeaturedSessionCard session={session} />
 
         {/* NEW FORM CARD */}
         <View style={{

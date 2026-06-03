@@ -56,52 +56,11 @@ const SkillBadge = ({ type, label, theme }: { type: 'NAM' | 'NỮ', label: strin
   )
 }
 
-// Micro-UI: Progress Bar Footer
-const CapacityFooter = ({ count, max, statusColor, theme, actionText }: { count: number, max: number, statusColor: string, theme: any, actionText: string }) => {
-  const displayMax = 10
-  const segments = []
-  // Avoid NaN if max is 0
-  const fillRatio = max > 0 ? count / max : 0
-  
-  for (let i = 0; i < displayMax; i++) {
-    const isActive = i < fillRatio * displayMax
-    segments.push(
-      <View 
-        key={i} 
-        style={{ 
-          flex: 1, 
-          height: 5, 
-          borderRadius: 4, 
-          backgroundColor: isActive ? statusColor : theme.outlineVariant,
-          opacity: isActive ? 1 : 0.3
-        }} 
-      />
-    )
-  }
-
-  return (
-    <View style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: theme.outlineVariant + '40' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Users size={14} color={statusColor} />
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: statusColor, marginTop: 1 }}>{count}/{max}</Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 3, width: 100 }}>
-          {segments}
-        </View>
-      </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: statusColor + '15', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, gap: 2 }}>
-        <Text style={{ color: statusColor, fontFamily: SCREEN_FONTS.headline, fontSize: 12 }}>{actionText}</Text>
-        <ChevronRight size={14} color={statusColor} />
-      </View>
-    </View>
-  )
-}
-
 const getActionText = (status: string, isHost: boolean) => {
   if (isHost) return 'QUẢN LÝ'
   if (status === 'done') return 'KẾT QUẢ'
   if (status === 'playing') return 'CHI TIẾT'
+  if (status === 'full') return 'CHI TIẾT'
   return 'THAM GIA'
 }
 
@@ -122,9 +81,10 @@ export interface SessionCardProps {
   session: any
   onPress?: (id: string) => void
   isHost?: boolean
+  showDistance?: boolean // Option to turn distance off if needed
 }
 
-export const FeaturedSessionCard = ({ session, onPress, isHost = false }: SessionCardProps) => {
+export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDistance = true }: SessionCardProps) => {
   const theme = useAppTheme()
   const data: SessionDisplayData = parseSessionForCard(session, isHost)
   
@@ -135,6 +95,30 @@ export const FeaturedSessionCard = ({ session, onPress, isHost = false }: Sessio
 
   const timeStr = new Date(data.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
   const endStr = new Date(data.endTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+
+  const displayMax = 10
+  const segments = []
+  const fillRatio = data.maxPlayers > 0 ? data.confirmedCount / data.maxPlayers : 0
+  
+  for (let i = 0; i < displayMax; i++) {
+    const isActive = i < fillRatio * displayMax
+    segments.push(
+      <View 
+        key={i} 
+        style={{ 
+          flex: 1, 
+          height: 5, 
+          borderRadius: 4, 
+          backgroundColor: isActive ? statusColor : theme.outlineVariant,
+          opacity: isActive ? 1 : 0.3
+        }} 
+      />
+    )
+  }
+
+  // Mock Avatar colors
+  const avatarColors = ['#E1F5EE', '#FAECE7', '#E5E7EB']
+  const avatarTexts = ['#0F6E56', '#993C1D', '#374151']
 
   return (
     <TouchableOpacity activeOpacity={0.9} onPress={() => onPress && onPress(data.id)} style={{ backgroundColor: theme.surface, borderRadius: RADIUS.xl, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, ...SHADOW.md, overflow: 'hidden', marginBottom: SPACING.md }}>
@@ -150,8 +134,11 @@ export const FeaturedSessionCard = ({ session, onPress, isHost = false }: Sessio
       <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 }}>
         {/* Title & Address */}
         <View style={{ marginBottom: 8 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 26, color: theme.onSurface, textTransform: 'uppercase' }} numberOfLines={1}>{data.title}</Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, color: theme.onSurfaceVariant, marginTop: 2 }} numberOfLines={1}>{data.courtName}</Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 26, color: theme.onSurface, textTransform: 'uppercase' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{data.title}</Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, color: theme.onSurfaceVariant, marginTop: 2 }} numberOfLines={1}>
+            {data.courtName} 
+            {showDistance && <Text> • <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.bold }}>Cách 2.5km</Text></Text>}
+          </Text>
         </View>
 
         {/* Badges Row */}
@@ -168,27 +155,71 @@ export const FeaturedSessionCard = ({ session, onPress, isHost = false }: Sessio
         {/* 2 Columns: Time and Cost */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           {/* Time Column */}
-          <View>
+          <View style={{ flex: 1, paddingRight: 8 }}>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 }}>THỜI GIAN</Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 28, color: theme.onSurface, lineHeight: 30 }}>{timeStr}</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 28, color: theme.onSurface, lineHeight: 30 }} adjustsFontSizeToFit numberOfLines={1} minimumFontScale={0.8}>{timeStr}</Text>
             <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, color: theme.onSurfaceVariant, marginTop: 2 }}>đến {endStr}</Text>
           </View>
           
           {/* Cost Column */}
-          <View style={{ alignItems: 'flex-end' }}>
+          <View style={{ alignItems: 'flex-end', flex: 1, paddingLeft: 8 }}>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 }}>CHI PHÍ</Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 28, color: theme.onSurface, lineHeight: 30 }}>{data.price > 0 ? `${data.price}K` : 'Miễn phí'}</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 28, color: theme.onSurface, lineHeight: 30 }} adjustsFontSizeToFit numberOfLines={1} minimumFontScale={0.8}>{data.price > 0 ? `${data.price}K` : 'Miễn phí'}</Text>
             <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, color: theme.onSurfaceVariant, marginTop: 2 }}>/người</Text>
           </View>
         </View>
       </View>
       
-      <CapacityFooter count={data.confirmedCount} max={data.maxPlayers} statusColor={statusColor} theme={theme} actionText={actionText} />
+      {/* Capacity Footer Unified: Avatars + Solid CTA */}
+      <View style={{ paddingHorizontal: 14, paddingVertical: 12, backgroundColor: theme.surfaceAlt, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: theme.outlineVariant + '40' }}>
+        
+        {/* Left Side: Avatars + Progress */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {/* Overlapping Avatars */}
+            {[1, 2, 3].map((_, index) => (
+              <View 
+                key={index}
+                style={{
+                  width: 26, 
+                  height: 26, 
+                  borderRadius: 13, 
+                  backgroundColor: avatarColors[index],
+                  borderWidth: 2,
+                  borderColor: theme.surface,
+                  marginLeft: index === 0 ? 0 : -8,
+                  zIndex: 3 - index,
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.bold, color: avatarTexts[index] }}>{String.fromCharCode(65 + index)}</Text>
+              </View>
+            ))}
+          </View>
+          
+          <View style={{ flex: 1, paddingRight: 10 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: statusColor }}>{data.confirmedCount}/{data.maxPlayers} NGƯỜI</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 3 }}>
+              {segments}
+            </View>
+          </View>
+        </View>
+
+        {/* Right Side: Solid CTA Button */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: statusColor, paddingHorizontal: 16, paddingVertical: 10, borderRadius: RADIUS.sm, gap: 2, ...SHADOW.sm }}>
+          <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.headline, fontSize: 13 }}>{actionText}</Text>
+          <ChevronRight size={14} color="white" />
+        </View>
+
+      </View>
     </TouchableOpacity>
   )
 }
 
-export const ListSessionCard = ({ session, onPress, isHost = false }: SessionCardProps) => {
+export const ListSessionCard = ({ session, onPress, isHost = false, showDistance = true }: SessionCardProps) => {
   const theme = useAppTheme()
   const data: SessionDisplayData = parseSessionForCard(session, isHost)
   
@@ -197,6 +228,29 @@ export const ListSessionCard = ({ session, onPress, isHost = false }: SessionCar
   const actionText = getActionText(data.status, isHost)
   const dayBadge = getDayBadge(data.startTime)
   
+  const displayMax = 10
+  const segments = []
+  const fillRatio = data.maxPlayers > 0 ? data.confirmedCount / data.maxPlayers : 0
+  
+  for (let i = 0; i < displayMax; i++) {
+    const isActive = i < fillRatio * displayMax
+    segments.push(
+      <View 
+        key={i} 
+        style={{ 
+          flex: 1, 
+          height: 5, 
+          borderRadius: 4, 
+          backgroundColor: isActive ? statusColor : theme.outlineVariant,
+          opacity: isActive ? 1 : 0.3
+        }} 
+      />
+    )
+  }
+
+  const avatarColors = ['#E1F5EE', '#FAECE7', '#E5E7EB']
+  const avatarTexts = ['#0F6E56', '#993C1D', '#374151']
+
   return (
     <TouchableOpacity activeOpacity={0.9} onPress={() => onPress && onPress(data.id)} style={{ backgroundColor: theme.surface, borderRadius: RADIUS.lg, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, ...SHADOW.sm, overflow: 'hidden', marginBottom: SPACING.sm }}>
       <View style={{ backgroundColor: statusColor, paddingHorizontal: 14, paddingVertical: 5, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -209,31 +263,72 @@ export const ListSessionCard = ({ session, onPress, isHost = false }: SessionCar
       <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
           <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface, textTransform: 'uppercase' }} numberOfLines={1}>{data.courtName}</Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurfaceVariant, marginTop: 2 }} numberOfLines={1}>{data.courtAddress || data.title}</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface, textTransform: 'uppercase' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{data.courtName}</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurfaceVariant, marginTop: 2 }} numberOfLines={1}>
+              {data.courtAddress || data.title}
+              {showDistance && <Text> • <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.bold }}>Cách 2.5km</Text></Text>}
+            </Text>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>{data.price > 0 ? `${data.price}K` : 'Free'}</Text>
+          <View style={{ alignItems: 'flex-end', flexShrink: 0, paddingLeft: 8 }}>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }} adjustsFontSizeToFit numberOfLines={1} minimumFontScale={0.8}>{data.price > 0 ? `${data.price}K` : 'Free'}</Text>
             {data.price > 0 && <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 9, color: theme.onSurfaceVariant, marginTop: -2 }}>/người</Text>}
           </View>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
             <View style={{ backgroundColor: theme.outline, paddingHorizontal: 6, paddingVertical: 2, borderRadius: RADIUS.xs }}>
               <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 10 }}>{dayBadge}</Text>
             </View>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>{formatTimeRange(data.startTime, data.endTime)}</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }} adjustsFontSizeToFit numberOfLines={1} minimumFontScale={0.8}>{formatTimeRange(data.startTime, data.endTime)}</Text>
           </View>
           
-          <View style={{ flexDirection: 'row', gap: 6 }}>
+          <View style={{ flexDirection: 'row', gap: 6, flexShrink: 0, paddingLeft: 8 }}>
             {data.skillNam ? <SkillBadge type="NAM" label={data.skillNam} theme={theme} /> : null}
             {data.skillNu ? <SkillBadge type="NỮ" label={data.skillNu} theme={theme} /> : null}
           </View>
         </View>
       </View>
       
-      <CapacityFooter count={data.confirmedCount} max={data.maxPlayers} statusColor={statusColor} theme={theme} actionText={actionText} />
+      {/* Mini Capacity Footer for List Card */}
+      <View style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: theme.outlineVariant + '40' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {[1, 2].map((_, index) => (
+              <View 
+                key={index}
+                style={{
+                  width: 20, 
+                  height: 20, 
+                  borderRadius: 10, 
+                  backgroundColor: avatarColors[index],
+                  borderWidth: 1.5,
+                  borderColor: theme.surface,
+                  marginLeft: index === 0 ? 0 : -6,
+                  zIndex: 2 - index,
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Text style={{ fontSize: 8, fontFamily: SCREEN_FONTS.bold, color: avatarTexts[index] }}>{String.fromCharCode(65 + index)}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={{ flex: 1, paddingRight: 10 }}>
+             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: statusColor }}>{data.confirmedCount}/{data.maxPlayers} NGƯỜI</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 2 }}>
+              {segments}
+            </View>
+          </View>
+        </View>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: statusColor, paddingHorizontal: 12, paddingVertical: 6, borderRadius: RADIUS.sm, gap: 2, ...SHADOW.sm }}>
+          <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>{actionText}</Text>
+          <ChevronRight size={12} color="white" />
+        </View>
+      </View>
     </TouchableOpacity>
   )
 }

@@ -7,7 +7,7 @@ import { Trophy, CheckCheck } from 'lucide-react-native'
 
 import { AppDialog, type AppDialogConfig, SecondaryNavbar, NavbarShareButton, AppLoading } from '@/components/design'
 import { useAppTheme } from '@/lib/theme-context'
-import { MatchSessionCard } from '@/components/home/MatchSessionCard'
+import { FeaturedSessionCard } from '@/components/sessions/v2/SessionCards'
 import { getStatusLabel, type MatchSession } from '@/lib/homeFeed'
 import { HostRosterSection } from '@/features/host/session-detail/HostRosterSection'
 import { SessionActionButtons } from '@/components/session/SessionActionButtons'
@@ -110,35 +110,6 @@ export function PlayerSessionDetailScreen({
   const HostDetails = session.owner_sessions?.[0] || session.owner_sessions || {}
   const processedPlayers = buildArrangementPlayers({ ...session, owner_sessions: HostDetails })
 
-  const previewMatch: MatchSession = {
-    id: session.id,
-    title: session.title || STRINGS.session_detail.default_title,
-    bookingId: session.booking_reference || 'Match',
-    courtName: session.slot.court.name,
-    courtId: session.slot.court.id,
-    address: session.slot.court.city ? `${session.slot.court.address}, ${session.slot.court.city}` : session.slot.court.address,
-    matchScore: 100,
-    matchHint: (HostDetails.format_type || 'social').replace(/_/g, ' ').toUpperCase(),
-    skillLabel: sessionSkillLabel,
-    timeLabel: formatTimeRange(session.slot.start_time, session.slot.end_time),
-    priceLabel: (HostDetails.total_cost ?? session.total_cost ?? 0) > 0
-      ? `${Math.round(Number(HostDetails.total_cost ?? session.total_cost ?? 0) / 1000)}K`
-      : STRINGS.session_detail.free,
-    openSlotsLabel: STRINGS.session_detail.open_slots.replace('{count}', String(session.session_players?.length || 0)),
-    statusLabel: isPast ? STRINGS.session_detail.ended : getStatusLabel(session.court_booking_status, session.status),
-    courtBookingConfirmed: session.court_booking_status === 'confirmed',
-    isBooked: true,
-    isRanked: session.is_ranked,
-    requireApproval: HostDetails.require_approval || session.require_approval,
-    activePlayers: session.session_players?.length || 0,
-    maxPlayers: session.max_players,
-    levelId: getEloBandForSessionRange(session.elo_min, session.elo_max).levelId,
-    host: session.host,
-    players: session.session_players || [],
-    urgent: false,
-    joined: hasJoined,
-  } as any
-
   const handleShare = async () => {
     try {
       const url = Linking.createURL(`/session/${id}`)
@@ -169,16 +140,7 @@ export function PlayerSessionDetailScreen({
         }}
       >
         <WebContainer>
-          <MatchSessionCard
-            item={previewMatch}
-            variant="standard"
-            actionLabel={hasJoined ? STRINGS.session_detail.action.joined : STRINGS.session_detail.action.join}
-            showFullAddress={true}
-            isHostDetail={true} // Using the premium detail style
-            fullCourtName={true}
-            showPlayerList={showPlayerList}
-            onTogglePlayerList={() => setShowPlayerList(!showPlayerList)}
-          />
+          <FeaturedSessionCard session={session} />
 
           {session.is_ranked && (
             <View

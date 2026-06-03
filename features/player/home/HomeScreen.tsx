@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { FamiliarCourtCard } from '@/components/home/FamiliarCourtCard'
 import { HomeCarouselSection } from '@/components/home/HomeCarouselSection'
 import { HomeGreetingHeader } from '@/components/home/HomeGreetingHeader'
-import { MatchSessionCard } from '@/components/home/MatchSessionCard'
+import { FeaturedSessionCard } from '@/components/sessions/v2/SessionCards'
 import { PostMatchInboxSection } from '@/components/home/PostMatchInboxSection'
 import { ExpandingCreateButton } from '@/components/sessions/ExpandingCreateButton'
 import { AppLoading } from '@/components/design/AppLoading'
@@ -25,12 +25,12 @@ const CAROUSEL_SECTION_HEIGHT = 430
 const COURT_CAROUSEL_HEIGHT = 272
 
 
-const SmartMatchCard = memo(function SmartMatchCard({ item, accentMode = 'default' }: { item: MatchSession; accentMode?: 'default' | 'rescue' }) {
-  return <MatchSessionCard item={item} variant="standard" actionLabel={item.joined ? STRINGS.home.actions.view_session : STRINGS.home.actions.join_session} accentMode={accentMode} />
+const SmartMatchCard = memo(function SmartMatchCard({ item, accentMode }: { item: MatchSession; accentMode?: 'default' | 'rescue' }) {
+  return <FeaturedSessionCard session={item} />
 })
 
 const SmartQueueHeroStyledCard = memo(function SmartQueueHeroStyledCard({ item }: { item: MatchSession }) {
-  return <MatchSessionCard item={item} variant="smart" actionLabel={item.joined ? STRINGS.home.actions.view_session : STRINGS.home.actions.prioritize_match} />
+  return <FeaturedSessionCard session={item} />
 })
 
 const HeroThemeCard = memo(function HeroThemeCard({
@@ -40,7 +40,7 @@ const HeroThemeCard = memo(function HeroThemeCard({
   item: MatchSession
   actionLabel: string
 }) {
-  return <MatchSessionCard item={item} variant="hero" actionLabel={actionLabel} />
+  return <FeaturedSessionCard session={item} />
 })
 
 const HomeStreakCard = memo(function HomeStreakCard({ current }: { current: number }) {
