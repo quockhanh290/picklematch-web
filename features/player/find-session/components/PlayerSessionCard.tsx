@@ -6,6 +6,7 @@ import { RADIUS, SPACING, BORDER, SHADOW } from '@/constants/screenLayout'
 import { getSessionSkillLabel } from '@/lib/skillAssessment'
 import { format } from 'date-fns'
 import { Users, MapPin, Share2, ChevronRight } from 'lucide-react-native'
+import { useTranslation } from 'react-i18next'
 
 type PlayerSessionCardProps = {
   session: any
@@ -14,6 +15,7 @@ type PlayerSessionCardProps = {
 
 export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) {
   const theme = useAppTheme()
+  const { t } = useTranslation()
   
   const start = session.slot?.start_time ? new Date(session.slot.start_time) : new Date()
   const end = session.slot?.end_time ? new Date(session.slot.end_time) : new Date()
@@ -22,7 +24,7 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
   const maxPlayers = session.max_players || 16
   const rawPrice = session.total_cost ?? session.slot?.price
   const pricePerPerson = (rawPrice !== undefined && rawPrice !== null)
-    ? (rawPrice === 0 ? 'FREE' : `${Math.round(rawPrice / 1000)}K`)
+    ? (rawPrice === 0 ? t('player_session_card.free') : `${Math.round(rawPrice / 1000)}K`)
     : '?'
 
   const skillLabel = getSessionSkillLabel(session.elo_min, session.elo_max)
@@ -31,30 +33,21 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
   const now = new Date()
   const isPast = end < now
   
-  // Enhanced Color System (Matching Host Dashboard)
-  const COLORS = {
-    teal: '#0F6E56',
-    darkTeal: '#064E3B',
-    amber: '#D97706',
-    coral: '#D85A30',
-    gray: '#6B7280'
-  }
-
   const fillRatio = confirmedCount / maxPlayers
   const isFull = fillRatio >= 1
   const isUnderfilled = fillRatio < 0.6 && !isPast && !isFull
   
   // Format Type Label
   const formatType = (session.format_type || '').toLowerCase()
-  let formatLabel = 'GIAO LƯU SOCIAL'
-  if (formatType === 'round_robin') formatLabel = 'ROUND ROBIN'
-  else if (formatType === 'open_play') formatLabel = 'OPEN PLAY'
+  let formatLabel = t('player_session_card.label_social')
+  if (formatType === 'round_robin') formatLabel = t('player_session_card.label_round_robin')
+  else if (formatType === 'open_play') formatLabel = t('player_session_card.label_open_play')
 
   let statusLabel = formatLabel
   let statusBg = theme.primary
   
   if (isPast) {
-    statusBg = COLORS.gray
+    statusBg = theme.outline
   } else if (session.is_joined) {
     statusBg = theme.primary
   }
@@ -62,7 +55,7 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
   // Day Badge Logic (Matching Host Dashboard style)
   const isToday = start.toDateString() === now.toDateString()
   const isTomorrow = new Date(now.getTime() + 86400000).toDateString() === start.toDateString()
-  const dateLabel = isToday ? 'Hôm nay' : (isTomorrow ? 'Ngày mai' : format(start, 'dd/MM'))
+  const dateLabel = isToday ? t('player_session_card.today') : (isTomorrow ? t('player_session_card.tomorrow') : format(start, 'dd/MM'))
   let dayBadgeBg = theme.outline
   if (isToday) dayBadgeBg = theme.primary
   else if (isTomorrow) dayBadgeBg = theme.onSurfaceVariant
@@ -91,19 +84,19 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
         alignItems: 'center' 
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: 'white' }} />
-          <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 9.5, letterSpacing: 0.5 }}>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.surface }} />
+          <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.bold, fontSize: 9.5, letterSpacing: 0.5 }}>
             {statusLabel}
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           {session.is_joined && (
             <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
-              <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 8, letterSpacing: 0.2 }}>ĐÃ THAM GIA</Text>
+              <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.bold, fontSize: 8, letterSpacing: 0.2 }}>{t('player_session_card.label_joined')}</Text>
             </View>
           )}
-          <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 9.5, letterSpacing: 0.5 }}>
-            {session.slot?.court?.city?.toUpperCase() || 'TP.HCM'}
+          <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.bold, fontSize: 9.5, letterSpacing: 0.5 }}>
+            {session.slot?.court?.city?.toUpperCase() || t('player_session_card.default_city')}
           </Text>
         </View>
       </View>
@@ -119,7 +112,7 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
               textTransform: 'uppercase', 
               lineHeight: 24 
             }} numberOfLines={1}>
-              {session.slot?.court?.name || 'KÈO PICKLEBALL'}
+              {session.slot?.court?.name || t('player_session_card.default_title')}
             </Text>
             <Text style={{ 
               fontFamily: SCREEN_FONTS.body, 
@@ -128,15 +121,15 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
               marginTop: 2,
               letterSpacing: 0.3
             }}>
-              {session.slot?.court?.address || 'Địa chỉ đang cập nhật'} • {session.slot?.court?.city || 'TP.HCM'}
+              {session.slot?.court?.address || t('player_session_card.default_address')} • {session.slot?.court?.city || t('player_session_card.default_city')}
             </Text>
           </View>
           <View style={{ alignItems: 'flex-end', marginLeft: 12, paddingTop: 2 }}>
             <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }}>
               {pricePerPerson}
             </Text>
-            {pricePerPerson !== 'FREE' && pricePerPerson !== '?' && (
-              <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 9, color: theme.onSurfaceVariant, marginTop: -3 }}>/người</Text>
+            {pricePerPerson !== t('player_session_card.free') && pricePerPerson !== '?' && (
+              <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 9, color: theme.onSurfaceVariant, marginTop: -3 }}>{t('player_session_card.price_suffix')}</Text>
             )}
           </View>
         </View>
@@ -157,7 +150,7 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
                 borderRadius: 4, 
                 marginRight: 8 
               }}>
-                <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.bold, fontSize: 9.5 }}>
+                <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.bold, fontSize: 9.5 }}>
                   {dateLabel.toUpperCase()}
                 </Text>
               </View>
@@ -170,7 +163,7 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
           <View style={{ flexDirection: 'row', gap: 6 }}>
             {/* Male Skill Badge */}
             <View style={{ 
-              backgroundColor: isPast ? theme.outlineVariant : '#E1F5EE', 
+              backgroundColor: isPast ? theme.outlineVariant : theme.successContainer, 
               borderRadius: 6, 
               paddingHorizontal: 8, 
               paddingVertical: 4, 
@@ -178,16 +171,16 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
               alignItems: 'center', 
               gap: 3, 
               borderWidth: 1, 
-              borderColor: isPast ? theme.outlineVariant : '#0F6E5630' 
+              borderColor: isPast ? theme.outlineVariant : theme.successSoft 
             }}>
-              <Text style={{ color: isPast ? theme.outline : '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NAM</Text>
-              <Text style={{ color: isPast ? theme.outline : '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
+              <Text style={{ color: isPast ? theme.outline : theme.success, fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>{t('player_session_card.gender_male')}</Text>
+              <Text style={{ color: isPast ? theme.outline : theme.success, fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
                 {(skillLabel || '').split('/')[0]?.replace('♂', '').replace(/\(Nam\)|\(nam\)|Trình|trình/g, '').trim()}
               </Text>
             </View>
             {/* Female Skill Badge */}
             <View style={{ 
-              backgroundColor: isPast ? theme.outlineVariant : '#FAECE7', 
+              backgroundColor: isPast ? theme.outlineVariant : theme.dangerContainer, 
               borderRadius: 6, 
               paddingHorizontal: 8, 
               paddingVertical: 4, 
@@ -195,10 +188,10 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
               alignItems: 'center', 
               gap: 3, 
               borderWidth: 1, 
-              borderColor: isPast ? theme.outlineVariant : '#993C1D30' 
+              borderColor: isPast ? theme.outlineVariant : theme.dangerSoft 
             }}>
-              <Text style={{ color: isPast ? theme.outline : '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NỮ</Text>
-              <Text style={{ color: isPast ? theme.outline : '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
+              <Text style={{ color: isPast ? theme.outline : theme.danger, fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>{t('player_session_card.gender_female')}</Text>
+              <Text style={{ color: isPast ? theme.outline : theme.danger, fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
                 {((skillLabel || '').split('/')[1] || skillLabel || '').replace('♀', '').replace(/\(Nữ\)|\(nữ\)|Trình|trình/g, '').trim()}
               </Text>
             </View>
@@ -226,7 +219,7 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
               color: theme.onSurfaceVariant,
               marginRight: 2
             }}>
-              {confirmedCount}/{session.is_unlimited ? '∞' : session.max_players}
+              {confirmedCount}/{session.is_unlimited ? t('player_session_card.unlimited') : session.max_players}
             </Text>
           </View>
 
@@ -273,7 +266,7 @@ export function PlayerSessionCard({ session, onPress }: PlayerSessionCardProps) 
             fontSize: 10,
             textTransform: 'uppercase'
           }}>
-            Chi tiết
+            {t('player_session_card.btn_details')}
           </Text>
           <ChevronRight size={12} color={statusBg} />
         </TouchableOpacity>

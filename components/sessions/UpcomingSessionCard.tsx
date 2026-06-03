@@ -1,5 +1,6 @@
 import React from 'react'
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+import { useTranslation } from 'react-i18next'
 import { Users, MapPin } from 'lucide-react-native'
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS, AppFontSet } from '@/constants/typography'
@@ -18,32 +19,27 @@ interface UpcomingSessionCardProps {
 
 export function UpcomingSessionCard({ session, onPress, isHost = false }: UpcomingSessionCardProps) {
   const theme = useAppTheme()
+  const { t } = useTranslation()
 
   // Dynamic Status Logic matching Host Dashboard
   const confirmedCount = session.player_count || 0
   const maxPlayers = session.max_players || 1
   const fillRatio = confirmedCount / maxPlayers
   const isFull = fillRatio >= 1
-  
-  const COLORS = {
-    teal: '#0F6E56',
-    amber: '#D97706',
-    coral: '#D85A30',
-  }
 
   let statusLabel = ''
-  let statusBg = COLORS.teal
+  let statusBg = theme.primary
   
   if (isHost) {
     if (isFull) {
-      statusLabel = STRINGS.session_card.status_full
-      statusBg = COLORS.amber
+      statusLabel = t('session_card.status_full')
+      statusBg = theme.warning
     } else if (fillRatio < 0.6) {
-      statusLabel = STRINGS.session_card.status_need_players
-      statusBg = COLORS.coral
+      statusLabel = t('session_card.status_need_players')
+      statusBg = theme.error
     } else {
-      statusLabel = STRINGS.session_card.status_open
-      statusBg = COLORS.teal
+      statusLabel = t('session_card.status_open')
+      statusBg = theme.primary
     }
   } else {
     // Player View: Show format type
@@ -53,7 +49,7 @@ export function UpcomingSessionCard({ session, onPress, isHost = false }: Upcomi
     const fmtInternal = (ownerDetails.format_type || session.format_type || '').toLowerCase()
     if (fmtInternal === 'round_robin') statusLabel = 'ROUND ROBIN'
     else if (fmtInternal === 'open_play') statusLabel = 'OPEN PLAY'
-    else statusLabel = STRINGS.session_card.format_social
+    else statusLabel = t('session_card.format_social')
   }
 
   const ownerSessions = session.owner_sessions
@@ -63,12 +59,12 @@ export function UpcomingSessionCard({ session, onPress, isHost = false }: Upcomi
   // Helper for skill badges
   const renderSkillBadge = (label: string, type: 'NAM' | 'NỮ') => {
     const isNam = type === 'NAM'
-    const bgColor = isNam ? '#E1F5EE' : '#FAECE7'
-    const textColor = isNam ? '#0F6E56' : '#993C1D'
-    const borderColor = isNam ? '#0F6E5630' : '#993C1D30'
+    const bgColor = isNam ? theme.infoContainer : theme.dangerContainer
+    const textColor = isNam ? theme.info : theme.danger
+    const borderColor = isNam ? theme.info : theme.danger
 
     return (
-      <View style={[styles.skillBadge, { backgroundColor: bgColor, borderColor }]}>
+      <View style={[styles.skillBadge, { backgroundColor: bgColor, borderColor, borderWidth: 1 }]}>
         <Text style={[styles.skillText, { color: textColor }]}>{type}</Text>
         <Text style={[styles.skillText, { color: textColor }]}>
           {label.replace('♂', '').replace('♀', '').replace(/\(Nam\)|\(Nữ\)/g, '').trim()}
@@ -103,17 +99,17 @@ export function UpcomingSessionCard({ session, onPress, isHost = false }: Upcomi
           <Text style={styles.statusLabel}>{statusLabel}</Text>
         </View>
         {session.status === 'playing' && (
-          <Text style={styles.courtBadge}>{STRINGS.session_card.status_playing}</Text>
+          <Text style={styles.courtBadge}>{t('session_card.status_playing')}</Text>
         )}
       </View>
 
       <View style={styles.contentPadding}>
         <Text numberOfLines={1} style={[styles.title, { color: theme.onSurface }]}>
-          {(session.court_name || STRINGS.session_card.default_court_name).toUpperCase()}
+          {(session.court_name || t('session_card.default_court_name')).toUpperCase()}
         </Text>
         <Text numberOfLines={1} style={[styles.location, { color: theme.onSurfaceVariant }]}>
           {isHost 
-            ? (session.title || (fmt === 'round_robin' ? 'Round Robin' : (fmt === 'open_play' ? 'Open Play' : STRINGS.session_card.format_social)))
+            ? (session.title || (fmt === 'round_robin' ? 'Round Robin' : (fmt === 'open_play' ? 'Open Play' : t('session_card.format_social'))))
             : session.court_address}
         </Text>
       </View>
@@ -132,24 +128,24 @@ export function UpcomingSessionCard({ session, onPress, isHost = false }: Upcomi
 
         <View style={styles.gridMain}>
           <View>
-            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{STRINGS.session_card.time_label}</Text>
+            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{t('session_card.time_label')}</Text>
             <Text style={[styles.clockValue, { color: theme.onSurface }]}>
               {formatClock(session.start_time)}
             </Text>
             <Text style={[styles.gridSubValue, { color: theme.onSurfaceVariant }]}>
-              {STRINGS.session_card.time_to.replace('{time}', formatClock(session.end_time))}
+              {t('session_card.time_to', { time: formatClock(session.end_time) })}
             </Text>
           </View>
 
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{STRINGS.session_card.cost_label}</Text>
+            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{t('session_card.cost_label')}</Text>
             <Text style={[styles.priceValue, { color: theme.onSurface }]}>
               {session.total_cost && session.total_cost > 0 
                 ? `${Math.round(session.total_cost / 1000)}K` 
-                : STRINGS.session_card.free}
+                : t('session_card.free')}
             </Text>
             <Text style={[styles.gridSubValue, { color: theme.onSurfaceVariant }]}>
-              {session.total_cost && session.total_cost > 0 ? STRINGS.session_card.per_person : ''}
+              {session.total_cost && session.total_cost > 0 ? t('session_card.per_person') : ''}
             </Text>
           </View>
         </View>

@@ -1,5 +1,6 @@
 import { ChevronRight, Users } from 'lucide-react-native'
 import { Image, Pressable, Text, View } from 'react-native'
+import { useTranslation } from 'react-i18next'
 
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
@@ -33,9 +34,10 @@ function withAlpha(hex: string, alpha: number) {
 
 export function PendingRequestsWidget({ count, avatars, onPress }: Props) {
   const theme = useAppTheme()
+  const { t } = useTranslation()
   const visibleAvatars = avatars.slice(0, 3)
   const remainingCount = Math.max(count - visibleAvatars.length, 0)
-  const insightLabel = count > 0 ? 'Độ khớp trình độ > 85%' : 'Chưa có yêu cầu mới cần xử lý'
+  const insightLabel = count > 0 ? t('pending_requests.high_match') : t('pending_requests.no_request')
 
   return (
     <Pressable
@@ -67,7 +69,7 @@ export function PendingRequestsWidget({ count, avatars, onPress }: Props) {
             <View className="flex-row items-center">
               <Users size={12} color={withAlpha(theme.onPrimary, 0.8)} />
               <Text className="ml-1.5 text-[10px] font-black uppercase" style={{ color: withAlpha(theme.onPrimary, 0.8) }}>
-                YÊU CẦU MỚI
+                {t('pending_requests.new_request')}
               </Text>
             </View>
           </View>
@@ -81,7 +83,7 @@ export function PendingRequestsWidget({ count, avatars, onPress }: Props) {
               textTransform: 'uppercase',
             }}
           >
-            {count} người đang chờ duyệt
+            {t('pending_requests.waiting_count', { count })}
           </Text>
           <Text className="mt-1 text-[12px] font-medium" style={{ color: theme.secondaryContainer }}>
             {insightLabel}

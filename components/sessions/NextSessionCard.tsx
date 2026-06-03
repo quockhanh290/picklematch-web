@@ -1,5 +1,6 @@
 import React from 'react'
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+import { useTranslation } from 'react-i18next'
 import { Users, ChevronRight } from 'lucide-react-native'
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS, AppFontSet } from '@/constants/typography'
@@ -15,17 +16,18 @@ interface NextSessionCardProps {
 
 export function NextSessionCard({ session, onPress, isHost = false }: NextSessionCardProps) {
   const theme = useAppTheme()
+  const { t } = useTranslation()
 
   // Data normalization
   const startTime = session.start_time || session.slot?.start_time
   const endTime = session.end_time || session.slot?.end_time
-  const courtName = session.court_name || session.slot?.court?.name || STRINGS.session_card.default_court_title
-  const address = session.court_address || session.slot?.court?.address || STRINGS.session_card.no_address
+  const courtName = session.court_name || session.slot?.court?.name || t('session_card.default_court_title')
+  const address = session.court_address || session.slot?.court?.address || t('session_card.no_address')
   const ownerSessions = session.owner_sessions
   const ownerDetails = Array.isArray(ownerSessions) ? (ownerSessions[0] || {}) : (ownerSessions || {})
   const formatType = ownerDetails.format_type || session.format_type || 'social'
   const fmt = formatType.toLowerCase()
-  const title = session.title || (fmt === 'round_robin' ? 'Round Robin' : (fmt === 'open_play' ? 'Open Play' : STRINGS.session_card.format_social))
+  const title = session.title || (fmt === 'round_robin' ? 'Round Robin' : (fmt === 'open_play' ? 'Open Play' : t('session_card.format_social')))
   
   const confirmedCount = isHost 
     ? (session.session_players?.filter((p: any) => p.status === 'confirmed' || p.status === 'checked_in').length || 0)
@@ -33,7 +35,7 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
     
   const maxPlayers = session.is_unlimited ? 16 : (session.max_players || 16)
   const costPerPerson = ownerDetails.format_metadata?.cost_per_person ?? ownerDetails.total_cost ?? session.total_cost
-  const priceLabel = costPerPerson > 0 ? `${Math.round(costPerPerson / 1000)}K` : STRINGS.session_card.free
+  const priceLabel = costPerPerson > 0 ? `${Math.round(costPerPerson / 1000)}K` : t('session_card.free')
   const skillLabel = getSessionSkillLabel(session.elo_min, session.elo_max)
 
   // Status Logic
@@ -59,27 +61,27 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
   const isUrgent = isUnderfilled && isWithin24h
 
   let statusLabel = ''
-  let statusBg = COLORS.teal
+  let statusBg = theme.primary
   
   if (isHost) {
     if (isPlaying) {
-      statusLabel = STRINGS.session_card.status_playing_match
-      statusBg = COLORS.darkTeal
+      statusLabel = t('session_card.status_playing_match')
+      statusBg = theme.primary
     } else if (isCancelled) {
-      statusLabel = STRINGS.session_card.status_cancelled
-      statusBg = COLORS.gray
+      statusLabel = t('session_card.status_cancelled')
+      statusBg = theme.outline
     } else if (isDone) {
-      statusLabel = STRINGS.session_card.status_done
-      statusBg = COLORS.gray
+      statusLabel = t('session_card.status_done')
+      statusBg = theme.outline
     } else if (isFull) {
-      statusLabel = STRINGS.session_card.status_full
-      statusBg = COLORS.amber
+      statusLabel = t('session_card.status_full')
+      statusBg = theme.warning
     } else if (isUrgent) {
-      statusLabel = STRINGS.session_card.status_need_players
-      statusBg = COLORS.coral
+      statusLabel = t('session_card.status_need_players')
+      statusBg = theme.error
     } else {
-      statusLabel = STRINGS.session_card.status_open
-      statusBg = COLORS.teal
+      statusLabel = t('session_card.status_open')
+      statusBg = theme.primary
     }
   } else {
     // Player View: Show format type
@@ -89,7 +91,7 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
     const fmt = (ownerDetails.format_type || session.format_type || '').toLowerCase()
     if (fmt === 'round_robin') statusLabel = 'ROUND ROBIN'
     else if (fmt === 'open_play') statusLabel = 'OPEN PLAY'
-    else statusLabel = STRINGS.session_card.format_social
+    else statusLabel = t('session_card.format_social')
   }
 
   const formatClock = (date: Date) => {
@@ -101,18 +103,18 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
     const tomorrow = new Date()
     tomorrow.setDate(today.getDate() + 1)
     
-    if (date.toDateString() === today.toDateString()) return STRINGS.session_card.today
-    if (date.toDateString() === tomorrow.toDateString()) return STRINGS.session_card.tomorrow
+    if (date.toDateString() === today.toDateString()) return t('session_card.today')
+    if (date.toDateString() === tomorrow.toDateString()) return t('session_card.tomorrow')
     
-    const days = STRINGS.session_card.days
+    const days = t('session_card.days', { returnObjects: true }) as string[]
     return days[date.getDay()]
   }
 
   const renderSkillBadge = (label: string, type: 'NAM' | 'NỮ') => {
     const isNam = type === 'NAM'
-    const bgColor = isNam ? '#E1F5EE' : '#FAECE7'
-    const textColor = isNam ? '#0F6E56' : '#993C1D'
-    const borderColor = isNam ? '#0F6E5630' : '#993C1D30'
+    const bgColor = isNam ? theme.infoContainer : theme.dangerContainer
+    const textColor = isNam ? theme.info : theme.danger
+    const borderColor = isNam ? theme.info : theme.danger
 
     const skillValue = isNam 
       ? label.split('/')[0] 
@@ -150,7 +152,7 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
           <Text style={styles.statusLabel}>{statusLabel}</Text>
         </View>
         {subCourts.length > 0 && (
-          <Text style={styles.courtBadge}>{STRINGS.session_card.court_number.replace('{number}', subCourts.join(', '))}</Text>
+          <Text style={styles.courtBadge}>{t('session_card.court_number', { number: subCourts.join(', ') })}</Text>
         )}
       </View>
 
@@ -177,22 +179,22 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
 
         <View style={styles.gridMain}>
           <View>
-            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{STRINGS.session_card.time_label}</Text>
+            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{t('session_card.time_label')}</Text>
             <Text style={[styles.clockValue, { color: theme.onSurface }]}>
               {formatClock(startDate)}
             </Text>
             <Text style={[styles.gridSubValue, { color: theme.onSurfaceVariant }]}>
-              {STRINGS.session_card.time_to.replace('{time}', formatClock(endDate))}
+              {t('session_card.time_to', { time: formatClock(endDate) })}
             </Text>
           </View>
 
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{STRINGS.session_card.cost_label}</Text>
+            <Text style={[styles.gridLabel, { color: theme.onSurfaceVariant }]}>{t('session_card.cost_label')}</Text>
             <Text style={[styles.priceValue, { color: theme.onSurface }]}>
               {priceLabel}
             </Text>
             <Text style={[styles.gridSubValue, { color: theme.onSurfaceVariant }]}>
-              {priceLabel === STRINGS.session_card.free ? '' : STRINGS.session_card.per_person}
+              {priceLabel === t('session_card.free') ? '' : t('session_card.per_person')}
             </Text>
           </View>
         </View>
@@ -223,7 +225,7 @@ export function NextSessionCard({ session, onPress, isHost = false }: NextSessio
             onPress={() => onPress(session.id)}
             style={[styles.detailButton, { backgroundColor: statusBg + '10' }]}
           >
-            <Text style={[styles.detailButtonText, { color: statusBg }]}>{STRINGS.session_card.details_btn}</Text>
+            <Text style={[styles.detailButtonText, { color: statusBg }]}>{t('session_card.details_btn')}</Text>
             <ChevronRight size={14} color={statusBg} />
           </TouchableOpacity>
         </View>

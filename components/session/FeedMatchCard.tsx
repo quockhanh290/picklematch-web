@@ -1,16 +1,9 @@
 import { LinearGradient } from 'expo-linear-gradient'
 import type { LucideIcon } from 'lucide-react-native'
 import {
-  Activity,
-  AlertCircle,
-  CalendarDays,
-  CircleDollarSign,
-  MapPin,
-  ShieldCheck,
-  Target,
-  Users,
-} from 'lucide-react-native'
+import { Activity, AlertCircle, CalendarDays, CircleDollarSign, MapPin, ShieldCheck, Target, Users } from 'lucide-react-native'
 import { Pressable, Text, View } from 'react-native'
+import { useTranslation } from 'react-i18next'
 
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
@@ -61,13 +54,13 @@ function extractCounts(label: string) {
   return { first: Number(match[1]), second: Number(match[2]) }
 }
 
-function compactPriceLabel(label: string, divisor?: number) {
-  if (!label.trim()) return 'Miễn phí'
+function compactPriceLabel(label: string, divisor?: number, freeText: string = 'Miễn phí') {
+  if (!label.trim()) return freeText
   const lower = label.toLowerCase()
-  if (lower.includes('miễn phí') || lower.includes('free')) return 'Miễn phí'
+  if (lower.includes('miễn phí') || lower.includes('free')) return freeText
   if (/[kK]/.test(label)) return label
   const raw = Number(label.replace(/[^\d]/g, ''))
-  if (!raw) return 'Miễn phí'
+  if (!raw) return freeText
   const normalized = divisor && divisor > 0 ? Math.ceil(raw / divisor) : raw
   return `${Math.round(normalized / 1000)}K`
 }
@@ -95,9 +88,12 @@ export function FeedMatchCard({
   onPress,
   disabled = false,
   containerClassName = 'mx-5 mb-4',
-  actionLabel = 'Vào kèo',
+  actionLabel,
 }: Props) {
   const theme = useAppTheme()
+  const { t } = useTranslation()
+  
+  const finalActionLabel = actionLabel || t('feed_card.join_btn')
   const BADGE_STYLE = {
     backgroundColor: theme.surfaceContainerLow,
     borderWidth: BORDER.base,
@@ -206,7 +202,7 @@ export function FeedMatchCard({
               lineHeight: 18,
             }}
           >
-            {isConfirmed ? 'Đã đặt sân' : 'Chưa đặt sân'}
+            {isConfirmed ? t('feed_card.booked') : t('feed_card.unbooked')}
           </Text>
         </View>
 
@@ -283,7 +279,7 @@ export function FeedMatchCard({
               lineHeight: 18,
             }}
           >
-            {compactPriceLabel(priceLabel, priceDivisor)}{priceLabel === 'Miễn phí' ? '' : '/ng'}
+            {compactPriceLabel(priceLabel, priceDivisor, t('feed_card.free'))}{priceLabel.toLowerCase().includes('miễn phí') || priceLabel.toLowerCase().includes('free') ? '' : t('feed_card.per_person')}
           </Text>
         </View>
       </View>
@@ -322,7 +318,7 @@ export function FeedMatchCard({
                   fontSize: 13,
                 }}
               >
-                {hostName || 'Ẩn danh'}
+                {hostName || t('feed_card.anonymous')}
               </Text>
             </View>
           </View>
@@ -344,7 +340,7 @@ export function FeedMatchCard({
                 fontSize: 10,
               }}
             >
-              người chơi
+              {t('feed_card.players')}
             </Text>
           </View>
         </View>
@@ -386,7 +382,7 @@ export function FeedMatchCard({
                   fontSize: 12,
                 }}
               >
-                {isFull ? 'Đầy chỗ' : `Còn ${counts ? counts.second - counts.first : '?'} chỗ`}
+                {isFull ? t('feed_card.full') : t('feed_card.slots_left', { count: counts ? counts.second - counts.first : '?' })}
               </Text>
             </View>
           </View>
@@ -404,7 +400,7 @@ export function FeedMatchCard({
                 letterSpacing: 1.3,
               }}
             >
-              {actionLabel}
+              {finalActionLabel}
             </Text>
           </View>
         </View>

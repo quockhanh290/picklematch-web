@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   ActivityIndicator,
   FlatList,
@@ -40,6 +41,7 @@ import { WebContainer } from '@/components/design/WebContainer'
 export function FindSessionScreen() {
   const isWeb = Platform.OS === 'web'
   const theme = useAppTheme()
+  const { t } = useTranslation()
   const {
     loading,
     isFirstLoad,
@@ -71,8 +73,8 @@ export function FindSessionScreen() {
   const listHeader = useMemo(() => (
     <View>
       <MainHeader
-        title={STRINGS.find_session.title}
-        subtitle={loading && isFirstLoad ? STRINGS.common.loading : STRINGS.find_session.status.matches_found.replace('{count}', filteredSessions.length.toString())}
+        title={t('find_session_screen.header_title')}
+        subtitle={loading && isFirstLoad ? t('find_session_screen.loading_matches') : t('find_session_screen.matches_found', { count: filteredSessions.length })}
         rightElement={
           <Pressable
             onPress={() => void handleNearbyFilter()}
@@ -222,14 +224,14 @@ export function FindSessionScreen() {
         borderColor: theme.outlineVariant,
       }}>
         <Text style={{ fontSize: 11, fontFamily: SCREEN_FONTS.label, color: theme.outline, marginBottom: 24, textTransform: 'uppercase', letterSpacing: 2 }}>
-          LỌC KÈO ĐẤU
+          {t('find_session_screen.filter_header')}
         </Text>
         
 
         {/* Skill Level Filter */}
         <View style={{ marginBottom: 32 }}>
           <Text style={{ fontSize: 13, fontFamily: SCREEN_FONTS.headline, color: theme.onSurface, marginBottom: 14, letterSpacing: 0.5 }}>
-            TRÌNH ĐỘ (SLOT)
+            {t('find_session_screen.skill_filter')}
           </Text>
           <View style={{ gap: 10 }}>
             {SKILL_LEVELS.map(level => (
@@ -244,12 +246,12 @@ export function FindSessionScreen() {
               >
                 <View style={{ 
                   width: 6, height: 6, borderRadius: 3, 
-                  backgroundColor: advancedFilter.skillLevel === level.id ? 'white' : theme.primary,
+                  backgroundColor: advancedFilter.skillLevel === level.id ? theme.onPrimary : theme.primary,
                   marginRight: 12
                 }} />
                 <Text style={{ 
                   fontSize: 13, fontFamily: SCREEN_FONTS.label, 
-                  color: advancedFilter.skillLevel === level.id ? 'white' : theme.onSurface 
+                  color: advancedFilter.skillLevel === level.id ? theme.onPrimary : theme.onSurface 
                 }}>
                   {level.label}
                 </Text>
@@ -267,7 +269,7 @@ export function FindSessionScreen() {
           }}
         >
           <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.cta, fontSize: 12, letterSpacing: 1 }}>
-            LÀM MỚI BỘ LỌC
+            {t('find_session_screen.reset_filter')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -284,15 +286,15 @@ export function FindSessionScreen() {
     }}>
       <View style={{ backgroundColor: 'transparent', paddingTop: isMobile ? 0 : 24 }}>
         <MainHeader
-          title="TÌM KÈO GIAO LƯU"
-          brandedSubtitle="PICKLEMATCH"
+          title={t('find_session_screen.header_title')}
+          brandedSubtitle={t('find_session_screen.header_subtitle')}
           style={{ backgroundColor: 'transparent' }}
           rightElement={
             <TouchableOpacity
               onPress={() => void handleNearbyFilter()}
               style={{
                 height: 52, width: 52, alignItems: 'center', justifyContent: 'center',
-                borderRadius: RADIUS.full, backgroundColor: 'white',
+                borderRadius: RADIUS.full, backgroundColor: theme.surface,
                 borderWidth: 1, borderColor: theme.outlineVariant,
                 marginRight: isMobile ? 0 : SPACING.xl,
                 ...SHADOW.xs
@@ -310,7 +312,7 @@ export function FindSessionScreen() {
               fontSize: 13, 
               color: theme.onSurfaceVariant 
             }}>
-              {loading && isFirstLoad ? STRINGS.common.loading : `Tìm thấy ${filteredSessions.length} kèo đấu phù hợp`}
+              {loading && isFirstLoad ? t('find_session_screen.loading_matches') : t('find_session_screen.matches_found', { count: filteredSessions.length })}
             </Text>
           </View>
 
@@ -326,7 +328,7 @@ export function FindSessionScreen() {
           }}>
             <View style={{ flex: 1 }}>
               <Text style={{ color: theme.primary, fontFamily: SCREEN_FONTS.cta, fontSize: 10, letterSpacing: 2.2, textTransform: 'uppercase' }}>
-                ƯU TIÊN THEO CƠ SỞ
+                {t('find_session_screen.priority_court')}
               </Text>
               <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.headline, fontSize: 16, marginTop: 4 }}>
                 {preferredCourtFilter.name}
@@ -334,7 +336,7 @@ export function FindSessionScreen() {
             </View>
             <TouchableOpacity 
               onPress={clearCourtFilter} 
-              style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: 'white', borderRadius: RADIUS.full, ...SHADOW.xs }}
+              style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surface, borderRadius: RADIUS.full, ...SHADOW.xs }}
             >
               <X size={16} color={theme.primary} strokeWidth={3} />
             </TouchableOpacity>
@@ -393,7 +395,7 @@ export function FindSessionScreen() {
                       color: sortMode === 'match' ? theme.primary : theme.onSurfaceVariant,
                       letterSpacing: 0.5
                     }}>
-                      PHÙ HỢP NHẤT
+                      {t('find_session_screen.sort_relevance')}
                     </Text>
                   </TouchableOpacity>
 
@@ -421,14 +423,14 @@ export function FindSessionScreen() {
                       color: sortMode === 'time' ? theme.primary : theme.onSurfaceVariant,
                       letterSpacing: 0.5
                     }}>
-                      MỚI NHẤT
+                      {t('find_session_screen.sort_latest')}
                     </Text>
                   </TouchableOpacity>
                 </View>
               </View>
             </View>
             {loading && isFirstLoad ? (
-              <AppLoading label="Đang tìm kèo đấu phù hợp..." style={{ marginTop: 60 }} />
+              <AppLoading label={t('find_session_screen.loading_matches')} style={{ marginTop: 60 }} />
             ) : (
               <FlatList
                 data={filteredSessions}
@@ -454,23 +456,23 @@ export function FindSessionScreen() {
                 !loading && (
                   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 100, paddingHorizontal: 40 }}>
                     <View style={{ 
-                      width: 120, height: 120, borderRadius: 60, backgroundColor: 'white', 
+                      width: 120, height: 120, borderRadius: 60, backgroundColor: theme.surface, 
                       alignItems: 'center', justifyContent: 'center', marginBottom: 28,
                       borderWidth: 1, borderColor: theme.outlineVariant, ...SHADOW.sm
                     }}>
                       <Activity size={56} color={theme.outline} strokeWidth={1} />
                     </View>
                     <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 24, color: theme.onSurface, textAlign: 'center' }}>
-                      Rất tiếc, không thấy kèo nào!
+                      {t('find_session_screen.empty_title')}
                     </Text>
                     <Text style={{ marginTop: 14, fontFamily: SCREEN_FONTS.body, fontSize: 16, color: theme.onSurfaceVariant, textAlign: 'center', lineHeight: 24, maxWidth: 320 }}>
-                      Hãy thử mở rộng phạm vi tìm kiếm hoặc quay lại sau ít phút nhé.
+                      {t('find_session_screen.empty_desc')}
                     </Text>
                     <TouchableOpacity 
                       onPress={() => setAdvancedFilter(ADVANCED_FILTER_INITIAL)}
                       style={{ marginTop: 36, paddingHorizontal: 40, paddingVertical: 16, backgroundColor: theme.primary, borderRadius: RADIUS.full, ...SHADOW.sm }}
                     >
-                      <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.cta, fontSize: 14, letterSpacing: 1 }}>LÀM MỚI BỘ LỌC</Text>
+                      <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.cta, fontSize: 14, letterSpacing: 1 }}>{t('find_session_screen.reset_filter')}</Text>
                     </TouchableOpacity>
                   </View>
                 )
@@ -526,7 +528,7 @@ const SearchBar = React.memo(({
       <View
         style={{
           flex: 1, flexDirection: 'row', alignItems: 'center', height: isMobile ? 48 : 52, paddingHorizontal: isMobile ? 12 : 20,
-          backgroundColor: 'white',
+          backgroundColor: theme.surface,
           borderRadius: RADIUS.lg,
           borderWidth: 1,
           borderColor: theme.outlineVariant,
@@ -558,7 +560,7 @@ const SearchBar = React.memo(({
         onPress={onFilterPress}
         style={{
           width: isMobile ? 48 : 52, height: isMobile ? 48 : 52, alignItems: 'center', justifyContent: 'center',
-          backgroundColor: activeAdvancedFiltersCount > 0 ? theme.primary : 'white',
+          backgroundColor: activeAdvancedFiltersCount > 0 ? theme.primary : theme.surface,
           borderRadius: RADIUS.lg,
           borderWidth: 1,
           borderColor: activeAdvancedFiltersCount > 0 ? theme.primary : theme.outlineVariant,
@@ -567,7 +569,7 @@ const SearchBar = React.memo(({
       >
         <SlidersHorizontal
           size={isMobile ? 18 : 20}
-          color={activeAdvancedFiltersCount > 0 ? 'white' : theme.onSurfaceVariant}
+          color={activeAdvancedFiltersCount > 0 ? theme.onPrimary : theme.onSurfaceVariant}
           strokeWidth={2}
         />
         {activeAdvancedFiltersCount > 0 && (
@@ -583,10 +585,10 @@ const SearchBar = React.memo(({
               alignItems: 'center',
               justifyContent: 'center',
               borderWidth: 2,
-              borderColor: 'white',
+              borderColor: theme.surface,
             }}
           >
-            <Text style={{ color: '#FFFFFF', fontSize: isMobile ? 8 : 10, fontFamily: SCREEN_FONTS.bold, top: -0.5 }}>
+            <Text style={{ color: theme.onPrimary, fontSize: isMobile ? 8 : 10, fontFamily: SCREEN_FONTS.bold, top: -0.5 }}>
               {activeAdvancedFiltersCount}
             </Text>
           </View>

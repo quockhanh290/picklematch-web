@@ -21,8 +21,9 @@ import {
   Zap,
 } from 'lucide-react-native'
 import { LinearGradient } from 'expo-linear-gradient'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {  LayoutAnimation, Platform, ScrollView, Text, TouchableOpacity, UIManager, View } from 'react-native'
+import { useTranslation } from 'react-i18next'
 import {  useSafeAreaInsets } from 'react-native-safe-area-context'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, SPACING } from '@/constants/screenLayout'
@@ -81,24 +82,28 @@ function withAlpha(hex: string, alpha: number) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
 }
 
-const SKILL_OPTIONS: SkillOption[] = [
-  { value: 'weaker', label: 'Cần cố gắng', subtitle: 'Dưới trình', icon: ArrowDown },
-  { value: 'matched', label: 'Đúng trình', subtitle: 'Như kỳ vọng', icon: Check },
-  { value: 'outclass', label: 'Out trình', subtitle: 'Trên hẳn', icon: Trophy },
-]
+const SKILL_OPTIONS_KEYS = ['weaker', 'matched', 'outclass'] as const
+const POSITIVE_TAGS_KEYS = ['fair_play', 'on_time', 'friendly', 'skilled'] as const
+const WARNING_TAGS_KEYS = ['toxic', 'late', 'dishonest'] as const
 
-const POSITIVE_TAGS: TagOption[] = [
-  { value: 'fair_play', label: 'Chơi đẹp', icon: Heart, tone: 'positive' },
-  { value: 'on_time', label: 'Đúng giờ', icon: Clock, tone: 'positive' },
-  { value: 'friendly', label: 'Thân thiện', icon: MessageCircle, tone: 'positive' },
-  { value: 'skilled', label: 'Kỹ thuật tốt', icon: Zap, tone: 'positive' },
-]
+const SKILL_ICONS: Record<string, LucideIcon> = {
+  weaker: ArrowDown,
+  matched: Check,
+  outclass: Trophy,
+}
 
-const WARNING_TAGS: TagOption[] = [
-  { value: 'toxic', label: 'Xấu tính', icon: AlertOctagon, tone: 'warning' },
-  { value: 'late', label: 'Đến trễ', icon: Hourglass, tone: 'warning' },
-  { value: 'dishonest', label: 'Gian lận', icon: ShieldAlert, tone: 'warning' },
-]
+const POSITIVE_ICONS: Record<string, LucideIcon> = {
+  fair_play: Heart,
+  on_time: Clock,
+  friendly: MessageCircle,
+  skilled: Zap,
+}
+
+const WARNING_ICONS: Record<string, LucideIcon> = {
+  toxic: AlertOctagon,
+  late: Hourglass,
+  dishonest: ShieldAlert,
+}
 
 function createDefaultEntry(): RatingEntry {
   return { tags: [], no_show: false, skill_validation: 'matched' }
@@ -297,6 +302,7 @@ function TagChip({
 
 export default function RateSessionScreen() {
   const theme = useAppTheme()
+  const { t } = useTranslation()
   const { id } = useLocalSearchParams<{ id: string }>()
   const insets = useSafeAreaInsets()
   const [loading, setLoading] = useState(true)
@@ -311,6 +317,27 @@ export default function RateSessionScreen() {
 
   const currentPlayer = players[currentIndex] ?? null
   const currentEntry = currentPlayer ? (ratings[currentPlayer.player_id] ?? createDefaultEntry()) : createDefaultEntry()
+
+  const SKILL_OPTIONS = useMemo<SkillOption[]>(() => SKILL_OPTIONS_KEYS.map(key => ({
+    value: key,
+    label: t(`rate_session_screen.skill_options.${key}`),
+    subtitle: t(`rate_session_screen.skill_options.${key}_sub`),
+    icon: SKILL_ICONS[key]
+  })), [t])
+
+  const POSITIVE_TAGS = useMemo<TagOption[]>(() => POSITIVE_TAGS_KEYS.map(key => ({
+    value: key,
+    label: t(`rate_session_screen.positive_tags.${key}`),
+    icon: POSITIVE_ICONS[key],
+    tone: 'positive'
+  })), [t])
+
+  const WARNING_TAGS = useMemo<TagOption[]>(() => WARNING_TAGS_KEYS.map(key => ({
+    value: key,
+    label: t(`rate_session_screen.warning_tags.${key}`),
+    icon: WARNING_ICONS[key],
+    tone: 'warning'
+  })), [t])
 
   const init = useCallback(async () => {
     if (!id) return
@@ -351,9 +378,9 @@ export default function RateSessionScreen() {
     if (sessionError || !session) {
       setLoading(false)
       setDialogConfig({
-        title: 'Không tải được kèo',
-        message: sessionError?.message ?? 'Vui lòng thử lại sau ít phút.',
-        actions: [{ label: 'Đã hiểu' }],
+        title: t('rate_session_screen.err_not_found'),
+        message: sessionError?.message ?? t('rate_session_screen.err_not_found_desc'),
+        actions: [{ label: t('rate_session_screen.btn_got_it') }],
       })
       return
     }
@@ -363,9 +390,9 @@ export default function RateSessionScreen() {
     if (!isSessionEnded) {
       setLoading(false)
       setDialogConfig({
-        title: 'Kèo chưa kết thúc',
-        message: 'Chỉ có thể đánh giá sau khi buổi chơi đã hoàn tất.',
-        actions: [{ label: 'Quay lại', onPress: () => router.back() }],
+        title: t('rate_session_screen.err_not_ended'),
+        message: t('rate_session_screen.err_not_ended_desc'),
+        actions: [{ label: t('rate_session_screen.btn_go_back'), onPress: () => router.back() }],
       })
       return
     }
@@ -373,9 +400,9 @@ export default function RateSessionScreen() {
     if (session.results_status !== 'finalized') {
       setLoading(false)
       setDialogConfig({
-        title: 'Kết quả trận chưa được chốt',
-        message: 'Bạn chỉ có thể đánh giá sau khi kết quả trận đã được xác nhận xong.',
-        actions: [{ label: 'Quay lại', onPress: () => router.back() }],
+        title: t('rate_session_screen.err_not_finalized'),
+        message: t('rate_session_screen.err_not_finalized_desc'),
+        actions: [{ label: t('rate_session_screen.btn_go_back'), onPress: () => router.back() }],
       })
       return
     }
@@ -388,7 +415,7 @@ export default function RateSessionScreen() {
       .filter((item) => !ratedIds.has(item.player_id))
       .map((item) => ({
         player_id: item.player_id,
-        name: item.player?.name?.trim() || 'Người chơi',
+        name: item.player?.name?.trim() || t('rate_session_screen.default_player'),
         is_host: item.player_id === typedSession.host_id,
         self_assessed_level: item.player?.self_assessed_level ?? null,
         skill_label: item.player?.skill_label ?? null,
@@ -467,9 +494,9 @@ export default function RateSessionScreen() {
     if (ratingError) {
       setSaving(false)
       setDialogConfig({
-        title: 'Không gửi được đánh giá',
+        title: t('rate_session_screen.err_submit'),
         message: ratingError.message,
-        actions: [{ label: 'Đã hiểu' }],
+        actions: [{ label: t('rate_session_screen.btn_got_it') }],
       })
       return
     }
@@ -478,9 +505,9 @@ export default function RateSessionScreen() {
     if (processError) {
       setSaving(false)
       setDialogConfig({
-        title: 'Đánh giá đã lưu nhưng chưa xử lý xong',
+        title: t('rate_session_screen.err_process'),
         message: processError.message,
-        actions: [{ label: 'Đã hiểu' }],
+        actions: [{ label: t('rate_session_screen.btn_got_it') }],
       })
       return
     }
@@ -496,9 +523,9 @@ export default function RateSessionScreen() {
 
     setSaving(false)
     setDialogConfig({
-      title: 'Đã gửi đánh giá',
-      message: 'Đánh giá của bạn đang ở chế độ ẩn danh và sẽ chỉ hiển thị sau 24 giờ hoặc khi cả hai bên hoàn thành.',
-      actions: [{ label: 'Về trang chủ', onPress: () => router.replace('/player-hub/my-sessions' as any) }],
+      title: t('rate_session_screen.success_title'),
+      message: t('rate_session_screen.success_desc'),
+      actions: [{ label: t('rate_session_screen.btn_home'), onPress: () => router.replace('/player-hub/my-sessions' as any) }],
     })
   }
 
@@ -530,19 +557,19 @@ export default function RateSessionScreen() {
                 shadowOffset: { width: 0, height: 8 }
               }}
             >
-              <CheckCircle2 size={40} color="#FFFFFF" strokeWidth={2} />
+              <CheckCircle2 size={40} color={theme.onPrimary} strokeWidth={2} />
             </View>
           </View>
           <Text style={{ fontSize: 24, fontFamily: SCREEN_FONTS.headline, color: theme.onSurface, textAlign: 'center' }}>
-            {alreadyRated ? 'Đã hoàn thành đánh giá' : 'Tuyệt vời!'}
+            {alreadyRated ? t('rate_session_screen.completed_title') : t('rate_session_screen.great_title')}
           </Text>
           <Text style={{ fontSize: 15, fontFamily: SCREEN_FONTS.body, color: theme.onSurfaceVariant, textAlign: 'center', marginTop: 12, lineHeight: 22 }}>
             {alreadyRated 
-              ? 'Bạn đã gửi đánh giá cho kèo này rồi. Cảm ơn bạn đã góp phần xây dựng cộng đồng!'
-              : 'Bạn đã hoàn tất đánh giá cho tất cả người chơi trong kèo này.'}
+              ? t('rate_session_screen.already_rated_desc')
+              : t('rate_session_screen.completed_desc')}
           </Text>
           <View style={{ marginTop: 40 }}>
-            <AppButton label="Về trang chủ" onPress={() => router.replace('/player-hub/my-sessions' as any)} variant="primary" />
+            <AppButton label={t('rate_session_screen.btn_home')} onPress={() => router.replace('/player-hub/my-sessions' as any)} variant="primary" />
           </View>
         </View>
         <AppDialog visible={Boolean(dialogConfig)} config={dialogConfig} onClose={() => setDialogConfig(null)} />
@@ -559,7 +586,7 @@ export default function RateSessionScreen() {
       
       <SecondaryNavbar
         onBackPress={() => router.back()}
-        title="ĐÁNH GIÁ TRẬN ĐẤU"
+        title={t('rate_session_screen.title_review')}
       />
 
       <ScrollView
@@ -607,7 +634,7 @@ export default function RateSessionScreen() {
                   borderColor: theme.surface
                 }}
               >
-                <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.headline, color: theme.surface }}>HOST</Text>
+                <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.headline, color: theme.surface }}>{t('rate_session_screen.host_badge')}</Text>
               </View>
             )}
           </View>
@@ -627,7 +654,7 @@ export default function RateSessionScreen() {
         <View style={{ paddingHorizontal: 24, gap: 32 }}>
           {/* Skill Validation */}
           <View>
-            <SectionLabel title="Trình độ thực tế" subtitle="Bạn thấy họ chơi thế nào?" icon={Trophy} theme={theme} />
+            <SectionLabel title={t('rate_session_screen.skill_title')} subtitle={t('rate_session_screen.skill_subtitle')} icon={Trophy} theme={theme} />
             <View style={{ flexDirection: 'row', gap: 12 }}>
               {SKILL_OPTIONS.map((option) => (
                 <SkillChip
@@ -644,14 +671,14 @@ export default function RateSessionScreen() {
 
           {/* Tags Section */}
           <View>
-            <SectionLabel title="Đánh giá chi tiết" subtitle="Chọn những điều bạn muốn nói" icon={Star} theme={theme} />
+            <SectionLabel title={t('rate_session_screen.tag_title')} subtitle={t('rate_session_screen.tag_subtitle')} icon={Star} theme={theme} />
             
             <View style={{ gap: 24 }}>
               {/* Compliments */}
               <View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                   <Heart size={14} color={theme.primary} strokeWidth={2.5} />
-                  <Text style={{ fontSize: 13, fontFamily: SCREEN_FONTS.headline, color: theme.outline, letterSpacing: 1 }}>LỜI KHEN</Text>
+                  <Text style={{ fontSize: 13, fontFamily: SCREEN_FONTS.headline, color: theme.outline, letterSpacing: 1 }}>{t('rate_session_screen.compliments')}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                   {POSITIVE_TAGS.map((tag) => (
@@ -671,7 +698,7 @@ export default function RateSessionScreen() {
               <View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                   <ShieldAlert size={14} color={theme.error} strokeWidth={2.5} />
-                  <Text style={{ fontSize: 13, fontFamily: SCREEN_FONTS.headline, color: theme.outline, letterSpacing: 1 }}>CẦN LƯU Ý</Text>
+                  <Text style={{ fontSize: 13, fontFamily: SCREEN_FONTS.headline, color: theme.outline, letterSpacing: 1 }}>{t('rate_session_screen.warnings')}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                   {WARNING_TAGS.map((tag) => (
@@ -724,11 +751,10 @@ export default function RateSessionScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 18, fontFamily: SCREEN_FONTS.headline, color: currentEntry.no_show ? theme.error : theme.onSurface, textTransform: 'uppercase' }}>
-                {/* ... */}
-                Người chơi không đến?
+                {t('rate_session_screen.no_show_title')}
               </Text>
               <Text style={{ fontSize: 12, fontFamily: SCREEN_FONTS.body, color: theme.onSurfaceVariant, marginTop: 2 }}>
-                Báo cáo vắng mặt để hệ thống xử lý
+                {t('rate_session_screen.no_show_desc')}
               </Text>
             </View>
             <View 
@@ -759,7 +785,7 @@ export default function RateSessionScreen() {
           >
             <Info size={16} color={theme.primary} strokeWidth={2.5} style={{ marginTop: 2 }} />
             <Text style={{ flex: 1, fontSize: 12, fontFamily: SCREEN_FONTS.body, color: theme.onSurfaceVariant, lineHeight: 18 }}>
-              Đánh giá là ẩn danh hoàn toàn. Thông tin chỉ được hiển thị khi cả hai bên đã hoàn tất đánh giá hoặc sau 24 giờ.
+              {t('rate_session_screen.info_text')}
             </Text>
           </View>
         </View>
@@ -783,7 +809,7 @@ export default function RateSessionScreen() {
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <View style={{ flex: 1 }}>
             <AppButton
-              label={currentIndex === players.length - 1 ? 'Hoàn tất' : 'Tiếp theo'}
+              label={currentIndex === players.length - 1 ? t('rate_session_screen.btn_finish') : t('rate_session_screen.btn_next')}
               onPress={() => void submit()}
               loading={saving}
               variant="primary"
@@ -798,7 +824,9 @@ export default function RateSessionScreen() {
               backgroundColor: theme.surfaceContainerHigh,
             }}
           >
-            <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: theme.onSurfaceVariant }}>BỎ QUA</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.cta, fontSize: 15, color: theme.onSurface }}>
+              {t('rate_session_screen.btn_skip')}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>

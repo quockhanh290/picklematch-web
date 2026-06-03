@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   View,
   Text,
@@ -26,6 +27,7 @@ interface RegistrationSuccessViewProps {
 
 export function RegistrationSuccessView({ session, onBackHome, status }: RegistrationSuccessViewProps) {
   const theme = useAppTheme()
+  const { t } = useTranslation()
   const isWaiting = status === 'waiting'
   
   // Calculate enrolled count and waitlist position
@@ -42,7 +44,11 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
 
   const handleShare = async () => {
     try {
-      const message = `Mình vừa đăng ký tham gia kèo Pickleball: ${session.title}\n📍 Địa điểm: ${session.courtName}\n🕒 Thời gian: ${session.timeLabel}\nCùng tham gia với mình nhé!`
+      const message = t('registration.share_message', {
+        title: session.title,
+        court: session.courtName,
+        time: session.timeLabel
+      })
       await Share.share({
         message,
         url: `https://picklematch.vn/register/${session.id}`, // Mock URL
@@ -53,7 +59,7 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
   }
 
   const handleAddToCalendar = () => {
-    Alert.alert('Tính năng đang phát triển', 'Chúng tôi sẽ sớm hỗ trợ thêm lịch thi đấu vào ứng dụng của bạn.')
+    Alert.alert(t('registration.add_to_calendar_title'), t('registration.add_to_calendar_message'))
   }
 
   return (
@@ -65,10 +71,10 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
       {isWaiting ? (
         /* WAITLIST CARD */
         <View style={{
-          backgroundColor: 'white',
+          backgroundColor: theme.surface,
           borderRadius: 16,
           borderWidth: 0.5,
-          borderColor: '#E5E3DC',
+          borderColor: theme.borderStrong,
           padding: 20,
           alignItems: 'center',
           gap: 10,
@@ -79,8 +85,8 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
           {/* Icon — amber */}
           <View style={{
             width: 56, height: 56, borderRadius: 28,
-            backgroundColor: '#FAEEDA',
-            borderWidth: 4, borderColor: '#F0D5A8',
+            backgroundColor: theme.warningContainer,
+            borderWidth: 4, borderColor: theme.warningSoft,
             alignItems: 'center', justifyContent: 'center',
           }}>
             <Text style={{ fontSize: 24 }}>🕐</Text>
@@ -89,24 +95,24 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
           {/* Title — amber */}
           <Text style={{
             fontFamily: SCREEN_FONTS.headlineItalic,
-            fontSize: 24, color: '#854F0B',
+            fontSize: 24, color: theme.warning,
             lineHeight: 24, letterSpacing: -0.3,
             textAlign: 'center',
-          }}>Bạn đang ở danh sách chờ</Text>
+          }}>{t('registration.waitlist_title')}</Text>
 
           {/* Description */}
           <Text style={{
             fontFamily: SCREEN_FONTS.body,
-            fontSize: 13, color: '#7A8884',
+            fontSize: 13, color: theme.textMuted,
             lineHeight: 20, textAlign: 'center',
             maxWidth: 280,
           }}>
-            Hiện kèo đã đủ người. Bạn sẽ được tự động đón lên nếu có thành viên khác hủy tham gia.
+            {t('registration.waitlist_desc')}
           </Text>
 
           {/* Waitlist position badge */}
           <View style={{
-            backgroundColor: '#FAEEDA',
+            backgroundColor: theme.warningContainer,
             borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10,
             width: '100%',
             flexDirection: 'row', alignItems: 'center',
@@ -115,26 +121,26 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <View style={{
                 width: 6, height: 6, borderRadius: 3,
-                backgroundColor: '#EF9F27', flexShrink: 0,
+                backgroundColor: theme.warning, flexShrink: 0,
               }} />
               <Text style={{
                 fontFamily: SCREEN_FONTS.label,
-                fontSize: 12, fontWeight: '600', color: '#854F0B',
-              }}>Vị trí của bạn trong hàng chờ</Text>
+                fontSize: 12, fontWeight: '600', color: theme.warning,
+              }}>{t('registration.waitlist_position')}</Text>
             </View>
             <Text style={{
               fontFamily: SCREEN_FONTS.headlineBlack,
-              fontSize: 18, color: '#854F0B',
+              fontSize: 18, color: theme.warning,
             }}>#{waitlistPosition}</Text>
           </View>
         </View>
       ) : (
         /* SUCCESS CARD */
         <View style={{
-          backgroundColor: 'white',
+          backgroundColor: theme.surface,
           borderRadius: 16,
           borderWidth: 0.5,
-          borderColor: '#C5DDD3',
+          borderColor: theme.successSoft,
           padding: 20,
           alignItems: 'center',
           gap: 10,
@@ -145,47 +151,47 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
           {/* Icon */}
           <View style={{
             width: 56, height: 56, borderRadius: 28,
-            backgroundColor: '#0F6E56',
-            borderWidth: 4, borderColor: '#C5DDD3',
+            backgroundColor: theme.success,
+            borderWidth: 4, borderColor: theme.successSoft,
             alignItems: 'center', justifyContent: 'center',
           }}>
-            <Text style={{ fontSize: 24, color: 'white' }}>✓</Text>
+            <Text style={{ fontSize: 24, color: theme.primaryContrast }}>✓</Text>
           </View>
 
           {/* Title */}
           <Text style={{
             fontFamily: SCREEN_FONTS.headlineItalic,
-            fontSize: 26, color: '#0F6E56',
+            fontSize: 26, color: theme.success,
             lineHeight: 26, letterSpacing: -0.3,
             textAlign: 'center',
-          }}>Đăng ký thành công!</Text>
+          }}>{t('registration.success_title')}</Text>
 
           {/* Description */}
           <Text style={{
             fontFamily: SCREEN_FONTS.body,
-            fontSize: 13, color: '#7A8884',
+            fontSize: 13, color: theme.textMuted,
             lineHeight: 20, textAlign: 'center',
             maxWidth: 280,
           }}>
-            Bạn đã có tên trong danh sách tham gia chính thức. Hẹn gặp bạn tại sân!
+            {t('registration.success_desc')}
           </Text>
 
           {/* Confirm badge */}
           <View style={{
-            backgroundColor: '#E1F5EE',
+            backgroundColor: theme.successContainer,
             borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10,
             width: '100%',
             flexDirection: 'row', alignItems: 'center', gap: 8,
           }}>
             <View style={{
               width: 6, height: 6, borderRadius: 3,
-              backgroundColor: '#0F6E56', flexShrink: 0,
+              backgroundColor: theme.success, flexShrink: 0,
             }} />
             <Text style={{
               fontFamily: SCREEN_FONTS.label,
-              fontSize: 12, fontWeight: '600', color: '#0F6E56',
+              fontSize: 12, fontWeight: '600', color: theme.success,
             }}>
-              Bạn là người chơi thứ {enrolledCount} trong kèo này
+              {t('registration.success_count', { count: enrolledCount })}
             </Text>
           </View>
         </View>
@@ -200,7 +206,7 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
           isHostDetail 
           isPreview={false} 
           fullCourtName={true}
-          actionLabel={'Vào kèo'}
+          actionLabel={t('registration.action_enter')}
         />
       </View>
 
@@ -213,8 +219,8 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
         {/* Add to calendar — ghost gray */}
         <TouchableOpacity style={{
           flex: 1,
-          backgroundColor: 'white',
-          borderWidth: 1.5, borderColor: '#E5E3DC',
+          backgroundColor: theme.surface,
+          borderWidth: 1.5, borderColor: theme.borderStrong,
           borderRadius: 999, padding: 12,
           flexDirection: 'row',
           alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -222,35 +228,35 @@ export function RegistrationSuccessView({ session, onBackHome, status }: Registr
           <Text style={{ fontSize: 14 }}>📅</Text>
           <Text style={{
             fontFamily: SCREEN_FONTS.label,
-            fontSize: 13, fontWeight: '600', color: '#1A2E2A',
-          }}>Thêm vào lịch</Text>
+            fontSize: 13, fontWeight: '600', color: theme.text,
+          }}>{t('registration.action_calendar')}</Text>
         </TouchableOpacity>
 
         {/* Share — teal primary */}
         <TouchableOpacity style={{
           flex: 1,
-          backgroundColor: '#0F6E56',
+          backgroundColor: theme.primary,
           borderRadius: 999, padding: 12,
           flexDirection: 'row',
           alignItems: 'center', justifyContent: 'center', gap: 6,
         }} onPress={handleShare}>
-          <Text style={{ fontSize: 14, color: 'white' }}>⇪</Text>
+          <Text style={{ fontSize: 14, color: theme.primaryContrast }}>⇪</Text>
           <Text style={{
             fontFamily: SCREEN_FONTS.bold,
-            fontSize: 13, fontWeight: '700', color: 'white',
-          }}>Chia sẻ</Text>
+            fontSize: 13, fontWeight: '700', color: theme.primaryContrast,
+          }}>{t('registration.action_share')}</Text>
         </TouchableOpacity>
       </View>
 
       {/* 4. CLOSE HINT */}
       <Text style={{
         fontFamily: SCREEN_FONTS.body,
-        fontSize: 11, color: '#B4B2A9',
+        fontSize: 11, color: theme.textSoft,
         textAlign: 'center',
         marginHorizontal: 16,
         marginBottom: 8,
       }}>
-        Bạn có thể đóng cửa sổ này
+        {t('registration.close_hint')}
       </Text>
 
       <BrandedFooter />

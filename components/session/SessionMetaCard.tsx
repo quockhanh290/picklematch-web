@@ -1,4 +1,5 @@
 import { useAppTheme } from '@/lib/theme-context'
+import { useTranslation } from 'react-i18next'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { getSkillLevelUi } from '@/lib/skillLevelUi'
 import { Text, View, TouchableOpacity } from 'react-native'
@@ -51,6 +52,7 @@ export function SessionMetaCard({
   court,
 }: Props & { isInvalidPlayerCount?: boolean }) {
   const theme = useAppTheme()
+  const { t } = useTranslation()
   const { onOpenCourt } = useSessionNav()
   const levelUi = getSkillLevelUi(skillLevelId)
   const _LevelIcon = levelUi.icon
@@ -71,45 +73,45 @@ export function SessionMetaCard({
   const isDuringMatch = sessionStatus === 'in_progress'
   const isFinalized = resultsStatus === 'finalized'
 
-  let bookingStatusLabel = isConfirmed ? 'Đã đặt sân' : 'Chưa đặt sân'
+  let bookingStatusLabel = isConfirmed ? t('session_meta.booked') : t('session_meta.unbooked')
   let statusColor = isConfirmed ? theme.primary : theme.warningStrong
 
   if (isInvalidPlayerCount && sessionStatus !== 'cancelled') {
-    bookingStatusLabel = 'Hủy - Thiếu người'
+    bookingStatusLabel = t('session_meta.cancelled_no_players')
     statusColor = theme.error
   } else if (sessionStatus === 'cancelled') {
-    bookingStatusLabel = 'Đã hủy'
+    bookingStatusLabel = t('session_meta.cancelled')
     statusColor = theme.error
   } else if (isFinished || isPendingResult || isDuringMatch || isFinalized) {
     if ((isFinished || isPendingResult || isFinalized) && !isRankedMatch) {
-      bookingStatusLabel = 'Đã kết thúc'
+      bookingStatusLabel = t('session_meta.finished')
       statusColor = theme.onSurfaceVariant
     } else if (isFinalized) {
       if (userResult === 'win') {
-        bookingStatusLabel = 'Thắng'
+        bookingStatusLabel = t('session_meta.win')
         statusColor = theme.primary
       } else if (userResult === 'loss') {
-        bookingStatusLabel = 'Thua'
+        bookingStatusLabel = t('session_meta.loss')
         statusColor = theme.error
       } else {
-        bookingStatusLabel = 'Đã kết thúc'
+        bookingStatusLabel = t('session_meta.finished')
         statusColor = theme.onSurfaceVariant
       }
     } else if (resultsStatus === 'not_submitted') {
-      bookingStatusLabel = 'Chờ nhập kết quả'
+      bookingStatusLabel = t('session_meta.pending_input')
       statusColor = theme.warningStrong
     } else if (resultsStatus === 'pending_confirmation' || resultsStatus === 'disputed') {
-      bookingStatusLabel = 'Đang xác nhận'
+      bookingStatusLabel = t('session_meta.confirming')
       statusColor = theme.warningStrong
     } else if (isDuringMatch) {
-      bookingStatusLabel = 'Đang diễn ra'
+      bookingStatusLabel = t('session_meta.in_progress')
       statusColor = theme.primary
     } else if (isFinished || isPendingResult) {
-      bookingStatusLabel = 'Đã kết thúc'
+      bookingStatusLabel = t('session_meta.finished')
       statusColor = theme.onSurfaceVariant
     }
   } else if (isClosedRecruitment) {
-    bookingStatusLabel = 'Đã ngừng nhận người'
+    bookingStatusLabel = t('session_meta.closed_recruitment')
     statusColor = theme.onSurfaceVariant
   }
 
@@ -145,7 +147,7 @@ export function SessionMetaCard({
                 letterSpacing: 0.5,
               }}
             >
-              {'THÔNG TIN KÈO'}
+              {t('session_meta.info_title')}
             </Text>
           </View>
 
@@ -156,7 +158,7 @@ export function SessionMetaCard({
               fontSize: 11,
             }}
           >
-            {maxPlayers === 2 ? 'Đánh đơn' : 'Đánh đôi'}
+            {maxPlayers === 2 ? t('session_meta.singles') : t('session_meta.doubles')}
           </Text>
         </View>
 
@@ -198,7 +200,7 @@ export function SessionMetaCard({
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
           <View>
             <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>
-              {'THỜI GIAN'}
+              {t('session_meta.time')}
             </Text>
             <Text
               style={{
@@ -218,13 +220,13 @@ export function SessionMetaCard({
 
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>
-              {'CHI PHÍ'}
+              {t('session_meta.cost')}
             </Text>
             <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.headline, fontSize: 33, lineHeight: 33 }}>
               {priceLabel}
             </Text>
             <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.body, fontSize: 11, marginTop: 4 }}>
-              {priceLabel === 'Miễn phí' ? ' ' : '/người'}
+              {priceLabel === 'Miễn phí' || priceLabel === t('session_meta.free') ? ' ' : t('session_meta.per_person')}
             </Text>
           </View>
         </View>
@@ -258,7 +260,7 @@ export function SessionMetaCard({
               <MessageSquareText size={14} color={theme.onSurface} strokeWidth={2.5} style={{ marginTop: 2 }} />
               <View style={{ marginLeft: 8, flex: 1 }}>
                 <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  {'LỜI NHẮN'}
+                  {t('session_meta.note')}
                 </Text>
                 <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.body, fontSize: 13, marginTop: 2 }}>
                   {hostNote.trim()}
@@ -281,7 +283,7 @@ export function SessionMetaCard({
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Clock size={12} color={theme.onSurfaceVariant} strokeWidth={2.5} />
                   <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label, fontSize: 11 }}>
-                    {'Giờ mở cửa'}
+                    {t('session_meta.open_hours')}
                   </Text>
                 </View>
               )}

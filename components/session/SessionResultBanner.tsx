@@ -1,5 +1,6 @@
 import React from 'react'
 import { Text, TouchableOpacity, View } from 'react-native'
+import { useTranslation } from 'react-i18next'
 import { CheckCheck, ShieldAlert } from 'lucide-react-native'
 import { useSessionNav } from '@/lib/navigation/SessionNavContext'
 import { useAppTheme } from '@/lib/theme-context'
@@ -22,6 +23,7 @@ export const SessionResultBanner: React.FC<SessionResultBannerProps> = ({
   canRespondToResult,
 }) => {
   const theme = useAppTheme()
+  const { t } = useTranslation()
   const { onViewMatchResult, onConfirmResult } = useSessionNav()
   if (!canRespondToResult && !(isHost && isResultDisputed)) return null
 
@@ -65,10 +67,10 @@ export const SessionResultBanner: React.FC<SessionResultBannerProps> = ({
           }}
         >
           {resultsStatus === 'disputed'
-            ? 'Kết quả đang bị tranh chấp'
+            ? t('session_result.disputed_title')
             : resultsStatus === 'pending_confirmation'
-              ? 'Chủ kèo đã gửi kết quả trận'
-              : 'Chủ kèo chưa gửi kết quả'}
+              ? t('session_result.pending_title')
+              : t('session_result.no_result_title')}
         </Text>
       </View>
 
@@ -83,11 +85,11 @@ export const SessionResultBanner: React.FC<SessionResultBannerProps> = ({
       >
         {resultsStatus === 'disputed'
           ? isHost
-            ? 'Người chơi đã khiếu nại kết quả này. Vui lòng kiểm tra và cập nhật lại thông tin chính xác.'
-            : 'Vào màn xác nhận để xem lại kết quả chủ kèo đã gửi và cập nhật phản hồi của bạn.'
+            ? t('session_result.disputed_desc_host')
+            : t('session_result.disputed_desc_player')
           : resultsStatus === 'pending_confirmation'
-            ? 'Bạn cần xác nhận hoặc tranh chấp kết quả trước khi hệ thống chốt trận.'
-            : 'Nếu chủ kèo chưa gửi kết quả đúng hạn, bạn có thể báo kết quả của mình để hệ thống xử lý tiếp.'}
+            ? t('session_result.pending_desc')
+            : t('session_result.no_result_desc')}
       </Text>
 
       <TouchableOpacity
@@ -113,11 +115,11 @@ export const SessionResultBanner: React.FC<SessionResultBannerProps> = ({
         >
           {resultsStatus === 'disputed'
             ? isHost
-              ? 'Cập nhật lại kết quả'
-              : 'Xác nhận kết quả'
+              ? t('session_result.btn_update_result')
+              : t('session_result.btn_confirm_result')
             : resultsStatus === 'pending_confirmation'
-              ? 'Xác nhận kết quả'
-              : 'Báo kết quả'}
+              ? t('session_result.btn_confirm_result')
+              : t('session_result.btn_report_result')}
         </Text>
       </TouchableOpacity>
     </View>

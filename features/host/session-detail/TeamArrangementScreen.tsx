@@ -12,6 +12,8 @@ import { buildFixedTeamScheduleDraft, type FixedTeamScheduledMatch } from '@/lib
 import { hasCompleteFixedPair, type FixedTeamOptimizationProfile } from '@/lib/scheduler/scoring'
 import { optimizeSocialPlan } from '@/lib/scheduler/socialOptimizer'
 import { optimizeRotationPlan } from '@/lib/scheduler/rotationOptimizer'
+import { useAppTheme } from '@/lib/theme-context'
+import { useTranslation } from 'react-i18next'
 import { ScheduleCoverageReport } from './ScheduleCoverageReport'
 
 type Props = {
@@ -33,6 +35,8 @@ type Props = {
 }
 
 export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount = 1, sessionId, onUpdated, onGoToMatches, onApplySchedule, isAfterEnd }: Props) {
+  const theme = useAppTheme()
+  const { t } = useTranslation()
   const maxTeamCount = Math.max(1, Math.floor(players.length / 2))
   const defaultTeamCount = Math.max(1, Math.min(maxTeamCount, Math.ceil(players.length / 2)))
   const [arrangedPlayers, setArrangedPlayers] = useState<ArrangementPlayer[]>(players)
@@ -269,11 +273,11 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
   const getTeamPlayers = (t: number) => displayPlayers.filter(p => p.team === t)
   
   const AVATAR_COLORS = [
-    { bg: '#EDE4FE', text: '#5B2D9E' },
-    { bg: '#E1F5EE', text: '#0F6E56' },
-    { bg: '#FAEEDA', text: '#854F0B' },
-    { bg: '#FAECE7', text: '#993C1D' },
-    { bg: '#F1EFE8', text: '#7A8884' },
+    { bg: theme.primaryContainer, text: theme.onPrimaryContainer },
+    { bg: theme.successContainer, text: theme.success },
+    { bg: theme.warningContainer, text: theme.warning },
+    { bg: theme.dangerContainer, text: theme.danger },
+    { bg: theme.surfaceContainerHighest, text: theme.onSurface },
   ]
   const getAvatarColor = (name: string) => {
     const safeName = name || ''
@@ -292,37 +296,37 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
   const maxSkill = 12.0
 
   return (
-    <View style={{ flex: 1, backgroundColor: 'white' }}>
+    <View style={{ flex: 1, backgroundColor: theme.surface }}>
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
         <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
           {hasOngoingMatches && (
             <View style={{ 
-              backgroundColor: '#FAECE7', 
+              backgroundColor: theme.dangerContainer, 
               padding: 12, 
               borderRadius: 12, 
               borderWidth: 1, 
-              borderColor: '#fee2e2',
+              borderColor: theme.dangerSoft,
               marginBottom: 20,
               flexDirection: 'row',
               alignItems: 'center',
               gap: 10
             }}>
-              <ShieldCheck size={20} color="#dc2626" />
+              <ShieldCheck size={20} color={theme.danger} />
               <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#991b1b', fontWeight: '700' }}>Đang có trận đấu diễn ra!</Text>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#b91c1c' }}>Cân nhắc kỹ trước khi đổi đội hình.</Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: theme.danger, fontWeight: '700' }}>{t('team_arrangement.ongoing_match_title')}</Text>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.danger }}>{t('team_arrangement.ongoing_match_desc')}</Text>
               </View>
             </View>
           )}
 
           {/* Optimization Profile */}
           <View style={{ marginBottom: 16 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '600', color: '#7A8884', marginBottom: 10, letterSpacing: 0.5 }}>
-              ƯU TIÊN TỐI ƯU
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '600', color: theme.outline, marginBottom: 10, letterSpacing: 0.5 }}>
+              {t('team_arrangement.optimization_priority')}
             </Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               {[
-                { key: 'social', label: 'Tối ưu Social', hint: 'Ghép & Xếp linh hoạt' },
+                { key: 'social', label: t('team_arrangement.social_optimization'), hint: t('team_arrangement.social_optimization_hint') },
               ].map(option => {
                 const selected = optimizationProfile === option.key
                 return (
@@ -334,16 +338,16 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                       flex: 1,
                       borderRadius: 12,
                       borderWidth: 1.5,
-                      borderColor: selected ? '#0F6E56' : '#E5E3DC',
-                      backgroundColor: selected ? '#E1F5EE' : 'white',
+                      borderColor: selected ? theme.success : theme.outlineVariant,
+                      backgroundColor: selected ? theme.successContainer : theme.surface,
                       paddingHorizontal: 8,
                       paddingVertical: 9,
                     }}
                   >
-                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: selected ? '#0F6E56' : '#1A2E2A', fontWeight: '900', textAlign: 'center' }}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: selected ? theme.success : theme.onSurface, fontWeight: '900', textAlign: 'center' }}>
                       {option.label}
                     </Text>
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#7A8884', textAlign: 'center', marginTop: 2 }} numberOfLines={1}>
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: theme.outline, textAlign: 'center', marginTop: 2 }} numberOfLines={1}>
                       {option.hint}
                     </Text>
                   </TouchableOpacity>
@@ -353,9 +357,9 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
           </View>
 
           {optimizationProfile === 'social' && (
-            <View style={{ marginBottom: 24, backgroundColor: '#F0FDF4', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#DCFCE7' }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#166534', marginBottom: 8 }}>
-                MỤC TIÊU SỐ TRẬN MỖI ĐỘI
+            <View style={{ marginBottom: 24, backgroundColor: theme.successContainer, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: theme.successSoft }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: theme.success, marginBottom: 8 }}>
+                {t('team_arrangement.target_games_per_team')}
               </Text>
               <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
                 {[3, 4, 5, 6, 7, 8, 9, 10].map(n => (
@@ -364,27 +368,27 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                     onPress={() => setTargetGamesPerTeam(n)}
                     style={{
                       width: 40, height: 40, borderRadius: 20,
-                      backgroundColor: targetGamesPerTeam === n ? '#166534' : 'white',
+                      backgroundColor: targetGamesPerTeam === n ? theme.success : theme.surface,
                       alignItems: 'center', justifyContent: 'center',
-                      borderWidth: 1, borderColor: '#166534'
+                      borderWidth: 1, borderColor: theme.success
                     }}
                   >
-                    <Text style={{ color: targetGamesPerTeam === n ? 'white' : '#166534', fontWeight: '700' }}>{n}</Text>
+                    <Text style={{ color: targetGamesPerTeam === n ? theme.surface : theme.success, fontWeight: '700' }}>{n}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#166534', marginTop: 8, fontStyle: 'italic' }}>
-                * Mỗi người sẽ chơi đúng {targetGamesPerTeam} trận.
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.success, marginTop: 8, fontStyle: 'italic' }}>
+                {t('team_arrangement.target_games_desc', { count: targetGamesPerTeam })}
               </Text>
 
-              <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#DCFCE7' }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#166534', marginBottom: 10 }}>
-                  CHẾ ĐỘ GHÉP CẶP
+              <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: theme.successSoft }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: theme.success, marginBottom: 10 }}>
+                  {t('team_arrangement.pairing_mode')}
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   {[
-                    { key: 'fixed', label: 'Cố định cặp', icon: '🔒' },
-                    { key: 'rotation', label: 'Xoay vòng', icon: '🔄' },
+                    { key: 'fixed', label: t('team_arrangement.fixed_pair'), icon: '🔒' },
+                    { key: 'rotation', label: t('team_arrangement.rotation'), icon: '🔄' },
                   ].map(mode => {
                     const active = socialSubMode === mode.key
                     return (
@@ -393,11 +397,11 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                         onPress={() => setSocialSubMode(mode.key as any)}
                         style={{
                           flex: 1,
-                          backgroundColor: active ? '#166534' : 'white',
+                          backgroundColor: active ? theme.success : theme.surface,
                           paddingVertical: 10,
                           borderRadius: 10,
                           borderWidth: 1,
-                          borderColor: '#166534',
+                          borderColor: theme.success,
                           alignItems: 'center',
                           flexDirection: 'row',
                           justifyContent: 'center',
@@ -408,7 +412,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                         <Text style={{ 
                           fontFamily: SCREEN_FONTS.headline, 
                           fontSize: 11, 
-                          color: active ? 'white' : '#166534',
+                          color: active ? theme.surface : theme.success,
                           fontWeight: '700' 
                         }}>
                           {mode.label}
@@ -417,10 +421,10 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                     )
                   })}
                 </View>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: '#166534', marginTop: 6, fontStyle: 'italic', opacity: 0.8 }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 9, color: theme.success, marginTop: 6, fontStyle: 'italic', opacity: 0.8 }}>
                   {socialSubMode === 'rotation' 
-                    ? '• Ưu tiên Partner mới mỗi trận • Coi mỗi người là cá nhân độc lập' 
-                    : '• Giữ nguyên Team hiện tại • Chỉ tối ưu hóa đối thủ và khoảng nghỉ'}
+                    ? t('team_arrangement.rotation_hint') 
+                    : t('team_arrangement.fixed_pair_hint')}
                 </Text>
                 {hasFixedPairWaitingPlayers && (
                   <View style={{
@@ -458,9 +462,9 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                 )}
               </View>
 
-                <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#DCFCE7' }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#166534', marginBottom: 8 }}>
-                    SỐ SÂN SỬ DỤNG ĐỂ TEST LỊCH
+                <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: theme.successSoft }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: theme.success, marginBottom: 8 }}>
+                    {t('team_arrangement.test_courts')}
                   </Text>
                   <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
                     {Array.from({ length: Math.max(4, Math.floor(players.length / 4)) }, (_, i) => i + 1).map(n => (
@@ -470,12 +474,12 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                         style={{
                           width: 36, height: 36, borderRadius: 18,
                           marginBottom: 5,
-                          backgroundColor: tempCourtCount === n ? '#166534' : 'white',
+                          backgroundColor: tempCourtCount === n ? theme.success : theme.surface,
                           alignItems: 'center', justifyContent: 'center',
-                          borderWidth: 1, borderColor: '#166534'
+                          borderWidth: 1, borderColor: theme.success
                         }}
                       >
-                        <Text style={{ fontSize: 12, color: tempCourtCount === n ? 'white' : '#166534', fontWeight: '700' }}>{n}</Text>
+                        <Text style={{ fontSize: 12, color: tempCourtCount === n ? theme.surface : theme.success, fontWeight: '700' }}>{n}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -483,7 +487,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                   <TouchableOpacity
                     onPress={() => setRebalanceTick(prev => prev + 1)}
                     style={{
-                      backgroundColor: '#166534',
+                      backgroundColor: theme.success,
                       paddingVertical: 12,
                       borderRadius: 12,
                       alignItems: 'center',
@@ -493,8 +497,8 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                       ...LAYOUT_SHADOW.sm
                     }}
                   >
-                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: 'white', fontWeight: '900' }}>
-                      CÂN BẰNG LẠI
+                    <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: theme.surface, fontWeight: '900' }}>
+                      {t('team_arrangement.rebalance')}
                     </Text>
                     {draftSchedule && draftSchedule.quality && (
                       <View style={{ 
@@ -524,19 +528,19 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
               alignItems: 'center', 
               justifyContent: 'space-between',
               marginBottom: 12,
-              backgroundColor: '#F8FAF9',
+              backgroundColor: theme.surfaceContainerLow,
               padding: 10,
               borderRadius: 8,
               borderWidth: 1,
-              borderColor: '#E5E3DC'
+              borderColor: theme.outlineVariant
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#1A2E2A' }}>
-                📋 XEM TRƯỚC ĐỘI HÌNH ({teamOptions.length} ĐỘI)
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: theme.onSurface }}>
+                {t('team_arrangement.preview_roster', { count: teamOptions.length })}
               </Text>
             </View>
-            {previewExpanded ? <ChevronDown size={16} color="#7A8884" /> : <ChevronRight size={16} color="#7A8884" />}
+            {previewExpanded ? <ChevronDown size={16} color={theme.outline} /> : <ChevronRight size={16} color={theme.outline} />}
           </TouchableOpacity>
           
           {previewExpanded && (
@@ -548,38 +552,38 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
               const isEmpty = ps.length === 0
 
               const balanceStyle = balance > 0
-                ? { bg: '#E1F5EE', color: '#0F6E56', label: `+${balance.toFixed(2)}` }
+                ? { bg: theme.successContainer, color: theme.success, label: `+${balance.toFixed(2)}` }
                 : balance < 0
-                ? { bg: '#FAECE7', color: '#993C1D', label: balance.toFixed(2) }
-                : { bg: '#F1EFE8', color: '#B4B2A9', label: 'Cân bằng' }
+                ? { bg: theme.dangerContainer, color: theme.danger, label: balance.toFixed(2) }
+                : { bg: theme.surfaceContainerHighest, color: theme.onSurfaceVariant, label: t('team_arrangement.balanced') }
               
               return (
                 <View key={t} style={{ 
                   width: '48.5%', 
-                  backgroundColor: isEmpty ? '#FAFAF7' : '#F9F9F7', 
+                  backgroundColor: isEmpty ? theme.surfaceContainerLowest : theme.surface, 
                   borderRadius: 12, 
                   borderWidth: 0.5, 
-                  borderColor: isEmpty ? '#D5D2C8' : '#E5E3DC',
+                  borderColor: isEmpty ? theme.outline : theme.outlineVariant,
                   borderStyle: isEmpty ? 'dashed' : 'solid',
                   overflow: 'hidden',
                 }}>
                   <View style={{ 
                     paddingHorizontal: 12, 
                     paddingVertical: 5,
-                    backgroundColor: isEmpty ? '#B4B2A9' : '#0F6E56',
+                    backgroundColor: isEmpty ? theme.outline : theme.success,
                   }}>
                     <Text style={{ 
                       fontFamily: SCREEN_FONTS.headline, 
                       fontSize: 11, 
-                      color: 'white',
+                      color: theme.surface,
                       fontWeight: '700'
-                    }}>ĐỘI {t}</Text>
+                    }}>{t('team_arrangement.team_label', { num: t })}</Text>
                   </View>
                   
                   {isEmpty ? (
                     <View style={{ height: 100, alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                       <Text style={{ fontSize: 18 }}>👤</Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: '#B4B2A9', fontStyle: 'italic' }}>Chưa có người</Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.outline, fontStyle: 'italic' }}>{t('team_arrangement.empty_team')}</Text>
                     </View>
                   ) : (
                     <View style={{ padding: 10 }}>
@@ -587,7 +591,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                         <Text style={{ 
                           fontFamily: SCREEN_FONTS.headline, 
                           fontSize: 24, 
-                          color: '#1A2E2A',
+                          color: theme.onSurface,
                           fontWeight: '900'
                         }}>
                           {teamSkill.toFixed(2)}
@@ -609,11 +613,11 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                         </View>
                       </View>
 
-                      <View style={{ height: 4, backgroundColor: '#E5E3DC', borderRadius: 2, marginBottom: 10, overflow: 'hidden' }}>
+                      <View style={{ height: 4, backgroundColor: theme.surfaceContainerHighest, borderRadius: 2, marginBottom: 10, overflow: 'hidden' }}>
                         <View style={{ 
                           height: '100%', 
                           width: `${Math.min(100, (teamSkill / maxSkill) * 100)}%`,
-                          backgroundColor: balance < 0 ? '#D85A30' : '#0F6E56' 
+                          backgroundColor: balance < 0 ? theme.danger : theme.success 
                         }} />
                       </View>
                       
@@ -645,16 +649,16 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                                 <View style={{ 
                                   position: 'absolute', bottom: -1, right: -1,
                                   width: 7, height: 7, borderRadius: 3.5,
-                                  backgroundColor: isFemale ? '#D85A30' : '#0F6E56',
-                                  borderWidth: 1.5, borderColor: 'white',
+                                  backgroundColor: isFemale ? theme.danger : theme.success,
+                                  borderWidth: 1.5, borderColor: theme.surface,
                                 }} />
                               </View>
 
-                              <Text numberOfLines={1} style={{ flex: 1, fontSize: 11, fontFamily: SCREEN_FONTS.label, fontWeight: '600', color: '#1A2E2A' }}>
+                              <Text numberOfLines={1} style={{ flex: 1, fontSize: 11, fontFamily: SCREEN_FONTS.label, fontWeight: '600', color: theme.onSurface }}>
                                 {player.name}
                               </Text>
 
-                              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#7A8884', fontWeight: '700' }}>
+                              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: theme.outline, fontWeight: '700' }}>
                                 {Number(player.pvna || 0).toFixed(2)}
                               </Text>
                             </View>
@@ -678,19 +682,19 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
               alignItems: 'center', 
               justifyContent: 'space-between',
               marginBottom: 12,
-              backgroundColor: '#F8FAF9',
+              backgroundColor: theme.surfaceContainerLow,
               padding: 10,
               borderRadius: 8,
               borderWidth: 1,
-              borderColor: '#E5E3DC'
+              borderColor: theme.outlineVariant
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: '#1A2E2A' }}>
-                👥 PHÂN BỔ CHI TIẾT ({arrangedPlayers.length} NGƯỜI)
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, fontWeight: '700', color: theme.onSurface }}>
+                {t('team_arrangement.detailed_distribution', { count: arrangedPlayers.length })}
               </Text>
             </View>
-            {distributionExpanded ? <ChevronDown size={16} color="#7A8884" /> : <ChevronRight size={16} color="#7A8884" />}
+            {distributionExpanded ? <ChevronDown size={16} color={theme.outline} /> : <ChevronRight size={16} color={theme.outline} />}
           </TouchableOpacity>
           
           {distributionExpanded && (
@@ -704,9 +708,9 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
               return (
                 <View key={player.id || pIdx} style={{ 
                   flexDirection: 'row', alignItems: 'center', 
-                  backgroundColor: 'white',
+                  backgroundColor: theme.surface,
                   padding: 10, borderRadius: 12,
-                  borderWidth: 0.5, borderColor: '#E5E3DC',
+                  borderWidth: 0.5, borderColor: theme.outlineVariant,
                   marginBottom: 8, gap: 10,
                   ...LAYOUT_SHADOW.xs
                 }}>
@@ -721,28 +725,28 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                     <View style={{ 
                       position: 'absolute', bottom: -1, right: -1,
                       width: 9, height: 9, borderRadius: 4.5,
-                      backgroundColor: isFemale ? '#D85A30' : '#0F6E56',
-                      borderWidth: 1.5, borderColor: 'white',
+                      backgroundColor: isFemale ? theme.danger : theme.success,
+                      borderWidth: 1.5, borderColor: theme.surface,
                     }} />
                   </View>
 
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, fontWeight: '600', color: '#1A2E2A' }} numberOfLines={1}>{player.name}</Text>
+                      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 13, fontWeight: '600', color: theme.onSurface }} numberOfLines={1}>{player.name}</Text>
                       
                       {/* Preferences */}
                       {player.metadata?.partner_gender_pref && player.metadata.partner_gender_pref !== 'any' && (
-                        <View style={{ backgroundColor: player.metadata.partner_gender_pref === 'female' ? '#FAECE7' : '#E1F5EE', paddingHorizontal: 4, borderRadius: 4 }}>
-                          <Text style={{ fontSize: 8, color: player.metadata.partner_gender_pref === 'female' ? '#993C1D' : '#0F6E56', fontWeight: '800' }}>🤝{player.metadata.partner_gender_pref === 'male' ? 'M' : 'F'}</Text>
+                        <View style={{ backgroundColor: player.metadata.partner_gender_pref === 'female' ? theme.dangerContainer : theme.successContainer, paddingHorizontal: 4, borderRadius: 4 }}>
+                          <Text style={{ fontSize: 8, color: player.metadata.partner_gender_pref === 'female' ? theme.danger : theme.success, fontWeight: '800' }}>🤝{player.metadata.partner_gender_pref === 'male' ? 'M' : 'F'}</Text>
                         </View>
                       )}
                       {player.metadata?.opponent_gender_pref && player.metadata.opponent_gender_pref !== 'any' && (
-                        <View style={{ backgroundColor: player.metadata.opponent_gender_pref === 'female' ? '#FAECE7' : '#E1F5EE', paddingHorizontal: 4, borderRadius: 4 }}>
-                          <Text style={{ fontSize: 8, color: player.metadata.opponent_gender_pref === 'female' ? '#993C1D' : '#0F6E56', fontWeight: '800' }}>⚔️{player.metadata.opponent_gender_pref === 'male' ? 'M' : 'F'}</Text>
+                        <View style={{ backgroundColor: player.metadata.opponent_gender_pref === 'female' ? theme.dangerContainer : theme.successContainer, paddingHorizontal: 4, borderRadius: 4 }}>
+                          <Text style={{ fontSize: 8, color: player.metadata.opponent_gender_pref === 'female' ? theme.danger : theme.success, fontWeight: '800' }}>⚔️{player.metadata.opponent_gender_pref === 'male' ? 'M' : 'F'}</Text>
                         </View>
                       )}
                     </View>
-                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884' }}>Trình {Number(player.pvna || 0).toFixed(2)}</Text>
+                    <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.outline }}>{t('team_arrangement.skill_level', { skill: Number(player.pvna || 0).toFixed(2) })}</Text>
                   </View>
 
                   {activePlayerId === player.id ? (
@@ -755,29 +759,29 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                           }}
                           style={{
                             paddingHorizontal: 12, height: 34, borderRadius: 17,
-                            backgroundColor: player.team === 0 ? '#FAEEDA' : '#F5F1E8',
+                            backgroundColor: player.team === 0 ? theme.warningContainer : theme.surfaceContainerHighest,
                             alignItems: 'center', justifyContent: 'center',
-                            borderWidth: 1, borderColor: player.team === 0 ? '#854F0B' : '#E5E3DC'
+                            borderWidth: 1, borderColor: player.team === 0 ? theme.warning : theme.outlineVariant
                           }}
                         >
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: player.team === 0 ? '#854F0B' : '#7A8884', fontFamily: SCREEN_FONTS.label }}>DỰ BỊ</Text>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: player.team === 0 ? theme.warning : theme.outline, fontFamily: SCREEN_FONTS.label }}>{t('team_arrangement.substitute')}</Text>
                         </TouchableOpacity>
 
-                        {teamOptions.map(t => (
+                        {teamOptions.map(tOption => (
                           <TouchableOpacity
-                            key={t}
+                            key={tOption}
                             onPress={() => {
-                              setArrangedPlayers(prev => prev.map(ap => ap.id === player.id ? { ...ap, team: t } : ap))
+                              setArrangedPlayers(prev => prev.map(ap => ap.id === player.id ? { ...ap, team: tOption } : ap))
                               setActivePlayerId(null)
                             }}
                             style={{
                               paddingHorizontal: 12, height: 34, borderRadius: 17,
-                              backgroundColor: player.team === t ? '#E1F5EE' : '#F5F1E8',
+                              backgroundColor: player.team === tOption ? theme.successContainer : theme.surfaceContainerHighest,
                               alignItems: 'center', justifyContent: 'center',
-                              borderWidth: 1, borderColor: player.team === t ? '#0F6E56' : '#E5E3DC'
+                              borderWidth: 1, borderColor: player.team === tOption ? theme.success : theme.outlineVariant
                             }}
                           >
-                            <Text style={{ fontSize: 10, fontWeight: '700', color: player.team === t ? '#0F6E56' : '#7A8884', fontFamily: SCREEN_FONTS.label }}>ĐỘI {t}</Text>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: player.team === tOption ? theme.success : theme.outline, fontFamily: SCREEN_FONTS.label }}>{t('team_arrangement.team_label_short', { num: tOption })}</Text>
                           </TouchableOpacity>
                         ))}
                       </ScrollView>
@@ -786,18 +790,18 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
                     <TouchableOpacity 
                       onPress={() => setActivePlayerId(player.id)}
                       style={{
-                        backgroundColor: teamIndex === null ? '#FAEEDA' : '#E1F5EE',
+                        backgroundColor: teamIndex === null ? theme.warningContainer : theme.successContainer,
                         paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
                         flexDirection: 'row', alignItems: 'center', gap: 6,
-                        borderWidth: 0.5, borderColor: teamIndex === null ? '#854F0B20' : '#0F6E5620'
+                        borderWidth: 0.5, borderColor: teamIndex === null ? theme.warningSoft : theme.successSoft
                       }}
                     >
                       <Text style={{
                         fontSize: 10, fontWeight: '700',
-                        color: teamIndex === null ? '#854F0B' : '#0F6E56',
+                        color: teamIndex === null ? theme.warning : theme.success,
                         fontFamily: SCREEN_FONTS.label,
                       }}>
-                        {teamIndex === null ? 'DỰ BỊ' : `ĐỘI ${player.team}`} ↺
+                        {teamIndex === null ? t('team_arrangement.substitute') : t('team_arrangement.team_label_short', { num: player.team })} ↺
                       </Text>
                     </TouchableOpacity>
                   )}

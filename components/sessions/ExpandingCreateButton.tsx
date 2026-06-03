@@ -14,7 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import * as Haptics from 'expo-haptics'
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { STRINGS } from '@/constants/strings'
+import { useTranslation } from 'react-i18next'
 const canHaptics = Platform.OS !== 'web'
 
 interface ExpandingCreateButtonProps {
@@ -23,6 +23,7 @@ interface ExpandingCreateButtonProps {
 
 export function ExpandingCreateButton({ isFAB = false }: ExpandingCreateButtonProps) {
   const theme = useAppTheme()
+  const { t } = useTranslation()
   const { onCreateSession } = useAppNav()
   const [expanded, setExpanded] = useState(false)
   
@@ -121,7 +122,7 @@ export function ExpandingCreateButton({ isFAB = false }: ExpandingCreateButtonPr
             shadowOffset: { width: 0, height: isFAB ? 6 : 4 },
             elevation: isFAB ? 8 : 4,
             borderWidth: 1,
-            borderColor: 'rgba(255, 255, 255, 0.3)',
+            borderColor: theme.onPrimary + '4D', // 0.3 opacity
           },
           animatedStyle,
         ]}
@@ -134,7 +135,7 @@ export function ExpandingCreateButton({ isFAB = false }: ExpandingCreateButtonPr
         />
         
         <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-          <Plus size={iconSize} color="#FFFFFF" strokeWidth={3} />
+          <Plus size={iconSize} color={theme.onPrimary} strokeWidth={3} />
         </View>
 
         <Animated.View 
@@ -151,13 +152,13 @@ export function ExpandingCreateButton({ isFAB = false }: ExpandingCreateButtonPr
             className="uppercase tracking-[1.2px]"
             numberOfLines={1}
             style={{ 
-              color: '#FFFFFF', 
+              color: theme.onPrimary, 
               fontFamily: SCREEN_FONTS.headlineBlack, 
               fontSize: fontSize,
               top: 1,
             }}
           >
-            {isFAB ? STRINGS.home.actions.create_session : 'Tạo kèo'}
+            {isFAB ? t('expanding_button.create_new') : t('expanding_button.create_session')}
           </Text>
         </Animated.View>
       </Animated.View>

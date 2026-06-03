@@ -1,5 +1,6 @@
 import React from 'react'
 import { Pressable, Text, View, Platform, TouchableOpacity } from 'react-native'
+import { useTranslation } from 'react-i18next'
 import { CheckCircle2, AlertCircle, PencilLine, Star, Users, ChevronRight, Share2, Pencil as Edit3, UserPlus, ArrowUpRight } from 'lucide-react-native'
 import { useSessionNav } from '@/lib/navigation/SessionNavContext'
 import { useAppTheme } from '@/lib/theme-context'
@@ -39,21 +40,24 @@ export type MySession = {
   format_type?: string
 }
 
-function formatRelativeDate(date: Date) {
-  const today = new Date()
-  const tomorrow = new Date()
-  tomorrow.setDate(today.getDate() + 1)
+function useFormatRelativeDate() {
+  const { t } = useTranslation()
+  return (date: Date) => {
+    const today = new Date()
+    const tomorrow = new Date()
+    tomorrow.setDate(today.getDate() + 1)
 
-  const isSameDay = (d1: Date, d2: Date) =>
-    d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate()
+    const isSameDay = (d1: Date, d2: Date) =>
+      d1.getFullYear() === d2.getFullYear() &&
+      d1.getMonth() === d2.getMonth() &&
+      d1.getDate() === d2.getDate()
 
-  if (isSameDay(date, today)) return STRINGS.session_card.today
-  if (isSameDay(date, tomorrow)) return STRINGS.session_card.tomorrow
-  
-  const days = STRINGS.session_card.days
-  return days[date.getDay()]
+    if (isSameDay(date, today)) return t('session_card.today')
+    if (isSameDay(date, tomorrow)) return t('session_card.tomorrow')
+    
+    const days = t('session_card.days', { returnObjects: true }) as string[]
+    return days[date.getDay()]
+  }
 }
 
 export function MySessionCard({
@@ -67,6 +71,8 @@ export function MySessionCard({
   formatTimeRange: (start: string, end: string) => string
 }) {
   const theme = useAppTheme()
+  const { t } = useTranslation()
+  const formatRelativeDate = useFormatRelativeDate()
   const { 
     onOpenSession, 
     onRateSession, 
@@ -80,7 +86,7 @@ export function MySessionCard({
   const end = new Date(item.end_time)
   const confirmedCount = item.player_count
   const maxPlayers = item.max_players
-  const pricePerPerson = item.total_cost && item.total_cost > 0 ? `${Math.round(item.total_cost / 1000)}K` : STRINGS.session_card.free
+  const pricePerPerson = item.total_cost && item.total_cost > 0 ? `${Math.round(item.total_cost / 1000)}K` : t('session_card.free')
   const isHistory = tab === 'history'
   const isPending = tab === 'pending'
   
@@ -90,8 +96,8 @@ export function MySessionCard({
   // Day Badge Logic
   const dateLabel = formatRelativeDate(start)
   let dayBadgeBg = theme.outline
-  if (dateLabel === STRINGS.session_card.today) dayBadgeBg = theme.primary
-  else if (dateLabel === STRINGS.session_card.tomorrow) dayBadgeBg = theme.onSurfaceVariant
+  if (dateLabel === t('session_card.today')) dayBadgeBg = theme.primary
+  else if (dateLabel === t('session_card.tomorrow')) dayBadgeBg = theme.onSurfaceVariant
 
   // Enhanced Color System
   const COLORS = {
@@ -106,27 +112,27 @@ export function MySessionCard({
   const fillRatio = confirmedCount / maxPlayers
   const isFull = fillRatio >= 1
 
-  let statusLabel = STRINGS.session_card.status_upcoming
-  let statusBg = COLORS.teal
+  let statusLabel = t('session_card.status_upcoming')
+  let statusBg = theme.primary
   
   if (isHistory) {
-    statusLabel = STRINGS.session_card.status_history
-    statusBg = COLORS.gray
+    statusLabel = t('session_card.status_history')
+    statusBg = theme.outline
     if (item.status === 'cancelled') {
-      statusLabel = STRINGS.session_card.status_cancelled
+      statusLabel = t('session_card.status_cancelled')
     } else if (item.user_result === 'win') {
-      statusLabel = STRINGS.session_card.status_win
-      statusBg = COLORS.teal
+      statusLabel = t('session_card.status_win')
+      statusBg = theme.primary
     } else if (item.user_result === 'loss') {
-      statusLabel = STRINGS.session_card.status_loss
-      statusBg = COLORS.coral
+      statusLabel = t('session_card.status_loss')
+      statusBg = theme.error
     }
   } else if (isPending) {
-    statusLabel = STRINGS.session_card.status_pending
-    statusBg = COLORS.amber
+    statusLabel = t('session_card.status_pending')
+    statusBg = theme.warning
   } else if (isFull) {
-    statusLabel = STRINGS.session_card.status_full
-    statusBg = COLORS.amber
+    statusLabel = t('session_card.status_full')
+    statusBg = theme.warning
   }
 
   return (
@@ -166,7 +172,7 @@ export function MySessionCard({
                   const fmt = (item.format_type || '').toLowerCase()
                   if (fmt === 'round_robin') return 'ROUND ROBIN'
                   if (fmt === 'open_play') return 'OPEN PLAY'
-                  return STRINGS.session_card.format_social
+                  return t('session_card.format_social')
                 })()}
           </Text>
         </View>
@@ -180,7 +186,7 @@ export function MySessionCard({
             fontWeight: '700',
             opacity: 0.9 
           }}>
-            {STRINGS.session_card.host_role}
+            {t('session_card.host_role')}
           </Text>
         )}
       </View>
@@ -207,7 +213,7 @@ export function MySessionCard({
               letterSpacing: 0.3
             }}>
               {item.role === 'host' 
-                ? (item.title || (item.format_type === 'round_robin' ? 'Round Robin' : STRINGS.session_card.format_social))
+                ? (item.title || (item.format_type === 'round_robin' ? 'Round Robin' : t('session_card.format_social')))
                 : item.court_address}
             </Text>
           </View>
@@ -218,7 +224,7 @@ export function MySessionCard({
             </Text>
             {item.total_cost && item.total_cost > 0 && (
               <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 10, color: theme.onSurfaceVariant, marginTop: -2 }}>
-                {STRINGS.session_card.per_person}
+                {t('session_card.per_person')}
               </Text>
             )}
           </View>
@@ -238,15 +244,15 @@ export function MySessionCard({
           </View>
           
           <View style={{ flexDirection: 'row', gap: 6 }}>
-            <View style={{ backgroundColor: isHistory ? theme.outlineVariant : '#E1F5EE', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: isHistory ? theme.outlineVariant : '#0F6E5630' }}>
-              <Text style={{ color: isHistory ? theme.outline : '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NAM</Text>
-              <Text style={{ color: isHistory ? theme.outline : '#0F6E56', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
+            <View style={{ backgroundColor: isHistory ? theme.outlineVariant : theme.infoContainer, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: isHistory ? theme.outlineVariant : theme.info }}>
+              <Text style={{ color: isHistory ? theme.outline : theme.info, fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NAM</Text>
+              <Text style={{ color: isHistory ? theme.outline : theme.info, fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
                 {(skillLabel || '').split('/')[0]?.replace('♂', '').replace(/\(Nam\)|\(nam\)|Trình|trình/g, '').trim()}
               </Text>
             </View>
-            <View style={{ backgroundColor: isHistory ? theme.outlineVariant : '#FAECE7', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: isHistory ? theme.outlineVariant : '#993C1D30' }}>
-              <Text style={{ color: isHistory ? theme.outline : '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NỮ</Text>
-              <Text style={{ color: isHistory ? theme.outline : '#993C1D', fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
+            <View style={{ backgroundColor: isHistory ? theme.outlineVariant : theme.dangerContainer, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderColor: isHistory ? theme.outlineVariant : theme.danger }}>
+              <Text style={{ color: isHistory ? theme.outline : theme.danger, fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>NỮ</Text>
+              <Text style={{ color: isHistory ? theme.outline : theme.danger, fontFamily: SCREEN_FONTS.headline, fontSize: 11 }}>
                 {((skillLabel || '').split('/')[1] || skillLabel || '').replace('♀', '').replace(/\(Nữ\)|\(nữ\)|Trình|trình/g, '').trim()}
               </Text>
             </View>
@@ -307,7 +313,7 @@ export function MySessionCard({
             }}
           >
             <Text style={{ color: statusBg, fontFamily: SCREEN_FONTS.headline, fontSize: 10.5, textTransform: 'uppercase' }}>
-              {STRINGS.session_card.details_btn}
+              {t('session_card.details_btn')}
             </Text>
             <ChevronRight size={12} color={statusBg} />
           </TouchableOpacity>

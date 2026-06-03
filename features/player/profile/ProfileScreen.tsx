@@ -30,6 +30,7 @@ import {
 } from 'lucide-react-native'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Platform, RefreshControl, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native'
+import { useTranslation } from 'react-i18next'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { RADIUS, SPACING, BORDER, SHADOW } from '@/constants/screenLayout'
 import { STRINGS } from '@/constants/strings'
@@ -160,6 +161,7 @@ export function ProfileScreen() {
   const [loading, setLoading] = useState(false)
   const [dialogConfig, setDialogConfig] = useState<AppDialogConfig | null>(null)
   const { switchToHost } = useRoleSwitcher()
+  const { t } = useTranslation()
 
   const init = useCallback(async () => {
     setLoading(true)
@@ -341,11 +343,11 @@ export function ProfileScreen() {
               <View style={{ 
                 width: 64, height: 64, borderRadius: 32, 
                 backgroundColor: theme.primary,
-                borderWidth: 2, borderColor: 'white',
+                borderWidth: 2, borderColor: theme.surface,
                 alignItems: 'center', justifyContent: 'center',
                 ...SHADOW.xs
               }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 24, color: 'white' }}>
+                <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 24, color: theme.onPrimary }}>
                   {player.name?.[0]?.toUpperCase()}
                 </Text>
               </View>
@@ -364,7 +366,7 @@ export function ProfileScreen() {
                     marginLeft: 4, fontFamily: SCREEN_FONTS.bold, fontSize: 11, 
                     color: theme.onSurfaceVariant, textTransform: 'uppercase' 
                   }}>
-                    {player.city || 'TP. HỒ CHÍ MINH'}
+                    {player.city || t('profile_screen.default_city')}
                   </Text>
                 </View>
               </View>
@@ -373,12 +375,12 @@ export function ProfileScreen() {
                 onPress={() => router.push((pathname.startsWith('/player-hub') ? '/player-hub/edit-profile' : '/edit-profile') as any)}
                 style={{ 
                   width: 36, height: 36, borderRadius: 18, 
-                  backgroundColor: theme.primary, borderWidth: 1, borderColor: 'white',
+                  backgroundColor: theme.primary, borderWidth: 1, borderColor: theme.surface,
                   alignItems: 'center', justifyContent: 'center',
                   ...SHADOW.xs
                 }}
               >
-                <PencilLine size={16} color="white" />
+                <PencilLine size={16} color={theme.onPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -395,8 +397,8 @@ export function ProfileScreen() {
                 <ProfileSectionDivider index="01" title={STRINGS.profile.sections.pvna} theme={theme} />
                 <ProfileSkillHero
                   elo={effectiveElo}
-                  title={skill?.title ?? 'MỚI CHƠI'}
-                  subtitle={skill?.subtitle ?? 'PVNA 2.1 - Bắt đầu làm quen'}
+                  title={skill?.title ?? t('profile_screen.default_skill_title')}
+                  subtitle={skill?.subtitle ?? t('profile_screen.default_skill_desc')}
                   description={skill?.description}
                   levelId={skill?.id}
                 />
@@ -439,7 +441,7 @@ export function ProfileScreen() {
                             backgroundColor: theme.primary,
                             alignItems: 'center', justifyContent: 'center'
                           }}>
-                            <MapPin size={16} color="white" />
+                            <MapPin size={16} color={theme.onPrimary} />
                           </View>
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.onSurface, textTransform: 'uppercase' }}>
@@ -481,7 +483,7 @@ export function ProfileScreen() {
                     }}
                   >
                     <Text style={{ 
-                      fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: 'white',
+                      fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.onPrimary,
                       textTransform: 'uppercase', letterSpacing: 1
                     }}>
                       {STRINGS.profile.actions.host_mode}
@@ -498,7 +500,7 @@ export function ProfileScreen() {
                     }}
                   >
                     <Text style={{ 
-                      fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: 'white',
+                      fontFamily: SCREEN_FONTS.headline, fontSize: 15, color: theme.onError,
                       textTransform: 'uppercase', letterSpacing: 1
                     }}>
                       {STRINGS.profile.actions.logout}

@@ -20,6 +20,7 @@ import { SessionNavContext, SessionNavigation } from '@/lib/navigation/SessionNa
 
 import { AuthGate } from '@/features/player/auth/AuthGate'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import '@/lib/i18n'
 
 void SplashScreen.preventAutoHideAsync()
 

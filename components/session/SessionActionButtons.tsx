@@ -1,5 +1,6 @@
 import React from 'react'
 import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native'
+import { useTranslation } from 'react-i18next'
 import { LogOut, PencilLine, Repeat2, Save, Star, Trophy, ShieldAlert, Hourglass, LayoutDashboard } from 'lucide-react-native'
 import { useSessionNav } from '@/lib/navigation/SessionNavContext'
 import { router } from 'expo-router'
@@ -74,6 +75,7 @@ const SessionStatusBanner = ({
   matchesCount?: number;
   theme: any 
 }) => {
+  const { t } = useTranslation()
   const isCancelledNoCheckin = isAfterEnd && !checkInCompleted && !isCancelled
   const isNoData = isAfterEnd && checkInCompleted && matchesCount === 0
 
@@ -82,8 +84,8 @@ const SessionStatusBanner = ({
   const textColor = (isCancelled || isCancelledNoCheckin) ? theme.dangerText : isNoData ? theme.onSurfaceVariant : theme.dangerText
 
   let label: string = isInvalidPlayerCount ? STRINGS.session.labels.cancelled_no_players : STRINGS.session.labels.cancelled_generic
-  if (isCancelledNoCheckin) label = 'KÈO KHÔNG DIỄN RA (CHƯA CHECK-IN)'
-  if (isNoData) label = 'KÈO ĐÃ KẾT THÚC (THIẾU DỮ LIỆU)'
+  if (isCancelledNoCheckin) label = t('session_actions.cancelled_no_checkin')
+  if (isNoData) label = t('session_actions.ended_no_data')
 
   return (
     <View
@@ -144,6 +146,7 @@ const HostPastSessionView = ({ theme }: { theme: any }) => (
 )
 
 const HostFinalizedSessionView = ({ id, theme }: { id: string; theme: any }) => {
+  const { t } = useTranslation()
   return (
     <View style={{ flexDirection: 'row', gap: 10, width: '100%' }}>
       <TouchableOpacity 
@@ -152,18 +155,18 @@ const HostFinalizedSessionView = ({ id, theme }: { id: string; theme: any }) => 
         style={{
           flex: 1,
           minHeight: 52,
-          backgroundColor: '#E1F5EE',
+          backgroundColor: theme.successContainer,
           borderRadius: RADIUS.md,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
           gap: 8,
           borderWidth: 1,
-          borderColor: '#0F6E5630'
+          borderColor: theme.successSoft
         }}
       >
-        <LayoutDashboard size={18} color="#0F6E56" />
-        <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: '#0F6E56' }}>XEM KẾT QUẢ</Text>
+        <LayoutDashboard size={18} color={theme.success} />
+        <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: theme.success }}>{t('session_actions.view_result')}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity 
@@ -172,18 +175,18 @@ const HostFinalizedSessionView = ({ id, theme }: { id: string; theme: any }) => 
         style={{
           flex: 1,
           minHeight: 52,
-          backgroundColor: '#FAECE7',
+          backgroundColor: theme.warningContainer,
           borderRadius: RADIUS.md,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
           gap: 8,
           borderWidth: 1,
-          borderColor: '#D85A3030'
+          borderColor: theme.warningSoft
         }}
       >
-        <Trophy size={18} color="#993C1D" />
-        <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: '#993C1D' }}>BẢNG XẾP HẠNG</Text>
+        <Trophy size={18} color={theme.warningStrong} />
+        <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: theme.warningStrong }}>{t('session_actions.leaderboard')}</Text>
       </TouchableOpacity>
     </View>
   )
@@ -236,6 +239,7 @@ const HostSubmittedSessionView = ({ id, session, theme }: { id: string; session:
 }
 
 const HostAwaitingResultView = ({ id, isPartial, count, max, theme }: any) => {
+  const { t } = useTranslation()
   return (
     <View style={{ width: '100%' }}>
       {isPartial && <PartialPlayerWarning count={count} max={max} theme={theme} />}
@@ -255,7 +259,7 @@ const HostAwaitingResultView = ({ id, isPartial, count, max, theme }: any) => {
           }}
         >
           <LayoutDashboard size={18} color={theme.onPrimary} />
-          <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: theme.onPrimary }}>XEM KẾT QUẢ</Text>
+          <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: theme.onPrimary }}>{t('session_actions.view_result')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
@@ -275,7 +279,7 @@ const HostAwaitingResultView = ({ id, isPartial, count, max, theme }: any) => {
           }}
         >
           <Trophy size={18} color={theme.primary} />
-          <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: theme.primary }}>XẾP HẠNG</Text>
+          <Text style={{ fontSize: 14, fontFamily: SCREEN_FONTS.headline, color: theme.primary }}>{t('session_actions.ranking')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -297,6 +301,7 @@ const HostActiveActionsView = ({
   hideInputResult,
   theme
 }: any) => {
+  const { t } = useTranslation()
   const { onEditSession } = useSessionNav()
   const confirmedCount = (session?.session_players ?? []).filter((p: any) => p.status === 'confirmed').length
   const maxPlayers = session?.max_players || 4
@@ -335,7 +340,7 @@ const HostActiveActionsView = ({
             color: isFull ? theme.onPrimary : theme.outline, 
             textTransform: 'uppercase' 
           }}>
-            {isFull ? 'SẮP XẾP ĐỘI' : `CẦN THÊM ${maxPlayers - confirmedCount} NGƯỜI`}
+            {isFull ? t('session_actions.arrange_teams') : t('session_actions.need_more_players', { count: maxPlayers - confirmedCount })}
           </Text>
         </View>
         </TouchableOpacity>
@@ -556,7 +561,7 @@ const HostActions = ({
             textTransform: 'uppercase',
           }}
         >
-          {'Kèo đang diễn ra'}
+          {STRINGS.session.labels.in_progress_match}
         </Text>
       </View>
     )
