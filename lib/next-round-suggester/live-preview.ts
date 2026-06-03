@@ -333,18 +333,29 @@ export function buildTradeoffChoiceExplanation(
   if (metrics.pvna_over_by > 0) {
     lines.push(`Vượt PVNA +${formatNumber(metrics.pvna_over_by, 2)}`)
   }
+  if (metrics.intra_team_over_by > 0) {
+    lines.push(`Intra-team +${formatNumber(metrics.intra_team_over_by, 2)}`)
+  }
   if (metrics.repeat_over_by > 0) {
     lines.push(`Lặp vượt cap ${metrics.repeat_over_by} điểm trên ${metrics.affected_pairs} cặp`)
-  } else {
-    lines.push('Không vượt cap lặp')
   }
-  if (metrics.max_partner_pair > 0 || metrics.max_opponent_pair > 0) {
+  if (metrics.max_partner_pair > 1 || metrics.max_opponent_pair > 1) {
     lines.push(`Nặng nhất: partner ${metrics.max_partner_pair} lần, đối thủ ${metrics.max_opponent_pair} lần`)
   }
   if (id === 'balanced') {
     lines.push(`Tổng trade-off ${formatNumber(metrics.total_cost, 1)}`)
   }
   return lines
+}
+
+function getTradeoffChoiceLabel(
+  fallback: string,
+  metrics: SuggestionTradeoffChoice['metrics'],
+) {
+  if (metrics.pvna_over_by > 0 && metrics.intra_team_over_by <= 0) return 'Giảm intra-team'
+  if (metrics.intra_team_over_by > 0 && metrics.pvna_over_by <= 0) return 'Giữ PVNA'
+  if (metrics.repeat_over_by > 0) return fallback
+  return fallback
 }
 
 export function buildLiveTradeoffChoices(
@@ -398,7 +409,7 @@ export function buildLiveTradeoffChoices(
     seen.add(matchKey)
     return [{
       id,
-      label,
+      label: getTradeoffChoiceLabel(label, item.metrics),
       alternative: item.alternative,
       metrics: item.metrics,
       explanation: buildTradeoffChoiceExplanation(id, item.metrics, configuredPvnaTolerance),

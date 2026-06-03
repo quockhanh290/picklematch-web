@@ -128,5 +128,10 @@ describe('repairIntraTeamWarningClusters', () => {
     expect(repaired[0].tradeoff_choices?.length).toBeGreaterThan(1)
     expect(repaired[0].tradeoff_choices?.some(choice => choice.metrics.pvna_over_by > 0)).toBe(true)
     expect(repaired[0].tradeoff_choices?.some(choice => choice.metrics.intra_team_over_by > 0)).toBe(true)
+    expect(repaired[0].tradeoff_choices?.map(choice => choice.label)).toEqual(
+      expect.arrayContaining(['Giảm intra-team', 'Giữ PVNA']),
+    )
+    expect(repaired[0].tradeoff_choices?.some(choice => choice.label === 'Giảm lặp')).toBe(false)
+    expect(repaired[0].tradeoff_choices?.flatMap(choice => choice.explanation).some(line => line.includes('cap lặp'))).toBe(false)
   })
 })

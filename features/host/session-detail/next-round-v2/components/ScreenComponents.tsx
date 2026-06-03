@@ -1791,6 +1791,13 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
               const overPvna = choice.metrics.pvna_over_by > 0
               const overIntraTeam = choice.metrics.intra_team_over_by > 0
               const overRepeat = choice.metrics.repeat_over_by > 0
+              const choiceSummary = overPvna && !overIntraTeam
+                ? `Đổi intra-team tốt hơn lấy PVNA +${formatNumber(choice.metrics.pvna_over_by, 2)}`
+                : overIntraTeam && !overPvna
+                  ? `Giữ PVNA cap, intra-team +${formatNumber(choice.metrics.intra_team_over_by, 2)}`
+                  : overPvna && overIntraTeam
+                    ? `PVNA +${formatNumber(choice.metrics.pvna_over_by, 2)} · intra-team +${formatNumber(choice.metrics.intra_team_over_by, 2)}`
+                    : `Trong PVNA cap ${formatNumber(configuredPvnaTolerance, 2)} · intra-team <= ${formatNumber(PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT, 2)}`
               return (
                 <Pressable
                   key={choice.id}
@@ -1813,11 +1820,13 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
                     </Text>
                   </View>
                   <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: selected ? theme.onSurface : theme.outline }}>
-                    {overPvna ? `Vượt PVNA +${formatNumber(choice.metrics.pvna_over_by, 2)}` : `Trong PVNA cap ${formatNumber(configuredPvnaTolerance, 2)}`} · {overRepeat ? `lặp vượt ${choice.metrics.repeat_over_by}` : 'không vượt cap lặp'}
+                    {choiceSummary}
                   </Text>
-                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: selected ? theme.onSurface : theme.outline }}>
-                    Nặng nhất: partner {choice.metrics.max_partner_pair} lần, đối thủ {choice.metrics.max_opponent_pair} lần
-                  </Text>
+                  {overRepeat ? (
+                    <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: selected ? theme.onSurface : theme.outline }}>
+                      Lặp vượt {choice.metrics.repeat_over_by}
+                    </Text>
+                  ) : null}
                 </Pressable>
               )
             })}
