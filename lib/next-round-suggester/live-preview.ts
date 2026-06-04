@@ -347,6 +347,27 @@ export function compareChoiceMetrics(
   return 0
 }
 
+function pickRecommendedTradeoffChoice(choices: SuggestionTradeoffChoice[]): SuggestionTradeoffChoiceId {
+  const sortedByPvnaGuard = [...choices].sort((left, right) => {
+    const leftWithinPvnaCap = left.metrics.pvna_over_by <= 0
+    const rightWithinPvnaCap = right.metrics.pvna_over_by <= 0
+    if (leftWithinPvnaCap !== rightWithinPvnaCap) {
+      return leftWithinPvnaCap ? -1 : 1
+    }
+
+    const fields: Array<keyof SuggestionTradeoffChoice['metrics']> = leftWithinPvnaCap
+      ? ['total_cost', 'intra_team_over_by', 'repeat_over_by', 'pvna_gap']
+      : ['pvna_over_by', 'pvna_gap', 'total_cost', 'intra_team_over_by', 'repeat_over_by']
+    const metricDiff = compareChoiceMetrics(left.metrics, right.metrics, fields)
+    if (metricDiff !== 0) return metricDiff
+
+    if (left.id === 'balanced') return -1
+    if (right.id === 'balanced') return 1
+    return 0
+  })
+  return sortedByPvnaGuard[0]?.id ?? choices[0]?.id ?? 'balanced'
+}
+
 export function buildTradeoffChoiceExplanation(
   id: SuggestionTradeoffChoiceId,
   metrics: SuggestionTradeoffChoice['metrics'],
@@ -416,7 +437,7 @@ export function buildLiveTradeoffChoices(
     {
       id: 'keep_pvna' as const,
       label: 'Giữ PVNA',
-      item: pickBest(['intra_team_over_by', 'pvna_over_by', 'pvna_gap', 'repeat_over_by']),
+      item: pickBest(['pvna_over_by', 'pvna_gap', 'intra_team_over_by', 'repeat_over_by']),
     },
     {
       id: 'reduce_repeat' as const,
@@ -445,11 +466,7 @@ export function buildLiveTradeoffChoices(
   if (!choices.some(choice => hasTradeoffMetric(choice.metrics))) {
     return null
   }
-  const recommended = choices.some(choice => choice.id === 'balanced') ? 'balanced' : choices[0].id
-  const recommendedChoice = choices.find(choice => choice.id === recommended) ?? choices[0]
-  if (!hasTradeoffMetric(recommendedChoice.metrics)) {
-    return null
-  }
+  const recommended = pickRecommendedTradeoffChoice(choices)
   return {
     choices,
     recommended,

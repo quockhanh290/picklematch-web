@@ -760,7 +760,7 @@ export const STRINGS = {
     view_result: 'XEM KẾT QUẢ',
     calculating: 'Đang tính toán kết quả...',
     initial_pvna: 'ĐIỂM PVNA KHỞI ĐIỂM',
-    placement_note: 'Đây là điểm số dự phỏng dựa trên kỹ năng của bạn. Điểm số sẽ chính xác hơn sau 5 trận đấu chính thức.',
+    placement_note: 'Đây là điểm số ước tính dựa trên kỹ năng của bạn. Điểm số sẽ chính xác hơn sau 5 trận đấu chính thức.',
     level_names: {
       'Beginner': 'Mới chơi',
       'Novice I': 'Tập sự I',

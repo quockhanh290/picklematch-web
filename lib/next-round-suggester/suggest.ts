@@ -690,10 +690,11 @@ export function suggestNextMatch(
 
   const alternatives = [...mappedResult.alternatives, ...fallback.alternatives]
   alternatives.sort(sortSingleMatchAlternatives)
+  const uniqueAlternatives = uniqueSingleMatchAlternatives(alternatives)
 
   return {
     ...mappedResult,
-    alternatives: alternatives.slice(0, Math.max(1, Math.floor(options.max_alternatives ?? 1))),
+    alternatives: uniqueAlternatives.slice(0, Math.max(1, Math.floor(options.max_alternatives ?? 1))),
     warnings: [...new Set([...result.warnings.filter(warning => warning !== 'NO_VALID_MATCH'), ...fallback.warnings])],
   }
 }
@@ -713,6 +714,24 @@ function sortSingleMatchAlternatives(a: SuggestionAlternative, b: SuggestionAlte
   const matchA = a.matches[0]
   const matchB = b.matches[0]
   return (matchA?.team_a.join(':') ?? '').localeCompare(matchB?.team_a.join(':') ?? '')
+}
+
+function singleMatchAlternativeKey(alternative: SuggestionAlternative) {
+  const match = alternative.matches[0]
+  if (!match) return ''
+  const teamAKey = [...match.team_a].sort().join(':')
+  const teamBKey = [...match.team_b].sort().join(':')
+  return [teamAKey, teamBKey].sort().join('|')
+}
+
+function uniqueSingleMatchAlternatives(alternatives: SuggestionAlternative[]) {
+  const seen = new Set<string>()
+  return alternatives.filter((alternative) => {
+    const key = singleMatchAlternativeKey(alternative)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function suggestNextMatchExhaustiveFallback(

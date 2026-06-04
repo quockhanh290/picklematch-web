@@ -48,13 +48,13 @@ export function sanitizeWarningsForHost(warnings: FairnessWarning[]): FairnessWa
     }
 
     const count = warning.affected_players.length
+    const isStrict = warning.type === 'gender_pref_impossible'
     return {
       ...warning,
       affected_players: [],
-      message:
-        warning.type === 'gender_pref_impossible'
-          ? `${count} preference khong the dap ung hoan toan.`
-          : `${count} preference chua duoc dap ung tot.`,
+      message: isStrict
+        ? `${count} yêu cầu không thể đáp ứng hoàn toàn.`
+        : `${count} yêu cầu chưa được đáp ứng tốt.`,
     }
   })
 }

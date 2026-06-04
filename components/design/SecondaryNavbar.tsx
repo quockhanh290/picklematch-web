@@ -15,6 +15,7 @@ type SecondaryNavbarProps = {
   showProgress?: boolean
   onBackPress?: () => void
   style?: any
+  hideBackButton?: boolean
 }
 
 const NAVBAR_HEIGHT = 58
@@ -31,6 +32,7 @@ export function SecondaryNavbar({
   showProgress = false,
   onBackPress,
   style,
+  hideBackButton = false,
 }: SecondaryNavbarProps) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
@@ -58,25 +60,29 @@ export function SecondaryNavbar({
         }}
       >
         {/* Left Slot: Back Button */}
-        <Pressable
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          onPress={() => {
-            if (canHaptics) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-            handleBack()
-          }}
-          style={{
-            height: 36,
-            width: 36,
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 999,
-            borderWidth: 1,
-            backgroundColor: theme.surface,
-            borderColor: theme.outlineVariant,
-          }}
-        >
-          <ChevronLeft size={16} color={theme.onBackground} strokeWidth={3} />
-        </Pressable>
+        {!hideBackButton ? (
+          <Pressable
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            onPress={() => {
+              if (canHaptics) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+              handleBack()
+            }}
+            style={{
+              height: 36,
+              width: 36,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 999,
+              borderWidth: 1,
+              backgroundColor: theme.surface,
+              borderColor: theme.outlineVariant,
+            }}
+          >
+            <ChevronLeft size={16} color={theme.onBackground} strokeWidth={3} />
+          </Pressable>
+        ) : (
+          <View style={{ width: 36 }} />
+        )}
 
         {/* Center Slot: Brand Name or Title */}
         <View 

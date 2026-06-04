@@ -85,13 +85,14 @@ export interface SessionCardProps {
   expandableContent?: React.ReactNode
   isExpanded?: boolean
   onToggleExpand?: () => void
+  forcePrimaryColor?: boolean
 }
 
-export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDistance = true, expandableContent, isExpanded, onToggleExpand }: SessionCardProps) => {
+export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDistance = true, expandableContent, isExpanded, onToggleExpand, forcePrimaryColor = false }: SessionCardProps) => {
   const theme = useAppTheme()
   const data: SessionDisplayData = parseSessionForCard(session, isHost)
   
-  const statusColor = getStatusColor(data.status, theme)
+  const statusColor = forcePrimaryColor ? theme.primary : getStatusColor(data.status, theme)
   const topLabel = getTopLabel(data.status, data.formatLabel, isHost)
   const actionText = getActionText(data.status, isHost)
   const dayBadge = getDayBadge(data.startTime)
@@ -237,11 +238,11 @@ export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDist
   )
 }
 
-export const ListSessionCard = ({ session, onPress, isHost = false, showDistance = true }: SessionCardProps) => {
+export const ListSessionCard = ({ session, onPress, isHost = false, showDistance = true, forcePrimaryColor = false }: SessionCardProps) => {
   const theme = useAppTheme()
   const data: SessionDisplayData = parseSessionForCard(session, isHost)
   
-  const statusColor = getStatusColor(data.status, theme)
+  const statusColor = forcePrimaryColor ? theme.primary : getStatusColor(data.status, theme)
   const topLabel = getTopLabel(data.status, data.formatLabel, isHost)
   const actionText = getActionText(data.status, isHost)
   const dayBadge = getDayBadge(data.startTime)

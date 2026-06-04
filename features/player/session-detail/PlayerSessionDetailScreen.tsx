@@ -140,7 +140,7 @@ export function PlayerSessionDetailScreen({
         }}
       >
         <WebContainer>
-          <FeaturedSessionCard session={session} />
+          <FeaturedSessionCard session={session} forcePrimaryColor={true} />
 
           {session.is_ranked && (
             <View

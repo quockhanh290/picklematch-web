@@ -28,7 +28,7 @@ export function buildSwappedAlternative(
   const allPlaying = new Set(nextMatches.flatMap(match => [...match.team_a, ...match.team_b]))
 
   if (allPlaying.size !== nextMatches.length * 4) {
-    return { alternative: null, error: 'Swap khong hop le: mot nguoi bi trung trong cung vong.' }
+    return { alternative: null, error: 'Đổi chỗ không hợp lệ: một người bị trùng trong cùng vòng.' }
   }
 
   const swapped = {

@@ -125,4 +125,55 @@ describe('buildLiveTradeoffChoices', () => {
     expect(balanced?.metrics.intra_team_over_by).toBeCloseTo(0.35)
     expect(balanced?.metrics.repeat_over_by).toBe(0)
   })
+
+  it('recommends a PVNA-safe alternative instead of a lower-cost PVNA overflow', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1', { pvna: 3.0 }),
+        createPlayer('p2', { pvna: 3.1 }),
+        createPlayer('p3', { pvna: 3.2 }),
+        createPlayer('p4', { pvna: 3.3 }),
+        createPlayer('p5', { pvna: 5.0 }),
+        createPlayer('p6', { pvna: 5.1 }),
+      ],
+      pvnaTolerance: 0.5,
+    })
+    const lowCostPvnaOverflow = alternative(['p1', 'p2'], ['p3', 'p4'], 0.6)
+    const highIntraPvnaSafe = alternative(['p1', 'p5'], ['p2', 'p6'], 0.4)
+
+    const choices = buildLiveTradeoffChoices([
+      lowCostPvnaOverflow,
+      highIntraPvnaSafe,
+    ], state, 0.5)
+    const recommended = choices?.choices.find(choice => choice.id === choices.recommended)
+
+    expect(recommended?.alternative).toBe(highIntraPvnaSafe)
+    expect(recommended?.metrics.pvna_over_by).toBe(0)
+    expect(recommended?.metrics.intra_team_over_by).toBeGreaterThan(0)
+  })
+
+  it('recommends the smallest PVNA overflow when every alternative exceeds the cap', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1', { pvna: 3.0 }),
+        createPlayer('p2', { pvna: 3.1 }),
+        createPlayer('p3', { pvna: 3.2 }),
+        createPlayer('p4', { pvna: 3.3 }),
+        createPlayer('p5', { pvna: 5.0 }),
+        createPlayer('p6', { pvna: 5.1 }),
+      ],
+      pvnaTolerance: 0.5,
+    })
+    const largerPvnaOverflow = alternative(['p1', 'p2'], ['p3', 'p4'], 0.9)
+    const smallerPvnaOverflow = alternative(['p1', 'p5'], ['p2', 'p6'], 0.6)
+
+    const choices = buildLiveTradeoffChoices([
+      largerPvnaOverflow,
+      smallerPvnaOverflow,
+    ], state, 0.5)
+    const recommended = choices?.choices.find(choice => choice.id === choices.recommended)
+
+    expect(recommended?.alternative).toBe(smallerPvnaOverflow)
+    expect(recommended?.metrics.pvna_over_by).toBeCloseTo(0.1)
+  })
 })

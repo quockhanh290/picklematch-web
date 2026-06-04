@@ -81,6 +81,7 @@ import { useAppTheme } from '@/lib/theme-context'
 import { checkInLiveSessionPlayers, invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent, repairLiveSessionPlayerStateFromRounds } from '../api'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from '../components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from '../constants'
+import { buildCourtLaneModels } from '../court-lanes'
 import { ChoiceRow, NavbarRightActions, StickyRoundCta } from '../controls'
 import {
   BreakdownRow,
@@ -1396,6 +1397,30 @@ function displayMatchKey(match: SessionLiveMatchRow) {
   return (match as LiveDisplayMatchRow).client_preview_id ?? match.id
 }
 
+type LiveMatchBoardProps = {
+  liveMatches: SessionLiveMatchRow[]
+  suggestedMatches: SuggestedLiveMatchRow[]
+  completedMatches: SessionLiveMatchRow[]
+  roundSize: number
+  targetRounds: number
+  roundPace: number
+  busy: string | null
+  startingPreviewIds: Set<string>
+  endingLiveMatchIds: Set<string>
+  completingMatchIds: Set<string>
+  creatingNextMatchIds: Set<string>
+  isSuggestingPreview: boolean
+  state: SessionState
+  pvnaTolerance: number
+  playersById: Map<string, ArrangementPlayer>
+  onStartMatch: (match: SuggestedLiveMatchRow) => void
+  onCompleteMatch: (match: SessionLiveMatchRow, score: { a: number; b: number }) => void
+  onCancelMatch: (match: SessionLiveMatchRow) => void
+  onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
+  onOpenSettings: () => void
+  onOpenSwap: (match: SuggestedLiveMatchRow) => void
+}
+
 export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   liveMatches,
   suggestedMatches,
@@ -1407,6 +1432,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   startingPreviewIds,
   endingLiveMatchIds,
   completingMatchIds,
+  creatingNextMatchIds,
   isSuggestingPreview,
   state,
   pvnaTolerance,
@@ -1417,28 +1443,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   onPlayerPress,
   onOpenSettings,
   onOpenSwap,
-}: {
-  liveMatches: SessionLiveMatchRow[]
-  suggestedMatches: SuggestedLiveMatchRow[]
-  completedMatches: SessionLiveMatchRow[]
-  roundSize: number
-  targetRounds: number
-  roundPace: number
-  busy: string | null
-  startingPreviewIds: Set<string>
-  endingLiveMatchIds: Set<string>
-  completingMatchIds: Set<string>
-  isSuggestingPreview: boolean
-  state: SessionState
-  pvnaTolerance: number
-  playersById: Map<string, ArrangementPlayer>
-  onStartMatch: (match: SuggestedLiveMatchRow) => void
-  onCompleteMatch: (match: SessionLiveMatchRow, score: { a: number; b: number }) => void
-  onCancelMatch: (match: SessionLiveMatchRow) => void
-  onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
-  onOpenSettings: () => void
-  onOpenSwap: (match: SuggestedLiveMatchRow) => void
-}) {
+}: LiveMatchBoardProps) {
   if (liveMatches.length === 0 && suggestedMatches.length === 0) return null
   const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches], roundSize)
   const liveGroups = groupMatchesByLogicalRound(liveMatches, logicalRoundByMatchId)
@@ -1458,7 +1463,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
                     match={match}
                     busy={busy === `complete-match-${match.id}` || endingLiveMatchIds.has(match.id)}
                     cancelBusy={busy === `cancel-match-${match.id}`}
-                    searchingNext={completingMatchIds.has(match.id) && !endingLiveMatchIds.has(match.id) && isSuggestingPreview}
+                    searchingNext={creatingNextMatchIds.has(match.id) && !endingLiveMatchIds.has(match.id)}
                     state={state}
                     playersById={playersById}
                     onComplete={onCompleteMatch}
@@ -1496,6 +1501,128 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
           </View>
         </View>
       ) : null}
+    </View>
+  )
+})
+
+export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoard({
+  liveMatches,
+  suggestedMatches,
+  completedMatches,
+  roundSize,
+  targetRounds,
+  roundPace,
+  busy,
+  startingPreviewIds,
+  endingLiveMatchIds,
+  completingMatchIds,
+  creatingNextMatchIds,
+  isSuggestingPreview,
+  state,
+  pvnaTolerance,
+  playersById,
+  onStartMatch,
+  onCompleteMatch,
+  onCancelMatch,
+  onPlayerPress,
+  onOpenSettings,
+  onOpenSwap,
+}: LiveMatchBoardProps) {
+  const theme = useAppTheme()
+  if (liveMatches.length === 0 && suggestedMatches.length === 0 && !isSuggestingPreview) return null
+
+  const courtCount = Math.max(1, Math.floor(roundSize))
+  const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches], courtCount)
+  const courtLanes = buildCourtLaneModels({
+    courtCount,
+    liveMatches,
+    suggestedMatches,
+    liveYieldsToSuggested: (liveMatch) => creatingNextMatchIds.has(liveMatch.id) || completingMatchIds.has(liveMatch.id),
+  })
+
+  return (
+    <View style={{ marginTop: 16, gap: 12 }}>
+      <SectionEyebrow label="Court lanes preview" />
+      {courtLanes.map(({ courtIdx, liveMatch, suggestedMatch }) => {
+        const roundNo = liveMatch
+          ? logicalRoundByMatchId.get(liveMatch.id) ?? ((liveMatch.round_no ?? 0) + 1)
+          : suggestedMatch
+            ? (suggestedMatch.round_no ?? 0) + 1
+            : null
+        const laneBusy = liveMatch
+          ? busy === `complete-match-${liveMatch.id}` || endingLiveMatchIds.has(liveMatch.id)
+          : suggestedMatch
+            ? busy === `start-match-${suggestedMatch.id}` || startingPreviewIds.has(suggestedMatch.id)
+            : false
+        return (
+          <View
+            key={`court-lane-${courtIdx}`}
+            style={{
+              gap: 8,
+              paddingTop: 10,
+              borderTopWidth: courtIdx === 0 ? 0 : BORDER.hairline,
+              borderTopColor: theme.outlineVariant,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 24 }}>
+              <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: theme.onSurface }}>
+                Court {courtIdx + 1}
+              </Text>
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.outline, fontWeight: '800' }}>
+                {roundNo ? `Round ${roundNo} / ${targetRounds}` : isSuggestingPreview ? 'Suggesting' : 'Empty'}
+              </Text>
+            </View>
+            {liveMatch ? (
+              <LiveMatchScoreBoard
+                key={displayMatchKey(liveMatch)}
+                match={liveMatch}
+                busy={laneBusy}
+                cancelBusy={busy === `cancel-match-${liveMatch.id}`}
+                searchingNext={creatingNextMatchIds.has(liveMatch.id) && !endingLiveMatchIds.has(liveMatch.id)}
+                state={state}
+                playersById={playersById}
+                onComplete={onCompleteMatch}
+                onCancel={onCancelMatch}
+              />
+            ) : suggestedMatch ? (
+              <SuggestedLiveMatchCard
+                key={suggestedMatch.id}
+                match={suggestedMatch}
+                busy={laneBusy}
+                state={state}
+                pvnaTolerance={pvnaTolerance}
+                roundPace={roundPace}
+                playersById={playersById}
+                onStart={onStartMatch}
+                onPlayerPress={onPlayerPress}
+                onOpenSettings={onOpenSettings}
+                onOpenSwap={() => onOpenSwap(suggestedMatch)}
+              />
+            ) : (
+              <View
+                style={{
+                  minHeight: 74,
+                  borderRadius: RADIUS.md,
+                  borderWidth: BORDER.hairline,
+                  borderColor: theme.outlineVariant,
+                  backgroundColor: theme.surfaceContainerLow,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 12,
+                }}
+              >
+                {isSuggestingPreview ? (
+                  <ActivityIndicator color={theme.primary} />
+                ) : (
+                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline }}>
+                    Waiting for next match
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+        )
+      })}
     </View>
   )
 })
@@ -1684,18 +1811,18 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   const theme = useAppTheme()
   const cancelBusy = false
   const rawTradeoffChoices = match.tradeoff_choices ?? []
-  const hasMeaningfulTradeoffChoices = rawTradeoffChoices.some(choice =>
+  const hasCapTradeoffChoices = rawTradeoffChoices.some(choice =>
     choice.metrics.pvna_over_by > 0 ||
-    choice.metrics.intra_team_over_by > 0 ||
-    choice.metrics.repeat_over_by > 0
+    choice.metrics.repeat_over_by > 0 ||
+    choice.alternative.warnings.includes('INTRA_TEAM_GAP_RELAXED')
   )
-  const tradeoffChoices = hasMeaningfulTradeoffChoices ? rawTradeoffChoices : []
+  const tradeoffChoices = hasCapTradeoffChoices ? rawTradeoffChoices : []
   const [selectedChoiceId, setSelectedChoiceId] = useState<SuggestionTradeoffChoiceId>(
     match.recommended_tradeoff_choice ?? tradeoffChoices[0]?.id ?? 'balanced',
   )
   useEffect(() => {
-    setSelectedChoiceId(match.recommended_tradeoff_choice ?? match.tradeoff_choices?.[0]?.id ?? 'balanced')
-  }, [hasMeaningfulTradeoffChoices, match.id, match.recommended_tradeoff_choice])
+    setSelectedChoiceId(match.recommended_tradeoff_choice ?? (hasCapTradeoffChoices ? rawTradeoffChoices[0]?.id : undefined) ?? 'balanced')
+  }, [hasCapTradeoffChoices, match.id, match.recommended_tradeoff_choice, rawTradeoffChoices])
   const selectedChoice = tradeoffChoices.find(choice => choice.id === selectedChoiceId) ?? tradeoffChoices[0]
   const activeMatch = useMemo<SuggestedLiveMatchRow>(() => {
     if (!selectedChoice) return match
@@ -1748,6 +1875,50 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     setRepeatTradeoffApproved(false)
   }, [selectedChoiceId])
   const startDisabled = busy
+  const recommendedChoice = tradeoffChoices.find(choice => choice.id === match.recommended_tradeoff_choice) ?? tradeoffChoices[0]
+  const describeChoice = (choice: SuggestionTradeoffChoice) => {
+    const reference = recommendedChoice?.metrics
+    const pvnaGain = reference ? reference.pvna_gap - choice.metrics.pvna_gap : 0
+    const intraGain = reference ? reference.intra_team_gap - choice.metrics.intra_team_gap : 0
+    const repeatGain = reference ? reference.repeat_over_by - choice.metrics.repeat_over_by : 0
+    const overPvna = choice.metrics.pvna_over_by > 0
+    const overIntraTeam = choice.metrics.intra_team_over_by > 0
+    const overRepeat = choice.metrics.repeat_over_by > 0
+    const costParts: string[] = []
+    if (overPvna) costParts.push(`PVNA vượt +${formatNumber(choice.metrics.pvna_over_by, 2)}`)
+    if (overIntraTeam) costParts.push(`intra +${formatNumber(choice.metrics.intra_team_over_by, 2)}`)
+    if (overRepeat) costParts.push(`lặp +${choice.metrics.repeat_over_by}`)
+    const costText = costParts.length > 0 ? `, đổi lại ${costParts.join(', ')}` : ''
+
+    if (choice.id === match.recommended_tradeoff_choice) {
+      return {
+        title: 'Đề xuất',
+        summary: `Tốt nhất tổng thể: PVNA ${formatNumber(choice.metrics.pvna_gap, 2)}, intra ${formatNumber(choice.metrics.intra_team_gap, 2)}, lặp +${choice.metrics.repeat_over_by}`,
+      }
+    }
+    if (repeatGain > 0) {
+      return {
+        title: 'Ít lặp hơn',
+        summary: `Giảm lặp +${formatNumber(repeatGain, 0)}${costText}`,
+      }
+    }
+    if (pvnaGain > 0.01) {
+      return {
+        title: 'Ít lệch đội hơn',
+        summary: `Giảm PVNA ${formatNumber(reference?.pvna_gap ?? 0, 2)} → ${formatNumber(choice.metrics.pvna_gap, 2)}${costText}`,
+      }
+    }
+    if (intraGain > 0.01) {
+      return {
+        title: 'Cặp trong đội đều hơn',
+        summary: `Giảm intra-team ${formatNumber(reference?.intra_team_gap ?? 0, 2)} → ${formatNumber(choice.metrics.intra_team_gap, 2)}${costText}`,
+      }
+    }
+    return {
+      title: choice.label,
+      summary: `PVNA ${formatNumber(choice.metrics.pvna_gap, 2)}, intra ${formatNumber(choice.metrics.intra_team_gap, 2)}, lặp +${choice.metrics.repeat_over_by}`,
+    }
+  }
   const tradeoffSummaryLines: string[] = []
   const visiblePvnaOverBy = pvnaTradeoff?.over_by ?? pvnaOverBy
   if (intraTeamRelaxed) {
@@ -1783,21 +1954,14 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       {tradeoffChoices.length > 1 ? (
         <View style={{ paddingHorizontal: 14, paddingBottom: 12, gap: 8 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.outline, fontWeight: '900', textTransform: 'uppercase' }}>
-            Chọn đánh đổi
+            Chọn phương án
           </Text>
           <View style={{ gap: 8 }}>
             {tradeoffChoices.map(choice => {
               const selected = choice.id === selectedChoice?.id
-              const overPvna = choice.metrics.pvna_over_by > 0
               const overIntraTeam = choice.metrics.intra_team_over_by > 0
               const overRepeat = choice.metrics.repeat_over_by > 0
-              const choiceSummary = overPvna && !overIntraTeam
-                ? `Đổi intra-team tốt hơn lấy PVNA +${formatNumber(choice.metrics.pvna_over_by, 2)}`
-                : overIntraTeam && !overPvna
-                  ? `Giữ PVNA cap, intra-team +${formatNumber(choice.metrics.intra_team_over_by, 2)}`
-                  : overPvna && overIntraTeam
-                    ? `PVNA +${formatNumber(choice.metrics.pvna_over_by, 2)} · intra-team +${formatNumber(choice.metrics.intra_team_over_by, 2)}`
-                    : `Trong PVNA cap ${formatNumber(configuredPvnaTolerance, 2)} · intra-team <= ${formatNumber(PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT, 2)}`
+              const choiceCopy = describeChoice(choice)
               return (
                 <Pressable
                   key={choice.id}
@@ -1813,14 +1977,14 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                     <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 12, color: selected ? theme.primary : theme.onSurface, fontWeight: '900' }}>
-                      {choice.label}{choice.id === match.recommended_tradeoff_choice ? ' · Đề xuất' : ''}
+                      {choiceCopy.title}{choice.id === match.recommended_tradeoff_choice ? ' · Đề xuất' : ''}
                     </Text>
                     <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: selected ? theme.primary : theme.outline }}>
                       PVNA {formatNumber(choice.metrics.pvna_gap, 2)}{overIntraTeam ? ` / intra +${formatNumber(choice.metrics.intra_team_over_by, 2)}` : ''}
                     </Text>
                   </View>
                   <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: selected ? theme.onSurface : theme.outline }}>
-                    {choiceSummary}
+                    {choiceCopy.summary}
                   </Text>
                   {overRepeat ? (
                     <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: selected ? theme.onSurface : theme.outline }}>

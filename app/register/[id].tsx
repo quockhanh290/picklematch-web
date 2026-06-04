@@ -348,7 +348,7 @@ export default function ZaloRegisterScreen() {
   if (success) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.background }}>
-        <SecondaryNavbar title={STRINGS.register.success_title} onBackPress={() => router.replace('/')} />
+        <SecondaryNavbar title={STRINGS.register.success_title} hideBackButton={true} />
         <RegistrationSuccessView 
           session={session} 
           onBackHome={() => router.replace('/')} 
@@ -363,7 +363,7 @@ export default function ZaloRegisterScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1, backgroundColor: theme.background }}
     >
-      <SecondaryNavbar title={STRINGS.register.title} onBackPress={() => router.back()} />
+      <SecondaryNavbar title={STRINGS.register.title} hideBackButton={true} />
 
       <ScrollView contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 100 }}>
         {/* Player Roster & Card */}
@@ -420,7 +420,7 @@ export default function ZaloRegisterScreen() {
                     alignItems: 'center', 
                     gap: 10,
                     paddingVertical: 8,
-                    paddingHorizontal: 16,
+                    marginHorizontal: 16,
                     borderBottomWidth: idx === displayPlayers.length - 1 ? 0 : 0.5,
                     borderBottomColor: theme.outlineVariant + '80',
                     opacity: 0.9
@@ -436,7 +436,7 @@ export default function ZaloRegisterScreen() {
                       </Text>
                     </View>
                     <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.headline, fontSize: 16 }}>{pName}</Text>
+                      <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.headline, fontSize: 17 }}>{pName}</Text>
                       {p.is_host && (
                         <View style={{ backgroundColor: theme.primary + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
                           <Text style={{ color: theme.primary, fontSize: 9, fontFamily: SCREEN_FONTS.headline }}>CHỦ KÈO</Text>
@@ -473,6 +473,7 @@ export default function ZaloRegisterScreen() {
               isExpanded={displayPlayers.length > 0 ? showPlayerList : undefined}
               onToggleExpand={displayPlayers.length > 0 ? () => setShowPlayerList(!showPlayerList) : undefined}
               expandableContent={playerListContent}
+              forcePrimaryColor={true}
             />
           )
         })()}

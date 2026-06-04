@@ -309,8 +309,9 @@ export function HostSessionDetailScreen({
         )}
 
         <FeaturedSessionCard
-          session={session}
+          session={session as any}
           isHost={isHost}
+          forcePrimaryColor={true}
         />
 
         {/* Format Selector REMOVED */}

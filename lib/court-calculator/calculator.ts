@@ -94,7 +94,7 @@ function withTargetWarning(option: CourtOption, targetMatches: number): CourtOpt
     ...option,
     warnings: [
       ...option.warnings,
-      `Khong dat muc tieu ${targetMatches.toFixed(1)} tran/nguoi trong thoi luong nay.`,
+      `Không đạt mục tiêu ${targetMatches.toFixed(1)} trận/người trong thời lượng này.`,
     ],
   }
 }
@@ -136,15 +136,15 @@ function buildQualityNotes(
 ): string[] {
   const notes: string[] = []
   if (playRatio < min) {
-    notes.push('Rotation hoi thap, co the lap cap vi it nguoi choi moi vong.')
+    notes.push('Xoay vòng hơi thấp, có thể bị lặp cặp vì ít người chơi mỗi vòng.')
   } else if (playRatio > max) {
-    notes.push('Rotation hoi cao, co the lap cap vi qua nhieu nguoi choi moi vong.')
+    notes.push('Xoay vòng hơi cao, có thể bị lặp cặp vì quá nhiều người chơi mỗi vòng.')
   } else {
-    notes.push(`Rotation phu hop mode ${PRESETS[preset ?? 'balanced'].label.toLowerCase()}.`)
+    notes.push(`Rotation phù hợp mode ${PRESETS[preset ?? 'balanced'].label.toLowerCase()}.`)
   }
 
   if (playRatio >= 0.98) {
-    notes.push('Gan nhu all-play moi vong, diversity co the giam neu session dai.')
+    notes.push('Gần như all-play mỗi vòng, diversity có thể giảm nếu session dài.')
   }
 
   return notes
@@ -156,7 +156,7 @@ function buildReasoning(
   rounds: number,
   label: string,
 ): string {
-  return `${option.courts} san cho ${rounds} vong: du kien ${option.avg_matches_per_player.toFixed(1)} tran/nguoi, muc tieu ${label.toLowerCase()} la ${targetMatches.toFixed(1)} tran/nguoi.`
+  return `${option.courts} sân cho ${rounds} vòng: dự kiến ${option.avg_matches_per_player.toFixed(1)} trận/người, mục tiêu ${label.toLowerCase()} là ${targetMatches.toFixed(1)} trận/người.`
 }
 
 function feasibilityRank(value: CourtOption['feasibility']): number {

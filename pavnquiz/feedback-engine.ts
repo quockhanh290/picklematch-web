@@ -60,7 +60,7 @@ const SKILL_TIPS: Record<string, string> = {
   advancedShots: "Tap ATP/Erne theo tinh huong, uu tien do chinh xac truoc.",
   twoHandedAdvantage: "Tap two-handed backhand cho soft shot va drive co kiem soat.",
   strategyTeamwork: "Tap communication, stacking, va pattern play trong danh doi.",
-  competitionLevel: "Thi dau them giai de tang kinh nghiem thuc chien.",
+  competitionLevel: "Thi đấu thêm giải để tăng kinh nghiệm thực chiến.",
   consistencyUnderPressure: "Tap bai mental game: breathing, routine, point reset.",
   pointConstruction: "Tap xay dung diem: target weakness va shot selection high-percentage.",
   errorRate: "Giam toc do trong pha kho, uu tien consistency truoc power.",

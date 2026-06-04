@@ -654,7 +654,7 @@ function detectUnsatisfiableGenderPrefs(
   for (const gender of ['M', 'F'] as const) {
     if (wants[gender].length > counts[gender] * 2) {
       const label = gender === 'F' ? 'nu' : 'nam'
-      const reason = `${wants[gender].length} nguoi muon partner ${label} nhung chi co ${counts[gender]} ${label}`
+      const reason = `${wants[gender].length} người muốn xếp cặp với ${label} nhưng chỉ có ${counts[gender]} ${label}`
       for (const player of wants[gender]) {
         unsatisfiable.push({ player_id: player.player_id, reason })
       }
@@ -669,7 +669,7 @@ function detectUnsatisfiableGenderPrefs(
       const label = player.opponent_gender_pref === 'F' ? 'nu' : 'nam'
       unsatisfiable.push({
         player_id: player.player_id,
-        reason: `Khong co doi thu ${label} nao dang co mat`,
+        reason: `Không có đối thủ ${label} nào đang có mặt`,
       })
     }
   }
