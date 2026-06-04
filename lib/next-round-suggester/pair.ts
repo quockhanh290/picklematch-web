@@ -2,9 +2,12 @@
 import {
   INTRA_TEAM_PVNA_GAP_LIMIT,
   PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
+  RECENT_GROUP_REMATCH_BLOCK_ROUNDS,
+  getMatchGroupKey,
   hasIntraTeamGapOverflow,
   hasRepeatOverflow,
   scoreMatch,
+  withRecentGroupRematchKeys,
 } from './score.ts'
 import type { Match, MatchScore, PlayerSessionState, SessionState, Team } from './types'
 
@@ -499,6 +502,27 @@ function getSoftPvnaTolerance(state: SessionState): number {
   return Math.max(MIN_SOFT_PVNA_TOLERANCE, strictTolerance * 2)
 }
 
+function buildRecentGroupRematchKeys(state: SessionState): Set<string> {
+  const keys = new Set<string>()
+  const currentRoundNo = state.current_round
+
+  for (const round of state.rounds) {
+    if (
+      round.status !== 'completed' ||
+      currentRoundNo <= round.round_no ||
+      currentRoundNo > round.round_no + RECENT_GROUP_REMATCH_BLOCK_ROUNDS
+    ) {
+      continue
+    }
+
+    for (const match of round.matches) {
+      keys.add(getMatchGroupKey(match.team_a, match.team_b))
+    }
+  }
+
+  return keys
+}
+
 export function bestPartitioning(
   players: PlayerSessionState[],
   state: SessionState,
@@ -517,6 +541,7 @@ export function bestPartitioning(
   const maxIterations = options.maxIterations ?? defaultMaxIterations(normalizedPlayers.length)
   const partitionCount = estimateUniqueCourtPartitions(normalizedPlayers.length)
   const canSearchExhaustively = partitionCount > 0 && partitionCount <= maxIterations
+  const searchState = withRecentGroupRematchKeys(state, buildRecentGroupRematchKeys(state))
 
   function runSearch(
     searchOptions: {
@@ -532,12 +557,12 @@ export function bestPartitioning(
     function consider(groups: PlayerSessionState[][]) {
       if (iterations >= maxIterations) return
       iterations += 1
-      const result = evaluatePartition(groups, state, iterations, options.cache, {
+      const result = evaluatePartition(groups, searchState, iterations, options.cache, {
         ...searchOptions,
         allowRepeatOverflow: options.allowRepeatOverflow,
       })
       if (!result) return
-      if (shouldReplaceBestPartition(result, best, state, options.cache)) {
+      if (shouldReplaceBestPartition(result, best, searchState, options.cache)) {
         best = result
       }
     }

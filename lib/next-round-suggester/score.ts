@@ -77,13 +77,22 @@ export function hasRecentGroupRematch(teamA: Team, teamB: Team, state: SessionSt
   const injectedKeys = getInjectedRecentGroupRematchKeys(state)
   if (injectedKeys) return injectedKeys.has(matchGroupKey)
 
-  const completedRounds = state.rounds.filter(round => round.status === 'completed')
   const currentRoundNo = state.current_round
-  return completedRounds.some(round =>
-    currentRoundNo > round.round_no
-    && currentRoundNo <= round.round_no + RECENT_GROUP_REMATCH_BLOCK_ROUNDS
-    && round.matches.some(match => getMatchGroupKey(match.team_a, match.team_b) === matchGroupKey),
-  )
+  for (const round of state.rounds) {
+    if (
+      round.status !== 'completed' ||
+      currentRoundNo <= round.round_no ||
+      currentRoundNo > round.round_no + RECENT_GROUP_REMATCH_BLOCK_ROUNDS
+    ) {
+      continue
+    }
+
+    for (const match of round.matches) {
+      if (getMatchGroupKey(match.team_a, match.team_b) === matchGroupKey) return true
+    }
+  }
+
+  return false
 }
 
 function getTeamGap(team: Team, state: SessionState): number | null {
@@ -334,30 +343,32 @@ export function scoreMatch(
     return INFINITY_SCORE
   }
 
-  if (allPlayers.some((playerId) => !state.players.has(playerId))) {
-    return INFINITY_SCORE
+  const teamA0 = state.players.get(teamA[0])
+  const teamA1 = state.players.get(teamA[1])
+  const teamB0 = state.players.get(teamB[0])
+  const teamB1 = state.players.get(teamB[1])
+  if (!teamA0 || !teamA1 || !teamB0 || !teamB1) return INFINITY_SCORE
+
+  if (!options.allowIntraTeamGapOverflow) {
+    const intraTeamGapLimit = options.intraTeamGapLimit ?? PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT
+    if (
+      Math.abs(teamA0.pvna - teamA1.pvna) > intraTeamGapLimit ||
+      Math.abs(teamB0.pvna - teamB1.pvna) > intraTeamGapLimit
+    ) {
+      return INFINITY_SCORE
+    }
   }
+
+  const teamAPvna = teamA0.pvna + teamA1.pvna
+  const teamBPvna = teamB0.pvna + teamB1.pvna
+  const pvnaDiff = Math.abs(teamAPvna - teamBPvna)
+  const tolerance = options.tolerance ?? state.config.pvna_tolerance
+  if (pvnaDiff > tolerance) return INFINITY_SCORE
 
   if (!options.allowRecentGroupRematch && hasRecentGroupRematch(teamA, teamB, state)) {
     return INFINITY_SCORE
   }
 
-  const teamAPvna = getPvna(teamA, state)
-  const teamBPvna = getPvna(teamB, state)
-  if (teamAPvna === null || teamBPvna === null) return INFINITY_SCORE
-
-  if (!options.allowIntraTeamGapOverflow && hasIntraTeamGapOverflow(
-    teamA,
-    teamB,
-    state,
-    options.intraTeamGapLimit ?? PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
-  )) {
-    return INFINITY_SCORE
-  }
-
-  const pvnaDiff = Math.abs(teamAPvna - teamBPvna)
-  const tolerance = options.tolerance ?? state.config.pvna_tolerance
-  if (pvnaDiff > tolerance) return INFINITY_SCORE
   if (!options.allowRepeatOverflow && hasRepeatOverflow(teamA, teamB, state)) {
     return INFINITY_SCORE
   }
