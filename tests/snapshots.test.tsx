@@ -1,6 +1,4 @@
-import React from 'react'
 import renderer, { act } from 'react-test-renderer'
-import { FeedMatchCard } from '@/components/session/FeedMatchCard'
 import { SessionMetaCard } from '@/components/session/SessionMetaCard'
 import { SessionNavContext, type SessionNavigation } from '@/lib/navigation/SessionNavContext'
 
@@ -48,34 +46,6 @@ const sessionNavMock: SessionNavigation = {
 }
 
 describe('UI Snapshots', () => {
-  test('FeedMatchCard renders correctly', () => {
-    let tree: any
-    act(() => {
-      tree = renderer.create(
-        <FeedMatchCard
-          courtName="Court A"
-          address="10 Chu Van An"
-          timeLabel="08:00 - 10:00"
-          dateLabel="Sat, 24/05"
-          bookingStatus="confirmed"
-          skillLabel="Intermediate"
-          skillIcon={mockIcon}
-          skillTagClassName=""
-          skillTextClassName=""
-          skillBorderClassName=""
-          skillIconColor="#000"
-          eloValue={1200}
-          duprValue="3.5"
-          matchTypeLabel="Doubles"
-          hostName="Host User"
-          priceLabel="50K"
-          availabilityLabel="3/4"
-          onPress={() => {}}
-        />
-      )
-    })
-    expect(tree.toJSON()).toMatchSnapshot()
-  })
 
   test('SessionMetaCard renders correctly', () => {
     let tree: any

@@ -165,7 +165,7 @@ export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDist
           <View style={{ alignItems: 'flex-end', flex: 1, paddingLeft: 8 }}>
             <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 }}>CHI PHÍ</Text>
             <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 28, color: theme.onSurface, lineHeight: 30 }} adjustsFontSizeToFit numberOfLines={1} minimumFontScale={0.8}>{data.price > 0 ? `${data.price}K` : 'Miễn phí'}</Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, color: theme.onSurfaceVariant, marginTop: 2 }}>/người</Text>
+            {data.price > 0 && <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, color: theme.onSurfaceVariant, marginTop: 2 }}>/người</Text>}
           </View>
         </View>
       </View>
@@ -177,14 +177,14 @@ export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDist
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             {/* Overlapping Avatars */}
-            {[1, 2, 3].map((_, index) => (
+            {data.avatars.map((avatar, index) => (
               <View 
-                key={index}
+                key={avatar.id}
                 style={{
                   width: 26, 
                   height: 26, 
                   borderRadius: 13, 
-                  backgroundColor: avatarColors[index],
+                  backgroundColor: avatarColors[avatar.colorIdx],
                   borderWidth: 2,
                   borderColor: theme.surface,
                   marginLeft: index === 0 ? 0 : -8,
@@ -193,7 +193,12 @@ export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDist
                   justifyContent: 'center'
                 }}
               >
-                <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.bold, color: avatarTexts[index] }}>{String.fromCharCode(65 + index)}</Text>
+                <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.bold, color: avatarTexts[avatar.colorIdx] }}>{avatar.initials}</Text>
+                {avatar.isHost && (
+                  <View style={{ position: 'absolute', bottom: -2, right: -4, backgroundColor: theme.warning, borderRadius: 6, width: 12, height: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.surface }}>
+                    <Text style={{ fontSize: 7, lineHeight: 10 }}>👑</Text>
+                  </View>
+                )}
               </View>
             ))}
           </View>
@@ -270,7 +275,7 @@ export const ListSessionCard = ({ session, onPress, isHost = false, showDistance
             </Text>
           </View>
           <View style={{ alignItems: 'flex-end', flexShrink: 0, paddingLeft: 8 }}>
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }} adjustsFontSizeToFit numberOfLines={1} minimumFontScale={0.8}>{data.price > 0 ? `${data.price}K` : 'Free'}</Text>
+            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 20, color: theme.onSurface }} adjustsFontSizeToFit numberOfLines={1} minimumFontScale={0.8}>{data.price > 0 ? `${data.price}K` : 'Miễn phí'}</Text>
             {data.price > 0 && <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 9, color: theme.onSurfaceVariant, marginTop: -2 }}>/người</Text>}
           </View>
         </View>
@@ -294,14 +299,14 @@ export const ListSessionCard = ({ session, onPress, isHost = false, showDistance
       <View style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: theme.outlineVariant + '40' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {[1, 2].map((_, index) => (
+            {data.avatars.slice(0, 2).map((avatar, index) => (
               <View 
-                key={index}
+                key={avatar.id}
                 style={{
                   width: 20, 
                   height: 20, 
                   borderRadius: 10, 
-                  backgroundColor: avatarColors[index],
+                  backgroundColor: avatarColors[avatar.colorIdx],
                   borderWidth: 1.5,
                   borderColor: theme.surface,
                   marginLeft: index === 0 ? 0 : -6,
@@ -310,7 +315,12 @@ export const ListSessionCard = ({ session, onPress, isHost = false, showDistance
                   justifyContent: 'center'
                 }}
               >
-                <Text style={{ fontSize: 8, fontFamily: SCREEN_FONTS.bold, color: avatarTexts[index] }}>{String.fromCharCode(65 + index)}</Text>
+                <Text style={{ fontSize: 8, fontFamily: SCREEN_FONTS.bold, color: avatarTexts[avatar.colorIdx] }}>{avatar.initials}</Text>
+                {avatar.isHost && (
+                  <View style={{ position: 'absolute', bottom: -1, right: -2, backgroundColor: theme.warning, borderRadius: 5, width: 10, height: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.surface }}>
+                    <Text style={{ fontSize: 5, lineHeight: 8 }}>👑</Text>
+                  </View>
+                )}
               </View>
             ))}
           </View>
