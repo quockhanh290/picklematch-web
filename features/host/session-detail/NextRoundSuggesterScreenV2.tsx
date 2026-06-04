@@ -1484,21 +1484,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     [fairnessAdjustment, pvnaTolerance, queueCourtCount, sessionId, state],
   )
   const previewRequestKey = useMemo(() => {
-    const liveRowsKey = effectiveLiveMatchRows
-      .map(match => [
-        match.id,
-        match.sequence_no,
-        match.round_no ?? '',
-        match.court_idx ?? '',
-        match.status,
-        match.team_a.join(':'),
-        match.team_b.join(':'),
-      ].join(':'))
-      .sort()
-      .join('|')
-    const completingKey = [...completingLiveMatchIds].sort().join(',')
     const rowVersionKey = [
-      rows.liveStateVersion ?? 'noversion',
       rows.playerRows.length,
       rows.pairRows.length,
       rows.roundRows.length,
@@ -1506,19 +1492,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     return [
       previewBatchKey,
       rowVersionKey,
-      liveRowsKey,
-      completingKey,
-      suggestedQueueCount,
     ].join('||')
   }, [
-    completingLiveMatchIds,
-    effectiveLiveMatchRows,
     previewBatchKey,
-    rows.liveStateVersion,
     rows.pairRows.length,
     rows.playerRows.length,
     rows.roundRows.length,
-    suggestedQueueCount,
   ])
   React.useEffect(() => {
     if (previewBatchKeyRef.current === null) {

@@ -218,9 +218,6 @@ export default function HostDashboardScreen() {
     }
   }
 
-    )
-  }
-
   // Calculate performance metrics
   const completedSessions = sessions.filter(s => 
     ['completed', 'finished', 'archived', 'done'].includes(s.status)

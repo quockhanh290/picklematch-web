@@ -366,9 +366,7 @@ export default function ZaloRegisterScreen() {
       <SecondaryNavbar title={STRINGS.register.title} onBackPress={() => router.back()} />
 
       <ScrollView contentContainerStyle={{ padding: SPACING.xl, paddingBottom: 100 }}>
-        <FeaturedSessionCard session={session} />
-
-        {/* Player Roster */}
+        {/* Player Roster & Card */}
         {(() => {
           const rawPlayers = session?.session_players || []
           const hostId = session?.host?.id
@@ -387,122 +385,95 @@ export default function ZaloRegisterScreen() {
             } as any)
           }
 
-          if (displayPlayers.length === 0) return null
+          const playerListContent = displayPlayers.length === 0 ? null : (
+            <Animated.View 
+              entering={FadeInUp.duration(300)}
+              style={{ paddingBottom: 8, paddingTop: 4 }}
+            >
+              {displayPlayers.map((playerItem, idx) => {
+                const avatarColors = ['#E1F5EE', '#FAECE7', '#E5E7EB']
+                const avatarTexts = ['#0F6E56', '#993C1D', '#374151']
+                
+                const p = (playerItem as any).player || playerItem
+                const pName = p.name || 'Người chơi'
+                
+                let pInitials = p.initials
+                if (!pInitials && p.name) {
+                  const names = p.name.trim().split(' ').filter(Boolean)
+                  if (names.length > 1) {
+                    pInitials = (names[0][0] + names[names.length - 1][0]).toUpperCase()
+                  } else if (names.length === 1) {
+                    pInitials = names[0].substring(0, 2).toUpperCase()
+                  }
+                }
+                if (!pInitials) pInitials = '??'
+
+                const pGender = (p as any).gender === 'male' || (p as any).gender === 'Nam' ? 'Nam' : (p as any).gender === 'female' || (p as any).gender === 'Nữ' ? 'Nữ' : ''
+                let pSkill = (p as any).pvna ? `Trình ${Number((p as any).pvna).toFixed(2)}` : ((p as any).skill_label || (p as any).self_assessed_level || '')
+                if (!pSkill && ((p as any).current_elo || (p as any).elo)) {
+                  pSkill = `Elo ${(p as any).current_elo || (p as any).elo}`
+                }
+
+                return (
+                  <View key={p.id || idx} style={{ 
+                    flexDirection: 'row', 
+                    alignItems: 'center', 
+                    gap: 10,
+                    paddingVertical: 8,
+                    paddingHorizontal: 16,
+                    borderBottomWidth: idx === displayPlayers.length - 1 ? 0 : 0.5,
+                    borderBottomColor: theme.outlineVariant + '80',
+                    opacity: 0.9
+                  }}>
+                    <View style={{ 
+                      width: 32, height: 32, borderRadius: 16, 
+                      backgroundColor: avatarColors[idx % 3], 
+                      alignItems: 'center', justifyContent: 'center',
+                      borderWidth: 1, borderColor: theme.surfaceVariant
+                    }}>
+                      <Text style={{ color: avatarTexts[idx % 3], fontSize: 11, fontFamily: SCREEN_FONTS.bold }}>
+                        {pInitials}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.headline, fontSize: 16 }}>{pName}</Text>
+                      {p.is_host && (
+                        <View style={{ backgroundColor: theme.primary + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                          <Text style={{ color: theme.primary, fontSize: 9, fontFamily: SCREEN_FONTS.headline }}>CHỦ KÈO</Text>
+                        </View>
+                      )}
+                    </View>
+                    
+                    {(pGender || pSkill) ? (
+                      <View style={{ 
+                        backgroundColor: pGender === 'Nam' ? theme.successContainer : (pGender === 'Nữ' ? '#FDF2F0' : '#E5E7EB'), 
+                        paddingHorizontal: 8, paddingVertical: 4, borderRadius: RADIUS.sm,
+                        borderWidth: 1, borderColor: pGender === 'Nam' ? theme.success + '40' : (pGender === 'Nữ' ? '#D85A3040' : '#37415140'),
+                        flexDirection: 'row', alignItems: 'center', gap: 4
+                      }}>
+                        {pGender ? (
+                          <Text style={{ color: pGender === 'Nam' ? theme.success : (pGender === 'Nữ' ? '#D85A30' : '#374151'), fontSize: 12, fontFamily: SCREEN_FONTS.headline }}>
+                            {pGender.toUpperCase()}
+                          </Text>
+                        ) : null}
+                        <Text style={{ color: pGender === 'Nam' ? theme.success : (pGender === 'Nữ' ? '#D85A30' : '#374151'), fontSize: 12, fontFamily: SCREEN_FONTS.headline }}>
+                          {(p as any).pvna ? Number((p as any).pvna).toFixed(2) : (pSkill.replace('Trình', '').trim())}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )
+              })}
+            </Animated.View>
+          )
 
           return (
-            <View style={{ 
-              backgroundColor: theme.surface, 
-              borderRadius: RADIUS.lg, 
-              borderWidth: 1,
-              borderColor: theme.outlineVariant,
-              ...LAYOUT_SHADOW.xs,
-              overflow: 'hidden',
-              marginTop: 16
-            }}>
-              <Pressable 
-                onPress={() => setShowPlayerList(!showPlayerList)}
-                style={{ 
-                  paddingVertical: 12, 
-                  paddingHorizontal: 16,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}>
-                    <Users size={14} color={theme.onPrimary} />
-                  </View>
-                  <View>
-                    <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.bold, fontSize: 14 }}>
-                      {`Đã có ${displayPlayers.length} người tham gia`}
-                    </Text>
-                  </View>
-                </View>
-                {showPlayerList ? <ChevronUp size={20} color={theme.outline} /> : <ChevronDown size={20} color={theme.outline} />}
-              </Pressable>
-
-              {showPlayerList && (
-                <Animated.View 
-                  entering={FadeInUp.duration(300)}
-                  style={{ paddingBottom: 8 }}
-                >
-                  <View style={{ height: 1, backgroundColor: theme.outlineVariant, marginHorizontal: 16, marginBottom: 4 }} />
-                  
-                  {displayPlayers.map((playerItem, idx) => {
-                    const p = (playerItem as any).player || playerItem
-                    const pName = p.name || 'Người chơi'
-                    
-                    let pInitials = p.initials
-                    if (!pInitials && p.name) {
-                      const names = p.name.trim().split(' ').filter(Boolean)
-                      if (names.length > 1) {
-                        pInitials = (names[0][0] + names[names.length - 1][0]).toUpperCase()
-                      } else if (names.length === 1) {
-                        pInitials = names[0].substring(0, 2).toUpperCase()
-                      }
-                    }
-                    if (!pInitials) pInitials = '??'
-
-                    const pGender = (p as any).gender === 'male' || (p as any).gender === 'Nam' ? 'Nam' : (p as any).gender === 'female' || (p as any).gender === 'Nữ' ? 'Nữ' : ''
-                    let pSkill = (p as any).pvna ? `Trình ${Number((p as any).pvna).toFixed(2)}` : ((p as any).skill_label || (p as any).self_assessed_level || '')
-                    if (!pSkill && ((p as any).current_elo || (p as any).elo)) {
-                      pSkill = `Elo ${(p as any).current_elo || (p as any).elo}`
-                    }
-
-                    return (
-                      <View key={p.id || idx} style={{ 
-                        flexDirection: 'row', 
-                        alignItems: 'center', 
-                        gap: 10,
-                        paddingVertical: 10,
-                        paddingHorizontal: 16,
-                        borderBottomWidth: idx === displayPlayers.length - 1 ? 0 : 1,
-                        borderBottomColor: theme.outlineVariant,
-                        opacity: 0.9
-                      }}>
-                        <View style={{ 
-                          width: 32, height: 32, borderRadius: 16, 
-                          backgroundColor: theme.primary, 
-                          alignItems: 'center', justifyContent: 'center' 
-                        }}>
-                          <Text style={{ color: theme.onPrimary, fontSize: 11, fontFamily: SCREEN_FONTS.headline }}>
-                            {pInitials}
-                          </Text>
-                        </View>
-                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.headline, fontSize: 15 }}>{pName}</Text>
-                          {p.is_host && (
-                            <View style={{ backgroundColor: theme.primary + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                              <Text style={{ color: theme.primary, fontSize: 9, fontFamily: SCREEN_FONTS.headline }}>CHỦ KÈO</Text>
-                            </View>
-                          )}
-                        </View>
-                        
-                        {(pGender || pSkill) ? (
-                          <View style={{ 
-                            backgroundColor: pGender === 'Nam' ? '#E1F5EE' : '#FAECE7', 
-                            paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6,
-                            borderWidth: 1, borderColor: pGender === 'Nam' ? '#0F6E5630' : '#993C1D30',
-                            flexDirection: 'row', alignItems: 'center', gap: 6
-                          }}>
-                            <Text style={{ color: pGender === 'Nam' ? '#0F6E56' : '#993C1D', fontSize: 12, fontFamily: SCREEN_FONTS.headline }}>
-                              {pGender ? pGender.toUpperCase() : ''}
-                            </Text>
-                            {pGender && pSkill ? (
-                              <Text style={{ color: pGender === 'Nam' ? '#0F6E56' : '#993C1D', opacity: 0.3, fontSize: 10 }}>|</Text>
-                            ) : null}
-                            <Text style={{ color: pGender === 'Nam' ? '#0F6E56' : '#993C1D', fontSize: 12, fontFamily: SCREEN_FONTS.headline }}>
-                              {(p as any).pvna ? Number((p as any).pvna).toFixed(2) : (pSkill.replace('Trình', '').trim())}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    )
-                  })}
-                </Animated.View>
-              )}
-            </View>
+            <FeaturedSessionCard 
+              session={session} 
+              isExpanded={displayPlayers.length > 0 ? showPlayerList : undefined}
+              onToggleExpand={displayPlayers.length > 0 ? () => setShowPlayerList(!showPlayerList) : undefined}
+              expandableContent={playerListContent}
+            />
           )
         })()}
 

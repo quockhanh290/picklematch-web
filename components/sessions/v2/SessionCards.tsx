@@ -1,6 +1,6 @@
 import React from 'react'
 import { View, Text, TouchableOpacity } from 'react-native'
-import { Users, ChevronRight } from 'lucide-react-native'
+import { Users, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react-native'
 import { useAppTheme } from '@/lib/theme-context'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, SPACING, BORDER, SHADOW } from '@/constants/screenLayout'
@@ -82,9 +82,12 @@ export interface SessionCardProps {
   onPress?: (id: string) => void
   isHost?: boolean
   showDistance?: boolean // Option to turn distance off if needed
+  expandableContent?: React.ReactNode
+  isExpanded?: boolean
+  onToggleExpand?: () => void
 }
 
-export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDistance = true }: SessionCardProps) => {
+export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDistance = true, expandableContent, isExpanded, onToggleExpand }: SessionCardProps) => {
   const theme = useAppTheme()
   const data: SessionDisplayData = parseSessionForCard(session, isHost)
   
@@ -121,7 +124,10 @@ export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDist
   const avatarTexts = ['#0F6E56', '#993C1D', '#374151']
 
   return (
-    <TouchableOpacity activeOpacity={0.9} onPress={() => onPress && onPress(data.id)} style={{ backgroundColor: theme.surface, borderRadius: RADIUS.xl, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, ...SHADOW.md, overflow: 'hidden', marginBottom: SPACING.md }}>
+    <TouchableOpacity activeOpacity={0.9} onPress={() => {
+      if (onToggleExpand) onToggleExpand()
+      else if (onPress) onPress(data.id)
+    }} style={{ backgroundColor: theme.surface, borderRadius: RADIUS.xl, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, ...SHADOW.md, overflow: 'hidden', marginBottom: SPACING.md }}>
       
       {/* Header Status Bar */}
       <View style={{ backgroundColor: statusColor, paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -194,11 +200,6 @@ export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDist
                 }}
               >
                 <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.bold, color: avatarTexts[avatar.colorIdx] }}>{avatar.initials}</Text>
-                {avatar.isHost && (
-                  <View style={{ position: 'absolute', bottom: -2, right: -4, backgroundColor: theme.warning, borderRadius: 6, width: 12, height: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.surface }}>
-                    <Text style={{ fontSize: 7, lineHeight: 10 }}>👑</Text>
-                  </View>
-                )}
               </View>
             ))}
           </View>
@@ -215,11 +216,23 @@ export const FeaturedSessionCard = ({ session, onPress, isHost = false, showDist
 
         {/* Right Side: Solid CTA Button */}
         <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: statusColor, paddingHorizontal: 16, paddingVertical: 10, borderRadius: RADIUS.sm, gap: 2, ...SHADOW.sm }}>
-          <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.headline, fontSize: 13 }}>{actionText}</Text>
-          <ChevronRight size={14} color="white" />
+          <Text style={{ color: 'white', fontFamily: SCREEN_FONTS.headline, fontSize: 13 }}>
+            {isExpanded !== undefined ? (isExpanded ? 'THU GỌN' : 'CHI TIẾT') : actionText}
+          </Text>
+          {isExpanded !== undefined ? (
+            isExpanded ? <ChevronUp size={14} color="white" /> : <ChevronDown size={14} color="white" />
+          ) : (
+            <ChevronRight size={14} color="white" />
+          )}
         </View>
 
       </View>
+      
+      {expandableContent && isExpanded && (
+        <View style={{ backgroundColor: theme.surfaceAlt, paddingBottom: 8 }}>
+          {expandableContent}
+        </View>
+      )}
     </TouchableOpacity>
   )
 }
@@ -316,11 +329,6 @@ export const ListSessionCard = ({ session, onPress, isHost = false, showDistance
                 }}
               >
                 <Text style={{ fontSize: 8, fontFamily: SCREEN_FONTS.bold, color: avatarTexts[avatar.colorIdx] }}>{avatar.initials}</Text>
-                {avatar.isHost && (
-                  <View style={{ position: 'absolute', bottom: -1, right: -2, backgroundColor: theme.warning, borderRadius: 5, width: 10, height: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.surface }}>
-                    <Text style={{ fontSize: 5, lineHeight: 8 }}>👑</Text>
-                  </View>
-                )}
               </View>
             ))}
           </View>
