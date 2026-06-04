@@ -338,6 +338,7 @@ describe('scoreMatch', () => {
       createPlayer('p3', { pvna: 3.2 }),
       createPlayer('p4', { pvna: 3.3 }),
       createPlayer('p5', { pvna: 3.4 }),
+      createPlayer('p6', { pvna: 3.5 }),
     ]
     const previousMatch: Match = {
       court_idx: 0,
@@ -358,7 +359,37 @@ describe('scoreMatch', () => {
     }
 
     expect(scoreMatch(['p1', 'p3'], ['p2', 'p4'], state).score).toBe(Infinity)
-    expect(scoreMatch(['p1', 'p3'], ['p2', 'p5'], state).score).not.toBe(Infinity)
+    expect(scoreMatch(['p1', 'p5'], ['p2', 'p6'], state).score).not.toBe(Infinity)
+  })
+
+  it('blocks near-rematches with three of the same four players in the recent window', () => {
+    const players = [
+      createPlayer('p1', { pvna: 3.0 }),
+      createPlayer('p2', { pvna: 3.1 }),
+      createPlayer('p3', { pvna: 3.2 }),
+      createPlayer('p4', { pvna: 3.3 }),
+      createPlayer('p5', { pvna: 3.4 }),
+      createPlayer('p6', { pvna: 3.5 }),
+    ]
+    const state = {
+      ...createState({ players, currentRound: 1, pvnaTolerance: 10 }),
+      rounds: [{
+        session_id: 'session-test',
+        round_no: 0,
+        status: 'completed' as const,
+        matches: [{
+          court_idx: 0,
+          team_a: ['p1', 'p2'] as [string, string],
+          team_b: ['p3', 'p4'] as [string, string],
+        }],
+        resting: [],
+        started_at: null,
+        ended_at: null,
+      }],
+    }
+
+    expect(scoreMatch(['p1', 'p3'], ['p2', 'p5'], state).score).toBe(Infinity)
+    expect(scoreMatch(['p1', 'p5'], ['p2', 'p6'], state).score).not.toBe(Infinity)
   })
 
   it('allows same four-player groups after the two-round block window', () => {

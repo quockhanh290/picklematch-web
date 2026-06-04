@@ -1,9 +1,12 @@
 import {
+  buildSuggestedMatchPayloads,
   buildProjectedStateAfterCompletedLiveRound,
   buildProjectedStateAfterLiveMatch,
   buildLiveTradeoffChoices,
+  findStrictCleanLiveAlternative,
 } from '../../../lib/next-round-suggester/live-preview'
 import type { SessionLiveMatchRow, SuggestionAlternative } from '../../../lib/next-round-suggester/types'
+import { Tier } from '../../../lib/next-round-suggester/classify'
 import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
 
 function alternative(teamA: [string, string], teamB: [string, string], pvnaDiff: number): SuggestionAlternative {
@@ -55,6 +58,31 @@ function liveMatch(teamA: [string, string], teamB: [string, string], roundNo = 0
   }
 }
 
+function liveRow(
+  id: string,
+  courtIdx: number,
+  status: SessionLiveMatchRow['status'],
+  teamA: [string, string],
+  teamB: [string, string],
+): SessionLiveMatchRow {
+  return {
+    id,
+    session_id: 'session-test',
+    sequence_no: courtIdx,
+    round_no: 0,
+    court_idx: courtIdx,
+    status,
+    team_a: teamA,
+    team_b: teamB,
+    resting: [],
+    score_a: 0,
+    score_b: 0,
+    suggested_at: new Date('2026-05-14T12:00:00.000Z').toISOString(),
+    started_at: status === 'live' ? new Date('2026-05-14T12:01:00.000Z').toISOString() : null,
+    ended_at: status === 'completed' ? new Date('2026-05-14T12:15:00.000Z').toISOString() : null,
+  }
+}
+
 describe('projected live match state', () => {
   it('counts rest only when the projected logical round is finalized', () => {
     const state = createState({
@@ -80,6 +108,82 @@ describe('projected live match state', () => {
     expect(afterRound.players.get('p5')?.consecutive_rest).toBe(1)
     expect(afterRound.players.get('p5')?.consecutive_play).toBe(0)
     expect(afterRound.players.get('p1')?.consecutive_rest).toBe(0)
+  })
+
+  it('does not keep completed finishing-match players busy when suggesting a replacement', () => {
+    const state = createState({
+      courts: 2,
+      players: [
+        createPlayer('p1', { pvna: 3.0 }),
+        createPlayer('p2', { pvna: 3.1 }),
+        createPlayer('p3', { pvna: 3.2 }),
+        createPlayer('p4', { pvna: 3.3 }),
+        createPlayer('p5', { pvna: 3.4 }),
+        createPlayer('p6', { pvna: 3.5 }),
+        createPlayer('p7', { pvna: 3.6 }),
+        createPlayer('p8', { pvna: 3.7 }),
+      ],
+    })
+    const completedCourt0 = liveRow('live-court-0', 0, 'completed', ['p1', 'p2'], ['p3', 'p4'])
+    const liveCourt1 = liveRow('live-court-1', 1, 'live', ['p5', 'p6'], ['p7', 'p8'])
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 2,
+      state,
+      rows: { liveMatchRows: [completedCourt0, liveCourt1], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set([completedCourt0.id]),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].court_idx).toBe(0)
+    expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(new Set(['p1', 'p2', 'p3', 'p4']))
+  })
+})
+
+describe('findStrictCleanLiveAlternative', () => {
+  it('rescues a strict-clean match from available players before using soft-rest players', () => {
+    const state = createState({
+      players: [
+        createPlayer('fresh-1', { pvna: 3.71 }),
+        createPlayer('fresh-2', { pvna: 3.53 }),
+        createPlayer('fresh-3', { pvna: 3.46 }),
+        createPlayer('fresh-4', { pvna: 3.80 }),
+        createPlayer('fresh-5', { pvna: 4.93 }),
+        createPlayer('fresh-6', { pvna: 4.04 }),
+        createPlayer('soft-rest-1', { pvna: 2.20, matches_played: 1, consecutive_play: 1 }),
+        createPlayer('soft-rest-2', { pvna: 2.30, matches_played: 1, consecutive_play: 1 }),
+      ],
+      pvnaTolerance: 0.5,
+    })
+
+    const rescued = findStrictCleanLiveAlternative(state, {
+      busyIds: new Set(),
+      courtIdx: 0,
+      configuredPvnaTolerance: 0.5,
+      tierOverrides: {
+        'soft-rest-1': Tier.SHOULD_REST,
+        'soft-rest-2': Tier.SHOULD_REST,
+      },
+      timeoutMs: 300,
+    })
+
+    expect(rescued).not.toBeNull()
+    expect(rescued?.tradeoffs).toEqual([])
+    expect(rescued?.warnings).not.toContain('INTRA_TEAM_GAP_RELAXED')
+
+    const selectedIds = new Set([
+      ...(rescued?.matches[0]?.team_a ?? []),
+      ...(rescued?.matches[0]?.team_b ?? []),
+    ])
+    expect(selectedIds.has('soft-rest-1')).toBe(false)
+    expect(selectedIds.has('soft-rest-2')).toBe(false)
+    expect(rescued?.matches[0]?.stats?.pvna_diff).toBeLessThanOrEqual(0.5)
   })
 })
 

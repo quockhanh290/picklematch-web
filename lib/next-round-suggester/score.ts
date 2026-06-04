@@ -27,6 +27,7 @@ export const MAX_PROJECTED_OPPONENT_PAIR_COUNT = 2
 export const MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER = 2
 export const MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER = 2
 export const RECENT_GROUP_REMATCH_BLOCK_ROUNDS = 2
+export const RECENT_GROUP_NEAR_REMATCH_MIN_OVERLAP = 3
 const RECENT_GROUP_REMATCH_KEYS_FIELD = '__recent_group_rematch_keys'
 
 function emptyStats(pvnaDiff = 0): MatchStats {
@@ -63,19 +64,46 @@ export function getMatchGroupKey(teamA: Team, teamB: Team) {
   return [...teamA, ...teamB].sort().join(':')
 }
 
+export function getMatchNearRematchKeys(teamA: Team, teamB: Team) {
+  const ids = [...teamA, ...teamB].sort()
+  const keys: string[] = []
+  for (let omitted = 0; omitted < ids.length; omitted += 1) {
+    keys.push(`near:${ids.filter((_, index) => index !== omitted).join(':')}`)
+  }
+  return keys
+}
+
 function getInjectedRecentGroupRematchKeys(state: SessionState): Set<string> | null {
   const keys = (state as unknown as Record<string, unknown>)[RECENT_GROUP_REMATCH_KEYS_FIELD]
   return keys instanceof Set ? keys as Set<string> : null
+}
+
+export function getRecentGroupRematchKeys(state: SessionState): Set<string> {
+  const keys = getInjectedRecentGroupRematchKeys(state)
+  return keys ? new Set(keys) : new Set()
+}
+
+export function getRecentGroupRematchKeySignature(state: SessionState): string {
+  const keys = getInjectedRecentGroupRematchKeys(state)
+  return keys ? [...keys].sort().join('|') : ''
 }
 
 export function withRecentGroupRematchKeys(state: SessionState, keys: Set<string>): SessionState {
   return Object.assign({ ...state }, { [RECENT_GROUP_REMATCH_KEYS_FIELD]: keys })
 }
 
+function getPlayerOverlap(teamA: Team, teamB: Team, otherTeamA: Team, otherTeamB: Team) {
+  const otherIds = new Set([...otherTeamA, ...otherTeamB])
+  return [...teamA, ...teamB].filter(playerId => otherIds.has(playerId)).length
+}
+
 export function hasRecentGroupRematch(teamA: Team, teamB: Team, state: SessionState): boolean {
   const matchGroupKey = getMatchGroupKey(teamA, teamB)
   const injectedKeys = getInjectedRecentGroupRematchKeys(state)
-  if (injectedKeys) return injectedKeys.has(matchGroupKey)
+  if (injectedKeys) {
+    if (injectedKeys.has(matchGroupKey)) return true
+    return getMatchNearRematchKeys(teamA, teamB).some(key => injectedKeys.has(key))
+  }
 
   const currentRoundNo = state.current_round
   for (const round of state.rounds) {
@@ -89,6 +117,9 @@ export function hasRecentGroupRematch(teamA: Team, teamB: Team, state: SessionSt
 
     for (const match of round.matches) {
       if (getMatchGroupKey(match.team_a, match.team_b) === matchGroupKey) return true
+      if (getPlayerOverlap(teamA, teamB, match.team_a, match.team_b) >= RECENT_GROUP_NEAR_REMATCH_MIN_OVERLAP) {
+        return true
+      }
     }
   }
 

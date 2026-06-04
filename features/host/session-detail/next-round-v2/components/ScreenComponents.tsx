@@ -1930,6 +1930,16 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   if (repeatTradeoff && (repeatTradeoff.over_by ?? 0) > 0) {
     tradeoffSummaryLines.push(`lặp +${repeatTradeoff.over_by}`)
   }
+  const tradeoffBenefitLines: string[] = []
+  if (visiblePvnaOverBy <= 0) {
+    tradeoffBenefitLines.push(`PVNA ${formatNumber(pvnaDiff, 2)} trong cap ${formatNumber(configuredPvnaTolerance, 2)}`)
+  }
+  if (!intraTeamRelaxed) {
+    tradeoffBenefitLines.push('intra-team trong ngưỡng')
+  }
+  if (!repeatTradeoff || (repeatTradeoff.over_by ?? 0) <= 0) {
+    tradeoffBenefitLines.push('lặp trong cap')
+  }
   return (
     <View style={{ borderRadius: 16, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
@@ -1946,8 +1956,13 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
         <View style={{ paddingHorizontal: 14, paddingBottom: tradeoffChoices.length > 1 ? 8 : 12 }}>
           <View style={{ borderTopWidth: BORDER.hairline, borderTopColor: theme.outlineVariant, paddingTop: 9 }}>
             <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
-              Trade-off: {tradeoffSummaryLines.join(' · ')}
+              Đánh đổi: {tradeoffSummaryLines.join(' · ')}
             </Text>
+            {tradeoffBenefitLines.length > 0 ? (
+              <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.outline }}>
+                Đổi lại: {tradeoffBenefitLines.join(' · ')}
+              </Text>
+            ) : null}
           </View>
         </View>
       ) : null}
@@ -3734,7 +3749,7 @@ export function PlayerMatchDistributionBlock({
           const activities = buildPlayerRoundTimeline(row, completedRounds)
           const checkedOutRound = activities.find(activity => activity.status === 'checked_out')?.round_no
           const checkedOutLabel = checkedOutRound != null ? `R\u1eddi t\u1eeb V${checkedOutRound + 1}` : null
-          const statusLabel = checkedOutLabel ?? (row.opted_rest ? '\u0110ang xin ngh\u1ec9' : hasViolation ? `Ngh\u1ec9 ${playerRest?.max_consecutive_rest ?? 0}` : null)
+          const statusLabel = checkedOutLabel ?? (row.opted_rest ? '\u0110ang xin ngh\u1ec9' : hasViolation ? `T\u1eebng ngh\u1ec9 ${playerRest?.max_consecutive_rest ?? 0}` : null)
           return (
             <View
               key={row.player_id}

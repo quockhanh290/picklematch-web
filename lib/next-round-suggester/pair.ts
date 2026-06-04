@@ -4,6 +4,9 @@ import {
   PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
   RECENT_GROUP_REMATCH_BLOCK_ROUNDS,
   getMatchGroupKey,
+  getMatchNearRematchKeys,
+  getRecentGroupRematchKeys,
+  getRecentGroupRematchKeySignature,
   hasIntraTeamGapOverflow,
   hasRepeatOverflow,
   scoreMatch,
@@ -105,11 +108,13 @@ function teamKey(team: Team) {
 
 function splitCacheKey(
   players: PlayerSessionState[],
+  state: SessionState,
   tolerance?: number,
   allowIntraTeamGapOverflow?: boolean,
   intraTeamGapLimit?: number,
 ) {
-  return `${players.map((player) => player.player_id).sort().join(':')}|${tolerance ?? 'strict'}|intra:${allowIntraTeamGapOverflow ? 'open' : intraTeamGapLimit ?? 'preferred'}`
+  const recentKeySignature = getRecentGroupRematchKeySignature(state)
+  return `${players.map((player) => player.player_id).sort().join(':')}|${tolerance ?? 'strict'}|intra:${allowIntraTeamGapOverflow ? 'open' : intraTeamGapLimit ?? 'preferred'}|recent:${recentKeySignature}`
 }
 
 function matchesKey(matches: Match[]) {
@@ -150,6 +155,7 @@ function evaluatePartition(
     tolerance?: number
     relaxedTolerance?: boolean
     allowRepeatOverflow?: boolean
+    allowRecentGroupRematch?: boolean
     intraTeamGapLimit?: number
     allowIntraTeamGapOverflow?: boolean
   } = {},
@@ -163,6 +169,7 @@ function evaluatePartition(
     const split = bestTeamSplitWithTolerance(groups[courtIdx], state, {
       tolerance: options.tolerance,
       allowRepeatOverflow: options.allowRepeatOverflow,
+      allowRecentGroupRematch: options.allowRecentGroupRematch,
       intraTeamGapLimit: options.intraTeamGapLimit,
       allowIntraTeamGapOverflow: options.allowIntraTeamGapOverflow,
     }, cache)
@@ -309,6 +316,7 @@ function bestTeamSplitWithTolerance(
   options: {
     tolerance?: number
     allowRepeatOverflow?: boolean
+    allowRecentGroupRematch?: boolean
     intraTeamGapLimit?: number
     allowIntraTeamGapOverflow?: boolean
   } = {},
@@ -316,7 +324,7 @@ function bestTeamSplitWithTolerance(
 ): TeamSplitResult | null {
   if (players.length !== 4) return null
 
-  const key = `${splitCacheKey(players, options.tolerance, options.allowIntraTeamGapOverflow, options.intraTeamGapLimit)}|repeat:${options.allowRepeatOverflow ? 'open' : 'cap'}`
+  const key = `${splitCacheKey(players, state, options.tolerance, options.allowIntraTeamGapOverflow, options.intraTeamGapLimit)}|repeat:${options.allowRepeatOverflow ? 'open' : 'cap'}|recent:${options.allowRecentGroupRematch ? 'open' : 'cap'}`
   if (cache?.split.has(key)) return cache.split.get(key) ?? null
 
   let best: TeamSplitResult | null = null
@@ -327,6 +335,7 @@ function bestTeamSplitWithTolerance(
     const scored = scoreMatch(teamA, teamB, state, {
       ...(options.tolerance === undefined ? {} : { tolerance: options.tolerance }),
       allowRepeatOverflow: options.allowRepeatOverflow,
+      allowRecentGroupRematch: options.allowRecentGroupRematch,
       intraTeamGapLimit: options.intraTeamGapLimit,
       allowIntraTeamGapOverflow: options.allowIntraTeamGapOverflow,
     })
@@ -503,7 +512,7 @@ function getSoftPvnaTolerance(state: SessionState): number {
 }
 
 function buildRecentGroupRematchKeys(state: SessionState): Set<string> {
-  const keys = new Set<string>()
+  const keys = getRecentGroupRematchKeys(state)
   const currentRoundNo = state.current_round
 
   for (const round of state.rounds) {
@@ -517,6 +526,7 @@ function buildRecentGroupRematchKeys(state: SessionState): Set<string> {
 
     for (const match of round.matches) {
       keys.add(getMatchGroupKey(match.team_a, match.team_b))
+      getMatchNearRematchKeys(match.team_a, match.team_b).forEach(key => keys.add(key))
     }
   }
 
@@ -532,6 +542,7 @@ export function bestPartitioning(
     cache?: PartitioningRuntimeCache
     allowRelaxedTolerance?: boolean
     allowRepeatOverflow?: boolean
+    allowRecentGroupRematch?: boolean
     allowIntraTeamGapOverflow?: boolean
   } = {},
 ): PartitioningResult | null {
@@ -560,6 +571,7 @@ export function bestPartitioning(
       const result = evaluatePartition(groups, searchState, iterations, options.cache, {
         ...searchOptions,
         allowRepeatOverflow: options.allowRepeatOverflow,
+        allowRecentGroupRematch: options.allowRecentGroupRematch,
       })
       if (!result) return
       if (shouldReplaceBestPartition(result, best, searchState, options.cache)) {

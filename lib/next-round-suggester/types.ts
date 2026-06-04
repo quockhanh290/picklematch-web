@@ -192,7 +192,7 @@ export type SuggestionTradeoff = {
   affected_players?: number
 }
 
-export type SuggestionTradeoffChoiceId = 'balanced' | 'keep_pvna' | 'reduce_repeat'
+export type SuggestionTradeoffChoiceId = 'balanced' | 'keep_pvna' | 'reduce_intra' | 'reduce_repeat'
 
 export type SuggestionTradeoffChoiceMetrics = {
   pvna_gap: number

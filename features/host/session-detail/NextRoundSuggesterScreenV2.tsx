@@ -931,6 +931,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           preview_id: match.id,
           preview_live_state_version: previewVersion,
           preview_countable_match_count: previewCountableMatchCount,
+          expected_round_matches: queueCourtCount,
         },
       }
       const payloadBuildMs = nowMs() - payloadBuildT0
@@ -1173,6 +1174,21 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           next.delete(match.id)
           return next
         })
+        setCreatingNextMatchIds(current => {
+          if (!current.has(match.id)) return current
+          const next = new Set(current)
+          next.delete(match.id)
+          return next
+        })
+        setCompletingLiveMatchPlaceholders(current => {
+          if (!current.has(match.id)) return current
+          const next = new Map(current)
+          next.delete(match.id)
+          return next
+        })
+        suggestedPreviewBatchRef.current = null
+        setPreviewRefreshNonce(value => value + 1)
+        void loadLiveState({ silent: true })
       }, 8000)
       completingCleanupTimeoutsRef.current.push(cleanupId)
     } catch (err: any) {
@@ -1542,15 +1558,28 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       rows.playerRows.length,
       rows.pairRows.length,
       rows.roundRows.length,
+      rows.liveStateVersion ?? 'noversion',
     ].join(':')
+    const liveRowsKey = effectiveLiveMatchRows
+      .map(match => `${match.id}:${match.status}:${match.court_idx ?? ''}:${match.sequence_no}`)
+      .join(',')
+    const completingKey = [...completingLiveMatchIds].sort().join(',')
+    const creatingKey = [...creatingNextMatchIds].sort().join(',')
     return [
       previewBatchKey,
       rowVersionKey,
+      liveRowsKey,
+      completingKey,
+      creatingKey,
       previewRefreshNonce,
     ].join('||')
   }, [
+    completingLiveMatchIds,
+    creatingNextMatchIds,
+    effectiveLiveMatchRows,
     previewBatchKey,
     previewRefreshNonce,
+    rows.liveStateVersion,
     rows.pairRows.length,
     rows.playerRows.length,
     rows.roundRows.length,
@@ -1724,6 +1753,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           suggestedPreviewBatchRef.current = { key: previewRequestKey, matches }
           setSuggestedLiveMatches(matches)
           const replacementCourts = new Set(matches.map((match: SuggestedLiveMatchRow) => Number(match.court_idx ?? -1)))
+          if (matches.length === 0) {
+            setCreatingNextMatchIds(new Set())
+            setCompletingLiveMatchIds(new Set())
+            setCompletingLiveMatchPlaceholders(new Map())
+          }
           setCompletingLiveMatchIds(current => {
             if (current.size === 0 || replacementCourts.size === 0) return current
             const next = new Set(current)
@@ -1759,6 +1793,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         .catch(err => {
           setIsSuggestingPreview(false)
           setCompletingLiveMatchIds(new Set())
+          setCreatingNextMatchIds(new Set())
+          setCompletingLiveMatchPlaceholders(new Map())
           setEdgeDebug(`ERROR: ${err.message || 'Unknown error'}`)
           console.warn('[NextRoundSuggesterV2] Live preview fetch failed', err)
           Alert.alert('Lỗi gợi ý trận đấu', err.message || 'Không thể lấy gợi ý trận đấu từ server')

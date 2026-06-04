@@ -9,9 +9,12 @@ import {
   PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
   RECENT_GROUP_REMATCH_BLOCK_ROUNDS,
   getMatchGroupKey,
+  getMatchNearRematchKeys,
   getProjectedRepeatSummary,
   withRecentGroupRematchKeys,
 } from './score.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import { bestPartitioning } from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { suggestNextMatch } from './suggest.ts'
 import type {
@@ -26,6 +29,10 @@ import type {
 } from './types.ts'
 
 const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
+const LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT = 24
+const LIVE_STRICT_RESCUE_ELIGIBLE_LIMIT = 20
+const LIVE_STRICT_RESCUE_TIMEOUT_MS = 300
+const LIVE_PREVIEW_ALGORITHM_VERSION = 2
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_INTRA_TEAM_GAP_COST_WEIGHT = 8
 const BALANCED_REPEAT_COST_WEIGHT = 15
@@ -66,6 +73,16 @@ type CompletedMatchGroup = {
   round_no: number
   team_a: [string, string]
   team_b: [string, string]
+}
+
+type StrictRescueOptions = {
+  busyIds: Set<string>
+  courtIdx: number
+  configuredPvnaTolerance: number
+  tierOverrides: Record<string, Tier>
+  warnings?: string[]
+  maxEligiblePlayers?: number
+  timeoutMs?: number
 }
 
 export type PreviewPlayerInfo = { name: string }
@@ -240,6 +257,7 @@ export function buildPreviewBatchKey(
     .map(([playerId, tier]) => `${playerId}:${tier}`)
     .join(',')
   return [
+    LIVE_PREVIEW_ALGORITHM_VERSION,
     sessionId,
     state.status,
     state.current_round,
@@ -374,22 +392,19 @@ export function buildTradeoffChoiceExplanation(
   configuredPvnaTolerance: number,
 ) {
   const lines: string[] = [
-    `PVNA ${formatNumber(metrics.pvna_gap, 2)} / cap ${formatNumber(configuredPvnaTolerance, 2)}`,
+    `Trận lệch nhất: ${formatNumber(metrics.pvna_gap, 2)} (chuẩn ${formatNumber(configuredPvnaTolerance, 2)})`,
   ]
   if (metrics.pvna_over_by > 0) {
-    lines.push(`Vượt PVNA +${formatNumber(metrics.pvna_over_by, 2)}`)
+    lines.push(`Lệch trình quá mức cho phép (+${formatNumber(metrics.pvna_over_by, 2)})`)
   }
   if (metrics.intra_team_over_by > 0) {
-    lines.push(`Intra-team +${formatNumber(metrics.intra_team_over_by, 2)}`)
+    lines.push(`Đồng đội lệch nhau: +${formatNumber(metrics.intra_team_over_by, 2)}`)
   }
   if (metrics.repeat_over_by > 0) {
-    lines.push(`Lặp vượt cap ${metrics.repeat_over_by} điểm trên ${metrics.affected_pairs} cặp`)
+    lines.push(`Có ${metrics.affected_pairs} cặp bị lặp lại (vượt mức)`)
   }
   if (metrics.max_partner_pair > 1 || metrics.max_opponent_pair > 1) {
-    lines.push(`Nặng nhất: partner ${metrics.max_partner_pair} lần, đối thủ ${metrics.max_opponent_pair} lần`)
-  }
-  if (id === 'balanced') {
-    lines.push(`Tổng trade-off ${formatNumber(metrics.total_cost, 1)}`)
+    lines.push(`Lặp nhiều nhất: ${metrics.max_partner_pair} lần chung đội, ${metrics.max_opponent_pair} lần chạm trán`)
   }
   return lines
 }
@@ -398,10 +413,168 @@ function getTradeoffChoiceLabel(
   fallback: string,
   metrics: SuggestionTradeoffChoice['metrics'],
 ) {
-  if (metrics.pvna_over_by > 0 && metrics.intra_team_over_by <= 0) return 'Giảm intra-team'
-  if (metrics.intra_team_over_by > 0 && metrics.pvna_over_by <= 0) return 'Giữ PVNA'
+  if (metrics.pvna_over_by > 0 && metrics.intra_team_over_by <= 0) return 'Ưu tiên đồng đội ngang trình'
+  if (metrics.intra_team_over_by > 0 && metrics.pvna_over_by <= 0) return 'Ưu tiên cân tài cân sức'
   if (metrics.repeat_over_by > 0) return fallback
   return fallback
+}
+
+function improvesTradeoffMetric(
+  choice: SuggestionTradeoffChoice,
+  reference: SuggestionTradeoffChoice,
+) {
+  if (reference.metrics.pvna_over_by > 0) {
+    if (choice.metrics.pvna_over_by < reference.metrics.pvna_over_by) return true
+    if (choice.metrics.pvna_over_by <= reference.metrics.pvna_over_by && choice.metrics.pvna_gap < reference.metrics.pvna_gap - 0.01) return true
+  }
+  if (reference.metrics.intra_team_over_by > 0) {
+    if (choice.metrics.intra_team_over_by < reference.metrics.intra_team_over_by) return true
+    if (choice.metrics.intra_team_over_by <= reference.metrics.intra_team_over_by && choice.metrics.intra_team_gap < reference.metrics.intra_team_gap - 0.01) return true
+  }
+  if (reference.metrics.repeat_over_by > 0) {
+    if (choice.metrics.repeat_over_by < reference.metrics.repeat_over_by) return true
+    if (choice.metrics.repeat_over_by <= reference.metrics.repeat_over_by && choice.metrics.affected_players < reference.metrics.affected_players) return true
+    if (choice.metrics.repeat_over_by <= reference.metrics.repeat_over_by && choice.metrics.max_opponent_pair < reference.metrics.max_opponent_pair) return true
+  }
+  return false
+}
+
+function combinationKey(players: PlayerSessionState[]) {
+  return players.map(player => player.player_id).sort().join(':')
+}
+
+function getCombinations<T>(items: T[], size: number): T[][] {
+  const result: T[][] = []
+
+  function walk(start: number, selected: T[]) {
+    if (selected.length === size) {
+      result.push([...selected])
+      return
+    }
+
+    for (let index = start; index < items.length; index += 1) {
+      selected.push(items[index])
+      walk(index + 1, selected)
+      selected.pop()
+    }
+  }
+
+  walk(0, [])
+  return result
+}
+
+function makeStrictRescueAlternative(
+  selected: PlayerSessionState[],
+  allPresent: PlayerSessionState[],
+  state: SessionState,
+  courtIdx: number,
+  configuredPvnaTolerance: number,
+  warnings: string[],
+): SuggestionAlternative | null {
+  const strictState: SessionState = {
+    ...state,
+    config: {
+      ...state.config,
+      pvna_tolerance: configuredPvnaTolerance,
+    },
+  }
+  const partition = bestPartitioning(selected, strictState, {
+    allowRelaxedTolerance: false,
+    allowRepeatOverflow: false,
+    allowIntraTeamGapOverflow: false,
+  })
+  const match = partition?.matches[0]
+  if (!partition || !match) return null
+
+  const selectedIds = new Set(selected.map(player => player.player_id))
+  const resting = allPresent
+    .filter(player => !selectedIds.has(player.player_id) && !player.opted_rest)
+    .map(player => player.player_id)
+    .sort()
+
+  return {
+    matches: [{ ...match, court_idx: courtIdx }],
+    resting,
+    score: partition.score,
+    warnings: warnings.filter(warning =>
+      warning !== 'PVNA_TOLERANCE_RELAXED' &&
+      warning !== 'INTRA_TEAM_GAP_RELAXED' &&
+      warning !== 'REPEAT_CAP_RELAXED',
+    ),
+    tradeoffs: [],
+    approval_required: false,
+    stats: partition.stats,
+    iterations: partition.iterations,
+  }
+}
+
+export function findStrictCleanLiveAlternative(
+  state: SessionState,
+  options: StrictRescueOptions,
+): SuggestionAlternative | null {
+  const maxEligiblePlayers = Math.max(4, Math.floor(options.maxEligiblePlayers ?? LIVE_STRICT_RESCUE_ELIGIBLE_LIMIT))
+  const timeoutMs = Math.max(50, Math.floor(options.timeoutMs ?? LIVE_STRICT_RESCUE_TIMEOUT_MS))
+  const startedAt = nowMs()
+  const allPresent = [...state.players.values()]
+    .filter(player => player.checked_out_at === null)
+    .sort((left, right) => left.player_id.localeCompare(right.player_id))
+  let eligible = allPresent
+    .filter(player => !player.opted_rest)
+    .filter(player => !options.busyIds.has(player.player_id))
+    .filter(player => options.tierOverrides[player.player_id] !== Tier.MUST_REST)
+
+  const withoutSoftRest = eligible.filter(player => options.tierOverrides[player.player_id] !== Tier.SHOULD_REST)
+  if (withoutSoftRest.length >= 4) {
+    eligible = withoutSoftRest
+  }
+
+  if (eligible.length < 4 || eligible.length > maxEligiblePlayers) return null
+
+  const combinations = getCombinations(eligible, 4).sort((left, right) => {
+    const matchCountDiff =
+      left.reduce((sum, player) => sum + player.matches_played, 0) -
+      right.reduce((sum, player) => sum + player.matches_played, 0)
+    if (matchCountDiff !== 0) return matchCountDiff
+
+    const restDiff =
+      right.reduce((sum, player) => sum + player.consecutive_rest, 0) -
+      left.reduce((sum, player) => sum + player.consecutive_rest, 0)
+    if (restDiff !== 0) return restDiff
+
+    return combinationKey(left).localeCompare(combinationKey(right))
+  })
+
+  let best: SuggestionAlternative | null = null
+  const seen = new Set<string>()
+  for (const selected of combinations) {
+    if (nowMs() - startedAt > timeoutMs) break
+    const key = combinationKey(selected)
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    const alternative = makeStrictRescueAlternative(
+      selected,
+      allPresent,
+      {
+        ...state,
+        config: {
+          ...state.config,
+          pvna_tolerance: options.configuredPvnaTolerance,
+        },
+      },
+      options.courtIdx,
+      options.configuredPvnaTolerance,
+      options.warnings ?? [],
+    )
+    if (!alternative) continue
+    const metrics = getTradeoffChoiceMetrics(alternative, state, options.configuredPvnaTolerance)
+    if (hasTradeoffMetric(metrics)) continue
+    if (!best || alternative.score < best.score) {
+      best = alternative
+    }
+  }
+
+  return best
 }
 
 export function buildLiveTradeoffChoices(
@@ -431,17 +604,22 @@ export function buildLiveTradeoffChoices(
   const picked = [
     {
       id: 'balanced' as const,
-      label: 'Cân bằng',
+      label: 'Tốt nhất tổng thể',
       item: pickBest(['total_cost', 'intra_team_over_by', 'pvna_over_by', 'repeat_over_by']),
     },
     {
       id: 'keep_pvna' as const,
-      label: 'Giữ PVNA',
+      label: 'Ưu tiên cân tài cân sức',
       item: pickBest(['pvna_over_by', 'pvna_gap', 'intra_team_over_by', 'repeat_over_by']),
     },
     {
+      id: 'reduce_intra' as const,
+      label: 'Ưu tiên đồng đội ngang trình',
+      item: pickBest(['intra_team_over_by', 'intra_team_gap', 'pvna_over_by', 'repeat_over_by']),
+    },
+    {
       id: 'reduce_repeat' as const,
-      label: 'Giảm lặp',
+      label: 'Ưu tiên đổi người chơi',
       item: pickBest(['repeat_over_by', 'affected_pairs', 'max_opponent_pair', 'max_partner_pair', 'pvna_over_by']),
     },
   ]
@@ -467,8 +645,13 @@ export function buildLiveTradeoffChoices(
     return null
   }
   const recommended = pickRecommendedTradeoffChoice(choices)
+  const recommendedChoice = choices.find(choice => choice.id === recommended) ?? choices[0]
+  const usefulChoices = choices.filter(choice =>
+    choice.id === recommended || improvesTradeoffMetric(choice, recommendedChoice),
+  )
+  if (usefulChoices.length < 2) return null
   return {
-    choices,
+    choices: usefulChoices,
     recommended,
   }
 }
@@ -477,14 +660,18 @@ function getBlockedRecentGroupRematchKeys(
   completedMatchGroups: CompletedMatchGroup[],
   projectedRoundNo: number,
 ) {
-  return new Set(
-    completedMatchGroups
-      .filter(match =>
-        projectedRoundNo > match.round_no
-        && projectedRoundNo <= match.round_no + RECENT_GROUP_REMATCH_BLOCK_ROUNDS,
-      )
-      .map(match => getMatchGroupKey(match.team_a, match.team_b)),
-  )
+  const keys = new Set<string>()
+  for (const match of completedMatchGroups) {
+    if (
+      projectedRoundNo <= match.round_no
+      || projectedRoundNo > match.round_no + RECENT_GROUP_REMATCH_BLOCK_ROUNDS
+    ) {
+      continue
+    }
+    keys.add(getMatchGroupKey(match.team_a, match.team_b))
+    getMatchNearRematchKeys(match.team_a, match.team_b).forEach(key => keys.add(key))
+  }
+  return keys
 }
 
 export function nowMs() {
@@ -518,9 +705,6 @@ export function buildSuggestedMatchPayloads({
   pvnaTolerance,
   options = {},
 }: BuildSuggestedMatchPayloadsParams): SuggestedMatchPayload[] {
-  const buildT0 = nowMs()
-  let suggestMs = 0
-  let projectMs = 0
   let suggestionState = options.stateOverride ?? state
   const liveMatchRows = options.liveMatchRowsOverride ?? rows.liveMatchRows
   const payloads: SuggestedMatchPayload[] = []
@@ -529,7 +713,7 @@ export function buildSuggestedMatchPayloads({
       .filter(match =>
         match.status === 'live'
         || match.status === 'suggested'
-        || completingLiveMatchIds.has(match.id),
+        || (completingLiveMatchIds.has(match.id) && match.status !== 'completed'),
       )
       .flatMap(match => [...match.team_a, ...match.team_b]),
   )
@@ -595,14 +779,6 @@ export function buildSuggestedMatchPayloads({
       })
       .map(player => player.player_id)
     if (required.length > remainingRoundSlots) {
-      if (typeof console !== 'undefined' && console.log) {
-        console.log('[build-preview] rolling round required over capacity', {
-          sessionId,
-          roundNo,
-          required: required.length,
-          remainingRoundSlots,
-        })
-      }
       return new Set<string>()
     }
     return new Set(required)
@@ -657,7 +833,6 @@ export function buildSuggestedMatchPayloads({
       .find(idx => !queuedCourtIdxs.has(idx) && !roundCourtIdxs.has(idx))
     const courtIdx = options.courtIdx ?? nextCourtIdx
     if (courtIdx === undefined) break
-    const suggestT0 = nowMs()
     const remainingCourtsInRound = Math.max(1, courtCapacity - projectedRoundMatchCount)
     const availableRequiredIds = [...roundRequiredIds]
       .filter(playerId => !roundBusyIds.has(playerId) && !baseBusyIds.has(playerId))
@@ -715,19 +890,59 @@ export function buildSuggestedMatchPayloads({
       suggestionState,
       getBlockedRecentGroupRematchKeys(completedMatchGroups, projectedRoundNo),
     )
-    const result = suggestNextMatch(suggestionStateForCourt, {
+    const suggestOptions = {
       tier_overrides: tierOverrides as any,
       busy_player_ids: busyIds,
       court_idx: courtIdx,
       max_alternatives: LIVE_TRADEOFF_ALTERNATIVE_LIMIT,
       _exhaustiveDiag: exhaustiveDiag,
-    })
-    
-    suggestMs += nowMs() - suggestT0
+    }
+    let result = suggestNextMatch(suggestionStateForCourt, suggestOptions)
     const configuredPvnaTolerance = pvnaTolerance
-    const tradeoffChoices = buildLiveTradeoffChoices(result.alternatives, suggestionStateForCourt, configuredPvnaTolerance)
-    const recommendedChoice = tradeoffChoices?.choices.find(choice => choice.id === tradeoffChoices.recommended)
-      ?? tradeoffChoices?.choices[0]
+    const initialSelectedMetrics = result.alternatives[0]
+      ? getTradeoffChoiceMetrics(result.alternatives[0], suggestionStateForCourt, configuredPvnaTolerance)
+      : null
+    if (initialSelectedMetrics && hasTradeoffMetric(initialSelectedMetrics)) {
+      const strictAlternative = findStrictCleanLiveAlternative(suggestionStateForCourt, {
+        busyIds,
+        courtIdx,
+        configuredPvnaTolerance,
+        tierOverrides,
+        warnings: result.warnings,
+      })
+      if (strictAlternative) {
+        result = {
+          ...result,
+          alternatives: [
+            strictAlternative,
+            ...result.alternatives.filter(alternative => {
+              const match = alternative.matches[0]
+              const strictMatch = strictAlternative.matches[0]
+              if (!match || !strictMatch) return true
+              const leftKey = [match.team_a.join(':'), match.team_b.join(':')].sort().join('|')
+              const rightKey = [strictMatch.team_a.join(':'), strictMatch.team_b.join(':')].sort().join('|')
+              return leftKey !== rightKey
+            }),
+          ].slice(0, LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT),
+        }
+      }
+    }
+    let tradeoffChoices = buildLiveTradeoffChoices(result.alternatives, suggestionStateForCourt, configuredPvnaTolerance)
+    const selectedMetrics = result.alternatives[0]
+      ? getTradeoffChoiceMetrics(result.alternatives[0], suggestionStateForCourt, configuredPvnaTolerance)
+      : null
+    const shouldExpandTradeoffSearch = !tradeoffChoices && selectedMetrics && hasTradeoffMetric(selectedMetrics)
+    if (shouldExpandTradeoffSearch) {
+      result = suggestNextMatch(suggestionStateForCourt, {
+        ...suggestOptions,
+        max_alternatives: LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT,
+      })
+      tradeoffChoices = buildLiveTradeoffChoices(result.alternatives, suggestionStateForCourt, configuredPvnaTolerance)
+    }
+    const recommendedTradeoffChoice = tradeoffChoices?.recommended
+    const recommendedChoice = recommendedTradeoffChoice
+      ? tradeoffChoices?.choices.find(choice => choice.id === recommendedTradeoffChoice)
+      : tradeoffChoices?.choices[0]
     const alternative = recommendedChoice?.alternative ?? result.alternatives[0]
     const match = alternative?.matches[0]
     if (!alternative || !match) break
@@ -749,38 +964,6 @@ export function buildSuggestedMatchPayloads({
     const visibleWarnings = shouldSurfaceAutoPvnaTradeoff
       ? [...new Set([...alternative.warnings, 'PVNA_TOLERANCE_RELAXED'])]
       : alternative.warnings
-      
-    if (typeof console !== 'undefined' && console.log && (match.stats?.pvna_diff ?? 0) > 0.5) {
-      const labels = (team: [string, string]) => team.map(playerId => playersById.get(playerId)?.name ?? playerId.slice(0, 8)).join('+')
-      console.log('[build-preview] risky suggested match', {
-        exhaustive: exhaustiveDiag,
-      })
-      console.log('[build-preview] risky suggested match alternatives', {
-        sessionId,
-        courtIdx,
-        projectedRoundNo,
-        courtCapacity,
-        liveRows: liveMatchRows.length,
-        countableMatches: countableMatches.length,
-        projectedExistingMatches: projectedExistingMatches.length,
-        busyIds: [...busyIds].map(playerId => playersById.get(playerId)?.name ?? playerId.slice(0, 8)),
-        tierOverrides: Object.keys(fairnessAdjustment.tier_overrides).map(playerId => playersById.get(playerId)?.name ?? playerId.slice(0, 8)),
-        selected: `${labels(match.team_a as [string, string])} vs ${labels(match.team_b as [string, string])}`,
-        alternatives: result.alternatives.slice(0, 8).map((alt, rank) => {
-          const altMatch = alt.matches[0]
-          return {
-            rank: rank + 1,
-            match: altMatch ? `${labels(altMatch.team_a as [string, string])} vs ${labels(altMatch.team_b as [string, string])}` : null,
-            pvnaDiff: altMatch?.stats?.pvna_diff,
-            score: alt.score,
-            warnings: alt.warnings,
-            tradeoffs: alt.tradeoffs,
-            approvalRequired: alt.approval_required,
-          }
-        }),
-      })
-    }
-    
     payloads.push({
       court_idx: courtIdx,
       team_a: match.team_a,
@@ -801,8 +984,7 @@ export function buildSuggestedMatchPayloads({
         ? autoPvnaReasonDetails(fairnessAdjustment.applied_for_warnings, fairnessWarnings, suggestionState, playersById)
         : [],
       tradeoff_choices: tradeoffChoices?.choices,
-      recommended_tradeoff_choice: tradeoffChoices?.recommended,
-      _exhaustive_diag: (match.stats?.pvna_diff ?? 0) > 0.5 ? exhaustiveDiag : undefined,
+      recommended_tradeoff_choice: recommendedTradeoffChoice,
     })
     
     match.team_a.forEach(playerId => busyIds.add(playerId))
@@ -815,8 +997,7 @@ export function buildSuggestedMatchPayloads({
     queuedCourtIdxs.add(courtIdx)
     projectedRoundMatchCount += 1
     
-    const projectT0 = nowMs()
-    const projectedMatch = {
+    const projectedMatch: SessionLiveMatchRow = {
       id: `preview-projected-${index}`,
       session_id: sessionId,
       sequence_no: index,
@@ -841,21 +1022,6 @@ export function buildSuggestedMatchPayloads({
     if (projectedRoundMatchCount >= courtCapacity) {
       suggestionState = buildProjectedStateAfterCompletedLiveRound(suggestionState, roundBusyIds)
     }
-    projectMs += nowMs() - projectT0
-  }
-  
-  if (typeof console !== 'undefined' && console.log && count > 0) {
-    console.log('[build-preview] build suggested matches timing', {
-      requested: count,
-      built: payloads.length,
-      liveRows: liveMatchRows.length,
-      projectedExistingMatches: projectedExistingMatches.length,
-      courtCapacity,
-      roundNo: projectedRoundNo,
-      suggestMs: Math.round(suggestMs),
-      projectMs: Math.round(projectMs),
-      totalMs: Math.round(nowMs() - buildT0),
-    })
   }
   return payloads
 }

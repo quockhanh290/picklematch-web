@@ -365,12 +365,14 @@ function makeAlternative(
   partitioningCache?: PartitioningRuntimeCache,
   allowRelaxedTolerance = true,
   allowRepeatOverflow = true,
+  allowRecentGroupRematch = false,
 ): SuggestionAlternative | null {
   const partition = bestPartitioning(selected, state, {
     diagnostics,
     cache: partitioningCache,
     allowRelaxedTolerance,
     allowRepeatOverflow,
+    allowRecentGroupRematch,
   })
   if (!partition) return null
   const tradeoffs = buildTradeoffs(partition, state)
@@ -780,7 +782,12 @@ function suggestNextMatchExhaustiveFallback(
   let combinationsEvaluated = 0
 
   const startMs = Date.now()
-  const evaluateStage = (allowRelaxedTolerance: boolean, allowRepeatOverflow: boolean, enforceRequired = true) => {
+  const evaluateStage = (
+    allowRelaxedTolerance: boolean,
+    allowRepeatOverflow: boolean,
+    enforceRequired = true,
+    allowRecentGroupRematch = false,
+  ) => {
     let fallbackEligiblePlayers = eligiblePlayers
     if (eligiblePlayers.length > 20) {
       const required = eligiblePlayers.filter(p => requiredPlayerIds.has(p.player_id))
@@ -814,6 +821,7 @@ function suggestNextMatchExhaustiveFallback(
         continue
       }
       const key = `${combinationKey(selected)}|pvna:${allowRelaxedTolerance ? 'relaxed' : 'strict'}|repeat:${allowRepeatOverflow ? 'overflow' : 'cap'}`
+        + `|recent:${allowRecentGroupRematch ? 'open' : 'cap'}`
       if (seen.has(key)) continue
       combinationsEvaluated++
       const alternative = makeAlternative(
@@ -825,6 +833,7 @@ function suggestNextMatchExhaustiveFallback(
         partitioningCache,
         allowRelaxedTolerance,
         allowRepeatOverflow,
+        allowRecentGroupRematch,
       )
       seen.add(key)
       if (!alternative) continue
@@ -857,6 +866,16 @@ function suggestNextMatchExhaustiveFallback(
     evaluateStage(true, false, false)
     if (alternatives.length === 0) {
       evaluateStage(true, true, false)
+    }
+  }
+  if (alternatives.length === 0) {
+    evaluateStage(false, false, true, true)
+  }
+  if (alternatives.length === 0) {
+    evaluateStage(false, true, true, true)
+    evaluateStage(true, false, true, true)
+    if (alternatives.length === 0) {
+      evaluateStage(true, true, true, true)
     }
   }
 

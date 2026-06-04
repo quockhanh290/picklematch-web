@@ -71,6 +71,41 @@ describe('suggestNextRound', () => {
     expect([...selectedIds].some(id => ['p01', 'p02', 'p03', 'p04'].includes(id))).toBe(false)
   })
 
+  it('avoids a recent near-rematch when rested players can form another match', () => {
+    const players = createPlayers(8, { pvna: 3.0 })
+    const state = {
+      ...createState({
+        courts: 1,
+        players,
+        currentRound: 1,
+        pvnaTolerance: 10,
+      }),
+      rounds: [{
+        session_id: 'session-test',
+        round_no: 0,
+        status: 'completed' as const,
+        matches: [{
+          court_idx: 0,
+          team_a: ['p01', 'p02'] as [string, string],
+          team_b: ['p03', 'p04'] as [string, string],
+        }],
+        resting: ['p05', 'p06', 'p07', 'p08'],
+        started_at: null,
+        ended_at: null,
+      }],
+    }
+
+    const result = suggestNextMatch(state)
+    const match = result.alternatives[0]?.matches[0]
+    const previousIds = new Set(['p01', 'p02', 'p03', 'p04'])
+    const overlap = match
+      ? [...match.team_a, ...match.team_b].filter(playerId => previousIds.has(playerId)).length
+      : 0
+
+    expect(match).toBeTruthy()
+    expect(overlap).toBeLessThan(3)
+  })
+
   it('prefers a strict PVNA match over a relaxed higher-priority candidate', () => {
     const state = createState({
       courts: 1,
