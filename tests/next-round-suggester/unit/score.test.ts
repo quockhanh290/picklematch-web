@@ -1,4 +1,4 @@
-import { genderPenalty, scoreMatch } from '../../../lib/next-round-suggester/score'
+import { genderPenalty, getRecentRepeatCost, scoreMatch } from '../../../lib/next-round-suggester/score'
 import type { Match } from '../../../lib/next-round-suggester/types'
 import { createPlayer, createState, setOpponentRepeats, setPartnerRepeats } from '../helpers/factories'
 
@@ -103,6 +103,54 @@ describe('scoreMatch', () => {
     })
 
     expect(result.score).toBe(0.5 + 3 + 1.5 + 4)
+  })
+
+  it('adds decayed recent-repeat soft cost for the last three rounds', () => {
+    const state = {
+      ...createState({
+        currentRound: 3,
+        players: [
+          createPlayer('p1'),
+          createPlayer('p2'),
+          createPlayer('p3'),
+          createPlayer('p4'),
+          createPlayer('p5'),
+          createPlayer('p6'),
+        ],
+      }),
+      rounds: [
+        {
+          session_id: 'session-test',
+          round_no: 2,
+          status: 'completed' as const,
+          matches: [{ court_idx: 0, team_a: ['p1', 'p2'] as [string, string], team_b: ['p3', 'p4'] as [string, string] }],
+          resting: ['p5', 'p6'],
+          started_at: null,
+          ended_at: null,
+        },
+        {
+          session_id: 'session-test',
+          round_no: 1,
+          status: 'completed' as const,
+          matches: [{ court_idx: 0, team_a: ['p1', 'p5'] as [string, string], team_b: ['p2', 'p6'] as [string, string] }],
+          resting: ['p3', 'p4'],
+          started_at: null,
+          ended_at: null,
+        },
+      ],
+    }
+
+    const cost = getRecentRepeatCost(['p1', 'p2'], ['p5', 'p6'], state)
+    const score = scoreMatch(['p1', 'p2'], ['p5', 'p6'], state, {
+      allowRecentGroupRematch: true,
+      tolerance: 10,
+    })
+
+    expect(cost.partner).toBe(1)
+    expect(cost.opponent).toBeCloseTo(1.3)
+    expect(cost.overlap2).toBeCloseTo(1)
+    expect(cost.exact4).toBeCloseTo(0.65)
+    expect(score.score).toBeCloseTo(score.stats.pvna_diff + cost.total)
   })
 
   it('allows a second partner meeting by default', () => {

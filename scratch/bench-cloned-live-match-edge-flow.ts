@@ -273,7 +273,7 @@ async function getVersionGuard(client: SupabaseAny, sessionId: string) {
   return Number(row.live_state_version)
 }
 
-async function startOneSuggestedMatch(client: SupabaseAny, sessionId: string, match: any, matchIndex: number) {
+async function startOneSuggestedMatch(client: SupabaseAny, sessionId: string, match: any, matchIndex: number, courts: number) {
   const expectedVersion = Number(match.preview_live_state_version ?? await getVersionGuard(client, sessionId))
   const { data, error } = await client.rpc('start_live_session_match_from_payload_versioned', {
     p_session_id: sessionId,
@@ -285,6 +285,7 @@ async function startOneSuggestedMatch(client: SupabaseAny, sessionId: string, ma
       source: 'scratch/bench-cloned-live-match-edge-flow.ts',
       match_index: matchIndex,
       preview_live_state_version: expectedVersion,
+      expected_round_matches: courts,
     },
   })
   if (error) throw error
@@ -368,7 +369,7 @@ async function main() {
         if (!match) throw new Error(`No edge match payload at round ${roundNo}, court ${court}`)
 
         const startStartedAt = now()
-        const started = await startOneSuggestedMatch(client, cloneId, match, matchIndex)
+        const started = await startOneSuggestedMatch(client, cloneId, match, matchIndex, courts)
         const startRpcMs = now() - startStartedAt
         startedMatchIds.push(String(started.match.id))
 

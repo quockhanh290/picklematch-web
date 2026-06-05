@@ -28,6 +28,12 @@ export const MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER = 2
 export const MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER = 2
 export const RECENT_GROUP_REMATCH_BLOCK_ROUNDS = 2
 export const RECENT_GROUP_NEAR_REMATCH_MIN_OVERLAP = 3
+export const RECENT_REPEAT_PENALTY_WINDOW = 3
+export const RECENT_PARTNER_REPEAT_WEIGHT = 28
+export const RECENT_OPPONENT_REPEAT_WEIGHT = 4
+export const RECENT_OVERLAP_2_WEIGHT = 1.5
+export const RECENT_OVERLAP_3_WEIGHT = 80
+export const RECENT_EXACT_REMATCH_WEIGHT = 80
 const RECENT_GROUP_REMATCH_KEYS_FIELD = '__recent_group_rematch_keys'
 
 function emptyStats(pvnaDiff = 0): MatchStats {
@@ -71,6 +77,83 @@ export function getMatchNearRematchKeys(teamA: Team, teamB: Team) {
     keys.push(`near:${ids.filter((_, index) => index !== omitted).join(':')}`)
   }
   return keys
+}
+
+function pairKey(playerA: string, playerB: string) {
+  return playerA < playerB ? `${playerA}:${playerB}` : `${playerB}:${playerA}`
+}
+
+function recentRepeatDecay(distance: number) {
+  if (distance <= 1) return 1
+  if (distance === 2) return 0.65
+  return 0.35
+}
+
+export type RecentRepeatCost = {
+  total: number
+  partner: number
+  opponent: number
+  overlap2: number
+  overlap3: number
+  exact4: number
+}
+
+export function getRecentRepeatCost(
+  teamA: Team,
+  teamB: Team,
+  state: SessionState,
+  roundNo = state.current_round,
+): RecentRepeatCost {
+  const cost: RecentRepeatCost = {
+    total: 0,
+    partner: 0,
+    opponent: 0,
+    overlap2: 0,
+    overlap3: 0,
+    exact4: 0,
+  }
+  const partnerPairs = [pairKey(teamA[0], teamA[1]), pairKey(teamB[0], teamB[1])]
+  const opponentPairs = teamA.flatMap(playerA => teamB.map(playerB => pairKey(playerA, playerB)))
+  const matchGroupKey = getMatchGroupKey(teamA, teamB)
+
+  for (const round of state.rounds) {
+    const distance = roundNo - round.round_no
+    if (
+      round.status !== 'completed' ||
+      distance <= 0 ||
+      distance > RECENT_REPEAT_PENALTY_WINDOW
+    ) {
+      continue
+    }
+
+    const weight = recentRepeatDecay(distance)
+    for (const match of round.matches) {
+      const previousPartnerPairs = [
+        pairKey(match.team_a[0], match.team_a[1]),
+        pairKey(match.team_b[0], match.team_b[1]),
+      ]
+      const previousOpponentPairs = match.team_a.flatMap(playerA => match.team_b.map(playerB => pairKey(playerA, playerB)))
+      const partnerHits = partnerPairs.filter(key => previousPartnerPairs.includes(key)).length
+      const opponentHits = opponentPairs.filter(key => previousOpponentPairs.includes(key)).length
+      const playerOverlap = getPlayerOverlap(teamA, teamB, match.team_a, match.team_b)
+
+      cost.partner += partnerHits * weight
+      cost.opponent += opponentHits * weight
+      if (playerOverlap === 2) cost.overlap2 += weight
+      if (playerOverlap === 3) cost.overlap3 += weight
+      if (playerOverlap === 4 || getMatchGroupKey(match.team_a, match.team_b) === matchGroupKey) {
+        cost.exact4 += weight
+      }
+    }
+  }
+
+  cost.total =
+    cost.partner * RECENT_PARTNER_REPEAT_WEIGHT +
+    cost.opponent * RECENT_OPPONENT_REPEAT_WEIGHT +
+    cost.overlap2 * RECENT_OVERLAP_2_WEIGHT +
+    cost.overlap3 * RECENT_OVERLAP_3_WEIGHT +
+    cost.exact4 * RECENT_EXACT_REMATCH_WEIGHT
+  return cost
 }
 
 function getInjectedRecentGroupRematchKeys(state: SessionState): Set<string> | null {
@@ -411,6 +494,7 @@ export function scoreMatch(
   stats.group_bonus = getGroupedPartnerCount(teamA, teamB, state)
   stats.gender_pref_penalty = genderPenalty(teamA, teamB, state, weights)
   stats.consecutive_play_penalty = getConsecutivePlayPenalty([...teamA, ...teamB], state, weights.consecutive_play ?? 4)
+  const recentRepeatCost = getRecentRepeatCost(teamA, teamB, state)
 
   const score =
     pvnaDiff * weights.pvna +
@@ -418,7 +502,8 @@ export function scoreMatch(
     stats.opponent_repeats * weights.opponent_repeat -
     stats.group_bonus * weights.group_bonus +
     stats.gender_pref_penalty +
-    stats.consecutive_play_penalty
+    stats.consecutive_play_penalty +
+    recentRepeatCost.total
 
   return {
     score,

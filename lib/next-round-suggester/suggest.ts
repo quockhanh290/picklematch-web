@@ -27,6 +27,7 @@ import {
   MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER,
   MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER,
   PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
+  getRecentRepeatCost,
   getProjectedRepeatSummary,
 } from './score.ts'
 
@@ -356,6 +357,32 @@ function getTradeoffCount(alternative: SuggestionAlternative) {
   return alternative.tradeoffs?.length ?? 0
 }
 
+function getAlternativeRecentRepeatCost(alternative: SuggestionAlternative, state: SessionState) {
+  return alternative.matches.reduce((sum, match) => {
+    const cost = getRecentRepeatCost(match.team_a, match.team_b, state)
+    return {
+      total: sum.total + cost.total,
+      partner: sum.partner + cost.partner,
+      opponent: sum.opponent + cost.opponent,
+      overlap2: sum.overlap2 + cost.overlap2,
+      overlap3: sum.overlap3 + cost.overlap3,
+      exact4: sum.exact4 + cost.exact4,
+    }
+  }, { total: 0, partner: 0, opponent: 0, overlap2: 0, overlap3: 0, exact4: 0 })
+}
+
+function compareRecentRepeatCost(a: SuggestionAlternative, b: SuggestionAlternative, state: SessionState) {
+  const costA = getAlternativeRecentRepeatCost(a, state)
+  const costB = getAlternativeRecentRepeatCost(b, state)
+  if (costA.partner !== costB.partner) return costA.partner - costB.partner
+  if (costA.total !== costB.total) return costA.total - costB.total
+  if (costA.overlap3 !== costB.overlap3) return costA.overlap3 - costB.overlap3
+  if (costA.exact4 !== costB.exact4) return costA.exact4 - costB.exact4
+  if (costA.opponent !== costB.opponent) return costA.opponent - costB.opponent
+  if (costA.overlap2 !== costB.overlap2) return costA.overlap2 - costB.overlap2
+  return 0
+}
+
 function makeAlternative(
   selected: PlayerSessionState[],
   allPresent: PlayerSessionState[],
@@ -549,6 +576,9 @@ export function suggestNextRound(
     const tradeoffCountB = getTradeoffCount(b)
     if (tradeoffCountA !== tradeoffCountB) return tradeoffCountA - tradeoffCountB
 
+    const recentRepeatDiff = compareRecentRepeatCost(a, b, state)
+    if (recentRepeatDiff !== 0) return recentRepeatDiff
+
     const burdenA = getProjectedOpponentBurden(a, state)
     const burdenB = getProjectedOpponentBurden(b, state)
     if (burdenA.overThreshold !== burdenB.overThreshold) {
@@ -691,7 +721,7 @@ export function suggestNextMatch(
   if (fallback.alternatives.length === 0) return mappedResult
 
   const alternatives = [...mappedResult.alternatives, ...fallback.alternatives]
-  alternatives.sort(sortSingleMatchAlternatives)
+  alternatives.sort((a, b) => sortSingleMatchAlternatives(a, b, matchState))
   const uniqueAlternatives = uniqueSingleMatchAlternatives(alternatives)
 
   return {
@@ -701,13 +731,16 @@ export function suggestNextMatch(
   }
 }
 
-function sortSingleMatchAlternatives(a: SuggestionAlternative, b: SuggestionAlternative) {
+function sortSingleMatchAlternatives(a: SuggestionAlternative, b: SuggestionAlternative, state: SessionState) {
   const tradeoffScoreA = getTradeoffScore(a)
   const tradeoffScoreB = getTradeoffScore(b)
   if (tradeoffScoreA !== tradeoffScoreB) return tradeoffScoreA - tradeoffScoreB
   const tradeoffCountA = getTradeoffCount(a)
   const tradeoffCountB = getTradeoffCount(b)
   if (tradeoffCountA !== tradeoffCountB) return tradeoffCountA - tradeoffCountB
+
+  const recentRepeatDiff = compareRecentRepeatCost(a, b, state)
+  if (recentRepeatDiff !== 0) return recentRepeatDiff
 
   const scoreA = a.matches[0]?.score ?? a.score
   const scoreB = b.matches[0]?.score ?? b.score
@@ -879,7 +912,7 @@ function suggestNextMatchExhaustiveFallback(
     }
   }
 
-  alternatives.sort(sortSingleMatchAlternatives)
+  alternatives.sort((a, b) => sortSingleMatchAlternatives(a, b, state))
 
   const elapsedMs = Date.now() - startMs
   if (options._exhaustiveDiag) {

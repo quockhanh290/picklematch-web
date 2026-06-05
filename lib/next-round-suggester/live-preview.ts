@@ -10,6 +10,7 @@ import {
   RECENT_GROUP_REMATCH_BLOCK_ROUNDS,
   getMatchGroupKey,
   getMatchNearRematchKeys,
+  getRecentRepeatCost,
   getProjectedRepeatSummary,
   withRecentGroupRematchKeys,
 } from './score.ts'
@@ -29,10 +30,10 @@ import type {
 } from './types.ts'
 
 const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
-const LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT = 24
+const LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT = 80
 const LIVE_STRICT_RESCUE_ELIGIBLE_LIMIT = 20
 const LIVE_STRICT_RESCUE_TIMEOUT_MS = 300
-const LIVE_PREVIEW_ALGORITHM_VERSION = 2
+const LIVE_PREVIEW_ALGORITHM_VERSION = 3
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_INTRA_TEAM_GAP_COST_WEIGHT = 8
 const BALANCED_REPEAT_COST_WEIGHT = 15
@@ -346,6 +347,18 @@ function formatNumber(value: number, fractionDigits = 1) {
 
 function hasTradeoffMetric(metrics: SuggestionTradeoffChoice['metrics']) {
   return metrics.pvna_over_by > 0 || metrics.intra_team_over_by > 0 || metrics.repeat_over_by > 0
+}
+
+function hasRepeatPressureMetric(metrics: SuggestionTradeoffChoice['metrics']) {
+  return metrics.repeat_over_by > 0 || metrics.max_partner_pair > 1 || metrics.max_opponent_pair > 1
+}
+
+function hasRecentRepeatPressure(alternative: SuggestionAlternative | undefined, state: SessionState) {
+  if (!alternative) return false
+  return alternative.matches.some((match) => {
+    const cost = getRecentRepeatCost(match.team_a, match.team_b, state)
+    return cost.partner > 0 || cost.opponent > 0 || cost.overlap2 > 0 || cost.overlap3 > 0 || cost.exact4 > 0
+  })
 }
 
 export function compareByNumber(left: number, right: number) {
@@ -887,7 +900,7 @@ export function buildSuggestedMatchPayloads({
       combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
     }
     const suggestionStateForCourt = withRecentGroupRematchKeys(
-      suggestionState,
+      { ...suggestionState, current_round: projectedRoundNo },
       getBlockedRecentGroupRematchKeys(completedMatchGroups, projectedRoundNo),
     )
     const suggestOptions = {
@@ -932,7 +945,9 @@ export function buildSuggestedMatchPayloads({
       ? getTradeoffChoiceMetrics(result.alternatives[0], suggestionStateForCourt, configuredPvnaTolerance)
       : null
     const shouldExpandTradeoffSearch = !tradeoffChoices && selectedMetrics && hasTradeoffMetric(selectedMetrics)
-    if (shouldExpandTradeoffSearch) {
+    const shouldExpandRepeatSearch = selectedMetrics
+      && (hasRepeatPressureMetric(selectedMetrics) || hasRecentRepeatPressure(result.alternatives[0], suggestionStateForCourt))
+    if (shouldExpandTradeoffSearch || shouldExpandRepeatSearch) {
       result = suggestNextMatch(suggestionStateForCourt, {
         ...suggestOptions,
         max_alternatives: LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT,

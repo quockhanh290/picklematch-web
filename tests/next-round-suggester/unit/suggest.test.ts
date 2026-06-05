@@ -106,6 +106,47 @@ describe('suggestNextRound', () => {
     expect(overlap).toBeLessThan(3)
   })
 
+  it('prefers a clean recent-partner split when the same four players can be paired safely', () => {
+    const state = {
+      ...createState({
+        courts: 1,
+        currentRound: 1,
+        pvnaTolerance: 10,
+        players: [
+          createPlayer('p01', { pvna: 3.0 }),
+          createPlayer('p02', { pvna: 3.1 }),
+          createPlayer('p03', { pvna: 3.2 }),
+          createPlayer('p04', { pvna: 3.3 }),
+          createPlayer('p05', { pvna: 3.0 }),
+          createPlayer('p06', { pvna: 3.1 }),
+          createPlayer('p07', { pvna: 3.2 }),
+          createPlayer('p08', { pvna: 3.3 }),
+        ],
+      }),
+      rounds: [{
+        session_id: 'session-test',
+        round_no: 0,
+        status: 'completed' as const,
+        matches: [{
+          court_idx: 0,
+          team_a: ['p01', 'p02'] as [string, string],
+          team_b: ['p03', 'p04'] as [string, string],
+        }],
+        resting: ['p05', 'p06', 'p07', 'p08'],
+        started_at: null,
+        ended_at: null,
+      }],
+    }
+
+    const result = suggestNextMatch(state, { max_alternatives: 8 })
+    const match = result.alternatives[0]?.matches[0]
+    const teams = match ? [match.team_a, match.team_b].map(team => [...team].sort().join(':')) : []
+
+    expect(match).toBeTruthy()
+    expect(teams).not.toContain('p01:p02')
+    expect(teams).not.toContain('p03:p04')
+  })
+
   it('prefers a strict PVNA match over a relaxed higher-priority candidate', () => {
     const state = createState({
       courts: 1,
