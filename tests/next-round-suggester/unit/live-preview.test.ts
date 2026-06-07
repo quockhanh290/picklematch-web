@@ -144,6 +144,248 @@ describe('projected live match state', () => {
     expect(payloads[0].court_idx).toBe(0)
     expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(new Set(['p1', 'p2', 'p3', 'p4']))
   })
+
+  it('does not reuse players across visible preview cards after projected round advances', () => {
+    const state = createState({
+      courts: 2,
+      players: Array.from({ length: 8 }, (_, index) =>
+        createPlayer(`p${index + 1}`, { pvna: 3 + index * 0.1 }),
+      ),
+    })
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 3,
+      sessionId: state.session_id,
+      courtCount: 2,
+      state,
+      rows: { liveMatchRows: [], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    const visiblePlayerIds = payloads.flatMap(payload => [...payload.team_a, ...payload.team_b])
+    expect(payloads).toHaveLength(2)
+    expect(new Set(visiblePlayerIds).size).toBe(visiblePlayerIds.length)
+  })
+
+  it('continues filling the visible preview batch when enough non-overlapping players remain', () => {
+    const state = createState({
+      courts: 3,
+      players: Array.from({ length: 12 }, (_, index) =>
+        createPlayer(`p${index + 1}`, { pvna: 3 + index * 0.1 }),
+      ),
+    })
+    const completedCourt0 = liveRow('completed-court-0', 0, 'completed', ['p1', 'p2'], ['p3', 'p4'])
+    const completedCourt1 = liveRow('completed-court-1', 1, 'completed', ['p5', 'p6'], ['p7', 'p8'])
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 3,
+      sessionId: state.session_id,
+      courtCount: 3,
+      state,
+      rows: { liveMatchRows: [completedCourt0, completedCourt1], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    const visiblePlayerIds = payloads.flatMap(payload => [...payload.team_a, ...payload.team_b])
+    expect(payloads).toHaveLength(3)
+    expect(new Set(visiblePlayerIds).size).toBe(visiblePlayerIds.length)
+  })
+
+  it('honors explicit replacement court indexes when retained previews occupy other lanes', () => {
+    const state = createState({
+      courts: 3,
+      players: Array.from({ length: 12 }, (_, index) =>
+        createPlayer(`p${index + 1}`, { pvna: 3 + index * 0.1 }),
+      ),
+    })
+    const retainedPreviewCourt0 = liveRow('retained-preview-court-0', 0, 'suggested', ['p1', 'p2'], ['p3', 'p4'])
+    const completedCourt1 = liveRow('completed-court-1', 1, 'completed', ['p5', 'p6'], ['p7', 'p8'])
+    const liveCourt2 = liveRow('live-court-2', 2, 'live', ['p9', 'p10'], ['p11', 'p12'])
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 3,
+      state,
+      rows: { liveMatchRows: [retainedPreviewCourt0, completedCourt1, liveCourt2], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set([completedCourt1.id]),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+      options: { courtIdxs: [1] },
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].court_idx).toBe(1)
+    expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(new Set(['p5', 'p6', 'p7', 'p8']))
+  })
+
+  it('protects players with long consecutive-play streaks when enough fresh players are available', () => {
+    const state = createState({
+      courts: 1,
+      players: [
+        createPlayer('streak-1', { pvna: 3.00, matches_played: 2, consecutive_play: 2 }),
+        createPlayer('streak-2', { pvna: 3.02, matches_played: 2, consecutive_play: 2 }),
+        createPlayer('streak-3', { pvna: 3.04, matches_played: 2, consecutive_play: 2 }),
+        createPlayer('streak-4', { pvna: 3.06, matches_played: 2, consecutive_play: 2 }),
+        createPlayer('fresh-1', { pvna: 2.10 }),
+        createPlayer('fresh-2', { pvna: 2.40 }),
+        createPlayer('fresh-3', { pvna: 4.60 }),
+        createPlayer('fresh-4', { pvna: 4.90 }),
+      ],
+    })
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 1,
+      state,
+      rows: { liveMatchRows: [], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(
+      new Set(['fresh-1', 'fresh-2', 'fresh-3', 'fresh-4']),
+    )
+    expect(payloads[0].warnings ?? []).not.toContain('LIVE_REPLACEMENT_RECYCLE_RELAXED')
+  })
+
+  it('surfaces a recycle-relaxed warning only when consecutive-play protection cannot fill a match', () => {
+    const state = createState({
+      courts: 1,
+      players: [
+        createPlayer('streak-1', { pvna: 3.00, matches_played: 2, consecutive_play: 2 }),
+        createPlayer('streak-2', { pvna: 3.10, matches_played: 2, consecutive_play: 2 }),
+        createPlayer('streak-3', { pvna: 3.20, matches_played: 2, consecutive_play: 2 }),
+        createPlayer('streak-4', { pvna: 3.30, matches_played: 2, consecutive_play: 2 }),
+        createPlayer('fresh-1', { pvna: 3.40 }),
+        createPlayer('fresh-2', { pvna: 3.50 }),
+        createPlayer('fresh-3', { pvna: 3.60 }),
+      ],
+    })
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 1,
+      state,
+      rows: { liveMatchRows: [], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].warnings ?? []).toContain('LIVE_REPLACEMENT_RECYCLE_RELAXED')
+  })
+
+  it('does not let MUST_PLAY force a fourth-or-more consecutive match when enough fresh players exist', () => {
+    const state = createState({
+      courts: 1,
+      players: [
+        createPlayer('streak-required', { pvna: 3.00, matches_played: 4, consecutive_play: 4 }),
+        createPlayer('fresh-1', { pvna: 2.10 }),
+        createPlayer('fresh-2', { pvna: 2.40 }),
+        createPlayer('fresh-3', { pvna: 4.60 }),
+        createPlayer('fresh-4', { pvna: 4.90 }),
+      ],
+    })
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 1,
+      state,
+      rows: { liveMatchRows: [], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: {
+        tier_overrides: { 'streak-required': Tier.MUST_PLAY },
+        applied_for_warnings: [],
+      },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(
+      new Set(['fresh-1', 'fresh-2', 'fresh-3', 'fresh-4']),
+    )
+  })
+
+  it('allows a fourth consecutive match only when soft and hard recycle guards cannot fill a match', () => {
+    const state = createState({
+      courts: 1,
+      players: [
+        createPlayer('hard-streak', { pvna: 3.00, matches_played: 3, consecutive_play: 3 }),
+        createPlayer('fresh-1', { pvna: 3.10 }),
+        createPlayer('fresh-2', { pvna: 3.20 }),
+        createPlayer('fresh-3', { pvna: 3.30 }),
+      ],
+    })
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 1,
+      state,
+      rows: { liveMatchRows: [], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(
+      new Set(['hard-streak', 'fresh-1', 'fresh-2', 'fresh-3']),
+    )
+    expect(payloads[0].warnings ?? []).toContain('LIVE_REPLACEMENT_RECYCLE_HARD_RELAXED')
+  })
+
+  it('waits instead of creating a fifth consecutive match', () => {
+    const state = createState({
+      courts: 1,
+      players: [
+        createPlayer('absolute-streak', { pvna: 3.00, matches_played: 4, consecutive_play: 4 }),
+        createPlayer('fresh-1', { pvna: 3.10 }),
+        createPlayer('fresh-2', { pvna: 3.20 }),
+        createPlayer('fresh-3', { pvna: 3.30 }),
+      ],
+    })
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 1,
+      state,
+      rows: { liveMatchRows: [], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    expect(payloads).toHaveLength(0)
+  })
 })
 
 describe('findStrictCleanLiveAlternative', () => {

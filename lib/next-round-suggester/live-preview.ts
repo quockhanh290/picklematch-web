@@ -29,18 +29,34 @@ import type {
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 } from './types.ts'
 
-const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
+const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 12
 const LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT = 80
 const LIVE_STRICT_RESCUE_ELIGIBLE_LIMIT = 20
 const LIVE_STRICT_RESCUE_TIMEOUT_MS = 300
-const LIVE_PREVIEW_ALGORITHM_VERSION = 3
+const LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3800
+const LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS = 350
+const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
+const LIVE_PREVIEW_ALGORITHM_VERSION = 4
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_INTRA_TEAM_GAP_COST_WEIGHT = 8
 const BALANCED_REPEAT_COST_WEIGHT = 15
 const BALANCED_AFFECTED_PLAYER_COST_WEIGHT = 1
+const GUARDED_LIVE_PVNA_OVER_WEIGHT = 90
+const GUARDED_LIVE_INTRA_OVER_WEIGHT = 12
+const GUARDED_LIVE_RECENT_WEIGHT = 0.9
+const GUARDED_LIVE_REPEAT_OVER_WEIGHT = 55
+const GUARDED_LIVE_REPEAT_AFFECTED_WEIGHT = 8
+const GUARDED_LIVE_QUOTA_OVER_WEIGHT = 35
+const GUARDED_LIVE_QUOTA_UNDER_WEIGHT = 5
+const GUARDED_LIVE_TRADEOFF_WEIGHT = 20
+const LIVE_RECYCLE_SOFT_CONSECUTIVE_PLAY_LIMIT = 2
+const LIVE_RECYCLE_HARD_CONSECUTIVE_PLAY_LIMIT = 3
+const LIVE_RECYCLE_ABSOLUTE_CONSECUTIVE_PLAY_LIMIT = 4
+const LIVE_QUOTA_OVERPLAY_MARGIN = 0
 
 export type BuildSuggestedMatchOptions = {
   courtIdx?: number
+  courtIdxs?: number[]
   stateOverride?: SessionState
   liveMatchRowsOverride?: SessionLiveMatchRow[]
 }
@@ -313,6 +329,234 @@ export function getAlternativeIntraTeamGap(alternative: SuggestionAlternative, s
   )
 }
 
+function getAlternativeRecentCost(alternative: SuggestionAlternative, state: SessionState) {
+  return alternative.matches.reduce((sum, match) => (
+    sum + getRecentRepeatCost(match.team_a, match.team_b, state).total
+  ), 0)
+}
+
+function getProjectedCountViolation(
+  alternative: SuggestionAlternative,
+  state: SessionState,
+  targetMaxAfter: number,
+  targetMinAfter: number,
+) {
+  const selectedIds = new Set(alternative.matches.flatMap(match => [...match.team_a, ...match.team_b]))
+  let over = 0
+  let under = 0
+  for (const player of state.players.values()) {
+    if (player.checked_out_at !== null || player.opted_rest) continue
+    const projected = player.matches_played + (selectedIds.has(player.player_id) ? 1 : 0)
+    over += Math.max(0, projected - targetMaxAfter)
+    under += Math.max(0, targetMinAfter - projected)
+  }
+  return {
+    over,
+    under,
+    total: over * 100 + under,
+  }
+}
+
+function getActivePlayerCount(state: SessionState) {
+  return [...state.players.values()]
+    .filter(player => player.checked_out_at === null && !player.opted_rest)
+    .length
+}
+
+function getProjectedTargetRangeAfter(state: SessionState, nextMatchIndex: number) {
+  const activePlayerCount = Math.max(1, getActivePlayerCount(state))
+  const slotsAfter = Math.max(0, nextMatchIndex) * 4
+  return {
+    min: Math.floor(slotsAfter / activePlayerCount),
+    max: Math.ceil(slotsAfter / activePlayerCount),
+  }
+}
+
+function getPlayablePlayers(state: SessionState, busyIds: Set<string>) {
+  return [...state.players.values()]
+    .filter(player => player.checked_out_at === null && !player.opted_rest && !busyIds.has(player.player_id))
+}
+
+function buildLiveSelectionGuard({
+  state,
+  busyIds,
+  nextMatchIndex,
+}: {
+  state: SessionState
+  busyIds: Set<string>
+  nextMatchIndex: number
+}) {
+  const playablePlayers = getPlayablePlayers(state, busyIds)
+  const target = getProjectedTargetRangeAfter(state, nextMatchIndex)
+  const absoluteRecycleProtectedIds = playablePlayers
+    .filter(player => player.consecutive_play >= LIVE_RECYCLE_ABSOLUTE_CONSECUTIVE_PLAY_LIMIT)
+    .map(player => player.player_id)
+  const hardRecycleProtectedIds = playablePlayers
+    .filter(player =>
+      player.consecutive_play >= LIVE_RECYCLE_HARD_CONSECUTIVE_PLAY_LIMIT &&
+      player.consecutive_play < LIVE_RECYCLE_ABSOLUTE_CONSECUTIVE_PLAY_LIMIT
+    )
+    .map(player => player.player_id)
+  const softRecycleProtectedIds = playablePlayers
+    .filter(player =>
+      player.consecutive_play >= LIVE_RECYCLE_SOFT_CONSECUTIVE_PLAY_LIMIT &&
+      player.consecutive_play < LIVE_RECYCLE_HARD_CONSECUTIVE_PLAY_LIMIT
+    )
+    .map(player => player.player_id)
+  const quotaProtectedIds = playablePlayers
+    .filter(player => !absoluteRecycleProtectedIds.includes(player.player_id))
+    .filter(player => !hardRecycleProtectedIds.includes(player.player_id))
+    .filter(player => !softRecycleProtectedIds.includes(player.player_id))
+    .filter(player => player.matches_played >= target.max + LIVE_QUOTA_OVERPLAY_MARGIN)
+    .map(player => player.player_id)
+
+  const canFillWithout = (protectedIds: string[]) => {
+    const protectedSet = new Set(protectedIds)
+    return playablePlayers.filter(player => !protectedSet.has(player.player_id)).length >= 4
+  }
+
+  const strictProtectedIds = [
+    ...absoluteRecycleProtectedIds,
+    ...hardRecycleProtectedIds,
+    ...softRecycleProtectedIds,
+    ...quotaProtectedIds,
+  ]
+  const recycleProtectedIds = [
+    ...absoluteRecycleProtectedIds,
+    ...hardRecycleProtectedIds,
+    ...softRecycleProtectedIds,
+  ]
+  const hardRecycleIds = [
+    ...absoluteRecycleProtectedIds,
+    ...hardRecycleProtectedIds,
+  ]
+
+  if (canFillWithout(strictProtectedIds)) {
+    return {
+      protectedIds: new Set(strictProtectedIds),
+      warnings: [] as string[],
+      relaxationStages: [] as Array<{ protectedIds: Set<string>; warnings: string[] }>,
+    }
+  }
+
+  if (canFillWithout(recycleProtectedIds)) {
+    return {
+      protectedIds: new Set(recycleProtectedIds),
+      warnings: quotaProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_QUOTA_RELAXED'] : [] as string[],
+      relaxationStages: [
+        {
+          protectedIds: new Set(recycleProtectedIds),
+          warnings: quotaProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_QUOTA_RELAXED'] : [],
+        },
+      ],
+    }
+  }
+
+  if (canFillWithout(hardRecycleIds)) {
+    const warnings = [
+      ...(quotaProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_QUOTA_RELAXED'] : []),
+      ...(softRecycleProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_RECYCLE_RELAXED'] : []),
+    ]
+    return {
+      protectedIds: new Set(hardRecycleIds),
+      warnings,
+      relaxationStages: [
+        {
+          protectedIds: new Set(recycleProtectedIds),
+          warnings: quotaProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_QUOTA_RELAXED'] : [],
+        },
+        {
+          protectedIds: new Set(hardRecycleIds),
+          warnings,
+        },
+      ],
+    }
+  }
+
+  const absoluteWarnings = [
+    ...(quotaProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_QUOTA_RELAXED'] : []),
+    ...(softRecycleProtectedIds.length > 0 || hardRecycleProtectedIds.length > 0
+      ? ['LIVE_REPLACEMENT_RECYCLE_RELAXED', 'LIVE_REPLACEMENT_RECYCLE_HARD_RELAXED']
+      : []),
+  ]
+  return {
+    protectedIds: new Set(absoluteRecycleProtectedIds),
+    warnings: absoluteWarnings,
+    relaxationStages: [
+      {
+        protectedIds: new Set(recycleProtectedIds),
+        warnings: quotaProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_QUOTA_RELAXED'] : [],
+      },
+      {
+        protectedIds: new Set(hardRecycleIds),
+        warnings: [
+          ...(quotaProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_QUOTA_RELAXED'] : []),
+          ...(softRecycleProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_RECYCLE_RELAXED'] : []),
+        ],
+      },
+      {
+        protectedIds: new Set(absoluteRecycleProtectedIds),
+        warnings: absoluteWarnings,
+      },
+    ],
+  }
+}
+
+function pickGuardedLiveAlternative(
+  alternatives: SuggestionAlternative[],
+  state: SessionState,
+  configuredPvnaTolerance: number,
+  nextMatchIndex: number,
+) {
+  const { min: targetMinAfter, max: targetMaxAfter } = getProjectedTargetRangeAfter(state, nextMatchIndex)
+  const scored = alternatives
+    .filter(alternative => alternative.matches.length > 0)
+    .map((alternative) => {
+      const pvnaGap = getAlternativePvnaGap(alternative)
+      const intraTeamGap = getAlternativeIntraTeamGap(alternative, state)
+      const recent = getAlternativeRecentCost(alternative, state)
+      const repeat = getAlternativeRepeatMetrics(alternative, state)
+      const quota = getProjectedCountViolation(alternative, state, targetMaxAfter, targetMinAfter)
+      const pvnaOver = Math.max(0, pvnaGap - configuredPvnaTolerance)
+      const intraOver = Math.max(0, intraTeamGap - PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT)
+      const tradeoffs = alternative.tradeoffs?.length ?? 0
+      return {
+        alternative,
+        pvnaGap,
+        intraTeamGap,
+        recent,
+        repeat,
+        quota,
+        score:
+          pvnaOver * GUARDED_LIVE_PVNA_OVER_WEIGHT +
+          intraOver * GUARDED_LIVE_INTRA_OVER_WEIGHT +
+          repeat.repeat_over_by * GUARDED_LIVE_REPEAT_OVER_WEIGHT +
+          repeat.affected_players * GUARDED_LIVE_REPEAT_AFFECTED_WEIGHT +
+          Math.min(recent, 120) * GUARDED_LIVE_RECENT_WEIGHT +
+          quota.over * GUARDED_LIVE_QUOTA_OVER_WEIGHT +
+          quota.under * GUARDED_LIVE_QUOTA_UNDER_WEIGHT +
+          tradeoffs * GUARDED_LIVE_TRADEOFF_WEIGHT,
+      }
+    })
+  if (scored.length === 0) return null
+
+  const cleanEnough = scored.filter(item =>
+    item.pvnaGap <= configuredPvnaTolerance + 0.25 &&
+    item.recent < 40,
+  )
+  const pool = cleanEnough.length > 0 ? cleanEnough : scored
+  return [...pool].sort((left, right) => {
+    if (left.score !== right.score) return left.score - right.score
+    if (left.quota.total !== right.quota.total) return left.quota.total - right.quota.total
+    if (left.repeat.repeat_over_by !== right.repeat.repeat_over_by) return left.repeat.repeat_over_by - right.repeat.repeat_over_by
+    if (left.repeat.max_partner_pair !== right.repeat.max_partner_pair) return left.repeat.max_partner_pair - right.repeat.max_partner_pair
+    if (left.repeat.max_opponent_pair !== right.repeat.max_opponent_pair) return left.repeat.max_opponent_pair - right.repeat.max_opponent_pair
+    if (left.recent !== right.recent) return left.recent - right.recent
+    if (left.pvnaGap !== right.pvnaGap) return left.pvnaGap - right.pvnaGap
+    return left.intraTeamGap - right.intraTeamGap
+  })[0]?.alternative ?? null
+}
+
 export function getTradeoffChoiceMetrics(
   alternative: SuggestionAlternative,
   state: SessionState,
@@ -397,6 +641,12 @@ function pickRecommendedTradeoffChoice(choices: SuggestionTradeoffChoice[]): Sug
     return 0
   })
   return sortedByPvnaGuard[0]?.id ?? choices[0]?.id ?? 'balanced'
+}
+
+function getAlternativeMatchKey(alternative: SuggestionAlternative) {
+  return alternative.matches
+    .map(match => `${match.team_a.join(':')}|${match.team_b.join(':')}`)
+    .join(';')
 }
 
 export function buildTradeoffChoiceExplanation(
@@ -639,9 +889,7 @@ export function buildLiveTradeoffChoices(
 
   const seen = new Set<string>()
   const choices = picked.flatMap(({ id, label, item }) => {
-    const matchKey = item.alternative.matches
-      .map(match => `${match.team_a.join(':')}|${match.team_b.join(':')}`)
-      .join(';')
+    const matchKey = getAlternativeMatchKey(item.alternative)
     if (seen.has(matchKey)) return []
     seen.add(matchKey)
     return [{
@@ -718,15 +966,15 @@ export function buildSuggestedMatchPayloads({
   pvnaTolerance,
   options = {},
 }: BuildSuggestedMatchPayloadsParams): SuggestedMatchPayload[] {
+  const batchStartedAt = nowMs()
   let suggestionState = options.stateOverride ?? state
   const liveMatchRows = options.liveMatchRowsOverride ?? rows.liveMatchRows
   const payloads: SuggestedMatchPayload[] = []
   const baseBusyIds = new Set(
     liveMatchRows
       .filter(match =>
-        match.status === 'live'
-        || match.status === 'suggested'
-        || (completingLiveMatchIds.has(match.id) && match.status !== 'completed'),
+        (match.status === 'live' && !completingLiveMatchIds.has(match.id))
+        || match.status === 'suggested',
       )
       .flatMap(match => [...match.team_a, ...match.team_b]),
   )
@@ -791,10 +1039,7 @@ export function buildSuggestedMatchPayloads({
         return left.player_id.localeCompare(right.player_id)
       })
       .map(player => player.player_id)
-    if (required.length > remainingRoundSlots) {
-      return new Set<string>()
-    }
-    return new Set(required)
+    return new Set(required.slice(0, remainingRoundSlots))
   }
   let roundRequiredIds = new Set<string>()
   const projectedExistingMatches = countableMatches.filter(match =>
@@ -828,27 +1073,39 @@ export function buildSuggestedMatchPayloads({
     ])
   }
   const queuedCourtIdxs = new Set(liveCourtIdxs)
+  const batchBusyIds = new Set(baseBusyIds)
   let projectedRoundNo = Math.floor(countableMatches.length / courtCapacity)
   let projectedRoundMatchCount = countableMatches.length % courtCapacity
   let roundCourtIdxs = getInitialRoundCourtIdxs(projectedRoundNo)
   let roundBusyIds = new Set(playerIdsByRound.get(projectedRoundNo) ?? [])
-  roundRequiredIds = getRoundRequiredIds(projectedRoundNo, courtCapacity - projectedRoundMatchCount, roundBusyIds)
+  roundRequiredIds = getRoundRequiredIds(
+    projectedRoundNo,
+    courtCapacity - projectedRoundMatchCount,
+    new Set([...roundBusyIds, ...batchBusyIds]),
+  )
   
   for (let index = 0; index < count; index += 1) {
+    const remainingBatchMs = LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)
+    if (remainingBatchMs <= LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS) break
     if (projectedRoundMatchCount >= courtCapacity) {
       projectedRoundNo += 1
       projectedRoundMatchCount = 0
       roundCourtIdxs = getInitialRoundCourtIdxs(projectedRoundNo)
       roundBusyIds = new Set(playerIdsByRound.get(projectedRoundNo) ?? [])
-      roundRequiredIds = getRoundRequiredIds(projectedRoundNo, courtCapacity, roundBusyIds)
+      roundRequiredIds = getRoundRequiredIds(
+        projectedRoundNo,
+        courtCapacity,
+        new Set([...roundBusyIds, ...batchBusyIds]),
+      )
     }
+    const requestedCourtIdx = options.courtIdxs?.[index] ?? options.courtIdx
     const nextCourtIdx = Array.from({ length: courtCapacity }, (_, idx) => idx)
       .find(idx => !queuedCourtIdxs.has(idx) && !roundCourtIdxs.has(idx))
-    const courtIdx = options.courtIdx ?? nextCourtIdx
+    const courtIdx = requestedCourtIdx ?? nextCourtIdx
     if (courtIdx === undefined) break
     const remainingCourtsInRound = Math.max(1, courtCapacity - projectedRoundMatchCount)
     const availableRequiredIds = [...roundRequiredIds]
-      .filter(playerId => !roundBusyIds.has(playerId) && !baseBusyIds.has(playerId))
+      .filter(playerId => !roundBusyIds.has(playerId) && !batchBusyIds.has(playerId))
     const minRequiredForThisCourt = availableRequiredIds.length === 0
       ? 0
       : Math.min(4, Math.max(1, availableRequiredIds.length - ((remainingCourtsInRound - 1) * 4)))
@@ -856,7 +1113,7 @@ export function buildSuggestedMatchPayloads({
     const requiredForThisCourtIds = new Set(requiredForThisCourt)
     const deferredRequiredIds = availableRequiredIds
       .filter(playerId => !requiredForThisCourtIds.has(playerId))
-    const busyIds = new Set([...baseBusyIds, ...roundBusyIds])
+    const busyIds = new Set([...batchBusyIds, ...roundBusyIds])
     const activePlayersForBias = [...suggestionState.players.values()]
       .filter(player => player.checked_out_at === null && !player.opted_rest && !busyIds.has(player.player_id))
     const availabilityForBias = computeAvailabilityMetrics(suggestionState)
@@ -874,6 +1131,7 @@ export function buildSuggestedMatchPayloads({
     const softUnderplayedOverrides = Object.fromEntries(
       activePlayersForBias
         .filter(player => getMatchBalanceForBias(player) <= -0.25)
+        .filter(player => player.consecutive_play < LIVE_RECYCLE_SOFT_CONSECUTIVE_PLAY_LIMIT)
         .filter(player => !requiredForThisCourtIds.has(player.player_id))
         .filter(player => !deferredRequiredIds.includes(player.player_id))
         .filter(player => fairnessAdjustment.tier_overrides[player.player_id] === undefined)
@@ -903,14 +1161,85 @@ export function buildSuggestedMatchPayloads({
       { ...suggestionState, current_round: projectedRoundNo },
       getBlockedRecentGroupRematchKeys(completedMatchGroups, projectedRoundNo),
     )
+    const liveSelectionGuard = buildLiveSelectionGuard({
+      state: suggestionStateForCourt,
+      busyIds,
+      nextMatchIndex: previewCountableMatchCount + index + 1,
+    })
+    liveSelectionGuard.protectedIds.forEach(playerId => busyIds.add(playerId))
+    const buildBusyIdsForProtected = (protectedIds: Set<string>) => new Set([
+      ...batchBusyIds,
+      ...roundBusyIds,
+      ...protectedIds,
+    ])
+    const buildRelaxedTierOverrides = () => {
+      const relaxedTierOverrides = { ...tierOverrides }
+      for (const playerId of [...requiredForThisCourt, ...deferredRequiredIds]) {
+        delete relaxedTierOverrides[playerId]
+      }
+      return relaxedTierOverrides
+    }
     const suggestOptions = {
       tier_overrides: tierOverrides as any,
       busy_player_ids: busyIds,
       court_idx: courtIdx,
       max_alternatives: LIVE_TRADEOFF_ALTERNATIVE_LIMIT,
+      max_runtime_ms: Math.min(
+        LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS,
+        Math.max(LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS, remainingBatchMs - 50),
+      ),
       _exhaustiveDiag: exhaustiveDiag,
     }
     let result = suggestNextMatch(suggestionStateForCourt, suggestOptions)
+    if (result.alternatives.length === 0) {
+      const relaxedTierOverrides = buildRelaxedTierOverrides()
+      const relaxationStages = liveSelectionGuard.relaxationStages.length > 0
+        ? liveSelectionGuard.relaxationStages
+        : [{ protectedIds: liveSelectionGuard.protectedIds, warnings: liveSelectionGuard.warnings }]
+      for (const relaxationStage of relaxationStages) {
+        if (result.alternatives.length > 0) break
+        const relaxedDiag: import('./suggest.ts').ExhaustiveFallbackDiagnostic = {
+          ran: false, timedOut: false, eligibleCount: 0,
+          combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+        }
+        const relaxedResult = suggestNextMatch(suggestionStateForCourt, {
+          ...suggestOptions,
+          busy_player_ids: buildBusyIdsForProtected(relaxationStage.protectedIds),
+          tier_overrides: relaxedTierOverrides as any,
+          max_alternatives: LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT,
+          max_runtime_ms: Math.min(
+            LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS,
+            Math.max(LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS, remainingBatchMs - 50),
+          ),
+          _exhaustiveDiag: relaxedDiag,
+        })
+        if (relaxedResult.alternatives.length === 0) continue
+        result = {
+          ...relaxedResult,
+          warnings: [...new Set([
+            ...relaxedResult.warnings.filter(warning => warning !== 'NO_VALID_MATCH'),
+            ...relaxationStage.warnings,
+          ])],
+          alternatives: relaxedResult.alternatives.map(alternative => ({
+            ...alternative,
+            warnings: [...new Set([
+              ...alternative.warnings,
+              ...relaxationStage.warnings,
+            ])],
+          })),
+        }
+      }
+    }
+    if (liveSelectionGuard.warnings.length > 0 && result.alternatives.length > 0) {
+      result = {
+        ...result,
+        warnings: [...new Set([...result.warnings, ...liveSelectionGuard.warnings])],
+        alternatives: result.alternatives.map(alternative => ({
+          ...alternative,
+          warnings: [...new Set([...alternative.warnings, ...liveSelectionGuard.warnings])],
+        })),
+      }
+    }
     const configuredPvnaTolerance = pvnaTolerance
     const initialSelectedMetrics = result.alternatives[0]
       ? getTradeoffChoiceMetrics(result.alternatives[0], suggestionStateForCourt, configuredPvnaTolerance)
@@ -940,25 +1269,18 @@ export function buildSuggestedMatchPayloads({
         }
       }
     }
-    let tradeoffChoices = buildLiveTradeoffChoices(result.alternatives, suggestionStateForCourt, configuredPvnaTolerance)
-    const selectedMetrics = result.alternatives[0]
-      ? getTradeoffChoiceMetrics(result.alternatives[0], suggestionStateForCourt, configuredPvnaTolerance)
-      : null
-    const shouldExpandTradeoffSearch = !tradeoffChoices && selectedMetrics && hasTradeoffMetric(selectedMetrics)
-    const shouldExpandRepeatSearch = selectedMetrics
-      && (hasRepeatPressureMetric(selectedMetrics) || hasRecentRepeatPressure(result.alternatives[0], suggestionStateForCourt))
-    if (shouldExpandTradeoffSearch || shouldExpandRepeatSearch) {
-      result = suggestNextMatch(suggestionStateForCourt, {
-        ...suggestOptions,
-        max_alternatives: LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT,
-      })
-      tradeoffChoices = buildLiveTradeoffChoices(result.alternatives, suggestionStateForCourt, configuredPvnaTolerance)
-    }
-    const recommendedTradeoffChoice = tradeoffChoices?.recommended
-    const recommendedChoice = recommendedTradeoffChoice
-      ? tradeoffChoices?.choices.find(choice => choice.id === recommendedTradeoffChoice)
-      : tradeoffChoices?.choices[0]
-    const alternative = recommendedChoice?.alternative ?? result.alternatives[0]
+    const tradeoffChoices = buildLiveTradeoffChoices(result.alternatives, suggestionStateForCourt, configuredPvnaTolerance)
+    const guardedAlternative = pickGuardedLiveAlternative(
+      result.alternatives,
+      suggestionStateForCourt,
+      configuredPvnaTolerance,
+      previewCountableMatchCount + index + 1,
+    )
+    const alternative = guardedAlternative ?? result.alternatives[0]
+    const selectedTradeoffChoice = tradeoffChoices?.choices.find(choice =>
+      getAlternativeMatchKey(choice.alternative) === getAlternativeMatchKey(alternative),
+    )
+    const recommendedTradeoffChoice = selectedTradeoffChoice?.id ?? tradeoffChoices?.recommended
     const match = alternative?.matches[0]
     if (!alternative || !match) break
     const effectivePvnaTolerance = suggestionState.config.pvna_tolerance
@@ -1004,6 +1326,8 @@ export function buildSuggestedMatchPayloads({
     
     match.team_a.forEach(playerId => busyIds.add(playerId))
     match.team_b.forEach(playerId => busyIds.add(playerId))
+    match.team_a.forEach(playerId => batchBusyIds.add(playerId))
+    match.team_b.forEach(playerId => batchBusyIds.add(playerId))
     match.team_a.forEach(playerId => roundBusyIds.add(playerId))
     match.team_b.forEach(playerId => roundBusyIds.add(playerId))
     match.team_a.forEach(playerId => roundRequiredIds.delete(playerId))

@@ -792,6 +792,7 @@ export function ManagePlayersButton({
   onPress: () => void
 }) {
   const theme = useAppTheme()
+  const isPersistingStart = String(match.id).startsWith('preview-')
   return (
     <TouchableOpacity
       testID="nrv2-manage-players"
@@ -1380,7 +1381,7 @@ export function NextMatchSuggestionCard({
       <MatchTile match={match} state={state} playersById={playersById} onPlayerPress={onPlayerPress} />
       {false ? <TouchableOpacity
         onPress={onCreate}
-        disabled={busy}
+        disabled={busy || isPersistingStart}
         style={{ marginTop: 12, height: 46, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}
       >
         {busy ? <ActivityIndicator color={theme.onPrimary} /> : (
@@ -1395,6 +1396,11 @@ export function NextMatchSuggestionCard({
 
 function displayMatchKey(match: SessionLiveMatchRow) {
   return (match as LiveDisplayMatchRow).client_preview_id ?? match.id
+}
+
+function displayCourtIdxFor(match: Pick<SessionLiveMatchRow, 'court_idx' | 'sequence_no'>) {
+  const courtIdx = Number(match.court_idx ?? match.sequence_no)
+  return Number.isFinite(courtIdx) ? Math.max(0, courtIdx) : 0
 }
 
 type LiveMatchBoardProps = {
@@ -1533,6 +1539,14 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
 
   const courtCount = Math.max(1, Math.floor(roundSize))
   const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches], courtCount)
+  const countableMatchIdsByCourt = new Map<number, Set<string>>()
+  for (const match of [...completedMatches, ...liveMatches]) {
+    if (match.status === 'cancelled') continue
+    const courtIdx = displayCourtIdxFor(match)
+    const matchIds = countableMatchIdsByCourt.get(courtIdx) ?? new Set<string>()
+    matchIds.add(match.id)
+    countableMatchIdsByCourt.set(courtIdx, matchIds)
+  }
   const courtLanes = buildCourtLaneModels({
     courtCount,
     liveMatches,
@@ -1544,11 +1558,26 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
     <View style={{ marginTop: 16, gap: 12 }}>
       <SectionEyebrow label="Court lanes preview" />
       {courtLanes.map(({ courtIdx, liveMatch, suggestedMatch }) => {
-        const roundNo = liveMatch
-          ? logicalRoundByMatchId.get(liveMatch.id) ?? ((liveMatch.round_no ?? 0) + 1)
-          : suggestedMatch
-            ? (suggestedMatch.round_no ?? 0) + 1
-            : null
+        if (!liveMatch && !suggestedMatch) return null
+        const laneCreatingNext = Boolean(
+          liveMatch
+            && creatingNextMatchIds.has(liveMatch.id)
+            && !endingLiveMatchIds.has(liveMatch.id),
+        )
+        const courtMatchCount = countableMatchIdsByCourt.get(courtIdx)?.size ?? 0
+        const liveRoundNo = liveMatch
+          ? (logicalRoundByMatchId.get(liveMatch.id) ?? ((liveMatch.round_no ?? 0) + 1))
+          : null
+        const suggestedRoundNo = suggestedMatch
+          ? ((suggestedMatch.round_no ?? courtMatchCount) + 1)
+          : null
+        const roundNo = laneCreatingNext
+          ? liveRoundNo
+          : liveMatch
+            ? Math.max(1, liveRoundNo ?? 1)
+            : suggestedMatch
+              ? Math.max(1, suggestedRoundNo ?? 1)
+              : null
         const laneBusy = liveMatch
           ? busy === `complete-match-${liveMatch.id}` || endingLiveMatchIds.has(liveMatch.id)
           : suggestedMatch
@@ -1569,10 +1598,27 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
                 Court {courtIdx + 1}
               </Text>
               <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.outline, fontWeight: '800' }}>
-                {roundNo ? `Round ${roundNo} / ${targetRounds}` : isSuggestingPreview ? 'Suggesting' : 'Empty'}
+                {roundNo ? `Round ${roundNo} / ${targetRounds}` : 'Empty'}
               </Text>
             </View>
-            {liveMatch ? (
+            {liveMatch && laneCreatingNext ? (
+              <View
+                style={{
+                  minHeight: 118,
+                  borderRadius: RADIUS.xl,
+                  borderWidth: BORDER.hairline,
+                  borderColor: theme.outlineVariant,
+                  backgroundColor: theme.surfaceContainerLow,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 16,
+                  gap: 10,
+                }}
+              >
+                <ActivityIndicator color={theme.primary} />
+                <Text style={ctaTextStyle(theme.primary, 12)}>Tạo trận tiếp theo...</Text>
+              </View>
+            ) : liveMatch ? (
               <LiveMatchScoreBoard
                 key={displayMatchKey(liveMatch)}
                 match={liveMatch}
@@ -1598,28 +1644,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
                 onOpenSettings={onOpenSettings}
                 onOpenSwap={() => onOpenSwap(suggestedMatch)}
               />
-            ) : (
-              <View
-                style={{
-                  minHeight: 74,
-                  borderRadius: RADIUS.md,
-                  borderWidth: BORDER.hairline,
-                  borderColor: theme.outlineVariant,
-                  backgroundColor: theme.surfaceContainerLow,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: 12,
-                }}
-              >
-                {isSuggestingPreview ? (
-                  <ActivityIndicator color={theme.primary} />
-                ) : (
-                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline }}>
-                    Waiting for next match
-                  </Text>
-                )}
-              </View>
-            )}
+            ) : null}
           </View>
         )
       })}
@@ -2159,6 +2184,7 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
   }, [])
 
   const startedAt = match.started_at ?? match.suggested_at ?? match.created_at
+  const isPersistingStart = String(match.id).startsWith('preview-')
   const [elapsed, setElapsed] = useState(0)
   useEffect(() => {
     if (!startedAt) return
@@ -2219,12 +2245,17 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
               onCancel(match)
             }}
             hitSlop={8}
-            disabled={busy || cancelBusy}
+            disabled={busy || cancelBusy || isPersistingStart}
             style={{ flex: 1, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.dangerBg, alignItems: 'center', justifyContent: 'center' }}
           >
             {cancelBusy ? <ActivityIndicator color={theme.dangerText} /> : <Text style={ctaTextStyle(theme.dangerText, 12)}>Hủy trận</Text>}
           </Pressable>
-          {searchingNext ? (
+          {isPersistingStart ? (
+            <View style={{ flex: 2, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.surfaceVariant, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
+              <ActivityIndicator size="small" color={theme.primary} />
+              <Text style={ctaTextStyle(theme.primary, 12)}>Dang bat dau...</Text>
+            </View>
+          ) : searchingNext ? (
             <View style={{ flex: 2, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.surfaceVariant, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
               <ActivityIndicator size="small" color={theme.primary} />
               <Text style={ctaTextStyle(theme.primary, 12)}>Tạo trận tiếp theo...</Text>
@@ -2236,7 +2267,7 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
                 onComplete(match, score)
               }}
               hitSlop={8}
-              disabled={busy || cancelBusy || searchingNext}
+              disabled={busy || cancelBusy || searchingNext || isPersistingStart}
               style={{ flex: 2, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', ...LAYOUT_SHADOW.sm }}
             >
               {busy ? (

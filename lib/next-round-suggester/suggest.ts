@@ -36,6 +36,7 @@ export type SuggestNextRoundOptions = {
   diagnostics?: SuggestionDiagnostic
   partition_cache?: boolean
   max_alternatives?: number
+  max_runtime_ms?: number
 }
 
 export type ExhaustiveFallbackDiagnostic = {
@@ -484,6 +485,11 @@ export function suggestNextRound(
   const maxAcceptedPerStrategy = Math.min(MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY, maxAlternatives)
   const seen = new Set<string>()
   const diagnostics = options.diagnostics
+  const startedAt = Date.now()
+  const maxRuntimeMs = options.max_runtime_ms && options.max_runtime_ms > 0
+    ? Math.max(50, Math.floor(options.max_runtime_ms))
+    : null
+  const timedOut = () => maxRuntimeMs !== null && Date.now() - startedAt >= maxRuntimeMs
   const partitioningCache = options.partition_cache === false
     ? undefined
     : createPartitioningRuntimeCache()
@@ -496,6 +502,7 @@ export function suggestNextRound(
 
   const collectAlternatives = (allowRelaxedTolerance: boolean, allowRepeatOverflow: boolean) => {
     for (const strategy of strategies) {
+      if (timedOut()) break
       const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides)
       const candidates = getPriorityCandidates(sorted, slots, MAX_CANDIDATES_PER_STRATEGY)
       if (diagnostics && !diagnostics.strategies[strategy]) {
@@ -516,6 +523,7 @@ export function suggestNextRound(
       let acceptedForStrategy = 0
 
       for (const candidate of candidates) {
+        if (timedOut()) break
         if (acceptedForStrategy >= maxAcceptedPerStrategy) break
         const key = `${combinationKey(candidate.players)}|pvna:${allowRelaxedTolerance ? 'relaxed' : 'strict'}|repeat:${allowRepeatOverflow ? 'overflow' : 'cap'}`
         if (seen.has(key)) {
@@ -562,10 +570,10 @@ export function suggestNextRound(
   }
 
   collectAlternatives(false, false)
-  if (alternatives.length === 0) {
+  if (alternatives.length === 0 && !timedOut()) {
     collectAlternatives(false, true)
-    collectAlternatives(true, false)
-    collectAlternatives(true, true)
+    if (!timedOut()) collectAlternatives(true, false)
+    if (!timedOut()) collectAlternatives(true, true)
   }
 
   alternatives.sort((a, b) => {
@@ -622,7 +630,7 @@ export function suggestNextRound(
     return a.matches[0].team_a.join(':').localeCompare(b.matches[0].team_a.join(':'))
   })
 
-  if (alternatives.length === 0) {
+  if (alternatives.length === 0 && !timedOut()) {
     const forceRequiredIds = new Set(
       eligiblePlayers
         .filter((player) => player.consecutive_rest >= 2)
@@ -634,6 +642,7 @@ export function suggestNextRound(
         const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides)
         const candidates = getPriorityCandidates(sorted, slots, MAX_CANDIDATES_PER_STRATEGY)
         for (const candidate of candidates) {
+          if (timedOut()) break
           if (alternatives.length > 0) break
           const key = combinationKey(candidate.players)
           if (seen.has(key)) continue
@@ -666,6 +675,7 @@ export function suggestNextMatch(
   state: SessionState,
   options: SuggestNextMatchOptions = {},
 ): SuggestionResult {
+  const startedAt = Date.now()
   const busyIds = new Set([...(options.busy_player_ids ?? [])].map(String))
   const now = new Date()
   const players = new Map(
@@ -706,6 +716,10 @@ export function suggestNextMatch(
     topAlternative.warnings.includes('PVNA_TOLERANCE_RELAXED') ||
     topAlternative.warnings.includes('REPEAT_CAP_RELAXED')
   if (!shouldCheckFallback) return mappedResult
+  const remainingRuntimeMs = options.max_runtime_ms === undefined
+    ? undefined
+    : options.max_runtime_ms - (Date.now() - startedAt)
+  if (remainingRuntimeMs !== undefined && remainingRuntimeMs <= 100) return mappedResult
 
   const diag: ExhaustiveFallbackDiagnostic = {
     ran: false, timedOut: false, eligibleCount: 0,
@@ -717,6 +731,7 @@ export function suggestNextMatch(
     _exhaustiveDiag: options._exhaustiveDiag ?? diag,
     court_idx: courtIdx,
     max_alternatives: options.max_alternatives ?? 1,
+    max_runtime_ms: remainingRuntimeMs,
   })
   if (fallback.alternatives.length === 0) return mappedResult
 
@@ -815,6 +830,10 @@ function suggestNextMatchExhaustiveFallback(
   let combinationsEvaluated = 0
 
   const startMs = Date.now()
+  const timeoutMs = options.max_runtime_ms && options.max_runtime_ms > 0
+    ? Math.min(2500, Math.max(50, Math.floor(options.max_runtime_ms)))
+    : 2500
+  const timedOut = () => Date.now() - startMs >= timeoutMs
   const evaluateStage = (
     allowRelaxedTolerance: boolean,
     allowRepeatOverflow: boolean,
@@ -843,7 +862,7 @@ function suggestNextMatchExhaustiveFallback(
     })
 
     for (const selected of combinations) {
-      if (Date.now() - startMs > 2500) break
+      if (timedOut()) break
       if (
         enforceRequired &&
         requiredPlayerIds.size > 0 &&
@@ -886,28 +905,28 @@ function suggestNextMatchExhaustiveFallback(
   }
 
   evaluateStage(false, false)
-  if (alternatives.length === 0) {
+  if (alternatives.length === 0 && !timedOut()) {
     evaluateStage(false, true)
-    evaluateStage(true, false)
-    evaluateStage(true, true)
+    if (!timedOut()) evaluateStage(true, false)
+    if (!timedOut()) evaluateStage(true, true)
   }
-  if (alternatives.length === 0 && requiredPlayerIds.size > 0) {
+  if (alternatives.length === 0 && requiredPlayerIds.size > 0 && !timedOut()) {
     evaluateStage(false, false, false)
   }
-  if (alternatives.length === 0 && requiredPlayerIds.size > 0) {
+  if (alternatives.length === 0 && requiredPlayerIds.size > 0 && !timedOut()) {
     evaluateStage(false, true, false)
-    evaluateStage(true, false, false)
-    if (alternatives.length === 0) {
+    if (!timedOut()) evaluateStage(true, false, false)
+    if (alternatives.length === 0 && !timedOut()) {
       evaluateStage(true, true, false)
     }
   }
-  if (alternatives.length === 0) {
+  if (alternatives.length === 0 && !timedOut()) {
     evaluateStage(false, false, true, true)
   }
-  if (alternatives.length === 0) {
+  if (alternatives.length === 0 && !timedOut()) {
     evaluateStage(false, true, true, true)
-    evaluateStage(true, false, true, true)
-    if (alternatives.length === 0) {
+    if (!timedOut()) evaluateStage(true, false, true, true)
+    if (alternatives.length === 0 && !timedOut()) {
       evaluateStage(true, true, true, true)
     }
   }
@@ -918,7 +937,7 @@ function suggestNextMatchExhaustiveFallback(
   if (options._exhaustiveDiag) {
     const best = alternatives[0]
     options._exhaustiveDiag.ran = true
-    options._exhaustiveDiag.timedOut = elapsedMs >= 2500
+    options._exhaustiveDiag.timedOut = elapsedMs >= timeoutMs
     options._exhaustiveDiag.eligibleCount = eligiblePlayers.length
     options._exhaustiveDiag.combinationsEvaluated = combinationsEvaluated
     options._exhaustiveDiag.bestPvnaDiff = best?.matches[0]?.stats?.pvna_diff ?? null

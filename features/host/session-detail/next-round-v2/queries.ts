@@ -11,7 +11,7 @@ export const liveSessionQueryKeys = {
   detail: (sessionId: string) => [...liveSessionQueryKeys.all, sessionId] as const,
 }
 
-const POLL_INTERVAL_MS = 3000
+const POLL_INTERVAL_MS = process.env.EXPO_PUBLIC_USE_COURT_LANE_BOARD === '1' ? false : 3000
 
 export function useLiveSessionQuery(sessionId: string, playersById: Map<string, ArrangementPlayer>) {
   return useQuery<LiveRows, Error>({

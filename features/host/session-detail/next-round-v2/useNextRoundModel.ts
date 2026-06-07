@@ -31,6 +31,8 @@ import { getLevelIdForElo } from '@/lib/eloSystem'
 import { markNextRoundStage } from './telemetry'
 import { buildCompletedLiveCycleRows as buildCompletedLiveCycleRowsBySequence } from './live-cycle-rows'
 
+const USE_COURT_LANE_BOARD = process.env.EXPO_PUBLIC_USE_COURT_LANE_BOARD === '1'
+
 function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): SuggestionAlternative | null {
   if (!alternative) return null
   return {
@@ -550,6 +552,10 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     || deferredPvnaTolerance !== pvnaTolerance
     || deferredRows !== liveRows.rows
   const suggestion = useMemo(() => {
+    if (USE_COURT_LANE_BOARD) {
+      lastSuggestMsRef.current = 0
+      return { alternatives: [] }
+    }
     const startedAt = Date.now()
     const result = suggestNextRound(deferredState, { tier_overrides: deferredTierOverrides })
     lastSuggestMsRef.current = Date.now() - startedAt
@@ -572,7 +578,9 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   // Pre-compute cho tất cả alternatives — chỉ chạy khi engine tạo suggestion mới,
   // không chạy lại khi user chỉ đổi selectedAlternative.
   const suggestedRoundActionsCache = useMemo(
-    () => buildSuggestedRoundActionsCache(deferredState, suggestion.alternatives, deferredCourtCount),
+    () => USE_COURT_LANE_BOARD
+      ? { actions: [], audits: new Map() as Map<number, AlternativeAudit> }
+      : buildSuggestedRoundActionsCache(deferredState, suggestion.alternatives, deferredCourtCount),
     [deferredCourtCount, deferredState, suggestion.alternatives],
   )
   const alternativeOrder = useMemo(
@@ -580,11 +588,15 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     [suggestedRoundActionsCache],
   )
   const alternativeFairnessPreviews = useMemo(
-    () => suggestion.alternatives.map(alt => buildFairnessPreview(deferredState, withoutRestPenalty(alt))),
+    () => USE_COURT_LANE_BOARD
+      ? []
+      : suggestion.alternatives.map(alt => buildFairnessPreview(deferredState, withoutRestPenalty(alt))),
     [deferredState, suggestion.alternatives],
   )
   const alternativeFairnessWarnings = useMemo(
-    () => suggestion.alternatives.map(alt => buildFairnessWarningsForBanner(deferredState, alt)),
+    () => USE_COURT_LANE_BOARD
+      ? []
+      : suggestion.alternatives.map(alt => buildFairnessWarningsForBanner(deferredState, alt)),
     [deferredState, suggestion.alternatives],
   )
 
@@ -603,7 +615,9 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   const fairnessWarnings = manualFairnessWarnings ?? alternativeFairnessWarnings[selectedAlternative] ?? alternativeFairnessWarnings[0] ?? []
 
   const suggestedRoundActions = useMemo(
-    () => buildSuggestedRoundActions({
+    () => USE_COURT_LANE_BOARD
+      ? []
+      : buildSuggestedRoundActions({
       state: deferredState,
       alternatives: suggestion.alternatives,
       cache: suggestedRoundActionsCache,
