@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { Dimensions, Text, View } from 'react-native'
+import { Dimensions, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native'
 import Animated, {
   useAnimatedRef,
   useAnimatedStyle,
@@ -100,7 +100,7 @@ function SwipeStack<T>({
       disableIntervalMomentum
       contentContainerStyle={{ paddingRight: 0 }}
       style={{ height: measuredHeight || containerHeight }}
-      onScroll={(event) => {
+      onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const offsetX = event.nativeEvent.contentOffset.x
         const nextIndex = Math.round(offsetX / (carouselCardWidth + carouselGap))
         onIndexChange?.(nextIndex)
@@ -189,4 +189,3 @@ export function HomeCarouselSection<T>({
     </View>
   )
 }
-

@@ -1,5 +1,6 @@
 import { AppDialogConfig } from '@/components/design'
 import { supabase } from '@/lib/supabase'
+import { safeStorageSetItem } from '@/lib/storage'
 import { router } from 'expo-router'
 import { useAppTheme } from '@/lib/theme-context'
 import { ShieldCheck, Lock, Mail } from 'lucide-react-native'
@@ -76,7 +77,6 @@ export default function DevHostLoginSection({
     }
 
     // Set role in storage so AuthGate knows where to go
-    const { safeStorageSetItem } = await import('@/lib/storage')
     const role = isHost ? 'host' : 'player'
     await safeStorageSetItem('user_role', role)
 

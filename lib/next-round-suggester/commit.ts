@@ -1,5 +1,5 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { normalizePairKey } from './state.ts'
+import { normalizePairKey } from './state'
 import type {
   Match,
   PlayerSessionState,

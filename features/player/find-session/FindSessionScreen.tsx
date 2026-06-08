@@ -56,7 +56,6 @@ export function FindSessionScreen() {
     setSortMode,
     preferredCourtFilter,
     clearCourtFilter,
-    _setPreferredCourtFilter,
     filterModalVisible,
     setFilterModalVisible,
     advancedFilter,
@@ -282,7 +281,7 @@ export function FindSessionScreen() {
     <View style={{ 
       flex: 1, 
       backgroundColor: theme.background,
-      ...(Platform.OS === 'web' ? { minHeight: '100dvh' } : {})
+      ...(Platform.OS === 'web' ? { minHeight: 0 } : {})
     }}>
       <View style={{ backgroundColor: 'transparent', paddingTop: isMobile ? 0 : 24 }}>
         <MainHeader
@@ -453,7 +452,7 @@ export function FindSessionScreen() {
               }
               ListFooterComponent={listFooter}
               ListEmptyComponent={
-                !loading && (
+                !loading ? (
                   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 100, paddingHorizontal: 40 }}>
                     <View style={{ 
                       width: 120, height: 120, borderRadius: 60, backgroundColor: theme.surface, 
@@ -475,7 +474,7 @@ export function FindSessionScreen() {
                       <Text style={{ color: theme.onPrimary, fontFamily: SCREEN_FONTS.cta, fontSize: 14, letterSpacing: 1 }}>{t('find_session_screen.reset_filter')}</Text>
                     </TouchableOpacity>
                   </View>
-                )
+                ) : null
               }
               renderItem={({ item }) => (
                 <View style={{ 
@@ -501,7 +500,7 @@ export function FindSessionScreen() {
         skillLevels={SKILL_LEVELS}
       />
 
-      <AppDialog config={dialogConfig} onClose={() => setDialogConfig(null)} />
+      <AppDialog visible={Boolean(dialogConfig)} config={dialogConfig} onClose={() => setDialogConfig(null)} />
     </View>
   )
 }

@@ -1,8 +1,8 @@
 import type { Match, PlayerSessionState, RoundRecord, SessionState } from '../types'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { detectFairnessIssues, type FairnessWarning } from './detector.ts'
+import { detectFairnessIssues, type FairnessWarning } from './detector'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { computeGenderPrefSatisfaction, computeOpponentDiversity, computePartnerDiversity, computeRestFairness, computeSessionFairness, type SessionFairnessScore } from './metrics.ts'
+import { computeGenderPrefSatisfaction, computeOpponentDiversity, computePartnerDiversity, computeRestFairness, computeSessionFairness, type SessionFairnessScore } from './metrics'
 
 export type SessionSummary = {
   session_id: string

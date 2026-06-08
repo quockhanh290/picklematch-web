@@ -1,4 +1,4 @@
-import { getLegacySkillLabelForTier, getLevelIdForElo, getSimpleTierLabel, getTierForElo } from './eloSystem'
+import { getLegacySkillLabelForTier, getLevelIdForElo, getSimpleTierLabel, getTierForElo, type EloLevelId } from './eloSystem'
 import { STRINGS } from '@/constants/strings'
 
 export type OnboardingQuestionId =
@@ -145,7 +145,7 @@ export function calculateInitialElo(
   return { elo, tier: getTierForElo(elo), preference }
 }
 
-export function getSelfAssessedLevelForElo(elo: number): 'level_1' | 'level_2' | 'level_3' | 'level_4' | 'level_5' {
+export function getSelfAssessedLevelForElo(elo: number): EloLevelId {
   return getLevelIdForElo(elo)
 }
 

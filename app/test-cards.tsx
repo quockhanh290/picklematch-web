@@ -353,12 +353,14 @@ export default function TestCardsScreen() {
              <Text style={{ fontFamily: SCREEN_FONTS.headlineBlack, fontSize: 22, marginBottom: 8, color: theme.primary }}>
               KẾT QUẢ ĐỀ XUẤT HỢP NHẤT
             </Text>
+            {/* eslint-disable react/no-unescaped-entities */}
             <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 14, marginBottom: 16, color: theme.onSurfaceVariant }}>
               - Bổ sung Avatar người chơi ở Footer{'\n'}
               - CTA "Tham gia" nổi bật (Solid Button){'\n'}
               - Badge gợi ý ("Cần 1 người gấp"){'\n'}
               - Khoảng cách địa lý ("Cách 2.5km")
             </Text>
+            {/* eslint-enable react/no-unescaped-entities */}
             {states.map((s, idx) => (
               <View key={`unified-${idx}`} style={{ marginBottom: 24, paddingBottom: 24, borderBottomWidth: 1, borderBottomColor: theme.outlineVariant }}>
                 <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 14, marginBottom: 8, color: theme.onSurfaceVariant }}>{s.label}</Text>

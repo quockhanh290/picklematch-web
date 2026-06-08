@@ -16,6 +16,27 @@ import { useAppTheme } from '@/lib/theme-context'
 import { useTranslation } from 'react-i18next'
 import { ScheduleCoverageReport } from './ScheduleCoverageReport'
 
+export type DraftScheduledMatch = {
+  teamA: string[]
+  teamB: string[]
+  teamANo?: number
+  teamBNo?: number
+  rotation: number
+  court: number
+}
+
+type DraftSchedule = {
+  matches: DraftScheduledMatch[]
+  players: ArrangementPlayer[]
+  quality: {
+    runtimeMs: number
+    timedOut: boolean
+    fallbackUsed: boolean
+    pairingScore?: number
+    overallScore?: number
+  }
+}
+
 type Props = {
   onClose: () => void
   players: ArrangementPlayer[]
@@ -25,7 +46,7 @@ type Props = {
   onUpdated: () => void
   onGoToMatches?: () => void
   onApplySchedule?: (payload: {
-    matches: FixedTeamScheduledMatch[]
+    matches: DraftScheduledMatch[]
     players: ArrangementPlayer[]
     quality: { runtimeMs: number, timedOut: boolean, fallbackUsed: boolean }
     mode: 'full' | 'limited'
@@ -87,7 +108,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
 
   const teamOptions = Array.from({ length: targetNumTeams }, (_, i) => i + 1)
 
-  const draftSchedule = React.useMemo(
+  const draftSchedule = React.useMemo<DraftSchedule>(
     () => {
       if (optimizationProfile === 'social') {
         if (socialSubMode === 'rotation') {
@@ -99,7 +120,12 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
           return {
             matches: result.matches,
             players: result.players,
-            quality: result.quality
+            quality: {
+              runtimeMs: result.quality.runtimeMs,
+              timedOut: false,
+              fallbackUsed: false,
+              overallScore: result.quality.overallScore,
+            }
           }
         } else {
           const result = optimizeSocialPlan(arrangedPlayers, {
@@ -831,6 +857,7 @@ export function TeamArrangementScreen({ onClose, players, maxPlayers, courtCount
               <ScheduleCoverageReport 
                 schedule={draftSchedule.matches} 
                 players={draftSchedule.players}
+                mode={optimizationProfile === 'social' ? 'limited' : 'full'}
                 minGamesPerPlayer={targetGamesPerTeam}
                 variant={optimizationProfile === 'social' ? (socialSubMode === 'rotation' ? 'rotation' : 'social') : 'fixed'}
                 quality={draftSchedule.quality}

@@ -369,7 +369,7 @@ export function bestPartitioningCached(
   function runSearch(
     searchOptions: { tolerance?: number; relaxedTolerance?: boolean } = {},
   ): { result: CachedPartitioningResult | null; iterations: number } {
-    let best: CachedPartitioningResult | null = null
+    const bestRef: { current: CachedPartitioningResult | null } = { current: null }
     let iterations = 0
 
     function consider(groups: PlayerSessionState[][]) {
@@ -377,7 +377,7 @@ export function bestPartitioningCached(
       iterations += 1
       const result = evaluatePartition(groups, state, cache, iterations, searchOptions)
       if (!result) return
-      if (shouldReplaceBestPartition(result, best, state, cache)) best = result
+      if (shouldReplaceBestPartition(result, bestRef.current, state, cache)) bestRef.current = result
     }
 
     if (canSearchExhaustively) {
@@ -396,13 +396,13 @@ export function bestPartitioningCached(
       }
       walk(normalizedPlayers, [])
       return {
-        result: best
+        result: bestRef.current
           ? {
-              matches: best.matches,
-              score: best.score,
-              stats: best.stats,
+              matches: bestRef.current.matches,
+              score: bestRef.current.score,
+              stats: bestRef.current.stats,
               iterations,
-              relaxed_tolerance: best.relaxed_tolerance,
+              relaxed_tolerance: bestRef.current.relaxed_tolerance,
             }
           : null,
         iterations,
@@ -418,13 +418,13 @@ export function bestPartitioningCached(
     }
 
     return {
-      result: best
+      result: bestRef.current
         ? {
-            matches: best.matches,
-            score: best.score,
-            stats: best.stats,
+            matches: bestRef.current.matches,
+            score: bestRef.current.score,
+            stats: bestRef.current.stats,
             iterations,
-            relaxed_tolerance: best.relaxed_tolerance,
+            relaxed_tolerance: bestRef.current.relaxed_tolerance,
           }
         : null,
       iterations,

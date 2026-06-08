@@ -40,7 +40,7 @@ export async function fetchCourtDetailApi(courtId: string): Promise<CourtDetail 
   // 1. Prepare queries
   const courtPromise = supabase
     .from('courts')
-    .select('id, name, address, city, district, thumbnail_url, images, rating, rating_count, google_maps_url, phone, reviews_data, hours_open, hours_close, owner_id, sub_court_count')
+    .select('id, name, address, city, district, thumbnail_url, images, rating, rating_count, amenities, highlight, description, google_maps_url, booking_url, phone, reviews_data, popular_times, hours_open, hours_close, owner_id, sub_court_count')
     .eq('id', courtId)
     .single()
 

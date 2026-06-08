@@ -1,8 +1,8 @@
 import type { PlayerSessionState, SessionState } from '../types'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { computeAvailabilityMetrics, computeGenderPrefSatisfaction, computeMatchCountMetrics, computeOpponentDiversity, computeOpponentRepeatBurden, computePartnerDiversity } from './metrics.ts'
+import { computeAvailabilityMetrics, computeGenderPrefSatisfaction, computeMatchCountMetrics, computeOpponentDiversity, computeOpponentRepeatBurden, computePartnerDiversity } from './metrics'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { computeRepeatPressure } from './pressure.ts'
+import { computeRepeatPressure } from './pressure'
 
 export type WarningType =
   | 'match_count_imbalance'

@@ -1,4 +1,4 @@
-import { Check, ChevronRight, MessageSquareText, ShieldAlert, X } from 'lucide-react-native'
+import { Check, ChevronRight, MessageSquare, ShieldAlert, X } from 'lucide-react-native'
 import { Text, TouchableOpacity, View } from 'react-native'
 
 import { useAppTheme } from '@/lib/theme-context'
@@ -122,7 +122,7 @@ export function HostRequestReview({
 
             <View className="mt-4 rounded-2xl px-4 py-4" style={{ backgroundColor: theme.surfaceContainerLow }}>
               <View className="flex-row items-center">
-                <MessageSquareText size={15} color={theme.outline} />
+                <MessageSquare size={15} color={theme.outline} />
                 <Text className="ml-2 text-[11px] font-extrabold uppercase tracking-[1px]" style={{ color: theme.outline }}>
                   Lời nhắn giới thiệu
                 </Text>
@@ -203,4 +203,3 @@ export function HostRequestReview({
     </View>
   )
 }
-

@@ -441,9 +441,7 @@ export default function EditProfile() {
                 elo={elo}
                 title={currentLevel?.title ?? 'Đang hiệu chỉnh'}
                 subtitle={currentLevel?.subtitle ?? 'Mức khởi điểm hiện tại. Hệ thống sẽ tiếp tục tinh chỉnh sau vài trận.'}
-                subtitleItalic
                 description={currentLevel?.description ?? ''}
-                contentRightInset={12}
                 levelId={selectedLevelId}
               />
 
@@ -554,6 +552,5 @@ export default function EditProfile() {
     </View>
   )
 }
-
 
 

@@ -28,6 +28,7 @@ export type AppTheme = ProfileThemeColors & ProfileThemeSemantic & {
   warningSoft: string;
   warning: string;
   warningContainer: string;
+  onWarningContainer: string;
   dangerSoft: string;
   danger: string;
   dangerContainer: string;
@@ -64,6 +65,7 @@ function createAppThemeFromProfile(id: string, name: string, p: ProfileThemeColo
     warningSoft: s.warningBg,
     warning: s.warningStrong,
     warningContainer: s.warningBg,
+    onWarningContainer: s.warningText,
     dangerSoft: s.dangerBg,
     danger: s.dangerStrong,
     dangerContainer: s.dangerBg,

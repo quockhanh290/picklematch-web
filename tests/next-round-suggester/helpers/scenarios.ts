@@ -41,8 +41,8 @@ export function groupedScenario(): SessionState {
 export function genderPreferenceScenario(): SessionState {
   return createState({
     players: [
-      createPlayer('p01', { pvna: 3.28, gender: 'M', partner_gender_pref: 'M' }),
-      createPlayer('p02', { pvna: 3.28, gender: 'M' }),
+      createPlayer('p01', { pvna: 3.2, gender: 'M', partner_gender_pref: 'M' }),
+      createPlayer('p02', { pvna: 3.2, gender: 'M' }),
       createPlayer('p03', { pvna: 3.0, gender: 'F' }),
       createPlayer('p04', { pvna: 3.0, gender: 'F' }),
     ],

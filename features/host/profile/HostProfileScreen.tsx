@@ -5,7 +5,8 @@ import {
     ProfileSkillHero,
 } from '@/components/profile/ProfileSections'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { getSkillLevelFromPlayer, getEloBandByLevelId } from '@/lib/skillAssessment'
+import { getSkillLevelFromPlayer } from '@/lib/skillAssessment'
+import { getEloBandByLevelId } from '@/lib/eloSystem'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
 import { useRoleSwitcher } from '@/lib/useRoleSwitcher'
@@ -184,7 +185,6 @@ export function HostProfileScreen() {
               title="HỒ SƠ CHỦ SÂN" 
               brandedSubtitle="PICKLEMATCH" 
               style={{ paddingHorizontal: 0 }} 
-              testID="host-profile-header"
             />
           </View>
 

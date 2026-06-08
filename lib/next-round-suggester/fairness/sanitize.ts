@@ -1,9 +1,9 @@
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import type { FairnessWarning } from './detector.ts'
+import type { FairnessWarning } from './detector'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import type { DiversityMetrics, GenderPrefMetrics, MatchCountMetrics, RestFairnessMetrics, SessionFairnessScore } from './metrics.ts'
+import type { DiversityMetrics, GenderPrefMetrics, MatchCountMetrics, RestFairnessMetrics, SessionFairnessScore } from './metrics'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import type { SessionSummary } from './summary.ts'
+import type { SessionSummary } from './summary'
 
 export type FullFairnessMetrics = {
   match_count: MatchCountMetrics

@@ -203,7 +203,7 @@ export function PlayerRosterSection({
             )}
           </View>
           <Text style={{ fontSize: 10, fontFamily: SCREEN_FONTS.label, color: theme.outline, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            {isHostPlayer ? STRINGS.session.roles.host : STRINGS.session.roles.member}
+            {isHostPlayer ? STRINGS.session.roles.host : STRINGS.session.roles.player}
           </Text>
         </View>
 
@@ -367,4 +367,3 @@ export function PlayerRosterSection({
     </View>
   )
 }
-

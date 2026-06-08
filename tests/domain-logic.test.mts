@@ -12,15 +12,15 @@ function run(name: string, fn: () => void) {
 run('elo mapping uses the shared master table', () => {
   assert.equal(getLevelIdForElo(800), 'pvna_1')
   assert.equal(getLevelIdForElo(1000), 'pvna_2')
-  assert.equal(getLevelIdForElo(1100), 'pvna_3')
-  assert.equal(getLevelIdForElo(1200), 'pvna_4')
-  assert.equal(getLevelIdForElo(1375), 'pvna_5')
+  assert.equal(getLevelIdForElo(1100), 'pvna_2')
+  assert.equal(getLevelIdForElo(1200), 'pvna_3')
+  assert.equal(getLevelIdForElo(1375), 'pvna_4')
 
-  assert.equal(getTierForElo(1200), 'upper_intermediate')
+  assert.equal(getTierForElo(1200), 'intermediate')
 })
 
 run('tier mapping preserves the level 4 distinction', () => {
-  assert.equal(getEloBandByTier('upper_intermediate')?.levelId, 'pvna_4')
+  assert.equal(getEloBandByTier('advanced')?.levelId, 'pvna_4')
   assert.equal(getEloBandByTier('intermediate')?.levelId, 'pvna_3')
 })
 

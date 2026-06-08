@@ -16,7 +16,7 @@ import { MatchControlSection } from './MatchControlSection'
 import { MatchPlayerManagementPanel } from './MatchPlayerManagementPanel'
 import { ScheduleCoverageReport } from './ScheduleCoverageReport'
 import { ScheduleSetupPanel, type ScheduleMode } from './ScheduleSetupPanel'
-import { TeamArrangementScreen } from './TeamArrangementScreen'
+import { TeamArrangementScreen, type DraftScheduledMatch } from './TeamArrangementScreen'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const RESPONSIVE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 80 : SCREEN_WIDTH > 360 ? 70 : 64
@@ -562,6 +562,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   const getPlayerNames = (teamNo: number) => teamGroups[String(teamNo)]?.map(p => p.name).join(' - ') || `Đội ${teamNo}`
 
   const handleApplyFixedDraftSchedule = (payload: {
+    matches: DraftScheduledMatch[]
     players: ArrangementPlayer[]
     quality: { runtimeMs: number, timedOut: boolean, fallbackUsed: boolean }
     mode: 'full' | 'limited'

@@ -1,8 +1,8 @@
-import { computeGenderPrefSatisfaction, computeMatchCountMetrics, computeOpponentDiversity, computeOpponentRepeatBurden, computePartnerDiversity, computeSessionFairness } from './fairness/metrics.ts'
-import { computeRepeatPressure } from './fairness/pressure.ts'
-import { previewStateAfterAlternative } from './history.ts'
-import { suggestNextRound } from './suggest.ts'
-import type { SessionState, SuggestionAlternative } from './types.ts'
+import { computeGenderPrefSatisfaction, computeMatchCountMetrics, computeOpponentDiversity, computeOpponentRepeatBurden, computePartnerDiversity, computeSessionFairness } from './fairness/metrics'
+import { computeRepeatPressure } from './fairness/pressure'
+import { previewStateAfterAlternative } from './history'
+import { suggestNextRound } from './suggest'
+import type { SessionState, SuggestionAlternative } from './types'
 
 export type AlternativeAudit = {
   index: number

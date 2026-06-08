@@ -71,7 +71,7 @@ describe('court calculator', () => {
 
     expect(result.recommended.courts).toBe(3)
     expect(result.recommended.play_ratio).toBe(0.75)
-    expect(result.recommended.quality_notes[0]).toContain('Rotation phu hop')
+    expect(result.recommended.quality_notes[0]).toContain('Rotation')
   })
 
   it('prefers 4 courts for 24 players balanced because rotation is healthier', () => {

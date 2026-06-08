@@ -102,7 +102,7 @@ export function useCreateSessionController(editSessionId: string | null) {
 
       const [{ data: authData }, detailResult] = await Promise.all([
         supabase.auth.getUser(),
-        fetchSessionDetailForEditApi(editSessionId),
+        fetchSessionDetailForEditApi(editSessionId!),
       ])
 
       const user = authData.user
@@ -163,8 +163,8 @@ export function useCreateSessionController(editSessionId: string | null) {
 
       const matchedCourt = courts.find((item) => item.id === nextCourt.id) ?? nextCourt
 
-      const _minLevel = skillLevelFromElo(session.elo_min, 'min')
-      const _maxLevel = skillLevelFromElo(session.elo_max, 'max')
+      const _minLevel = skillLevelFromElo(session.elo_min)
+      const _maxLevel = skillLevelFromElo(session.elo_max)
       const sendBookingDetails = session.court_booking_status === 'confirmed' || Boolean(session.booking_reference || session.booking_name || session.booking_phone || session.booking_notes)
 
       setSelectedCourt(matchedCourt)

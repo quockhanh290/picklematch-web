@@ -5,7 +5,7 @@ import { View } from 'react-native'
 import { AppLoading } from '@/components/design'
 import { RosterScreen } from '@/features/host/session-detail/RosterScreen'
 import { useSessionDetail } from '@/hooks/useSessionDetail'
-import { buildArrangementPlayers } from '@/lib/sessionDetail'
+import { buildArrangementPlayers, getOwnerSession } from '@/lib/sessionDetail'
 import { useAuth } from '@/lib/useAuth'
 import { useAppTheme } from '@/lib/theme-context'
 
@@ -17,8 +17,8 @@ export default function RosterRoute() {
 
   if (loading) return <AppLoading fullScreen />
 
-  const ownerDetails = session?.owner_sessions?.[0] || session?.owner_sessions || {}
-  const formatType = (ownerDetails as any)?.[0]?.format_type || 'social'
+  const ownerDetails = getOwnerSession(session?.owner_sessions)
+  const formatType = ownerDetails?.format_type || 'social'
   const players = session ? buildArrangementPlayers({ ...session, owner_sessions: ownerDetails }) : []
 
   return (

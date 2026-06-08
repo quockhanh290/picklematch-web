@@ -1,9 +1,9 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { Tier } from './classify.ts'
+import { Tier } from './classify'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import type { FairnessWarning } from './fairness/detector.ts'
+import type { FairnessWarning } from './fairness/detector'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { computeAvailabilityMetrics } from './fairness/metrics.ts'
+import { computeAvailabilityMetrics } from './fairness/metrics'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import {
   PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
@@ -13,11 +13,11 @@ import {
   getRecentRepeatCost,
   getProjectedRepeatSummary,
   withRecentGroupRematchKeys,
-} from './score.ts'
+} from './score'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { bestPartitioning } from './pair.ts'
+import { bestPartitioning } from './pair'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { suggestNextMatch, type ExhaustiveFallbackDiagnostic } from './suggest.ts'
+import { suggestNextMatch, type ExhaustiveFallbackDiagnostic } from './suggest'
 import type {
   PlayerSessionState,
   SessionLiveMatchRow,
@@ -27,7 +27,7 @@ import type {
   SuggestionTradeoffChoice,
   SuggestionTradeoffChoiceId,
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-} from './types.ts'
+} from './types'
 
 const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 12
 const LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT = 80

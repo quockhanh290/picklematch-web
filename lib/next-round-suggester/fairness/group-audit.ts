@@ -1,4 +1,4 @@
-import type { SessionPlayerStateRow, SessionState } from '../types.ts'
+import type { SessionPlayerStateRow, SessionState } from '../types'
 
 export type GroupSummary = {
   group_id: string

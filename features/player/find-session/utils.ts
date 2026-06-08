@@ -32,7 +32,7 @@ export function computeMatchScore(session: Session, rescueMode: boolean, level3M
   if (hoursUntilStart >= 0 && hoursUntilStart <= 24) score += 4
   if (hoursUntilStart > 24 && hoursUntilStart <= 72) score += 2
   if (rescueMode && slotsLeft <= 2) score += 6
-  if (level3Mode && skill.id === 'level_3') score += 8
+  if (level3Mode && skill.id === 'pvna_3') score += 8
   return Math.max(78, Math.min(score, 99))
 }
 

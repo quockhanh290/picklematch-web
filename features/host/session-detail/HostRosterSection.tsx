@@ -3,7 +3,6 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import {  Users, AlertTriangle, CheckCircle2, XCircle, PlusCircle, Pencil, Check, Trash2, Clock, Settings2 } from 'lucide-react-native'
 import { supabase } from '@/lib/supabase'
 import { Text, View, TouchableOpacity, Platform, LayoutAnimation, Alert } from 'react-native'
-import { useSessionNav } from '@/lib/navigation/SessionNavContext'
 import { router } from 'expo-router'
 import { RADIUS, BORDER, SHADOW } from '@/constants/screenLayout'
 import { getInitials } from '@/lib/sessionDetail'
@@ -114,7 +113,6 @@ export function HostRosterSection({
   isAfterEnd = false
 }: Props) {
   const theme = useAppTheme()
-  const { _onOpenPlayerProfile } = useSessionNav()
   // Local state for instant feedback
   const [localStatuses, setLocalStatuses] = React.useState<Record<string, string>>({})
   const [removedPlayerIds, setRemovedPlayerIds] = React.useState<Set<string>>(new Set())

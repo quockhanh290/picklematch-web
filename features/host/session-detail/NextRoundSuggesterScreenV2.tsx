@@ -1959,7 +1959,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             && !rawFetchedCourtIdxs.includes(0)
             && Math.min(...rawFetchedCourtIdxs) >= 1
             && Math.max(...rawFetchedCourtIdxs) <= queueCourtCount
-          const fetchedMatches = res.payloads.map((match: any, index: number): SuggestedLiveMatchRow => {
+          const fetchedMatches: SuggestedLiveMatchRow[] = res.payloads.map((match: any, index: number): SuggestedLiveMatchRow => {
             const rawCourtIdx = Number(match.court_idx ?? index)
             const zeroBasedCourtIdx = fetchedCourtIdxsAreOneBased ? rawCourtIdx - 1 : rawCourtIdx
             const normalizedCourtIdx = Number.isFinite(zeroBasedCourtIdx)
@@ -2312,7 +2312,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           backgroundColor: theme.background,
           ...(isWeb
             ? {
-                minHeight: webViewportHeight ?? '100dvh',
+                minHeight: webViewportHeight ?? 0,
                 overflow: 'visible',
               }
             : null),
@@ -2335,7 +2335,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         backgroundColor: theme.background,
         ...(isWeb
           ? {
-              minHeight: webViewportHeight ?? '100dvh',
+              minHeight: webViewportHeight ?? 0,
               overflow: 'visible',
             }
           : null),
@@ -2393,7 +2393,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             flexGrow: 1,
             padding: SPACING.xl,
             paddingBottom: 126 + insets.bottom,
-            ...(isWeb ? { minHeight: webViewportHeight ?? '100dvh' } : null),
+            ...(isWeb ? { minHeight: webViewportHeight ?? 0 } : null),
           }}
         >
           <SessionDashboardCard
@@ -2462,7 +2462,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
               />
               {planningInProgress || (!USE_COURT_LANE_BOARD && isSuggestingPreview) ? (
                 <PlanningRoundCard syncingRoster={busy === 'sync' || isSuggestingPreview} />
-              ) : !USE_COURT_LANE_BOARD && suggestedLiveMatches.length === 0 && activeLiveMatches.length === 0 ? (
+              ) : !USE_COURT_LANE_BOARD && suggestedLiveMatches.length === 0 && activeLiveMatches.length === 0 && nextMatchSuggestion ? (
                 <EmptyPlanCard
                   state={state}
                   suggestion={nextMatchSuggestion}

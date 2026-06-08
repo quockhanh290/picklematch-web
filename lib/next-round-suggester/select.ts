@@ -1,9 +1,9 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { classifyPlayer, getAverageMatches, Tier } from './classify.ts'
+import { classifyPlayer, getAverageMatches, Tier } from './classify'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { computeAvailabilityMetrics } from './fairness/metrics.ts'
+import { computeAvailabilityMetrics } from './fairness/metrics'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { isPresent } from './state.ts'
+import { isPresent } from './state'
 import type { PlayerSessionState, SessionState } from './types'
 
 export type TierOverrides = Record<string, Tier>

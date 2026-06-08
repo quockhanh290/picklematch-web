@@ -14,6 +14,7 @@ export type SocialPlan = {
   quality: {
     runtimeMs: number
     score: number
+    overallScore: number
   }
 }
 
@@ -295,13 +296,17 @@ export function optimizeSocialPlan(
     // Tính Pref hits cho Partner
     if (pA.length === 2) {
       const p1 = pA[0], p2 = pA[1]
-      if (p1.genderPreference) { prefTotal++; if (p2.gender === p1.genderPreference) prefHits++; }
-      if (p2.genderPreference) { prefTotal++; if (p1.gender === p2.genderPreference) prefHits++; }
+      const p1Preference = p1.metadata?.partner_gender_pref
+      const p2Preference = p2.metadata?.partner_gender_pref
+      if (p1Preference && p1Preference !== 'any') { prefTotal++; if (normalizeGender(p2.gender) === normalizeGender(p1Preference)) prefHits++; }
+      if (p2Preference && p2Preference !== 'any') { prefTotal++; if (normalizeGender(p1.gender) === normalizeGender(p2Preference)) prefHits++; }
     }
     if (pB.length === 2) {
       const p1 = pB[0], p2 = pB[1]
-      if (p1.genderPreference) { prefTotal++; if (p2.gender === p1.genderPreference) prefHits++; }
-      if (p2.genderPreference) { prefTotal++; if (p1.gender === p2.genderPreference) prefHits++; }
+      const p1Preference = p1.metadata?.partner_gender_pref
+      const p2Preference = p2.metadata?.partner_gender_pref
+      if (p1Preference && p1Preference !== 'any') { prefTotal++; if (normalizeGender(p2.gender) === normalizeGender(p1Preference)) prefHits++; }
+      if (p2Preference && p2Preference !== 'any') { prefTotal++; if (normalizeGender(p1.gender) === normalizeGender(p2Preference)) prefHits++; }
     }
 
     // Ghi nhận vòng đấu để tính nghỉ

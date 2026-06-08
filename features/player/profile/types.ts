@@ -17,11 +17,13 @@ export type ProfilePlayer = {
   bio?: string | null
   is_host?: boolean | null
   gender?: 'male' | 'female' | null
+  avatar_url?: string | null
 }
 
 export type ProfilePlayerStats = {
   current_win_streak: number
   streak_fire_active: boolean
+  win_rate?: number | null
 }
 
 export type ProfileSessionHistory = {

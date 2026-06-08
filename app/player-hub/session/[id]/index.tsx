@@ -41,7 +41,7 @@ export default function SessionDetailRoute() {
       viewerPlayer={viewerPlayer}
       refreshing={refreshing}
       onRefresh={onRefresh}
-      userId={userId}
+      userId={userId ?? null}
       matches={[]} 
       introNote={introNote}
       setIntroNote={setIntroNote}

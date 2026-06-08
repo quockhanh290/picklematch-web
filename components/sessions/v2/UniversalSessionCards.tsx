@@ -20,6 +20,7 @@ export type MockSession = {
   formatLabel: string
   skillNam: string
   skillNu: string
+  footerActionText?: string
 }
 
 const getStatusColor = (status: string, theme: any) => {

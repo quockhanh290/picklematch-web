@@ -453,7 +453,7 @@ export default function ConfirmSessionResultScreen() {
       return
     }
     setSubmitting(response)
-    const { _data, error } = await supabase.rpc('respond_to_session_result', {
+    const { error } = await supabase.rpc('respond_to_session_result', {
       p_session_id: id,
       p_response: response,
       p_note: response === 'disputed' ? disputeNote.trim() : null,

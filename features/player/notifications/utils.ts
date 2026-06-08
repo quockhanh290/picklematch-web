@@ -6,7 +6,7 @@ import {
     DoorOpen,
     Info,
     Megaphone,
-    MessageCircleMore,
+    MessageCircle,
     Sparkles,
     Trophy,
     UserPlus,
@@ -77,7 +77,7 @@ export function typeMeta(type: string, theme: AppTheme): {
   }
   if (type === 'join_request_reply') {
     return {
-      icon: MessageCircleMore,
+      icon: MessageCircle,
       iconColor: theme.onPrimary,
       iconBackground: theme.primary,
       indicator: theme.primary,

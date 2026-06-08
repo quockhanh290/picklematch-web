@@ -1,8 +1,8 @@
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { Tier } from '../classify.ts'
+import { Tier } from '../classify'
 import type { ScoringWeights, SessionState } from '../types'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { detectFairnessIssues, type WarningType } from './detector.ts'
+import { detectFairnessIssues, type WarningType } from './detector'
 
 const REPEAT_TOLERANCE_STEP = 0.05
 const REPEAT_TOLERANCE_MAX = 0.6

@@ -30,7 +30,20 @@ export async function fetchCurrentPlayerProfileDataApi(options?: { force?: boole
   } = await supabase.auth.getUser()
 
   if (!user) {
-    return { loggedIn: false, player: null, playerStats: null, ratingTags: {}, achievements: [], history: [], hostedSessionsCount: 0, isOwner: false }
+    return {
+      loggedIn: false,
+      player: null,
+      playerStats: null,
+      ratingTags: {},
+      achievements: [],
+      history: [],
+      hostedSessionsCount: 0,
+      isOwner: false,
+      name: '',
+      skillLabel: '',
+      currentElo: 0,
+      winStreak: 0,
+    }
   }
 
   if (!options?.force && profileDataCache?.userId === user.id && Date.now() - profileDataCache.updatedAt < PROFILE_CACHE_FRESH_MS) {
@@ -40,7 +53,7 @@ export async function fetchCurrentPlayerProfileDataApi(options?: { force?: boole
   const nowIso = new Date().toISOString()
   const [playerRes, statsRes, ratingsRes, achievementsRes, historyRes, hostedCountRes] = await Promise.all([
     supabase.from('players').select('*').eq('id', user.id).single(),
-    supabase.from('player_stats').select('current_win_streak, streak_fire_active').eq('player_id', user.id).maybeSingle(),
+    supabase.from('player_stats').select('current_win_streak, streak_fire_active, win_rate').eq('player_id', user.id).maybeSingle(),
     supabase.from('ratings').select('tags, is_hidden, reveal_at').eq('rated_id', user.id).or(`is_hidden.eq.false,reveal_at.lte.${nowIso}`),
     supabase.from('player_achievements').select('badge_key, badge_title, badge_category, badge_description, icon, earned_at, meta').eq('player_id', user.id).order('earned_at', { ascending: false }),
     supabase.from('session_players').select(`

@@ -6,14 +6,14 @@ import { ScreenHeader } from '@/components/design/ScreenHeader'
 import type { FeedbackTrait } from '@/components/profile/CommunityFeedbackSection'
 import CommunityFeedbackPanel from '@/components/profile/CommunityFeedbackSection'
 import {
-    PROFILE_SKILL_HERO_TONE,
     ProfileSkillHero,
     ProfileWinStreak,
 } from '@/components/profile/ProfileSections'
 import { SCREEN_FONTS } from '@/constants/typography'
 import type { TrophyBadge } from '@/components/profile/TrophyRoom'
 import TrophyRoomSection from '@/components/profile/TrophyRoom'
-import { getSkillLevelFromPlayer, getEloBandByLevelId } from '@/lib/skillAssessment'
+import { getSkillLevelFromPlayer } from '@/lib/skillAssessment'
+import { getEloBandByLevelId } from '@/lib/eloSystem'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
 import { router, usePathname } from 'expo-router'

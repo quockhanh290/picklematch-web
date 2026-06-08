@@ -330,7 +330,7 @@ export function ProfileHistoryList({
             <TouchableOpacity
               key={item.id}
               activeOpacity={0.9}
-              onPress={() => router.push({ pathname: '/session/[id]', params: { id: item.id } })}
+              onPress={() => router.push({ pathname: '/player-hub/session/[id]/', params: { id: item.id } })}
               className="flex-row items-center p-4 rounded-[20px] shadow-sm"
               style={{ backgroundColor: theme.surfaceContainerLowest, shadowColor: theme.onBackground, shadowOpacity: 0.04, shadowRadius: 20 }}
             >

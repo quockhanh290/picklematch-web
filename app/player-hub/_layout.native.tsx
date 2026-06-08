@@ -71,9 +71,6 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        sceneStyle: {
-          backgroundColor: theme.background,
-        },
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.outline,
         tabBarStyle: {
@@ -156,4 +153,3 @@ export default function TabLayout() {
     </Tabs>
   )
 }
-

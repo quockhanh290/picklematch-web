@@ -107,7 +107,7 @@ export function mapLiveSessionToMatchSession(
   const isValidCount = activePlayers >= 2 && isEven && activePlayers <= session.max_players
   const isInvalidPlayerCount = isEnded && !isValidCount
 
-  let statusLabel = getStatusLabel(session.court_booking_status, session.status)
+  let statusLabel: string = getStatusLabel(session.court_booking_status, session.status)
   if (isInvalidPlayerCount && session.status !== 'cancelled') {
     statusLabel = 'Hủy - Thiếu người'
   } else if (session.status === 'cancelled') {
@@ -143,6 +143,8 @@ export function mapLiveSessionToMatchSession(
       rating: getLiveHostRating(session, options?.hostAverageRating),
       vibe: buildLiveHostVibe(session, slotsLeft),
     },
+    hostInitials: getInitials(session.host?.name ?? ''),
+    hostRating: getLiveHostRating(session, options?.hostAverageRating),
     players,
     urgent,
     joined,

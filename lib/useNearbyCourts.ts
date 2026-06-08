@@ -17,6 +17,8 @@ export type NearByCourt = {
   price_per_hour: number | null
   booking_url: string | null
   google_maps_url?: string | null
+  rating?: number | null
+  rating_count?: number | null
   hasSlots?: boolean
   distance?: number // km, present only in geo mode
 }
@@ -111,7 +113,7 @@ export function useNearbyCourts(): Result {
       const [{ data: courtData }, openIds] = await Promise.all([
         supabase
           .from('courts')
-          .select('id, name, address, city, phone, lat, lng, hours_open, hours_close, price_per_hour, booking_url, google_maps_url')
+          .select('id, name, address, city, phone, lat, lng, hours_open, hours_close, price_per_hour, booking_url, google_maps_url, rating, rating_count')
           .order('name', { ascending: true }), // Default alpha sort
         fetchOpenCourtIds(),
       ])

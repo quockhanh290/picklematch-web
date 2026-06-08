@@ -10,5 +10,5 @@ export default function MySessionsRoute() {
     return <AppLoading fullScreen />
   }
 
-  return <MySessionsScreen userId={userId!} />
+  return <MySessionsScreen />
 }

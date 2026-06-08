@@ -1,12 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { buildSuggestedMatchPayloads as buildPreviewPayloads } from '../preview'
-import { ActivityIndicator, Alert, AppState, Dimensions, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
-import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   AlertTriangle,
-  ArrowLeftRight,
   ChevronDown,
   Minus,
   Plus,
@@ -16,40 +10,23 @@ import {
   Sparkles,
   TrendingUp,
   Users,
-  Zap,
+  Zap
 } from 'lucide-react-native'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { ActivityIndicator, Dimensions, Pressable, Text, TouchableOpacity, View } from 'react-native'
 
-import { SecondaryNavbar } from '@/components/design'
 import { colors } from '@/constants/colors'
-import { BORDER, RADIUS, SHADOW as LAYOUT_SHADOW, SPACING } from '@/constants/screenLayout'
+import { BORDER, SHADOW as LAYOUT_SHADOW, RADIUS } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
-import { calculateOptimalCourts, getCourtPresetTargetMatches, PRESETS, PRESET_ROTATION_TARGETS, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
-import { Tier } from '@/lib/next-round-suggester/classify'
-import type { SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
-import type { AlternativeAudit } from '@/lib/next-round-suggester/alternatives'
-import { commitCompletedRound, pairHistoryRowsFromState } from '@/lib/next-round-suggester/commit'
-import { auditManualSwap, buildSwappedAlternative } from '@/lib/next-round-suggester/manual-swap'
-import {
-  MAX_PROJECTED_OPPONENT_PAIR_COUNT,
-  MAX_PROJECTED_PARTNER_PAIR_COUNT,
-  MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER,
-  MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER,
-  INTRA_TEAM_PVNA_GAP_LIMIT,
-  PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
-  getProjectedRepeatSummary,
-  scoreMatch,
-} from '@/lib/next-round-suggester/score'
-import { suggestNextMatch, suggestNextRound } from '@/lib/next-round-suggester/suggest'
-import { buildSessionStateFingerprint } from '@/lib/next-round-suggester/state-version'
-import type { FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
+import { PRESETS, PRESET_ROTATION_TARGETS, calculateOptimalCourts, getCourtPresetTargetMatches, type CourtOption, type CourtPreset, type CourtWarningAlternative } from '@/lib/court-calculator'
+import type { AlternativeAudit, SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import {
   buildFairnessAudits,
   type FairnessAudit,
-  type MatchCountConsistencyRow,
-  type FairnessPreview,
+  type FairnessPreview
 } from '@/lib/next-round-suggester/fairness/audit'
+import type { FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
 import type { GroupSummary } from '@/lib/next-round-suggester/fairness/group-audit'
-import { computeFairnessEvolution } from '@/lib/next-round-suggester/fairness/summary'
 import {
   computeGenderPrefSatisfaction,
   computeMatchCountMetrics,
@@ -57,53 +34,50 @@ import {
   computeOpponentRepeatBurden,
   computePartnerDiversity,
   computeRestFairness,
-  computeSessionFairness,
-  type SessionFairnessScore,
+  type SessionFairnessScore
 } from '@/lib/next-round-suggester/fairness/metrics'
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
+import { computeFairnessEvolution } from '@/lib/next-round-suggester/fairness/summary'
+import {
+  MAX_PROJECTED_OPPONENT_PAIR_COUNT,
+  MAX_PROJECTED_PARTNER_PAIR_COUNT,
+  MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER,
+  MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER,
+  PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
+  getProjectedRepeatSummary,
+  scoreMatch
+} from '@/lib/next-round-suggester/score'
 import type {
   Match,
   PlayerSessionState,
   SessionLiveMatchRow,
   SessionPairHistoryRow,
-  SessionRoundRow,
-  SessionPlayerStateRow,
   SessionState,
   SuggestionAlternative,
   SuggestionResult,
   SuggestionTradeoff,
   SuggestionTradeoffChoice,
-  SuggestionTradeoffChoiceId,
+  SuggestionTradeoffChoiceId
 } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
-import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
-import { checkInLiveSessionPlayers, invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent, repairLiveSessionPlayerStateFromRounds } from '../api'
-import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from '../components'
+import { Card, PlayerAvatar, SheetTitle } from '../components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from '../constants'
+import { ChoiceRow } from '../controls'
 import { buildCourtLaneModels } from '../court-lanes'
-import { ChoiceRow, NavbarRightActions, StickyRoundCta } from '../controls'
 import {
   BreakdownRow,
   GroupAuditBlock,
-  HistorySheet as HistorySheetView,
-  LateArrivalsSheet as LateArrivalsSheetView,
-  MoreSheet as MoreSheetView,
-  RecapView as RecapViewModule,
-  RepeatDetailsBlock,
-  SwapSheet as SwapSheetView,
+  RepeatDetailsBlock
 } from '../flow-sheets'
 import {
   ctaTextStyle,
   eyebrowStyle,
   formatNumber,
-  getPlayerPvna,
   getTeamPvna,
   playerName,
-  repeatRiskLabel,
+  repeatRiskLabel
 } from '../helpers'
-import type { NextRoundSuggesterV2Props } from '../types'
-import { useNextRoundModel } from '../useNextRoundModel'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const LIVE_SCORE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 90 : SCREEN_WIDTH > 360 ? 80 : 72
@@ -2734,11 +2708,12 @@ export function MatchTile({
                   {repeatCapExceeded ? 'Vượt cap' : 'Trong cap'}
                 </Text>
               </View>
-              <ChevronDown
-                size={15}
-                color={repeatCapExceeded ? theme.warningText : theme.outline}
-                style={{ transform: [{ rotate: (repeatExpanded ? '180deg' : '0deg') as any }] }}
-              />
+              <View style={{ transform: [{ rotate: repeatExpanded ? '180deg' : '0deg' }] }}>
+                <ChevronDown
+                  size={15}
+                  color={repeatCapExceeded ? theme.warningText : theme.outline}
+                />
+              </View>
             </View>
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -2874,7 +2849,9 @@ export function RepeatCompactSummary({
       <Pressable onPress={onToggle} style={{ minHeight: 34, borderRadius: RADIUS.sm, backgroundColor: theme.warningBg, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         {showPartnerChip ? <RepeatSummaryChip icon="🤝" label="Lặp partner" count={partnerCount} strong={partnerCount > MAX_PROJECTED_PARTNER_PAIR_COUNT} /> : null}
         {showOpponentChip ? <RepeatSummaryChip icon="⚔️" label="Lặp đối thủ" count={opponentCount} strong={opponentCount > MAX_PROJECTED_OPPONENT_PAIR_COUNT} /> : null}
-        <ChevronDown size={15} color={textColor} style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }} />
+        <View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
+          <ChevronDown size={15} color={textColor} />
+        </View>
       </Pressable>
       {expanded ? (
         <View style={{ paddingHorizontal: 10, paddingTop: 8, gap: 6 }}>

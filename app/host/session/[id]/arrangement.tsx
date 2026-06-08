@@ -6,7 +6,7 @@ import { AppLoading, SecondaryNavbar } from '@/components/design'
 import { View } from 'react-native'
 import { useAppTheme } from '@/lib/theme-context'
 import { TeamArrangementScreen } from '@/features/host/session-detail/TeamArrangementScreen'
-import { buildArrangementPlayers } from '@/lib/sessionDetail'
+import { buildArrangementPlayers, getOwnerSession } from '@/lib/sessionDetail'
 
 export default function TeamArrangementRoute() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -26,14 +26,14 @@ export default function TeamArrangementRoute() {
     return <AppLoading fullScreen />
   }
 
-  const ownerDetails = session?.owner_sessions?.[0] || session?.owner_sessions || {}
+  const ownerDetails = getOwnerSession(session?.owner_sessions)
   const processedPlayers = session ? buildArrangementPlayers({ ...session, owner_sessions: ownerDetails }) : []
 
   const formatType = (ownerDetails as any)?.format_type || 'social'
   const startTs = session?.slot?.start_time ? new Date(session.slot.start_time).getTime() : 0
   const isWayPastStart = startTs > 0 && (Date.now() - startTs) > (12 * 3600000)
   const isAfterEnd = (session?.slot?.end_time ? new Date(session.slot.end_time).getTime() <= Date.now() : false) || 
-                     ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion'].includes(session?.status) || 
+                     ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion'].includes(session?.status ?? '') ||
                      isWayPastStart
 
   return (

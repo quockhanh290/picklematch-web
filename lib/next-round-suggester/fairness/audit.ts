@@ -1,5 +1,5 @@
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { previewStateAfterAlternative, rebuildStateThroughRound } from '../history.ts'
+import { previewStateAfterAlternative, rebuildStateThroughRound } from '../history'
 import type { SessionState, SuggestionAlternative } from '../types'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import {
@@ -12,9 +12,9 @@ import {
   computeRestFairness,
   computeSessionFairness,
   type SessionFairnessScore,
-} from './metrics.ts'
+} from './metrics'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { computeRepeatPressure } from './pressure.ts'
+import { computeRepeatPressure } from './pressure'
 
 export type FairnessAudit = {
   round_no: number

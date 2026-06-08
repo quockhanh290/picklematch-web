@@ -6,6 +6,8 @@ type FavoriteCourtMeta = {
   name?: string | null
   address?: string | null
   city?: string | null
+  images?: unknown
+  thumbnail_url?: string | null
 }
 
 /**

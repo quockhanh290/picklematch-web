@@ -76,7 +76,7 @@ export function useFindSessionController() {
   const fetchSessions = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchSessionsApi(userId)
+      const data = await fetchSessionsApi(userId ?? null)
 
       // Pre-calculate search index to speed up filtering
       const enrichedData = data.map(s => ({
@@ -216,7 +216,7 @@ export function useFindSessionController() {
       setSortMode('match')
       setQuery(nextQuery)
       setSearchInput(nextQuery)
-      setQuickFilters({ nearby: canUseNearbyFilter, recent: true, level3: playerLevel?.id === 'level_3', rescue: false })
+      setQuickFilters({ nearby: canUseNearbyFilter, recent: true, level3: playerLevel?.id === 'pvna_3', rescue: false })
       setSmartQueueEnabled(true)
       if (smartQueueStorageKey) await safeStorageSetItem(smartQueueStorageKey, '1')
     },
@@ -249,7 +249,7 @@ export function useFindSessionController() {
     const normalizedSearch = normalizeText(query)
     return sessions.filter((session: any) => {
       if (normalizedSearch && !(session.searchIndex ?? '').includes(normalizedSearch)) return false
-      if (!advancedFilter.skillLevel && quickFilters.level3 && getSkillLevelFromEloRange(session.elo_min, session.elo_max).id !== 'level_3') return false
+      if (!advancedFilter.skillLevel && quickFilters.level3 && getSkillLevelFromEloRange(session.elo_min, session.elo_max).id !== 'pvna_3') return false
       if (quickFilters.rescue && session.max_players - session.player_count > 2) return false
       if (quickFilters.recent) {
         const hoursUntilStart = (new Date(session.slot?.start_time ?? 0).getTime() - Date.now()) / 3600000

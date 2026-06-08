@@ -216,6 +216,7 @@ function isCourtPreset(value: unknown): value is CourtPreset {
 
 export function useNextRoundModel({ sessionId, players = [], courts, initialShowReport = false }: NextRoundSuggesterV2Props) {
   const queryClient = useQueryClient()
+  const [actionError, setActionError] = useState<string | null>(null)
   const sessionCourtSetup = useMemo(() => (
     typeof courts === 'number' && Number.isFinite(courts) ? normalizeCourtCount(courts) : null
   ), [courts])
@@ -756,7 +757,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     rosterPlayers,
     rows: liveRows.rows,
     applyLiveMatches: useCallback((matches: SessionLiveMatchRow[], version?: number | null) => {
-      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), current => {
+      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), (current: LiveRows | undefined) => {
         if (!current) return current
         const byId = new Map(current.liveMatchRows.map(m => [m.id, m]))
         for (const m of matches) byId.set(m.id, m)
@@ -769,13 +770,13 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     }, [queryClient, sessionId]),
     applyLiveStateVersion: useCallback((version?: number | null) => {
       if (version == null) return
-      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), current => {
+      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), (current: LiveRows | undefined) => {
         if (!current) return current
         return { ...current, liveStateVersion: version }
       })
     }, [queryClient, sessionId]),
     applyStartedRound: useCallback((round?: any, version?: number | null) => {
-      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), current => {
+      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), (current: LiveRows | undefined) => {
         if (!current) return current
         const updated = round
           ? current.roundRows.some(r => r.id === round.id)
@@ -790,7 +791,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
       })
     }, [queryClient, sessionId]),
     applyEndedRound: useCallback((roundNo: number, round?: any, playerState?: SessionPlayerStateRow[], pairHistory?: SessionPairHistoryRow[], version?: number | null) => {
-      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), current => {
+      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), (current: LiveRows | undefined) => {
         if (!current) return current
         const roundRows = round
           ? current.roundRows.map(r => r.round_no === roundNo ? { ...r, ...round } : r)
@@ -810,7 +811,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
       })
     }, [queryClient, sessionId]),
     applyCompletedLiveMatch: useCallback((match: SessionLiveMatchRow, playerState: SessionPlayerStateRow[], pairHistory: SessionPairHistoryRow[], version?: number | null) => {
-      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), current => {
+      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), (current: LiveRows | undefined) => {
         if (!current) return current
         const byId = new Map(current.liveMatchRows.map(m => [m.id, m]))
         byId.set(match.id, match)
@@ -836,7 +837,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     setCourtCount,
     setCourtDurationMin,
     setCourtPreset,
-    setError: () => {},
+    setError: setActionError,
     setGroupSelection,
     setManualAlternative,
     setPvnaTolerance,
@@ -857,7 +858,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     toggleGroupSelection,
     undoRoundSelection,
     workingAlternative,
-    error: liveRows.error,
+    error: actionError ?? liveRows.error,
     loadLiveState: async (_options?: { silent?: boolean }): Promise<LiveRows | null> => {
       try {
         return await queryClient.fetchQuery<LiveRows>({

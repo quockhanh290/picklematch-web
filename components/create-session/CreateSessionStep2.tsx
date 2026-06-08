@@ -151,7 +151,7 @@ export function CreateSessionStep2({
             playMode={'doubles'}
             setPlayMode={() => {}}
             subCourtCount={1}
-            selectedSubCourts={['1']}
+            selectedSubCourts={[1]}
             onSubCourtsChange={() => {}}
           />
 

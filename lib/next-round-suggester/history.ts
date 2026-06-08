@@ -1,5 +1,5 @@
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { commitCompletedRound } from './commit.ts'
+import { commitCompletedRound } from './commit'
 import type {
   PlayerSessionState,
   RoundRecord,

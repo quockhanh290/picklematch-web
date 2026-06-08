@@ -62,9 +62,20 @@ export type ArrangementPlayer = {
 export type ArrangementSession = {
   host: ArrangementHost
   session_players: ArrangementSessionPlayer[]
-  owner_sessions?: {
-    host_is_playing?: boolean
-  }
+  owner_sessions?: ArrangementOwnerSession | ArrangementOwnerSession[] | null
+}
+
+export type ArrangementOwnerSession = {
+  host_is_playing?: boolean
+  format_type?: string | null
+  require_approval?: boolean | null
+  sub_court_numbers?: number[] | null
+}
+
+export function getOwnerSession(
+  ownerSessions?: ArrangementOwnerSession | ArrangementOwnerSession[] | null,
+) {
+  return Array.isArray(ownerSessions) ? ownerSessions[0] : ownerSessions ?? undefined
 }
 
 export function safeNumber(value?: number | null) {
@@ -94,13 +105,13 @@ export function getReliability(player?: ReliablePlayer | null) {
 
 export function getSkillLevelId(player?: SkillPlayer | null): EloLevelId {
   const levelId = player?.self_assessed_level
-  if (levelId) return getEloBandByLevelId(levelId)?.levelId ?? 'level_1'
+  if (levelId) return getEloBandByLevelId(levelId)?.levelId ?? 'pvna_1'
 
   const legacy = player?.skill_label
   if (legacy) return getEloBandByLegacySkillLabel(legacy).levelId
 
   const elo = getComparableElo(player)
-  return getEloBandForElo(elo)?.levelId ?? 'level_1'
+  return getEloBandForElo(elo)?.levelId ?? 'pvna_1'
 }
 
 export function getSkillTag(player?: SkillPlayer | null) {
@@ -130,7 +141,7 @@ export function formatPricePerPerson(totalPrice: number, maxPlayers: number) {
 export function buildArrangementPlayers(session: ArrangementSession) {
   const playersById = new Map<string, ArrangementPlayer>()
 
-  const hostIsPlaying = session.owner_sessions?.host_is_playing ?? true
+  const hostIsPlaying = getOwnerSession(session.owner_sessions)?.host_is_playing ?? true
   const hostAlreadyInPlayers = (session.session_players ?? []).some(sp => sp.player_id === session.host.id)
 
   if (hostIsPlaying || hostAlreadyInPlayers) {

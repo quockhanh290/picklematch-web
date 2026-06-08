@@ -168,7 +168,7 @@ export function NextRoundBenchmarkScreen({ sessionId }: Props) {
           <View style={styles.card}>
             <Text style={styles.label}>Session</Text>
             <Text style={styles.value}>{result.present} present / {result.eligible} eligible / {result.courts} courts</Text>
-            <Text style={styles.code}>rounds={result.state.rounds.length} fairness={fairness?.score.overall ?? 'n/a'} load={formatMs(result.loadMs)} fairnessAdjust={formatMs(result.fairnessMs)}</Text>
+            <Text style={styles.code}>rounds={result.state.rounds.length} fairness={fairness?.total ?? 'n/a'} load={formatMs(result.loadMs)} fairnessAdjust={formatMs(result.fairnessMs)}</Text>
           </View>
 
           <View style={styles.card}>

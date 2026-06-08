@@ -308,7 +308,7 @@ export default function OnboardingScreen() {
       // BYPASS FOR TESTING
       if (otp === '123456' && phoneNum === '0123456789') {
         alert('DEBUG: Bypassed OTP verification for testing.')
-        router.replace('/profile')
+        router.replace('/player-hub/profile')
         return
       }
 
@@ -348,7 +348,7 @@ export default function OnboardingScreen() {
 
       if (dbError) throw dbError
 
-      router.replace(Platform.OS === 'web' ? '/player-hub/profile' : '/profile')
+      router.replace('/player-hub/profile')
     } catch (err: any) {
       setAuthError(err.message || 'Xác thực OTP thất bại')
     } finally {

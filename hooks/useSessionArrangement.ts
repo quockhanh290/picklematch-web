@@ -42,6 +42,15 @@ export function useSessionArrangement(
     setArrangedPlayers((current) => autoBalance(current))
   }, [])
 
+  const teamA = useMemo(
+    () => arrangedPlayers.filter((player) => player.team === 1),
+    [arrangedPlayers],
+  )
+  const teamB = useMemo(
+    () => arrangedPlayers.filter((player) => player.team === 2),
+    [arrangedPlayers],
+  )
+
   const onSaveArrangement = useCallback(async () => {
     if (!session || !isHost) return
 
@@ -92,14 +101,6 @@ export function useSessionArrangement(
     await refreshSession()
   }, [arrangedPlayers, isHost, refreshSession, session, teamA, teamB])
 
-  const teamA = useMemo(
-    () => arrangedPlayers.filter((player) => player.team === 1),
-    [arrangedPlayers],
-  )
-  const teamB = useMemo(
-    () => arrangedPlayers.filter((player) => player.team === 2),
-    [arrangedPlayers],
-  )
   const averageTeamA = teamA.length ? Math.round(teamA.reduce((sum, player) => sum + player.elo, 0) / teamA.length) : 0
   const averageTeamB = teamB.length ? Math.round(teamB.reduce((sum, player) => sum + player.elo, 0) / teamB.length) : 0
   const arrangementDirty = arrangedPlayers.some((player) => savedTeams[player.id] !== player.team)

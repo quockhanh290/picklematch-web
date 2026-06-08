@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import type { ArrangementOwnerSession } from '@/lib/sessionDetail'
 
 export type SessionPlayer = {
   player_id: string
@@ -74,7 +75,7 @@ export type SessionDetailRecord = {
   has_rated?: boolean
   is_owner_managed?: boolean
   owner_format?: string
-  owner_sessions?: any[] | Record<string, any> | null
+  owner_sessions?: ArrangementOwnerSession | ArrangementOwnerSession[] | null
   sub_court_numbers?: number[]
   is_unlimited?: boolean
   format_metadata?: any

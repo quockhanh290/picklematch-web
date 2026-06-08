@@ -132,7 +132,7 @@ test.describe('NR2: sync roster', () => {
 
     // Capture console errors từ browser
     page.on('console', (msg) => {
-      if (msg.type() === 'error' || msg.type() === 'warn') {
+      if (msg.type() === 'error' || msg.type() === 'warning') {
         console.log(`[NR2 browser ${msg.type()}] ${msg.text()}`)
       }
     })

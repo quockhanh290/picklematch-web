@@ -11,7 +11,7 @@ import {
   hasRepeatOverflow,
   scoreMatch,
   withRecentGroupRematchKeys,
-} from './score.ts'
+} from './score'
 import type { Match, MatchScore, PlayerSessionState, SessionState, Team } from './types'
 
 export type TeamSplitResult = {

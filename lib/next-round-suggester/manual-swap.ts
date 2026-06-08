@@ -1,6 +1,6 @@
-import { auditAlternative, type AlternativeAudit } from './alternatives.ts'
-import { scoreMatch } from './score.ts'
-import type { Match, MatchStats, SessionState, SuggestionAlternative } from './types.ts'
+import { auditAlternative, type AlternativeAudit } from './alternatives'
+import { scoreMatch } from './score'
+import type { Match, MatchStats, SessionState, SuggestionAlternative } from './types'
 
 export type ManualSwapAudit = {
   alternative: SuggestionAlternative

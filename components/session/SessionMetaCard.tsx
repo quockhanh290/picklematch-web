@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { getSkillLevelUi } from '@/lib/skillLevelUi'
 import { Text, View, TouchableOpacity } from 'react-native'
-import { Info, MapPin, MessageSquareText, Phone, Clock } from 'lucide-react-native'
+import { Info, MapPin, MessageSquare, Phone, Clock } from 'lucide-react-native'
 import { useSessionNav } from '@/lib/navigation/SessionNavContext'
 import { RADIUS, SPACING, SHADOW, BORDER } from '@/constants/screenLayout'
 import type { EloLevelId } from '@/lib/eloSystem'
@@ -257,7 +257,7 @@ export function SessionMetaCard({
 
           {hostNote && hostNote.trim().length > 0 && (
             <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-              <MessageSquareText size={14} color={theme.onSurface} strokeWidth={2.5} style={{ marginTop: 2 }} />
+              <MessageSquare size={14} color={theme.onSurface} strokeWidth={2.5} style={{ marginTop: 2 }} />
               <View style={{ marginLeft: 8, flex: 1 }}>
                 <Text style={{ color: theme.onSurfaceVariant, fontFamily: SCREEN_FONTS.label, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                   {t('session_meta.note')}
@@ -294,5 +294,3 @@ export function SessionMetaCard({
     </View>
   )
 }
-
-

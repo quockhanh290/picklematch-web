@@ -81,9 +81,10 @@ export type HomeSessionRecord = {
   elo_min: number
   elo_max: number
   max_players: number
-  status: 'open' | 'closed_recruitment' | 'done' | 'cancelled' | 'pending_completion'
+  status: 'open' | 'closed_recruitment' | 'done' | 'cancelled' | 'pending_completion' | 'pending_results'
   court_booking_status: 'confirmed' | 'unconfirmed'
   created_at?: string | null
+  total_cost?: number | null
   host: {
     id: string
     name: string
@@ -152,6 +153,7 @@ export type HomeProfile = {
   host_reputation?: number | null
   favorite_court_ids?: string[] | null
   photo_url?: string | null
+  avatar_url?: string | null
 }
 
 export type PlayerStatsRecord = {
@@ -227,9 +229,12 @@ export type MatchSession = {
   subCourtLabel?: string
   matchHint?: string
   statusLabel?: string
+  countdownLabel?: string
   courtBookingConfirmed?: boolean
   isRanked?: boolean
   requireApproval?: boolean
   matchFormat?: string
   courtId?: string
+  urgent?: boolean
+  joined?: boolean
 }

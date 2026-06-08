@@ -67,7 +67,7 @@ export function PostMatchActionsSection({ items }: { items: PostMatchAction[] })
               </View>
 
               <Pressable
-                onPress={() => router.push({ pathname: '/session/[id]/confirm-result' as never, params: { id: item.id } })}
+                onPress={() => router.push({ pathname: '/player-hub/session/[id]/confirm-result', params: { id: item.id } })}
                 className="mt-4 h-12 items-center justify-center rounded-full"
                 style={{ backgroundColor: tone.button }}
               >
@@ -82,7 +82,6 @@ export function PostMatchActionsSection({ items }: { items: PostMatchAction[] })
     </View>
   )
 }
-
 
 
 

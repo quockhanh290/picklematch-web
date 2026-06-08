@@ -220,7 +220,7 @@ export function MySessionsScreen() {
     }
   }
 
-  const activeTabCount = isHistoryTab ? filteredHistorySessions.length : (sessionsByTab[activeTab]?.length ?? 0)
+  const activeTabCount = isHistoryTab ? filteredHistorySessions.length : sessionsByTab.upcoming.length
 
   return (
     <View
@@ -228,7 +228,7 @@ export function MySessionsScreen() {
       style={{
         flex: 1,
         backgroundColor: theme.background,
-        ...(Platform.OS === 'web' ? { minHeight: '100dvh' } : {})
+        ...(Platform.OS === 'web' ? { minHeight: 0 } : {})
       }}
     >
       <View style={{ backgroundColor: theme.background, zIndex: 10, paddingBottom: 24 }}>
@@ -249,7 +249,7 @@ export function MySessionsScreen() {
           <View className="flex-1">
             <FlatList
               data={listData}
-              keyExtractor={(item) => ('type' in item ? `${activeTab}-${item.key}` : `${activeTab}-${item.id}`)}
+              keyExtractor={(item) => `${activeTab}-${item.key}`}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 0, paddingBottom: 160 }}
               refreshControl={
