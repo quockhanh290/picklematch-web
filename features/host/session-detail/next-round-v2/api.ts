@@ -260,6 +260,31 @@ export async function checkInLiveSessionPlayers(
   }
 }
 
+export async function checkOutLiveSessionPlayers(
+  sessionId: string,
+  playerIds: string[],
+) {
+  const uniqueIds = [...new Set(playerIds)].filter(Boolean)
+  if (uniqueIds.length === 0) {
+    throw new Error('Missing player_id')
+  }
+
+  try {
+    const { data, error: rpcError } = await supabase.rpc('checkout_live_session_players_versioned', {
+      p_session_id: sessionId,
+      p_player_ids: uniqueIds,
+    })
+    if (rpcError) throw rpcError
+    return data
+  } catch (error) {
+    if (!isRetryableError(error)) throw error
+
+    return await invokeLiveSessionFunction('session-checkout', sessionId, {
+      player_ids: uniqueIds,
+    })
+  }
+}
+
 export async function repairLiveSessionPlayerStateFromRounds(sessionId: string) {
   const { data, error } = await supabase.rpc('repair_live_session_player_state_from_rounds', {
     p_session_id: sessionId,
@@ -325,6 +350,8 @@ export async function markSessionPlayersPresent(sessionId: string, playerIds: st
   if (error) throw error
 }
 
+const liveMatchesPreviewInFlight = new Map<string, Promise<any>>()
+
 export async function fetchLiveMatchesPreview(
   sessionId: string,
   body: {
@@ -340,5 +367,16 @@ export async function fetchLiveMatchesPreview(
     round_rows: any[]
   }
 ) {
-  return invokeLiveSessionFunction('session-live-matches-suggest', sessionId, body)
+  const requestKey = `${sessionId}:${JSON.stringify(body)}`
+  const existingRequest = liveMatchesPreviewInFlight.get(requestKey)
+  if (existingRequest) return existingRequest
+
+  const request = invokeLiveSessionFunction('session-live-matches-suggest', sessionId, body)
+    .finally(() => {
+      if (liveMatchesPreviewInFlight.get(requestKey) === request) {
+        liveMatchesPreviewInFlight.delete(requestKey)
+      }
+    })
+  liveMatchesPreviewInFlight.set(requestKey, request)
+  return request
 }

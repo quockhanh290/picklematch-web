@@ -17,7 +17,7 @@ import {
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { bestPartitioning } from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { suggestNextMatch } from './suggest.ts'
+import { suggestNextMatch, type ExhaustiveFallbackDiagnostic } from './suggest.ts'
 import type {
   PlayerSessionState,
   SessionLiveMatchRow,
@@ -31,6 +31,7 @@ import type {
 
 const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 12
 const LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT = 80
+const LIVE_QUOTA_RESCUE_ALTERNATIVE_LIMIT = 24
 const LIVE_STRICT_RESCUE_ELIGIBLE_LIMIT = 20
 const LIVE_STRICT_RESCUE_TIMEOUT_MS = 300
 const LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3800
@@ -49,6 +50,14 @@ const GUARDED_LIVE_REPEAT_AFFECTED_WEIGHT = 8
 const GUARDED_LIVE_QUOTA_OVER_WEIGHT = 35
 const GUARDED_LIVE_QUOTA_UNDER_WEIGHT = 5
 const GUARDED_LIVE_TRADEOFF_WEIGHT = 20
+const GUARDED_LIVE_QUALITY_GATE_MIN_ALTERNATIVES = 8
+const GUARDED_LIVE_QUALITY_TIER_A_INTRA_LIMIT = 1.5
+const GUARDED_LIVE_QUALITY_TIER_B_PVNA_EXTRA = 0.3
+const GUARDED_LIVE_QUALITY_TIER_B_INTRA_LIMIT = 1.75
+const GUARDED_LIVE_QUALITY_TIER_C_PVNA_EXTRA = 0.7
+const GUARDED_LIVE_QUALITY_TIER_C_INTRA_LIMIT = 2
+const LIVE_QUALITY_RESCUE_QUOTA_RELAX_LIMIT = 2
+const LIVE_REPEAT_REPAIR_START_ROUND = 6
 const LIVE_RECYCLE_SOFT_CONSECUTIVE_PLAY_LIMIT = 2
 const LIVE_RECYCLE_HARD_CONSECUTIVE_PLAY_LIMIT = 3
 const LIVE_RECYCLE_ABSOLUTE_CONSECUTIVE_PLAY_LIMIT = 4
@@ -59,7 +68,18 @@ export type BuildSuggestedMatchOptions = {
   courtIdxs?: number[]
   stateOverride?: SessionState
   liveMatchRowsOverride?: SessionLiveMatchRow[]
+  liveQualityPolicy?: LiveQualityPolicy
 }
+
+export type LiveQualityPolicy =
+  | 'current'
+  | 'intra_guard'
+  | 'partner_repeat_heavy'
+  | 'recent_overlap_lite'
+  | 'recent_overlap_guarded'
+  | 'recent_overlap_heavy'
+  | 'pvna_outlier_rescue'
+  | 'balanced_late_quality'
 
 export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   preview_live_state_version?: number | null
@@ -434,6 +454,7 @@ function buildLiveSelectionGuard({
   if (canFillWithout(strictProtectedIds)) {
     return {
       protectedIds: new Set(strictProtectedIds),
+      quotaProtectedIds,
       warnings: [] as string[],
       relaxationStages: [] as Array<{ protectedIds: Set<string>; warnings: string[] }>,
     }
@@ -442,6 +463,7 @@ function buildLiveSelectionGuard({
   if (canFillWithout(recycleProtectedIds)) {
     return {
       protectedIds: new Set(recycleProtectedIds),
+      quotaProtectedIds,
       warnings: quotaProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_QUOTA_RELAXED'] : [] as string[],
       relaxationStages: [
         {
@@ -459,6 +481,7 @@ function buildLiveSelectionGuard({
     ]
     return {
       protectedIds: new Set(hardRecycleIds),
+      quotaProtectedIds,
       warnings,
       relaxationStages: [
         {
@@ -481,6 +504,7 @@ function buildLiveSelectionGuard({
   ]
   return {
     protectedIds: new Set(absoluteRecycleProtectedIds),
+    quotaProtectedIds,
     warnings: absoluteWarnings,
     relaxationStages: [
       {
@@ -507,8 +531,82 @@ function pickGuardedLiveAlternative(
   state: SessionState,
   configuredPvnaTolerance: number,
   nextMatchIndex: number,
+  policy: LiveQualityPolicy = 'current',
 ) {
   const { min: targetMinAfter, max: targetMaxAfter } = getProjectedTargetRangeAfter(state, nextMatchIndex)
+  const courtCount = Math.max(1, Math.floor(state.config.courts || 1))
+  const isLateRound = Math.floor(Math.max(0, nextMatchIndex - 1) / courtCount) >= 4
+  const policyWeights = (() => {
+    if (!isLateRound) {
+      return {
+        intra: GUARDED_LIVE_INTRA_OVER_WEIGHT,
+        recent: GUARDED_LIVE_RECENT_WEIGHT,
+        repeatOver: GUARDED_LIVE_REPEAT_OVER_WEIGHT,
+        repeatAffected: GUARDED_LIVE_REPEAT_AFFECTED_WEIGHT,
+        partnerRepeat: 0,
+      }
+    }
+    switch (policy) {
+      case 'intra_guard':
+        return {
+          intra: 26,
+          recent: GUARDED_LIVE_RECENT_WEIGHT,
+          repeatOver: GUARDED_LIVE_REPEAT_OVER_WEIGHT,
+          repeatAffected: GUARDED_LIVE_REPEAT_AFFECTED_WEIGHT,
+          partnerRepeat: 0,
+        }
+      case 'partner_repeat_heavy':
+        return {
+          intra: GUARDED_LIVE_INTRA_OVER_WEIGHT,
+          recent: GUARDED_LIVE_RECENT_WEIGHT,
+          repeatOver: 70,
+          repeatAffected: 12,
+          partnerRepeat: 35,
+        }
+      case 'recent_overlap_heavy':
+        return {
+          intra: GUARDED_LIVE_INTRA_OVER_WEIGHT,
+          recent: 1.8,
+          repeatOver: GUARDED_LIVE_REPEAT_OVER_WEIGHT,
+          repeatAffected: GUARDED_LIVE_REPEAT_AFFECTED_WEIGHT,
+          partnerRepeat: 15,
+        }
+      case 'recent_overlap_lite':
+      case 'recent_overlap_guarded':
+        return {
+          intra: GUARDED_LIVE_INTRA_OVER_WEIGHT,
+          recent: 1.25,
+          repeatOver: 62,
+          repeatAffected: 9,
+          partnerRepeat: 10,
+        }
+      case 'pvna_outlier_rescue':
+        return {
+          intra: GUARDED_LIVE_INTRA_OVER_WEIGHT,
+          recent: GUARDED_LIVE_RECENT_WEIGHT,
+          repeatOver: GUARDED_LIVE_REPEAT_OVER_WEIGHT,
+          repeatAffected: GUARDED_LIVE_REPEAT_AFFECTED_WEIGHT,
+          partnerRepeat: 0,
+        }
+      case 'balanced_late_quality':
+        return {
+          intra: 20,
+          recent: 1.3,
+          repeatOver: 70,
+          repeatAffected: 10,
+          partnerRepeat: 25,
+        }
+      case 'current':
+      default:
+        return {
+          intra: GUARDED_LIVE_INTRA_OVER_WEIGHT,
+          recent: GUARDED_LIVE_RECENT_WEIGHT,
+          repeatOver: GUARDED_LIVE_REPEAT_OVER_WEIGHT,
+          repeatAffected: GUARDED_LIVE_REPEAT_AFFECTED_WEIGHT,
+          partnerRepeat: 0,
+        }
+    }
+  })()
   const scored = alternatives
     .filter(alternative => alternative.matches.length > 0)
     .map((alternative) => {
@@ -529,10 +627,11 @@ function pickGuardedLiveAlternative(
         quota,
         score:
           pvnaOver * GUARDED_LIVE_PVNA_OVER_WEIGHT +
-          intraOver * GUARDED_LIVE_INTRA_OVER_WEIGHT +
-          repeat.repeat_over_by * GUARDED_LIVE_REPEAT_OVER_WEIGHT +
-          repeat.affected_players * GUARDED_LIVE_REPEAT_AFFECTED_WEIGHT +
-          Math.min(recent, 120) * GUARDED_LIVE_RECENT_WEIGHT +
+          intraOver * policyWeights.intra +
+          repeat.repeat_over_by * policyWeights.repeatOver +
+          repeat.affected_players * policyWeights.repeatAffected +
+          Math.max(0, repeat.max_partner_pair - 1) * policyWeights.partnerRepeat +
+          Math.min(recent, 120) * policyWeights.recent +
           quota.over * GUARDED_LIVE_QUOTA_OVER_WEIGHT +
           quota.under * GUARDED_LIVE_QUOTA_UNDER_WEIGHT +
           tradeoffs * GUARDED_LIVE_TRADEOFF_WEIGHT,
@@ -540,12 +639,46 @@ function pickGuardedLiveAlternative(
     })
   if (scored.length === 0) return null
 
+  const qualityGatePool = (() => {
+    if (scored.length < GUARDED_LIVE_QUALITY_GATE_MIN_ALTERNATIVES) return null
+    const tiers = [
+      {
+        pvnaLimit: configuredPvnaTolerance,
+        intraLimit: GUARDED_LIVE_QUALITY_TIER_A_INTRA_LIMIT,
+        repeatOverLimit: 0,
+        recentLimit: 20,
+      },
+      {
+        pvnaLimit: configuredPvnaTolerance + GUARDED_LIVE_QUALITY_TIER_B_PVNA_EXTRA,
+        intraLimit: GUARDED_LIVE_QUALITY_TIER_B_INTRA_LIMIT,
+        repeatOverLimit: 0,
+        recentLimit: 40,
+      },
+      {
+        pvnaLimit: configuredPvnaTolerance + GUARDED_LIVE_QUALITY_TIER_C_PVNA_EXTRA,
+        intraLimit: GUARDED_LIVE_QUALITY_TIER_C_INTRA_LIMIT,
+        repeatOverLimit: 1,
+        recentLimit: 60,
+      },
+    ]
+    for (const tier of tiers) {
+      const tierPool = scored.filter(item =>
+        item.quota.over === 0 &&
+        item.pvnaGap <= tier.pvnaLimit &&
+        item.intraTeamGap <= tier.intraLimit &&
+        item.repeat.repeat_over_by <= tier.repeatOverLimit &&
+        item.recent <= tier.recentLimit
+      )
+      if (tierPool.length > 0) return tierPool
+    }
+    return null
+  })()
+
   const cleanEnough = scored.filter(item =>
     item.pvnaGap <= configuredPvnaTolerance + 0.25 &&
     item.recent < 40,
   )
-  const pool = cleanEnough.length > 0 ? cleanEnough : scored
-  return [...pool].sort((left, right) => {
+  const sortScored = (items: typeof scored) => [...items].sort((left, right) => {
     if (left.score !== right.score) return left.score - right.score
     if (left.quota.total !== right.quota.total) return left.quota.total - right.quota.total
     if (left.repeat.repeat_over_by !== right.repeat.repeat_over_by) return left.repeat.repeat_over_by - right.repeat.repeat_over_by
@@ -554,7 +687,42 @@ function pickGuardedLiveAlternative(
     if (left.recent !== right.recent) return left.recent - right.recent
     if (left.pvnaGap !== right.pvnaGap) return left.pvnaGap - right.pvnaGap
     return left.intraTeamGap - right.intraTeamGap
-  })[0]?.alternative ?? null
+  })
+  const baseline = sortScored(cleanEnough.length > 0 ? cleanEnough : scored)[0]
+  if (!baseline) return null
+  if (policy === 'pvna_outlier_rescue' && isLateRound && baseline.pvnaGap > 1) {
+    const rescuePool = scored.filter(item =>
+      item.quota.over === 0 &&
+      item.pvnaGap < baseline.pvnaGap - 0.25 &&
+      item.pvnaGap <= Math.max(configuredPvnaTolerance + 0.4, baseline.pvnaGap * 0.65) &&
+      item.repeat.repeat_over_by <= Math.max(1, baseline.repeat.repeat_over_by) &&
+      item.recent <= Math.max(60, baseline.recent + 20)
+    )
+    if (rescuePool.length > 0) {
+      return sortScored(rescuePool)[0]?.alternative ?? baseline.alternative
+    }
+  }
+  if (policy === 'recent_overlap_guarded' && isLateRound) {
+    const pvnaGuardPool = scored.filter(item =>
+      item.quota.over === 0 &&
+      item.pvnaGap <= configuredPvnaTolerance &&
+      item.repeat.repeat_over_by <= 1
+    )
+    if (pvnaGuardPool.length > 0) {
+      return sortScored(pvnaGuardPool)[0]?.alternative ?? baseline.alternative
+    }
+  }
+  const baselineNeedsQualityRescue =
+    baseline.quota.over === 0 &&
+    (
+      baseline.pvnaGap > configuredPvnaTolerance + GUARDED_LIVE_QUALITY_TIER_B_PVNA_EXTRA ||
+      baseline.intraTeamGap > GUARDED_LIVE_QUALITY_TIER_B_INTRA_LIMIT ||
+      baseline.repeat.repeat_over_by > 0
+    )
+  if (baselineNeedsQualityRescue && qualityGatePool) {
+    return sortScored(qualityGatePool)[0]?.alternative ?? baseline.alternative
+  }
+  return baseline.alternative
 }
 
 export function getTradeoffChoiceMetrics(
@@ -593,6 +761,77 @@ function hasTradeoffMetric(metrics: SuggestionTradeoffChoice['metrics']) {
   return metrics.pvna_over_by > 0 || metrics.intra_team_over_by > 0 || metrics.repeat_over_by > 0
 }
 
+function needsLiveQualityRescue(metrics: SuggestionTradeoffChoice['metrics'], configuredPvnaTolerance: number) {
+  return metrics.pvna_gap > configuredPvnaTolerance + GUARDED_LIVE_QUALITY_TIER_B_PVNA_EXTRA ||
+    metrics.intra_team_gap > GUARDED_LIVE_QUALITY_TIER_B_INTRA_LIMIT ||
+    metrics.repeat_over_by > 0
+}
+
+function findQuotaRelaxedQualityRescue(
+  alternatives: SuggestionAlternative[],
+  state: SessionState,
+  configuredPvnaTolerance: number,
+  nextMatchIndex: number,
+) {
+  const { min: targetMinAfter, max: targetMaxAfter } = getProjectedTargetRangeAfter(state, nextMatchIndex)
+  return alternatives
+    .filter(alternative => alternative.matches.length > 0)
+    .map(alternative => ({
+      alternative,
+      metrics: getTradeoffChoiceMetrics(alternative, state, configuredPvnaTolerance),
+      quota: getProjectedCountViolation(alternative, state, targetMaxAfter, targetMinAfter),
+      recent: getAlternativeRecentCost(alternative, state),
+    }))
+    .filter(item =>
+      item.metrics.pvna_gap <= configuredPvnaTolerance &&
+      item.metrics.intra_team_gap <= GUARDED_LIVE_QUALITY_TIER_B_INTRA_LIMIT &&
+      item.metrics.repeat_over_by <= 0 &&
+      item.quota.over <= LIVE_QUALITY_RESCUE_QUOTA_RELAX_LIMIT &&
+      item.quota.under <= LIVE_QUALITY_RESCUE_QUOTA_RELAX_LIMIT &&
+      item.recent <= 40
+    )
+    .sort((left, right) => {
+      if (left.quota.total !== right.quota.total) return left.quota.total - right.quota.total
+      if (left.metrics.pvna_gap !== right.metrics.pvna_gap) return left.metrics.pvna_gap - right.metrics.pvna_gap
+      if (left.metrics.intra_team_gap !== right.metrics.intra_team_gap) return left.metrics.intra_team_gap - right.metrics.intra_team_gap
+      if (left.recent !== right.recent) return left.recent - right.recent
+      return left.alternative.score - right.alternative.score
+    })[0]?.alternative ?? null
+}
+
+function findPvnaOutlierRescue(
+  alternatives: SuggestionAlternative[],
+  state: SessionState,
+  configuredPvnaTolerance: number,
+  nextMatchIndex: number,
+  referenceMetrics: SuggestionTradeoffChoice['metrics'],
+) {
+  const { min: targetMinAfter, max: targetMaxAfter } = getProjectedTargetRangeAfter(state, nextMatchIndex)
+  return alternatives
+    .filter(alternative => alternative.matches.length > 0)
+    .map(alternative => ({
+      alternative,
+      metrics: getTradeoffChoiceMetrics(alternative, state, configuredPvnaTolerance),
+      quota: getProjectedCountViolation(alternative, state, targetMaxAfter, targetMinAfter),
+      recent: getAlternativeRecentCost(alternative, state),
+    }))
+    .filter(item =>
+      item.quota.over <= 2 &&
+      item.quota.under <= 2 &&
+      item.metrics.pvna_gap < referenceMetrics.pvna_gap - 0.25 &&
+      item.metrics.pvna_gap <= Math.max(configuredPvnaTolerance + 0.6, referenceMetrics.pvna_gap * 0.75) &&
+      item.metrics.repeat_over_by <= Math.max(1, referenceMetrics.repeat_over_by + 1) &&
+      item.recent <= 100
+    )
+    .sort((left, right) => {
+      if (left.metrics.pvna_gap !== right.metrics.pvna_gap) return left.metrics.pvna_gap - right.metrics.pvna_gap
+      if (left.quota.total !== right.quota.total) return left.quota.total - right.quota.total
+      if (left.metrics.intra_team_gap !== right.metrics.intra_team_gap) return left.metrics.intra_team_gap - right.metrics.intra_team_gap
+      if (left.recent !== right.recent) return left.recent - right.recent
+      return left.alternative.score - right.alternative.score
+    })[0]?.alternative ?? null
+}
+
 function hasRepeatPressureMetric(metrics: SuggestionTradeoffChoice['metrics']) {
   return metrics.repeat_over_by > 0 || metrics.max_partner_pair > 1 || metrics.max_opponent_pair > 1
 }
@@ -603,6 +842,359 @@ function hasRecentRepeatPressure(alternative: SuggestionAlternative | undefined,
     const cost = getRecentRepeatCost(match.team_a, match.team_b, state)
     return cost.partner > 0 || cost.opponent > 0 || cost.overlap2 > 0 || cost.overlap3 > 0 || cost.exact4 > 0
   })
+}
+
+function selectRequiredIdsForCourt(
+  availableRequiredIds: string[],
+  count: number,
+  remainingCourtsInRound: number,
+  state: SessionState,
+) {
+  if (count <= 0) return []
+  if (remainingCourtsInRound <= 1 || availableRequiredIds.length <= count) {
+    return availableRequiredIds.slice(0, count)
+  }
+  const sortedByPvna = [...availableRequiredIds].sort((left, right) =>
+    (state.players.get(right)?.pvna ?? 0) - (state.players.get(left)?.pvna ?? 0) ||
+    left.localeCompare(right)
+  )
+  const buckets = Array.from({ length: remainingCourtsInRound }, () => [] as string[])
+  let bucketIndex = 0
+  while (sortedByPvna.length > 0) {
+    buckets[bucketIndex % remainingCourtsInRound].push(sortedByPvna.shift()!)
+    if (sortedByPvna.length > 0) {
+      buckets[bucketIndex % remainingCourtsInRound].push(sortedByPvna.pop()!)
+    }
+    bucketIndex += 1
+  }
+  const selected = buckets[0].slice(0, count)
+  if (selected.length >= count) return selected
+  for (const playerId of availableRequiredIds) {
+    if (selected.includes(playerId)) continue
+    selected.push(playerId)
+    if (selected.length >= count) break
+  }
+  return selected
+}
+
+function getPayloadPlayer(payload: SuggestedMatchPayload, position: number) {
+  return position < 2 ? payload.team_a[position] : payload.team_b[position - 2]
+}
+
+function setPayloadPlayer(payload: SuggestedMatchPayload, position: number, playerId: string): SuggestedMatchPayload {
+  const teamA: [string, string] = [...payload.team_a] as [string, string]
+  const teamB: [string, string] = [...payload.team_b] as [string, string]
+  if (position < 2) teamA[position] = playerId
+  else teamB[position - 2] = playerId
+  return { ...payload, team_a: teamA, team_b: teamB }
+}
+
+function getPayloadPvnaGap(payload: SuggestedMatchPayload, state: SessionState) {
+  const teamSum = (team: [string, string]) => team.reduce(
+    (sum, playerId) => sum + (state.players.get(playerId)?.pvna ?? 0),
+    0,
+  )
+  return Math.abs(teamSum(payload.team_a) - teamSum(payload.team_b))
+}
+
+function getPayloadIntraTeamGap(payload: SuggestedMatchPayload, state: SessionState) {
+  const gap = (team: [string, string]) => Math.abs(
+    (state.players.get(team[0])?.pvna ?? 0) - (state.players.get(team[1])?.pvna ?? 0),
+  )
+  return Math.max(gap(payload.team_a), gap(payload.team_b))
+}
+
+function hasPayloadRepeat(payload: SuggestedMatchPayload, state: SessionState) {
+  const partnerPairs = [
+    [payload.team_a[0], payload.team_a[1]],
+    [payload.team_b[0], payload.team_b[1]],
+  ] as Array<[string, string]>
+  const opponentPairs = payload.team_a.flatMap(playerAId =>
+    payload.team_b.map(playerBId => [playerAId, playerBId] as [string, string]),
+  )
+  const partner = partnerPairs.some(([left, right]) =>
+    (state.players.get(left)?.partner_counts.get(right) ?? 0) > 0,
+  )
+  const opponent = opponentPairs.some(([left, right]) =>
+    (state.players.get(left)?.opponent_counts.get(right) ?? 0) > 0,
+  )
+  return partner || opponent
+}
+
+function getPayloadPairKey(left: string, right: string) {
+  return left < right ? `${left}:${right}` : `${right}:${left}`
+}
+
+function getPayloadBatchStats(payloads: SuggestedMatchPayload[], state: SessionState, pvnaTolerance: number) {
+  const pvnaValues = payloads.map(payload => getPayloadPvnaGap(payload, state))
+  const intraValues = payloads.map(payload => getPayloadIntraTeamGap(payload, state))
+  return {
+    maxPvna: Math.max(0, ...pvnaValues),
+    pvnaOver: pvnaValues.filter(value => value > pvnaTolerance).length,
+    maxIntra: Math.max(0, ...intraValues),
+    intraOverHard: intraValues.filter(value => value > 1.5).length,
+    repeatMatches: payloads.filter(payload => hasPayloadRepeat(payload, state)).length,
+  }
+}
+
+function getPayloadRepeatExposureStats(payloads: SuggestedMatchPayload[], state: SessionState) {
+  const basePlayerRepeat = new Map<string, { partnerEvents: number; opponentEvents: number }>()
+  for (const player of state.players.values()) {
+    basePlayerRepeat.set(player.player_id, {
+      partnerEvents: [...player.partner_counts.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0),
+      opponentEvents: [...player.opponent_counts.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0),
+    })
+  }
+  const partnerPairs = new Map<string, number>()
+  const opponentPairs = new Map<string, number>()
+  const perPlayer = new Map<string, {
+    partnerMatches: number
+    partnerEvents: number
+    opponentMatches: number
+    opponentEvents: number
+    maxSamePartner: number
+    maxSameOpponent: number
+  }>()
+  const ensurePlayer = (playerId: string) => {
+    const existing = perPlayer.get(playerId)
+    if (existing) return existing
+    const next = {
+      partnerMatches: 0,
+      partnerEvents: 0,
+      opponentMatches: 0,
+      opponentEvents: 0,
+      maxSamePartner: 0,
+      maxSameOpponent: 0,
+    }
+    perPlayer.set(playerId, next)
+    return next
+  }
+  for (const payload of payloads) {
+    const partnerPayloadPairs = [
+      [payload.team_a[0], payload.team_a[1]],
+      [payload.team_b[0], payload.team_b[1]],
+    ] as Array<[string, string]>
+    for (const [left, right] of partnerPayloadPairs) {
+      const before = state.players.get(left)?.partner_counts.get(right) ?? 0
+      const key = getPayloadPairKey(left, right)
+      partnerPairs.set(key, Math.max(before + 1, partnerPairs.get(key) ?? 0))
+      for (const playerId of [left, right]) {
+        const player = ensurePlayer(playerId)
+        if (before > 0) {
+          player.partnerMatches += 1
+          player.partnerEvents += before
+        }
+        player.maxSamePartner = Math.max(player.maxSamePartner, before + 1)
+      }
+    }
+    for (const left of payload.team_a) {
+      for (const right of payload.team_b) {
+        const before = state.players.get(left)?.opponent_counts.get(right) ?? 0
+        const key = getPayloadPairKey(left, right)
+        opponentPairs.set(key, Math.max(before + 1, opponentPairs.get(key) ?? 0))
+        for (const playerId of [left, right]) {
+          const player = ensurePlayer(playerId)
+          if (before > 0) {
+            player.opponentMatches += 1
+            player.opponentEvents += before
+          }
+          player.maxSameOpponent = Math.max(player.maxSameOpponent, before + 1)
+        }
+      }
+    }
+  }
+  const playerRows = [...perPlayer.values()]
+  const totalPlayerRows = [...perPlayer.entries()].map(([playerId, player]) => ({
+    partnerEvents: (basePlayerRepeat.get(playerId)?.partnerEvents ?? 0) + player.partnerEvents,
+    opponentEvents: (basePlayerRepeat.get(playerId)?.opponentEvents ?? 0) + player.opponentEvents,
+  }))
+  return {
+    partnerRepeatMatches: playerRows.reduce((sum, player) => sum + player.partnerMatches, 0),
+    partnerRepeatEvents: playerRows.reduce((sum, player) => sum + player.partnerEvents, 0),
+    opponentRepeatMatches: playerRows.reduce((sum, player) => sum + player.opponentMatches, 0),
+    opponentRepeatEvents: playerRows.reduce((sum, player) => sum + player.opponentEvents, 0),
+    maxPlayerPartnerMatches: Math.max(0, ...playerRows.map(player => player.partnerMatches)),
+    maxPlayerOpponentMatches: Math.max(0, ...playerRows.map(player => player.opponentMatches)),
+    maxSamePartner: Math.max(0, ...playerRows.map(player => player.maxSamePartner)),
+    maxSameOpponent: Math.max(0, ...playerRows.map(player => player.maxSameOpponent)),
+    maxTotalPlayerPartnerEvents: Math.max(0, ...totalPlayerRows.map(player => player.partnerEvents)),
+    maxTotalPlayerOpponentEvents: Math.max(0, ...totalPlayerRows.map(player => player.opponentEvents)),
+    partnerX3: [...partnerPairs.values()].filter(count => count >= 3).length,
+    opponentX3: [...opponentPairs.values()].filter(count => count >= 3).length,
+  }
+}
+
+function scorePayloadRepeatRepair(payloads: SuggestedMatchPayload[], state: SessionState) {
+  const repeat = getPayloadRepeatExposureStats(payloads, state)
+  return (
+    repeat.partnerX3 * 1000 +
+    repeat.maxSamePartner * 180 +
+    repeat.maxPlayerPartnerMatches * 120 +
+    repeat.partnerRepeatMatches * 60 +
+    repeat.partnerRepeatEvents * 30 +
+    repeat.maxTotalPlayerPartnerEvents * 80 +
+    repeat.opponentX3 * 140 +
+    repeat.maxSameOpponent * 80 +
+    repeat.maxPlayerOpponentMatches * 50 +
+    repeat.maxTotalPlayerOpponentEvents * 35 +
+    repeat.opponentRepeatMatches * 18 +
+    repeat.opponentRepeatEvents * 8
+  )
+}
+
+function shouldRepairRepeatForPayloadBatch(payloads: SuggestedMatchPayload[]) {
+  return payloads.some(payload =>
+    Number(payload.round_no ?? 0) + 1 >= LIVE_REPEAT_REPAIR_START_ROUND,
+  )
+}
+
+function repairPayloadBatchRepeatExposure(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  let current = payloads
+  let currentStats = getPayloadBatchStats(current, state, pvnaTolerance)
+  let currentScore = scorePayloadRepeatRepair(current, state)
+
+  for (let pass = 0; pass < 4; pass += 1) {
+    let bestPayloads: SuggestedMatchPayload[] | null = null
+    let bestStats = currentStats
+    let bestScore = currentScore
+    for (let leftIndex = 0; leftIndex < current.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < current.length; rightIndex += 1) {
+        for (let leftPos = 0; leftPos < 4; leftPos += 1) {
+          for (let rightPos = 0; rightPos < 4; rightPos += 1) {
+            const leftPlayer = getPayloadPlayer(current[leftIndex], leftPos)
+            const rightPlayer = getPayloadPlayer(current[rightIndex], rightPos)
+            if (!leftPlayer || !rightPlayer || leftPlayer === rightPlayer) continue
+            const candidate = [...current]
+            candidate[leftIndex] = setPayloadPlayer(candidate[leftIndex], leftPos, rightPlayer)
+            candidate[rightIndex] = setPayloadPlayer(candidate[rightIndex], rightPos, leftPlayer)
+            const candidateStats = getPayloadBatchStats(candidate, state, pvnaTolerance)
+            if (candidateStats.pvnaOver > currentStats.pvnaOver) continue
+            if (currentStats.pvnaOver === 0 && candidateStats.maxPvna > pvnaTolerance) continue
+            if (candidateStats.maxPvna > currentStats.maxPvna + 0.15) continue
+            if (candidateStats.intraOverHard > currentStats.intraOverHard + 1) continue
+            if (candidateStats.maxIntra > currentStats.maxIntra + 0.45) continue
+            const candidateScore = scorePayloadRepeatRepair(candidate, state)
+            if (candidateScore >= bestScore - 0.01) continue
+            bestPayloads = candidate
+            bestStats = candidateStats
+            bestScore = candidateScore
+          }
+        }
+      }
+    }
+    if (!bestPayloads) break
+    current = bestPayloads
+    currentStats = bestStats
+    currentScore = bestScore
+  }
+  return current
+}
+
+function normalizeRepairedPayload(payload: SuggestedMatchPayload, state: SessionState, pvnaTolerance: number) {
+  const pvnaGap = getPayloadPvnaGap(payload, state)
+  const intraGap = getPayloadIntraTeamGap(payload, state)
+  const pvnaOverBy = Math.max(0, pvnaGap - pvnaTolerance)
+  const intraOverBy = Math.max(0, intraGap - PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT)
+  const warnings = new Set((payload.warnings ?? []).filter(warning =>
+    warning !== 'PVNA_TOLERANCE_RELAXED' &&
+    warning !== 'INTRA_TEAM_GAP_RELAXED'
+  ))
+  const tradeoffs = (payload.tradeoffs ?? []).filter(tradeoff =>
+    tradeoff.type !== 'pvna_tolerance_relaxed' &&
+    tradeoff.type !== 'intra_team_gap_relaxed'
+  )
+  if (pvnaOverBy > 0) {
+    warnings.add('PVNA_TOLERANCE_RELAXED')
+    tradeoffs.push({
+      type: 'pvna_tolerance_relaxed',
+      severity: pvnaOverBy * 10,
+      over_by: pvnaOverBy,
+    })
+  }
+  if (intraOverBy > 0) {
+    warnings.add('INTRA_TEAM_GAP_RELAXED')
+    tradeoffs.push({
+      type: 'intra_team_gap_relaxed',
+      severity: intraOverBy * 8,
+      over_by: intraOverBy,
+      affected_pairs: 1,
+      affected_players: 2,
+    })
+  }
+  return {
+    ...payload,
+    warnings: [...warnings],
+    tradeoffs,
+    approval_required: tradeoffs.length > 0,
+    tradeoff_choices: undefined,
+    recommended_tradeoff_choice: undefined,
+  }
+}
+
+function repairSuggestedPayloadBatch(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  let current = payloads
+  let currentStats = getPayloadBatchStats(current, state, pvnaTolerance)
+  let changed = false
+
+  for (let pass = 0; pass < 3; pass += 1) {
+    let bestPayloads: SuggestedMatchPayload[] | null = null
+    let bestStats = currentStats
+    for (let leftIndex = 0; leftIndex < current.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < current.length; rightIndex += 1) {
+        for (let leftPos = 0; leftPos < 4; leftPos += 1) {
+          for (let rightPos = 0; rightPos < 4; rightPos += 1) {
+            const leftPlayer = getPayloadPlayer(current[leftIndex], leftPos)
+            const rightPlayer = getPayloadPlayer(current[rightIndex], rightPos)
+            if (!leftPlayer || !rightPlayer || leftPlayer === rightPlayer) continue
+            const candidate = [...current]
+            candidate[leftIndex] = setPayloadPlayer(candidate[leftIndex], leftPos, rightPlayer)
+            candidate[rightIndex] = setPayloadPlayer(candidate[rightIndex], rightPos, leftPlayer)
+            const candidateStats = getPayloadBatchStats(candidate, state, pvnaTolerance)
+            const improvesPvna =
+              candidateStats.maxPvna < bestStats.maxPvna - 0.25 ||
+              (
+                candidateStats.maxPvna < bestStats.maxPvna - 0.05 &&
+                candidateStats.pvnaOver < bestStats.pvnaOver
+              )
+            if (!improvesPvna) continue
+            if (candidateStats.pvnaOver > currentStats.pvnaOver) continue
+            if (candidateStats.intraOverHard > currentStats.intraOverHard + 1) continue
+            if (candidateStats.maxIntra > currentStats.maxIntra + 0.5) continue
+            const currentRepeatRatio = current.length > 0 ? currentStats.repeatMatches / current.length : 0
+            const candidatePvnaIsComfortable = candidateStats.maxPvna <= 0.8
+            if (currentRepeatRatio >= 0.45 && candidateStats.repeatMatches > currentStats.repeatMatches) continue
+            if (candidatePvnaIsComfortable && candidateStats.repeatMatches > currentStats.repeatMatches) continue
+            if (candidateStats.repeatMatches > currentStats.repeatMatches + 1) continue
+            bestPayloads = candidate
+            bestStats = candidateStats
+          }
+        }
+      }
+    }
+    if (!bestPayloads) break
+    current = bestPayloads
+    currentStats = bestStats
+    changed = true
+  }
+
+  if (shouldRepairRepeatForPayloadBatch(current)) {
+    const repeatRepaired = repairPayloadBatchRepeatExposure(current, state, pvnaTolerance)
+    if (repeatRepaired !== current) {
+      current = repeatRepaired
+      changed = true
+    }
+  }
+
+  if (!changed) return payloads
+  return current.map(payload => normalizeRepairedPayload(payload, state, pvnaTolerance))
 }
 
 export function compareByNumber(left: number, right: number) {
@@ -968,6 +1560,7 @@ export function buildSuggestedMatchPayloads({
 }: BuildSuggestedMatchPayloadsParams): SuggestedMatchPayload[] {
   const batchStartedAt = nowMs()
   let suggestionState = options.stateOverride ?? state
+  const baseSuggestionState = suggestionState
   const liveMatchRows = options.liveMatchRowsOverride ?? rows.liveMatchRows
   const payloads: SuggestedMatchPayload[] = []
   const baseBusyIds = new Set(
@@ -1106,10 +1699,19 @@ export function buildSuggestedMatchPayloads({
     const remainingCourtsInRound = Math.max(1, courtCapacity - projectedRoundMatchCount)
     const availableRequiredIds = [...roundRequiredIds]
       .filter(playerId => !roundBusyIds.has(playerId) && !batchBusyIds.has(playerId))
-    const minRequiredForThisCourt = availableRequiredIds.length === 0
-      ? 0
-      : Math.min(4, Math.max(1, availableRequiredIds.length - ((remainingCourtsInRound - 1) * 4)))
-    const requiredForThisCourt = availableRequiredIds.slice(0, minRequiredForThisCourt)
+    const futureRoundSlots = Math.max(0, (remainingCourtsInRound - 1) * 4)
+    const minRequiredForThisCourt = Math.min(
+      4,
+      Math.max(0, availableRequiredIds.length - futureRoundSlots),
+    )
+    const canLetQuotaGuardPickRequiredPool =
+      availableRequiredIds.length >= remainingCourtsInRound * 4
+    const requiredForThisCourt = selectRequiredIdsForCourt(
+      availableRequiredIds,
+      canLetQuotaGuardPickRequiredPool ? 0 : minRequiredForThisCourt,
+      remainingCourtsInRound,
+      suggestionState,
+    )
     const requiredForThisCourtIds = new Set(requiredForThisCourt)
     const deferredRequiredIds = availableRequiredIds
       .filter(playerId => !requiredForThisCourtIds.has(playerId))
@@ -1153,7 +1755,7 @@ export function buildSuggestedMatchPayloads({
       ...Object.fromEntries(requiredForThisCourt.map(playerId => [playerId, Tier.MUST_PLAY])),
     }
     
-    const exhaustiveDiag: import('./suggest.ts').ExhaustiveFallbackDiagnostic = {
+    const exhaustiveDiag: ExhaustiveFallbackDiagnostic = {
       ran: false, timedOut: false, eligibleCount: 0,
       combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
     }
@@ -1184,6 +1786,7 @@ export function buildSuggestedMatchPayloads({
       busy_player_ids: busyIds,
       court_idx: courtIdx,
       max_alternatives: LIVE_TRADEOFF_ALTERNATIVE_LIMIT,
+      exhaustive_fallback: false,
       max_runtime_ms: Math.min(
         LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS,
         Math.max(LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS, remainingBatchMs - 50),
@@ -1198,7 +1801,7 @@ export function buildSuggestedMatchPayloads({
         : [{ protectedIds: liveSelectionGuard.protectedIds, warnings: liveSelectionGuard.warnings }]
       for (const relaxationStage of relaxationStages) {
         if (result.alternatives.length > 0) break
-        const relaxedDiag: import('./suggest.ts').ExhaustiveFallbackDiagnostic = {
+        const relaxedDiag: ExhaustiveFallbackDiagnostic = {
           ran: false, timedOut: false, eligibleCount: 0,
           combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
         }
@@ -1241,9 +1844,125 @@ export function buildSuggestedMatchPayloads({
       }
     }
     const configuredPvnaTolerance = pvnaTolerance
-    const initialSelectedMetrics = result.alternatives[0]
+    let initialSelectedMetrics = result.alternatives[0]
       ? getTradeoffChoiceMetrics(result.alternatives[0], suggestionStateForCourt, configuredPvnaTolerance)
       : null
+    if (
+      initialSelectedMetrics &&
+      needsLiveQualityRescue(initialSelectedMetrics, configuredPvnaTolerance) &&
+      liveSelectionGuard.quotaProtectedIds.length > 0
+    ) {
+      const quotaRelaxedProtectedIds = new Set(
+        [...liveSelectionGuard.protectedIds]
+          .filter(playerId => !liveSelectionGuard.quotaProtectedIds.includes(playerId)),
+      )
+      const quotaRelaxedDiag: ExhaustiveFallbackDiagnostic = {
+        ran: false, timedOut: false, eligibleCount: 0,
+        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+      }
+      const quotaRelaxedResult = suggestNextMatch(suggestionStateForCourt, {
+        ...suggestOptions,
+        busy_player_ids: buildBusyIdsForProtected(quotaRelaxedProtectedIds),
+        max_alternatives: LIVE_QUOTA_RESCUE_ALTERNATIVE_LIMIT,
+        max_runtime_ms: Math.min(
+          500,
+          Math.max(LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS, remainingBatchMs - 50),
+        ),
+        _exhaustiveDiag: quotaRelaxedDiag,
+      })
+      const quotaRelaxedRescue = findQuotaRelaxedQualityRescue(
+        quotaRelaxedResult.alternatives,
+        suggestionStateForCourt,
+        configuredPvnaTolerance,
+        previewCountableMatchCount + index + 1,
+      )
+      if (quotaRelaxedRescue) {
+        const rescueKey = getAlternativeMatchKey(quotaRelaxedRescue)
+        result = {
+          ...result,
+          warnings: [...new Set([...result.warnings, 'LIVE_REPLACEMENT_QUOTA_RELAXED'])],
+          alternatives: [
+            {
+              ...quotaRelaxedRescue,
+              warnings: [...new Set([...quotaRelaxedRescue.warnings, 'LIVE_REPLACEMENT_QUOTA_RELAXED'])],
+            },
+            ...result.alternatives.filter(alternative => getAlternativeMatchKey(alternative) !== rescueKey),
+          ].slice(0, LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT),
+        }
+        initialSelectedMetrics = getTradeoffChoiceMetrics(result.alternatives[0], suggestionStateForCourt, configuredPvnaTolerance)
+      }
+    }
+    if (
+      options.liveQualityPolicy === 'pvna_outlier_rescue' &&
+      initialSelectedMetrics &&
+      initialSelectedMetrics.pvna_gap > 1
+    ) {
+      const protectedWithoutQuota = new Set(
+        [...liveSelectionGuard.protectedIds]
+          .filter(playerId => !liveSelectionGuard.quotaProtectedIds.includes(playerId)),
+      )
+      const outlierDiag: ExhaustiveFallbackDiagnostic = {
+        ran: false, timedOut: false, eligibleCount: 0,
+        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+      }
+      const outlierResult = suggestNextMatch(suggestionStateForCourt, {
+        ...suggestOptions,
+        busy_player_ids: buildBusyIdsForProtected(protectedWithoutQuota),
+        max_alternatives: LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT,
+        max_runtime_ms: Math.min(
+          700,
+          Math.max(LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS, remainingBatchMs - 50),
+        ),
+        _exhaustiveDiag: outlierDiag,
+      })
+      const outlierRescue = findPvnaOutlierRescue(
+        outlierResult.alternatives,
+        suggestionStateForCourt,
+        configuredPvnaTolerance,
+        previewCountableMatchCount + index + 1,
+        initialSelectedMetrics,
+      )
+      if (outlierRescue) {
+        const rescueKey = getAlternativeMatchKey(outlierRescue)
+        result = {
+          ...result,
+          warnings: [...new Set([...result.warnings, 'PVNA_TOLERANCE_RELAXED'])],
+          alternatives: [
+            outlierRescue,
+            ...result.alternatives.filter(alternative => getAlternativeMatchKey(alternative) !== rescueKey),
+          ].slice(0, LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT),
+        }
+        initialSelectedMetrics = getTradeoffChoiceMetrics(result.alternatives[0], suggestionStateForCourt, configuredPvnaTolerance)
+      }
+    }
+    if (
+      initialSelectedMetrics &&
+      needsLiveQualityRescue(initialSelectedMetrics, configuredPvnaTolerance) &&
+      result.alternatives.length < LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT
+    ) {
+      const deepDiag: ExhaustiveFallbackDiagnostic = {
+        ran: false, timedOut: false, eligibleCount: 0,
+        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+      }
+      const deepResult = suggestNextMatch(suggestionStateForCourt, {
+        ...suggestOptions,
+        max_alternatives: LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT,
+        max_runtime_ms: Math.min(
+          LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS,
+          Math.max(LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS, remainingBatchMs - 50),
+        ),
+        _exhaustiveDiag: deepDiag,
+      })
+      if (deepResult.alternatives.length > result.alternatives.length) {
+        result = {
+          ...deepResult,
+          warnings: [...new Set([...result.warnings, ...deepResult.warnings])],
+        }
+        initialSelectedMetrics = result.alternatives[0]
+          ? getTradeoffChoiceMetrics(result.alternatives[0], suggestionStateForCourt, configuredPvnaTolerance)
+          : null
+      }
+    }
     if (initialSelectedMetrics && hasTradeoffMetric(initialSelectedMetrics)) {
       const strictAlternative = findStrictCleanLiveAlternative(suggestionStateForCourt, {
         busyIds,
@@ -1275,6 +1994,7 @@ export function buildSuggestedMatchPayloads({
       suggestionStateForCourt,
       configuredPvnaTolerance,
       previewCountableMatchCount + index + 1,
+      options.liveQualityPolicy ?? 'current',
     )
     const alternative = guardedAlternative ?? result.alternatives[0]
     const selectedTradeoffChoice = tradeoffChoices?.choices.find(choice =>
@@ -1362,5 +2082,5 @@ export function buildSuggestedMatchPayloads({
       suggestionState = buildProjectedStateAfterCompletedLiveRound(suggestionState, roundBusyIds)
     }
   }
-  return payloads
+  return repairSuggestedPayloadBatch(payloads, baseSuggestionState, pvnaTolerance)
 }

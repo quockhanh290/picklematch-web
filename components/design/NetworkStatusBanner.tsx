@@ -23,7 +23,7 @@ export function NetworkStatusBanner() {
     }).start()
   }, [visible])
 
-  if (Platform.OS !== 'web' && status === 'online') return null
+  if (!visible) return null
 
   const backgroundColor = status === 'offline' ? theme.errorContainer : theme.secondaryContainer
   const textColor = status === 'offline' ? theme.onErrorContainer : theme.onSecondaryContainer

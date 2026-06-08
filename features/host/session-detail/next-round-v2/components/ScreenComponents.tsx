@@ -792,7 +792,6 @@ export function ManagePlayersButton({
   onPress: () => void
 }) {
   const theme = useAppTheme()
-  const isPersistingStart = String(match.id).startsWith('preview-')
   return (
     <TouchableOpacity
       testID="nrv2-manage-players"
@@ -848,8 +847,9 @@ export function StatusChipRow({
 }) {
   const theme = useAppTheme()
   const preset = PRESETS[courtPreset]
-  const delta = fairnessPreview?.delta_total ?? null
-  const deltaColor = delta == null ? theme.outline : delta >= 0 ? theme.successText : theme.warningText
+  const delta = fairnessPreview?.delta_total ?? 0
+  const hasDelta = fairnessPreview?.delta_total != null
+  const deltaColor = !hasDelta ? theme.outline : delta >= 0 ? theme.successText : theme.warningText
   return (
     <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
       <View style={{ flex: 1, gap: 8 }}>
@@ -873,7 +873,7 @@ export function StatusChipRow({
               <View style={{ flex: 1 }}>
                 <Text style={eyebrowStyle(theme.outline)}>Dự kiến vòng kế</Text>
                 <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.headline, fontSize: 16, color: deltaColor }}>
-                  {delta == null
+                  {!hasDelta
                     ? 'Chưa có gợi ý'
                     : `${fairnessScore.total} → ${fairnessPreview!.after_total} (${delta > 0 ? '+' : ''}${delta})`}
                 </Text>
@@ -1381,7 +1381,7 @@ export function NextMatchSuggestionCard({
       <MatchTile match={match} state={state} playersById={playersById} onPlayerPress={onPlayerPress} />
       {false ? <TouchableOpacity
         onPress={onCreate}
-        disabled={busy || isPersistingStart}
+        disabled={busy}
         style={{ marginTop: 12, height: 46, borderRadius: RADIUS.md, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}
       >
         {busy ? <ActivityIndicator color={theme.onPrimary} /> : (

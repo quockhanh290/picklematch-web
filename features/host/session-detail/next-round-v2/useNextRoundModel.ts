@@ -579,7 +579,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   // không chạy lại khi user chỉ đổi selectedAlternative.
   const suggestedRoundActionsCache = useMemo(
     () => USE_COURT_LANE_BOARD
-      ? { actions: [], audits: new Map() as Map<number, AlternativeAudit> }
+      ? buildSuggestedRoundActionsCache(deferredState, [], deferredCourtCount)
       : buildSuggestedRoundActionsCache(deferredState, suggestion.alternatives, deferredCourtCount),
     [deferredCourtCount, deferredState, suggestion.alternatives],
   )

@@ -44,7 +44,7 @@ describe('Detector', () => {
 
     const warning = detectFairnessIssues(state).find((item) => item.type === 'match_count_imbalance')
 
-    expect(warning?.message).toContain('muc hop ly la 1')
+    expect(warning?.message).toContain('mức hợp lý là 1')
   })
 
   it('does not warn when range 1 is expected from fractional match distribution', () => {
@@ -146,7 +146,7 @@ describe('Detector', () => {
     const warning = detectFairnessIssues(state).find((item) => item.type === 'availability_pressure')
 
     expect(warning?.affected_players).toEqual([])
-    expect(warning?.message).toContain('Roster thay doi')
+    expect(warning?.message).toContain('Danh sách thay đổi')
   })
 
   it('detects repeated partners', () => {

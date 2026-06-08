@@ -37,6 +37,7 @@ export type SuggestNextRoundOptions = {
   partition_cache?: boolean
   max_alternatives?: number
   max_runtime_ms?: number
+  exhaustive_fallback?: boolean
 }
 
 export type ExhaustiveFallbackDiagnostic = {
@@ -711,10 +712,13 @@ export function suggestNextMatch(
   }
 
   const topAlternative = mappedResult.alternatives[0]
-  const shouldCheckFallback = !topAlternative ||
-    getTradeoffCount(topAlternative) > 0 ||
-    topAlternative.warnings.includes('PVNA_TOLERANCE_RELAXED') ||
-    topAlternative.warnings.includes('REPEAT_CAP_RELAXED')
+  const shouldCheckFallback = !topAlternative || (
+    options.exhaustive_fallback !== false && (
+      getTradeoffCount(topAlternative) > 0 ||
+      topAlternative.warnings.includes('PVNA_TOLERANCE_RELAXED') ||
+      topAlternative.warnings.includes('REPEAT_CAP_RELAXED')
+    )
+  )
   if (!shouldCheckFallback) return mappedResult
   const remainingRuntimeMs = options.max_runtime_ms === undefined
     ? undefined

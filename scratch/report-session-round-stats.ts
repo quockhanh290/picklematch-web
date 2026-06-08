@@ -194,13 +194,11 @@ async function main() {
       }
     }
 
-    for (const playerId of round.resting ?? []) {
-      restCounts.set(playerId, (restCounts.get(playerId) ?? 0) + 1)
-    }
     for (const playerId of players.keys()) {
       if (playedThisRound.has(playerId)) {
         consecutiveRest.set(playerId, 0)
-      } else if ((round.resting ?? []).includes(playerId)) {
+      } else {
+        restCounts.set(playerId, (restCounts.get(playerId) ?? 0) + 1)
         const next = (consecutiveRest.get(playerId) ?? 0) + 1
         consecutiveRest.set(playerId, next)
         maxConsecutiveRest.set(playerId, Math.max(maxConsecutiveRest.get(playerId) ?? 0, next))

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Platform } from 'react-native'
 
 export type NetworkStatus = 'online' | 'offline' | 'degraded' | 'reconnecting'
@@ -22,12 +22,14 @@ const NetworkContext = createContext<NetworkContextValue>({
 export function NetworkProvider({ children }: { children: React.ReactNode }) {
   const [isOnline, setIsOnline] = useState(true)
   const [isDegraded, setIsDegraded] = useState(false)
-  const [retryTrigger, setRetryTrigger] = useState(0)
 
   useEffect(() => {
     if (Platform.OS !== 'web') return
 
-    const handleOnline = () => setIsOnline(true)
+    const handleOnline = () => {
+      setIsOnline(true)
+      setIsDegraded(false)
+    }
     const handleOffline = () => setIsOnline(false)
 
     window.addEventListener('online', handleOnline)
@@ -48,13 +50,27 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       ? 'degraded' 
       : 'online'
 
-  const value: NetworkContextValue = {
+  const reportDegraded = useCallback((val: boolean) => {
+    setIsDegraded(val)
+  }, [])
+
+  const retry = useCallback(() => {
+    if (Platform.OS === 'web') {
+      const online = window.navigator.onLine
+      setIsOnline(online)
+      if (online) setIsDegraded(false)
+      return
+    }
+    setIsDegraded(false)
+  }, [])
+
+  const value: NetworkContextValue = useMemo(() => ({
     isOnline,
     isDegraded,
     status,
-    reportDegraded: (val) => setIsDegraded(val),
-    retry: () => setRetryTrigger(prev => prev + 1),
-  }
+    reportDegraded,
+    retry,
+  }), [isDegraded, isOnline, reportDegraded, retry, status])
 
   return (
     <NetworkContext.Provider value={value}>
