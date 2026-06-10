@@ -1,4 +1,5 @@
-import type { PlayerSessionState } from './types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { PlayerSessionState } from './types.ts'
 
 export const Tier = {
   MUST_PLAY: 0,

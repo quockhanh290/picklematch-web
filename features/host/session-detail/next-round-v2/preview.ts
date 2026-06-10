@@ -5,6 +5,7 @@ import {
   getProjectedRepeatSummary,
 } from '@/lib/next-round-suggester/score'
 import { suggestNextMatch } from '@/lib/next-round-suggester/suggest'
+import { LIVE_PREVIEW_ALGORITHM_VERSION } from '@/lib/next-round-suggester/live-preview'
 import type {
   SessionLiveMatchRow,
   SessionState,
@@ -198,6 +199,7 @@ export function buildPreviewBatchKey(
     .map(([playerId, tier]) => `${playerId}:${tier}`)
     .join(',')
   return [
+    LIVE_PREVIEW_ALGORITHM_VERSION,
     sessionId,
     state.status,
     state.current_round,

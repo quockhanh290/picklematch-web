@@ -1,9 +1,9 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { Tier } from './classify'
+import { Tier } from './classify.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import type { FairnessWarning } from './fairness/detector'
+import type { FairnessWarning } from './fairness/detector.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { computeAvailabilityMetrics } from './fairness/metrics'
+import { computeAvailabilityMetrics } from './fairness/metrics.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import {
   PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
@@ -13,11 +13,11 @@ import {
   getRecentRepeatCost,
   getProjectedRepeatSummary,
   withRecentGroupRematchKeys,
-} from './score'
+} from './score.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { bestPartitioning } from './pair'
+import { bestPartitioning } from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { suggestNextMatch, type ExhaustiveFallbackDiagnostic } from './suggest'
+import { suggestNextMatch, type ExhaustiveFallbackDiagnostic } from './suggest.ts'
 import type {
   PlayerSessionState,
   SessionLiveMatchRow,
@@ -27,17 +27,18 @@ import type {
   SuggestionTradeoffChoice,
   SuggestionTradeoffChoiceId,
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-} from './types'
+} from './types.ts'
 
 const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 12
 const LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT = 80
 const LIVE_QUOTA_RESCUE_ALTERNATIVE_LIMIT = 24
+const LIVE_CONDITIONAL_RESCUE_ALTERNATIVE_LIMIT = 500
 const LIVE_STRICT_RESCUE_ELIGIBLE_LIMIT = 20
 const LIVE_STRICT_RESCUE_TIMEOUT_MS = 300
 const LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3800
 const LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS = 350
 const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
-const LIVE_PREVIEW_ALGORITHM_VERSION = 4
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 7
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_INTRA_TEAM_GAP_COST_WEIGHT = 8
 const BALANCED_REPEAT_COST_WEIGHT = 15
@@ -57,7 +58,13 @@ const GUARDED_LIVE_QUALITY_TIER_B_INTRA_LIMIT = 1.75
 const GUARDED_LIVE_QUALITY_TIER_C_PVNA_EXTRA = 0.7
 const GUARDED_LIVE_QUALITY_TIER_C_INTRA_LIMIT = 2
 const LIVE_QUALITY_RESCUE_QUOTA_RELAX_LIMIT = 2
+const LIVE_CONDITIONAL_RESCUE_MAX_PVNA_OVER = 0.3
+const LIVE_CONDITIONAL_RESCUE_MAX_INTRA_OVER = 0.5
 const LIVE_REPEAT_REPAIR_START_ROUND = 6
+const LIVE_EARLY_QUALITY_REPAIR_END_ROUND = LIVE_REPEAT_REPAIR_START_ROUND - 1
+const LIVE_EARLY_QUALITY_BEAM_WIDTH = 100
+const LIVE_EARLY_QUALITY_BEAM_MAX_PLAYERS = 24
+const LIVE_ROUND_ONE_CLEAN_BATCH_MAX_PLAYERS = 40
 const LIVE_RECYCLE_SOFT_CONSECUTIVE_PLAY_LIMIT = 2
 const LIVE_RECYCLE_HARD_CONSECUTIVE_PLAY_LIMIT = 3
 const LIVE_RECYCLE_ABSOLUTE_CONSECUTIVE_PLAY_LIMIT = 4
@@ -104,12 +111,147 @@ export type SuggestedPreviewBatch = {
   matches: SuggestedLiveMatchRow[]
 }
 
-type SuggestedMatchPayload = Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice'>
+export type SuggestedMatchPayload = Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice'>
+
+export type PreviewBoardMode = 'full_board' | 'replace_courts'
+
+export type FinalPreviewBoardResult = {
+  final_preview_board: SuggestedMatchPayload[]
+  replaced_court_idxs: number[]
+  locked_court_idxs: number[]
+  quality_rescue_used: boolean
+}
 
 type CompletedMatchGroup = {
   round_no: number
   team_a: [string, string]
   team_b: [string, string]
+}
+
+function normalizePreviewBoardPayload(
+  payload: Partial<SuggestedMatchPayload> | null | undefined,
+  courtCount: number,
+): SuggestedMatchPayload | null {
+  if (!payload) return null
+  const courtIdx = Number(payload.court_idx)
+  if (!Number.isFinite(courtIdx) || courtIdx < 0 || courtIdx >= courtCount) return null
+  const teamA = Array.isArray(payload.team_a) ? payload.team_a.map(String) : []
+  const teamB = Array.isArray(payload.team_b) ? payload.team_b.map(String) : []
+  if (teamA.length !== 2 || teamB.length !== 2) return null
+  return {
+    ...payload,
+    court_idx: courtIdx,
+    team_a: [teamA[0], teamA[1]],
+    team_b: [teamB[0], teamB[1]],
+    resting: Array.isArray(payload.resting) ? payload.resting.map(String) : [],
+  } as SuggestedMatchPayload
+}
+
+function previewPayloadPlayerIds(payload: Pick<SuggestedMatchPayload, 'team_a' | 'team_b'>) {
+  return [...payload.team_a, ...payload.team_b].map(String)
+}
+
+function addPreviewPayloadIfValid(
+  payload: SuggestedMatchPayload,
+  target: SuggestedMatchPayload[],
+  usedCourts: Set<number>,
+  usedPlayers: Set<string>,
+) {
+  const courtIdx = Number(payload.court_idx)
+  if (!Number.isFinite(courtIdx) || usedCourts.has(courtIdx)) return false
+  const playerIds = previewPayloadPlayerIds(payload)
+  if (playerIds.some(playerId => usedPlayers.has(playerId))) return false
+  usedCourts.add(courtIdx)
+  playerIds.forEach(playerId => usedPlayers.add(playerId))
+  target.push(payload)
+  return true
+}
+
+export function buildFinalPreviewBoard({
+  mode,
+  payloads,
+  currentPreviewBoard,
+  replacementCourtIdxs,
+  courtCount,
+}: {
+  mode?: PreviewBoardMode
+  payloads: Array<Partial<SuggestedMatchPayload>>
+  currentPreviewBoard?: Array<Partial<SuggestedMatchPayload>>
+  replacementCourtIdxs?: number[]
+  courtCount: number
+}): FinalPreviewBoardResult {
+  const normalizedPayloads = payloads
+    .map(payload => normalizePreviewBoardPayload(payload, courtCount))
+    .filter((payload): payload is SuggestedMatchPayload => payload !== null)
+  const normalizedCurrentBoard = (currentPreviewBoard ?? [])
+    .map(payload => normalizePreviewBoardPayload(payload, courtCount))
+    .filter((payload): payload is SuggestedMatchPayload => payload !== null)
+
+  const modeName: PreviewBoardMode = mode === 'replace_courts' ? 'replace_courts' : 'full_board'
+  if (modeName !== 'replace_courts') {
+    const usedCourts = new Set<number>()
+    const usedPlayers = new Set<string>()
+    const finalBoard: SuggestedMatchPayload[] = []
+    normalizedPayloads.forEach(payload => addPreviewPayloadIfValid(payload, finalBoard, usedCourts, usedPlayers))
+    return {
+      final_preview_board: finalBoard.sort((left, right) => Number(left.court_idx) - Number(right.court_idx)),
+      replaced_court_idxs: [...usedCourts].sort((left, right) => left - right),
+      locked_court_idxs: [],
+      quality_rescue_used: false,
+    }
+  }
+
+  const replacementSet = new Set(
+    (replacementCourtIdxs ?? [])
+      .map(Number)
+      .filter(courtIdx => Number.isFinite(courtIdx) && courtIdx >= 0 && courtIdx < courtCount),
+  )
+  const inferredReplacementSet = replacementSet.size > 0
+    ? replacementSet
+    : new Set(normalizedPayloads.map(payload => Number(payload.court_idx)))
+
+  const usedCourts = new Set<number>()
+  const usedPlayers = new Set<string>()
+  const finalBoard: SuggestedMatchPayload[] = []
+  const lockedCourtIdxs: number[] = []
+  normalizedCurrentBoard
+    .sort((left, right) => Number(left.court_idx) - Number(right.court_idx))
+    .forEach(payload => {
+      const courtIdx = Number(payload.court_idx)
+      if (inferredReplacementSet.has(courtIdx)) return
+      if (!addPreviewPayloadIfValid(payload, finalBoard, usedCourts, usedPlayers)) return
+      lockedCourtIdxs.push(courtIdx)
+    })
+
+  const replacedCourtIdxs: number[] = []
+  normalizedPayloads
+    .filter(payload => inferredReplacementSet.has(Number(payload.court_idx)))
+    .sort((left, right) => Number(left.court_idx) - Number(right.court_idx))
+    .forEach(payload => {
+      if (!addPreviewPayloadIfValid(payload, finalBoard, usedCourts, usedPlayers)) return
+      replacedCourtIdxs.push(Number(payload.court_idx))
+    })
+
+  return {
+    final_preview_board: finalBoard.sort((left, right) => Number(left.court_idx) - Number(right.court_idx)),
+    replaced_court_idxs: replacedCourtIdxs,
+    locked_court_idxs: lockedCourtIdxs,
+    quality_rescue_used: false,
+  }
+}
+
+export function hasFulfilledPreviewBoardReplacements(
+  board: Pick<FinalPreviewBoardResult, 'replaced_court_idxs'>,
+  replacementCourtIdxs: number[] | undefined,
+) {
+  const requestedCourts = new Set(
+    (replacementCourtIdxs ?? [])
+      .map(Number)
+      .filter(Number.isFinite),
+  )
+  if (requestedCourts.size === 0) return true
+  const replacedCourts = new Set(board.replaced_court_idxs.map(Number))
+  return [...requestedCourts].every(courtIdx => replacedCourts.has(courtIdx))
 }
 
 type StrictRescueOptions = {
@@ -799,6 +941,187 @@ function findQuotaRelaxedQualityRescue(
     })[0]?.alternative ?? null
 }
 
+function getProjectedSelectionBurden(alternative: SuggestionAlternative, state: SessionState) {
+  const selectedIds = new Set(alternative.matches.flatMap(match => [...match.team_a, ...match.team_b]))
+  const selectedPlayers = [...selectedIds]
+    .map(playerId => state.players.get(playerId))
+    .filter((player): player is PlayerSessionState => Boolean(player))
+  const projectedStreaks = selectedPlayers.map(player => player.consecutive_play + 1)
+  return {
+    max_streak: Math.max(0, ...projectedStreaks),
+    streak_gte_3: projectedStreaks.filter(streak => streak >= 3).length,
+    streak_gte_4: projectedStreaks.filter(streak => streak >= 4).length,
+  }
+}
+
+function materiallyImprovesLiveQuality(
+  candidate: SuggestionTradeoffChoice['metrics'],
+  reference: SuggestionTradeoffChoice['metrics'],
+) {
+  return candidate.pvna_gap < reference.pvna_gap - 0.05
+    || candidate.intra_team_gap < reference.intra_team_gap - 0.05
+    || candidate.repeat_over_by < reference.repeat_over_by
+    || candidate.max_partner_pair < reference.max_partner_pair
+    || candidate.max_opponent_pair < reference.max_opponent_pair
+}
+
+export function findConditionalLiveQualityRescue(
+  alternatives: SuggestionAlternative[],
+  reference: SuggestionAlternative,
+  state: SessionState,
+  configuredPvnaTolerance: number,
+  nextMatchIndex: number,
+) {
+  const referenceMetrics = getTradeoffChoiceMetrics(reference, state, configuredPvnaTolerance)
+  const shouldRun = referenceMetrics.intra_team_gap > PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT
+    || referenceMetrics.max_partner_pair > 1
+    || referenceMetrics.max_opponent_pair > 1
+    || referenceMetrics.pvna_gap >= Math.min(configuredPvnaTolerance, 0.4)
+  if (!shouldRun) return null
+
+  const referenceBurden = getProjectedSelectionBurden(reference, state)
+  const { min: targetMinAfter, max: targetMaxAfter } = getProjectedTargetRangeAfter(state, nextMatchIndex)
+  const referenceQuota = getProjectedCountViolation(reference, state, targetMaxAfter, targetMinAfter)
+
+  return alternatives
+    .filter(alternative => alternative.matches.length > 0)
+    .map(alternative => ({
+      alternative,
+      metrics: getTradeoffChoiceMetrics(alternative, state, configuredPvnaTolerance),
+      quota: getProjectedCountViolation(alternative, state, targetMaxAfter, targetMinAfter),
+      burden: getProjectedSelectionBurden(alternative, state),
+      recent: getAlternativeRecentCost(alternative, state),
+    }))
+    .filter(item =>
+      item.metrics.pvna_over_by <= referenceMetrics.pvna_over_by + 0.001
+      && item.metrics.intra_team_gap <= referenceMetrics.intra_team_gap + 0.001
+      && item.metrics.intra_team_over_by <= referenceMetrics.intra_team_over_by + 0.001
+      && item.metrics.repeat_over_by <= referenceMetrics.repeat_over_by
+      && item.metrics.max_partner_pair <= referenceMetrics.max_partner_pair
+      && item.metrics.max_opponent_pair <= referenceMetrics.max_opponent_pair
+      && item.quota.over <= referenceQuota.over
+      && item.quota.under <= referenceQuota.under
+      && item.burden.max_streak <= referenceBurden.max_streak
+      && item.burden.streak_gte_3 <= referenceBurden.streak_gte_3
+      && item.burden.streak_gte_4 <= referenceBurden.streak_gte_4
+      && materiallyImprovesLiveQuality(item.metrics, referenceMetrics)
+    )
+    .sort((left, right) => {
+      if (left.metrics.repeat_over_by !== right.metrics.repeat_over_by) return left.metrics.repeat_over_by - right.metrics.repeat_over_by
+      if (left.metrics.max_partner_pair !== right.metrics.max_partner_pair) return left.metrics.max_partner_pair - right.metrics.max_partner_pair
+      if (left.metrics.max_opponent_pair !== right.metrics.max_opponent_pair) return left.metrics.max_opponent_pair - right.metrics.max_opponent_pair
+      if (left.metrics.intra_team_over_by !== right.metrics.intra_team_over_by) return left.metrics.intra_team_over_by - right.metrics.intra_team_over_by
+      if (left.metrics.pvna_over_by !== right.metrics.pvna_over_by) return left.metrics.pvna_over_by - right.metrics.pvna_over_by
+      if (left.metrics.total_cost !== right.metrics.total_cost) return left.metrics.total_cost - right.metrics.total_cost
+      if (left.burden.streak_gte_4 !== right.burden.streak_gte_4) return left.burden.streak_gte_4 - right.burden.streak_gte_4
+      if (left.burden.streak_gte_3 !== right.burden.streak_gte_3) return left.burden.streak_gte_3 - right.burden.streak_gte_3
+      if (left.recent !== right.recent) return left.recent - right.recent
+      if (left.metrics.pvna_gap !== right.metrics.pvna_gap) return left.metrics.pvna_gap - right.metrics.pvna_gap
+      return left.alternative.score - right.alternative.score
+    })[0]?.alternative ?? null
+}
+
+export function findConditionalLiveQualityTradeoff(
+  alternatives: SuggestionAlternative[],
+  reference: SuggestionAlternative,
+  state: SessionState,
+  configuredPvnaTolerance: number,
+  nextMatchIndex: number,
+) {
+  const referenceMetrics = getTradeoffChoiceMetrics(reference, state, configuredPvnaTolerance)
+  const referenceBurden = getProjectedSelectionBurden(reference, state)
+  const referenceRecent = getAlternativeRecentCost(reference, state)
+  const { min: targetMinAfter, max: targetMaxAfter } = getProjectedTargetRangeAfter(state, nextMatchIndex)
+  const referenceQuota = getProjectedCountViolation(reference, state, targetMaxAfter, targetMinAfter)
+
+  return alternatives
+    .filter(alternative => alternative.matches.length > 0)
+    .map(alternative => ({
+      alternative,
+      metrics: getTradeoffChoiceMetrics(alternative, state, configuredPvnaTolerance),
+      quota: getProjectedCountViolation(alternative, state, targetMaxAfter, targetMinAfter),
+      burden: getProjectedSelectionBurden(alternative, state),
+      recent: getAlternativeRecentCost(alternative, state),
+    }))
+    .map(item => ({
+      ...item,
+      quota_over_delta: Math.max(0, item.quota.over - referenceQuota.over),
+      opponent_repeat_delta: Math.max(0, item.metrics.max_opponent_pair - referenceMetrics.max_opponent_pair),
+      consecutive_play_delta: Math.max(0, item.burden.max_streak - referenceBurden.max_streak),
+    }))
+    .filter(item =>
+      item.metrics.pvna_over_by <= referenceMetrics.pvna_over_by + 0.001
+      && item.metrics.intra_team_over_by <= referenceMetrics.intra_team_over_by + 0.001
+      && item.metrics.repeat_over_by <= referenceMetrics.repeat_over_by
+      && item.metrics.max_partner_pair <= referenceMetrics.max_partner_pair
+      && item.metrics.max_opponent_pair <= referenceMetrics.max_opponent_pair + 1
+      && item.quota.over > referenceQuota.over
+      && item.quota.over <= referenceQuota.over + LIVE_QUALITY_RESCUE_QUOTA_RELAX_LIMIT
+      && item.quota.under <= referenceQuota.under
+      && item.burden.max_streak <= referenceBurden.max_streak + 1
+      && item.burden.max_streak <= LIVE_RECYCLE_SOFT_CONSECUTIVE_PLAY_LIMIT
+      && item.burden.streak_gte_3 <= referenceBurden.streak_gte_3
+      && item.burden.streak_gte_4 <= referenceBurden.streak_gte_4
+      && item.recent <= referenceRecent
+      && materiallyImprovesLiveQuality(item.metrics, referenceMetrics)
+    )
+    .sort((left, right) => {
+      if (left.quota.total !== right.quota.total) return left.quota.total - right.quota.total
+      if (left.metrics.repeat_over_by !== right.metrics.repeat_over_by) return left.metrics.repeat_over_by - right.metrics.repeat_over_by
+      if (left.metrics.max_partner_pair !== right.metrics.max_partner_pair) return left.metrics.max_partner_pair - right.metrics.max_partner_pair
+      if (left.metrics.max_opponent_pair !== right.metrics.max_opponent_pair) return left.metrics.max_opponent_pair - right.metrics.max_opponent_pair
+      if (left.metrics.intra_team_over_by !== right.metrics.intra_team_over_by) return left.metrics.intra_team_over_by - right.metrics.intra_team_over_by
+      if (left.metrics.pvna_over_by !== right.metrics.pvna_over_by) return left.metrics.pvna_over_by - right.metrics.pvna_over_by
+      if (left.burden.streak_gte_4 !== right.burden.streak_gte_4) return left.burden.streak_gte_4 - right.burden.streak_gte_4
+      if (left.burden.streak_gte_3 !== right.burden.streak_gte_3) return left.burden.streak_gte_3 - right.burden.streak_gte_3
+      return left.metrics.total_cost - right.metrics.total_cost
+    })[0] ?? null
+}
+
+function buildConditionalLiveQualityTradeoffChoices(
+  reference: SuggestionAlternative,
+  tradeoff: NonNullable<ReturnType<typeof findConditionalLiveQualityTradeoff>>,
+  state: SessionState,
+  configuredPvnaTolerance: number,
+) {
+  const referenceMetrics = getTradeoffChoiceMetrics(reference, state, configuredPvnaTolerance)
+  const tradeoffMetrics: SuggestionTradeoffChoice['metrics'] = {
+    ...tradeoff.metrics,
+    match_count_over_by: tradeoff.quota_over_delta,
+    opponent_repeat_over_by: tradeoff.opponent_repeat_delta,
+    consecutive_play_over_by: tradeoff.consecutive_play_delta,
+  }
+  const id: SuggestionTradeoffChoiceId = tradeoffMetrics.max_partner_pair < referenceMetrics.max_partner_pair
+    || tradeoffMetrics.max_opponent_pair < referenceMetrics.max_opponent_pair
+    ? 'reduce_repeat'
+    : tradeoffMetrics.intra_team_gap < referenceMetrics.intra_team_gap - 0.01
+      ? 'reduce_intra'
+      : 'keep_pvna'
+
+  return {
+    recommended: 'balanced' as const,
+    choices: [
+      {
+        id: 'balanced' as const,
+        label: 'Tốt nhất tổng thể',
+        alternative: reference,
+        metrics: referenceMetrics,
+        explanation: buildTradeoffChoiceExplanation('balanced', referenceMetrics, configuredPvnaTolerance),
+      },
+      {
+        id,
+        label: id === 'reduce_repeat' ? 'Ít lặp hơn' : id === 'reduce_intra' ? 'Cặp trong đội đều hơn' : 'Giữ PVNA',
+        alternative: tradeoff.alternative,
+        metrics: tradeoffMetrics,
+        explanation: [
+          ...buildTradeoffChoiceExplanation(id, tradeoffMetrics, configuredPvnaTolerance),
+          `Fairness quota tăng ${tradeoff.quota_over_delta} người`,
+        ],
+      },
+    ],
+  }
+}
+
 function findPvnaOutlierRescue(
   alternatives: SuggestionAlternative[],
   state: SessionState,
@@ -897,6 +1220,45 @@ function getPayloadPvnaGap(payload: SuggestedMatchPayload, state: SessionState) 
   return Math.abs(teamSum(payload.team_a) - teamSum(payload.team_b))
 }
 
+export function getPreviewBoardPvnaRescueScore(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  const overBy = payloads.map(payload => Math.max(0, getPayloadPvnaGap(payload, state) - pvnaTolerance))
+  return {
+    overCount: overBy.filter(value => value > 0).length,
+    totalOver: overBy.reduce((sum, value) => sum + value, 0),
+    maxOver: Math.max(0, ...overBy),
+  }
+}
+
+export function needsEarlyFullBoardPvnaRescue(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  return payloads.some((payload) => {
+    const overBy = getPayloadPvnaGap(payload, state) - pvnaTolerance
+    if (overBy > 1) return true
+    return Number(payload.round_no ?? 0) < LIVE_EARLY_QUALITY_REPAIR_END_ROUND
+      && overBy > 0.25
+  })
+}
+
+export function improvesPreviewBoardPvna(
+  candidate: SuggestedMatchPayload[],
+  reference: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  const left = getPreviewBoardPvnaRescueScore(candidate, state, pvnaTolerance)
+  const right = getPreviewBoardPvnaRescueScore(reference, state, pvnaTolerance)
+  if (left.maxOver !== right.maxOver) return left.maxOver < right.maxOver
+  if (left.overCount !== right.overCount) return left.overCount < right.overCount
+  return left.totalOver < right.totalOver - 0.01
+}
+
 function getPayloadIntraTeamGap(payload: SuggestedMatchPayload, state: SessionState) {
   const gap = (team: [string, string]) => Math.abs(
     (state.players.get(team[0])?.pvna ?? 0) - (state.players.get(team[1])?.pvna ?? 0),
@@ -927,14 +1289,460 @@ function getPayloadPairKey(left: string, right: string) {
 
 function getPayloadBatchStats(payloads: SuggestedMatchPayload[], state: SessionState, pvnaTolerance: number) {
   const pvnaValues = payloads.map(payload => getPayloadPvnaGap(payload, state))
+  const pvnaOverValues = pvnaValues.map(value => Math.max(0, value - pvnaTolerance))
   const intraValues = payloads.map(payload => getPayloadIntraTeamGap(payload, state))
   return {
     maxPvna: Math.max(0, ...pvnaValues),
-    pvnaOver: pvnaValues.filter(value => value > pvnaTolerance).length,
+    pvnaOver: pvnaOverValues.filter(value => value > 0).length,
+    totalPvnaOver: pvnaOverValues.reduce((sum, value) => sum + value, 0),
     maxIntra: Math.max(0, ...intraValues),
     intraOverHard: intraValues.filter(value => value > 1.5).length,
+    totalIntraOverPreferred: intraValues.reduce(
+      (sum, value) => sum + Math.max(0, value - PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT),
+      0,
+    ),
     repeatMatches: payloads.filter(payload => hasPayloadRepeat(payload, state)).length,
   }
+}
+
+function shouldRepairEarlyQualityForPayloadBatch(payloads: SuggestedMatchPayload[]) {
+  return payloads.some(payload => {
+    const round = Number(payload.round_no ?? 0) + 1
+    return round >= 1 && round <= LIVE_EARLY_QUALITY_REPAIR_END_ROUND
+  })
+}
+
+function hasSeverePayloadPvnaOutlier(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  return payloads.some(payload => getPayloadPvnaGap(payload, state) > pvnaTolerance + 1)
+}
+
+function improvesEarlyBatchQuality(
+  candidate: ReturnType<typeof getPayloadBatchStats>,
+  reference: ReturnType<typeof getPayloadBatchStats>,
+) {
+  return scoreEarlyBatchQuality(candidate) < scoreEarlyBatchQuality(reference) - 0.01
+}
+
+function scoreEarlyBatchQuality(stats: ReturnType<typeof getPayloadBatchStats>) {
+  const severePvnaOutlier = Math.max(0, stats.maxPvna - 1.5)
+  return (
+    severePvnaOutlier * 250000 +
+    stats.pvnaOver * 60000 +
+    stats.totalPvnaOver * 250000 +
+    stats.intraOverHard * 100000 +
+    stats.repeatMatches * 100000 +
+    stats.maxIntra * 20000 +
+    stats.totalIntraOverPreferred * 3000 +
+    stats.maxPvna * 500
+  )
+}
+
+type EarlyBeamMatch = {
+  team_a: [string, string]
+  team_b: [string, string]
+  mask: number
+  pvna: number
+  intra: number
+  repeat: number
+}
+
+type EarlyBeamState = {
+  matches: EarlyBeamMatch[]
+  mask: number
+  maxPvna: number
+  pvnaOver: number
+  totalPvnaOver: number
+  maxIntra: number
+  totalIntraOverPreferred: number
+  repeatMatches: number
+  score: number
+}
+
+function getFirstUnusedBeamIndex(mask: number, playerCount: number) {
+  for (let index = 0; index < playerCount; index += 1) {
+    if ((mask & (1 << index)) === 0) return index
+  }
+  return -1
+}
+
+function buildEarlyBeamMatch(
+  teamA: [string, string],
+  teamB: [string, string],
+  indexByPlayerId: Map<string, number>,
+  state: SessionState,
+) {
+  const payload = {
+    team_a: teamA,
+    team_b: teamB,
+  } as SuggestedMatchPayload
+  const mask = [...teamA, ...teamB].reduce((nextMask, playerId) => {
+    const index = indexByPlayerId.get(playerId)
+    return index === undefined ? nextMask : nextMask | (1 << index)
+  }, 0)
+  return {
+    team_a: teamA,
+    team_b: teamB,
+    mask,
+    pvna: getPayloadPvnaGap(payload, state),
+    intra: getPayloadIntraTeamGap(payload, state),
+    repeat: hasPayloadRepeat(payload, state) ? 1 : 0,
+  }
+}
+
+function pushEarlyBeamMatch(
+  output: EarlyBeamMatch[],
+  teamA: [string, string],
+  teamB: [string, string],
+  indexByPlayerId: Map<string, number>,
+  state: SessionState,
+  pvnaTolerance: number,
+  maxIntraLimit: number,
+) {
+  const match = buildEarlyBeamMatch(teamA, teamB, indexByPlayerId, state)
+  if (match.pvna > pvnaTolerance + 1e-9) return
+  if (match.intra > maxIntraLimit + 1e-9) return
+  output.push(match)
+}
+
+function getEarlyBeamCandidatesForAnchor(
+  playerIds: string[],
+  indexByPlayerId: Map<string, number>,
+  anchorIndex: number,
+  usedMask: number,
+  state: SessionState,
+  pvnaTolerance: number,
+  maxIntraLimit: number,
+) {
+  const candidates: EarlyBeamMatch[] = []
+  const anchor = playerIds[anchorIndex]
+  for (let secondIndex = anchorIndex + 1; secondIndex < playerIds.length; secondIndex += 1) {
+    if ((usedMask & (1 << secondIndex)) !== 0) continue
+    for (let thirdIndex = secondIndex + 1; thirdIndex < playerIds.length; thirdIndex += 1) {
+      if ((usedMask & (1 << thirdIndex)) !== 0) continue
+      for (let fourthIndex = thirdIndex + 1; fourthIndex < playerIds.length; fourthIndex += 1) {
+        if ((usedMask & (1 << fourthIndex)) !== 0) continue
+        const second = playerIds[secondIndex]
+        const third = playerIds[thirdIndex]
+        const fourth = playerIds[fourthIndex]
+        pushEarlyBeamMatch(candidates, [anchor, second], [third, fourth], indexByPlayerId, state, pvnaTolerance, maxIntraLimit)
+        pushEarlyBeamMatch(candidates, [anchor, third], [second, fourth], indexByPlayerId, state, pvnaTolerance, maxIntraLimit)
+        pushEarlyBeamMatch(candidates, [anchor, fourth], [second, third], indexByPlayerId, state, pvnaTolerance, maxIntraLimit)
+      }
+    }
+  }
+  return candidates.sort((left, right) => {
+    if (left.repeat !== right.repeat) return left.repeat - right.repeat
+    if (left.intra !== right.intra) return left.intra - right.intra
+    return left.pvna - right.pvna
+  })
+}
+
+function getEarlyBeamCandidatesForBatch(
+  playerIds: string[],
+  indexByPlayerId: Map<string, number>,
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  const candidates: EarlyBeamMatch[] = []
+  for (let firstIndex = 0; firstIndex < playerIds.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < playerIds.length; secondIndex += 1) {
+      for (let thirdIndex = secondIndex + 1; thirdIndex < playerIds.length; thirdIndex += 1) {
+        for (let fourthIndex = thirdIndex + 1; fourthIndex < playerIds.length; fourthIndex += 1) {
+          const first = playerIds[firstIndex]
+          const second = playerIds[secondIndex]
+          const third = playerIds[thirdIndex]
+          const fourth = playerIds[fourthIndex]
+          pushEarlyBeamMatch(candidates, [first, second], [third, fourth], indexByPlayerId, state, pvnaTolerance, Infinity)
+          pushEarlyBeamMatch(candidates, [first, third], [second, fourth], indexByPlayerId, state, pvnaTolerance, Infinity)
+          pushEarlyBeamMatch(candidates, [first, fourth], [second, third], indexByPlayerId, state, pvnaTolerance, Infinity)
+        }
+      }
+    }
+  }
+  return candidates.sort((left, right) => {
+    if (left.repeat !== right.repeat) return left.repeat - right.repeat
+    if (left.intra !== right.intra) return left.intra - right.intra
+    return left.pvna - right.pvna
+  })
+}
+
+function scoreEarlyBeamState(
+  state: Pick<EarlyBeamState, 'maxPvna' | 'pvnaOver' | 'totalPvnaOver' | 'maxIntra' | 'totalIntraOverPreferred' | 'repeatMatches'>,
+) {
+  return scoreEarlyBatchQuality({
+    maxPvna: state.maxPvna,
+    pvnaOver: state.pvnaOver,
+    totalPvnaOver: state.totalPvnaOver,
+    maxIntra: state.maxIntra,
+    intraOverHard: state.maxIntra > 1.5 ? 1 : 0,
+    totalIntraOverPreferred: state.totalIntraOverPreferred,
+    repeatMatches: state.repeatMatches,
+  })
+}
+
+function repairEarlyPayloadBatchQualityWithBeam(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  if (payloads.length < 2) return payloads
+  const selectedIds = [...new Set(payloads.flatMap(payload => [...payload.team_a, ...payload.team_b]))]
+  if (selectedIds.length !== payloads.length * 4) return payloads
+  if (selectedIds.length > LIVE_EARLY_QUALITY_BEAM_MAX_PLAYERS) return payloads
+
+  const indexByPlayerId = new Map(selectedIds.map((playerId, index) => [playerId, index]))
+  const currentStats = getPayloadBatchStats(payloads, state, pvnaTolerance)
+  const fullMask = (1 << selectedIds.length) - 1
+  const candidates = getEarlyBeamCandidatesForBatch(selectedIds, indexByPlayerId, state, pvnaTolerance)
+  let beam: EarlyBeamState[] = [{
+    matches: [],
+    mask: 0,
+    maxPvna: 0,
+    pvnaOver: 0,
+    totalPvnaOver: 0,
+    maxIntra: 0,
+    totalIntraOverPreferred: 0,
+    repeatMatches: 0,
+    score: 0,
+  }]
+  for (let depth = 0; depth < payloads.length; depth += 1) {
+    const next: EarlyBeamState[] = []
+    for (const beamState of beam) {
+      for (const candidate of candidates) {
+        if ((beamState.mask & candidate.mask) !== 0) continue
+        const maxPvna = Math.max(beamState.maxPvna, candidate.pvna)
+        const candidatePvnaOver = Math.max(0, candidate.pvna - pvnaTolerance)
+        const pvnaOver = beamState.pvnaOver + (candidatePvnaOver > 0 ? 1 : 0)
+        const totalPvnaOver = beamState.totalPvnaOver + candidatePvnaOver
+        const maxIntra = Math.max(beamState.maxIntra, candidate.intra)
+        const totalIntraOverPreferred =
+          beamState.totalIntraOverPreferred +
+          Math.max(0, candidate.intra - PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT)
+        const repeatMatches = beamState.repeatMatches + candidate.repeat
+        const score = scoreEarlyBeamState({
+          maxPvna,
+          pvnaOver,
+          totalPvnaOver,
+          maxIntra,
+          totalIntraOverPreferred,
+          repeatMatches,
+        })
+        next.push({
+          matches: [...beamState.matches, candidate],
+          mask: beamState.mask | candidate.mask,
+          maxPvna,
+          pvnaOver,
+          totalPvnaOver,
+          maxIntra,
+          totalIntraOverPreferred,
+          repeatMatches,
+          score,
+        })
+      }
+    }
+    const seenMasks = new Set<number>()
+    beam = next
+      .sort((left, right) => left.score - right.score)
+      .filter((beamState) => {
+        if (seenMasks.has(beamState.mask)) return false
+        seenMasks.add(beamState.mask)
+        return true
+      })
+      .slice(0, LIVE_EARLY_QUALITY_BEAM_WIDTH)
+    if (beam.length === 0) return payloads
+  }
+  const best = beam
+    .filter(beamState => beamState.matches.length === payloads.length && beamState.mask === fullMask)
+    .sort((left, right) => left.score - right.score)[0]
+  if (!best) return payloads
+  const bestStats = {
+    maxPvna: best.maxPvna,
+    pvnaOver: best.pvnaOver,
+    totalPvnaOver: best.totalPvnaOver,
+    maxIntra: best.maxIntra,
+    intraOverHard: best.matches.filter(match => match.intra > 1.5).length,
+    totalIntraOverPreferred: best.totalIntraOverPreferred,
+    repeatMatches: best.repeatMatches,
+  }
+  if (!improvesEarlyBatchQuality(bestStats, currentStats)) return payloads
+
+  return payloads.map((payload, index) => ({
+    ...payload,
+    team_a: best.matches[index]?.team_a ?? payload.team_a,
+    team_b: best.matches[index]?.team_b ?? payload.team_b,
+  }))
+}
+
+function repairRoundOnePayloadBatchWithCleanPool(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  if (payloads.length < 2) return payloads
+  if (!payloads.every(payload => Number(payload.round_no ?? 0) === 0)) return payloads
+
+  const currentStats = getPayloadBatchStats(payloads, state, pvnaTolerance)
+  if (currentStats.totalIntraOverPreferred <= 1e-9 && currentStats.intraOverHard === 0) return payloads
+
+  const eligibleIds = [...state.players.values()]
+    .filter(player => player.checked_out_at === null)
+    .filter(player => !player.opted_rest)
+    .sort((left, right) => {
+      if (left.matches_played !== right.matches_played) return left.matches_played - right.matches_played
+      if (left.consecutive_rest !== right.consecutive_rest) return right.consecutive_rest - left.consecutive_rest
+      if (left.pvna !== right.pvna) return left.pvna - right.pvna
+      return left.player_id.localeCompare(right.player_id)
+    })
+    .map(player => player.player_id)
+
+  const requiredPlayerCount = payloads.length * 4
+  if (eligibleIds.length < requiredPlayerCount) return payloads
+  if (eligibleIds.length > LIVE_ROUND_ONE_CLEAN_BATCH_MAX_PLAYERS) return payloads
+
+  const indexByPlayerId = new Map(eligibleIds.map((playerId, index) => [playerId, index]))
+  const candidates: EarlyBeamMatch[] = []
+  for (let firstIndex = 0; firstIndex < eligibleIds.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < eligibleIds.length; secondIndex += 1) {
+      for (let thirdIndex = secondIndex + 1; thirdIndex < eligibleIds.length; thirdIndex += 1) {
+        for (let fourthIndex = thirdIndex + 1; fourthIndex < eligibleIds.length; fourthIndex += 1) {
+          const first = eligibleIds[firstIndex]
+          const second = eligibleIds[secondIndex]
+          const third = eligibleIds[thirdIndex]
+          const fourth = eligibleIds[fourthIndex]
+          pushEarlyBeamMatch(candidates, [first, second], [third, fourth], indexByPlayerId, state, pvnaTolerance, PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT)
+          pushEarlyBeamMatch(candidates, [first, third], [second, fourth], indexByPlayerId, state, pvnaTolerance, PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT)
+          pushEarlyBeamMatch(candidates, [first, fourth], [second, third], indexByPlayerId, state, pvnaTolerance, PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT)
+        }
+      }
+    }
+  }
+  if (candidates.length === 0) return payloads
+  candidates.sort((left, right) => {
+    if (left.repeat !== right.repeat) return left.repeat - right.repeat
+    if (left.intra !== right.intra) return left.intra - right.intra
+    return left.pvna - right.pvna
+  })
+
+  const candidatesByPlayerId = new Map<string, EarlyBeamMatch[]>()
+  for (const candidate of candidates) {
+    for (const playerId of [...candidate.team_a, ...candidate.team_b]) {
+      candidatesByPlayerId.set(playerId, [...(candidatesByPlayerId.get(playerId) ?? []), candidate])
+    }
+  }
+  const restBudget = Math.max(0, eligibleIds.length - requiredPlayerCount)
+  const search = (
+    chosen: EarlyBeamMatch[],
+    usedIds: Set<string>,
+    restedIds: Set<string>,
+  ): EarlyBeamMatch[] | null => {
+    if (chosen.length === payloads.length) return chosen
+    const remainingSlots = (payloads.length - chosen.length) * 4
+    const availableCount = eligibleIds.filter(playerId => !usedIds.has(playerId) && !restedIds.has(playerId)).length
+    if (availableCount < remainingSlots) return null
+
+    const anchor = eligibleIds.find(playerId => !usedIds.has(playerId) && !restedIds.has(playerId))
+    if (!anchor) return null
+    const options = candidatesByPlayerId.get(anchor) ?? []
+    for (const candidate of options) {
+      const ids = [...candidate.team_a, ...candidate.team_b]
+      if (ids.some(playerId => usedIds.has(playerId) || restedIds.has(playerId))) continue
+      const found = search(
+        [...chosen, candidate],
+        new Set([...usedIds, ...ids]),
+        restedIds,
+      )
+      if (found) return found
+    }
+    if (restedIds.size < restBudget) {
+      const nextRestedIds = new Set(restedIds)
+      nextRestedIds.add(anchor)
+      return search(chosen, usedIds, nextRestedIds)
+    }
+    return null
+  }
+  const bestMatches = search([], new Set(), new Set())
+  if (!bestMatches) return payloads
+
+  const usedIds = new Set(bestMatches.flatMap(match => [...match.team_a, ...match.team_b]))
+  const resting = eligibleIds.filter(playerId => !usedIds.has(playerId)).sort()
+  const repaired = bestMatches.map((match, index) => normalizeRepairedPayload({
+    ...payloads[index],
+    team_a: match.team_a,
+    team_b: match.team_b,
+    resting,
+  }, state, pvnaTolerance))
+  const repairedStats = getPayloadBatchStats(repaired, state, pvnaTolerance)
+  return improvesEarlyBatchQuality(repairedStats, currentStats) ? repaired : payloads
+}
+
+function repairEarlyPayloadBatchQuality(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  let current = repairRoundOnePayloadBatchWithCleanPool(payloads, state, pvnaTolerance)
+  let currentStats = getPayloadBatchStats(current, state, pvnaTolerance)
+
+  for (let pass = 0; pass < 4; pass += 1) {
+    let bestPayloads: SuggestedMatchPayload[] | null = null
+    let bestStats = currentStats
+    const considerCandidate = (candidate: SuggestedMatchPayload[]) => {
+      const candidateStats = getPayloadBatchStats(candidate, state, pvnaTolerance)
+      if (candidateStats.pvnaOver > currentStats.pvnaOver) return
+      if (currentStats.pvnaOver === 0 && candidateStats.maxPvna > pvnaTolerance) return
+      if (!improvesEarlyBatchQuality(candidateStats, bestStats)) return
+      bestPayloads = candidate
+      bestStats = candidateStats
+    }
+    for (let leftIndex = 0; leftIndex < current.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < current.length; rightIndex += 1) {
+        for (let leftPos = 0; leftPos < 4; leftPos += 1) {
+          for (let rightPos = 0; rightPos < 4; rightPos += 1) {
+            const leftPlayer = getPayloadPlayer(current[leftIndex], leftPos)
+            const rightPlayer = getPayloadPlayer(current[rightIndex], rightPos)
+            if (!leftPlayer || !rightPlayer || leftPlayer === rightPlayer) continue
+            const candidate = [...current]
+            candidate[leftIndex] = setPayloadPlayer(candidate[leftIndex], leftPos, rightPlayer)
+            candidate[rightIndex] = setPayloadPlayer(candidate[rightIndex], rightPos, leftPlayer)
+            considerCandidate(candidate)
+          }
+        }
+        const needsPairSwap =
+          currentStats.intraOverHard > 0 ||
+          currentStats.repeatMatches > 0 ||
+          currentStats.totalIntraOverPreferred > 0
+        if (needsPairSwap) {
+          for (let leftPosA = 0; leftPosA < 4; leftPosA += 1) {
+            for (let leftPosB = leftPosA + 1; leftPosB < 4; leftPosB += 1) {
+              for (let rightPosA = 0; rightPosA < 4; rightPosA += 1) {
+                for (let rightPosB = rightPosA + 1; rightPosB < 4; rightPosB += 1) {
+                  const leftPlayerA = getPayloadPlayer(current[leftIndex], leftPosA)
+                  const leftPlayerB = getPayloadPlayer(current[leftIndex], leftPosB)
+                  const rightPlayerA = getPayloadPlayer(current[rightIndex], rightPosA)
+                  const rightPlayerB = getPayloadPlayer(current[rightIndex], rightPosB)
+                  if (!leftPlayerA || !leftPlayerB || !rightPlayerA || !rightPlayerB) continue
+                  const candidate = [...current]
+                  candidate[leftIndex] = setPayloadPlayer(candidate[leftIndex], leftPosA, rightPlayerA)
+                  candidate[leftIndex] = setPayloadPlayer(candidate[leftIndex], leftPosB, rightPlayerB)
+                  candidate[rightIndex] = setPayloadPlayer(candidate[rightIndex], rightPosA, leftPlayerA)
+                  candidate[rightIndex] = setPayloadPlayer(candidate[rightIndex], rightPosB, leftPlayerB)
+                  considerCandidate(candidate)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    if (!bestPayloads) break
+    current = bestPayloads
+    currentStats = bestStats
+  }
+  return repairEarlyPayloadBatchQualityWithBeam(current, state, pvnaTolerance)
 }
 
 function getPayloadRepeatExposureStats(payloads: SuggestedMatchPayload[], state: SessionState) {
@@ -1101,7 +1909,8 @@ function normalizeRepairedPayload(payload: SuggestedMatchPayload, state: Session
   const intraOverBy = Math.max(0, intraGap - PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT)
   const warnings = new Set((payload.warnings ?? []).filter(warning =>
     warning !== 'PVNA_TOLERANCE_RELAXED' &&
-    warning !== 'INTRA_TEAM_GAP_RELAXED'
+    warning !== 'INTRA_TEAM_GAP_RELAXED' &&
+    warning !== 'REPEAT_CAP_REACHED'
   ))
   const tradeoffs = (payload.tradeoffs ?? []).filter(tradeoff =>
     tradeoff.type !== 'pvna_tolerance_relaxed' &&
@@ -1125,6 +1934,9 @@ function normalizeRepairedPayload(payload: SuggestedMatchPayload, state: Session
       affected_players: 2,
     })
   }
+  if (hasPayloadRepeat(payload, state)) {
+    warnings.add('REPEAT_CAP_REACHED')
+  }
   return {
     ...payload,
     warnings: [...warnings],
@@ -1135,7 +1947,7 @@ function normalizeRepairedPayload(payload: SuggestedMatchPayload, state: Session
   }
 }
 
-function repairSuggestedPayloadBatch(
+export function repairSuggestedPayloadBatch(
   payloads: SuggestedMatchPayload[],
   state: SessionState,
   pvnaTolerance: number,
@@ -1183,6 +1995,17 @@ function repairSuggestedPayloadBatch(
     current = bestPayloads
     currentStats = bestStats
     changed = true
+  }
+
+  if (
+    shouldRepairEarlyQualityForPayloadBatch(current)
+    || hasSeverePayloadPvnaOutlier(current, state, pvnaTolerance)
+  ) {
+    const qualityRepaired = repairEarlyPayloadBatchQuality(current, state, pvnaTolerance)
+    if (qualityRepaired !== current) {
+      current = qualityRepaired
+      changed = true
+    }
   }
 
   if (shouldRepairRepeatForPayloadBatch(current)) {
@@ -1292,6 +2115,21 @@ function improvesTradeoffMetric(
     if (choice.metrics.repeat_over_by <= reference.metrics.repeat_over_by && choice.metrics.max_opponent_pair < reference.metrics.max_opponent_pair) return true
   }
   return false
+}
+
+function isReasonableTradeoffChoice(
+  choice: SuggestionTradeoffChoice,
+  reference: SuggestionTradeoffChoice,
+) {
+  return choice.metrics.pvna_over_by <= Math.max(
+    LIVE_CONDITIONAL_RESCUE_MAX_PVNA_OVER,
+    reference.metrics.pvna_over_by + LIVE_CONDITIONAL_RESCUE_MAX_PVNA_OVER,
+  )
+    && choice.metrics.intra_team_over_by <= Math.max(
+      LIVE_CONDITIONAL_RESCUE_MAX_INTRA_OVER,
+      reference.metrics.intra_team_over_by + LIVE_CONDITIONAL_RESCUE_MAX_INTRA_OVER,
+    )
+    && choice.metrics.repeat_over_by <= reference.metrics.repeat_over_by + 1
 }
 
 function combinationKey(players: PlayerSessionState[]) {
@@ -1500,7 +2338,14 @@ export function buildLiveTradeoffChoices(
   const recommended = pickRecommendedTradeoffChoice(choices)
   const recommendedChoice = choices.find(choice => choice.id === recommended) ?? choices[0]
   const usefulChoices = choices.filter(choice =>
-    choice.id === recommended || improvesTradeoffMetric(choice, recommendedChoice),
+    choice.id === recommended
+      || (
+        improvesTradeoffMetric(choice, recommendedChoice)
+        && (
+          recommendedChoice.metrics.pvna_over_by > 0
+          || isReasonableTradeoffChoice(choice, recommendedChoice)
+        )
+      ),
   )
   if (usefulChoices.length < 2) return null
   return {
@@ -1692,8 +2537,9 @@ export function buildSuggestedMatchPayloads({
       )
     }
     const requestedCourtIdx = options.courtIdxs?.[index] ?? options.courtIdx
-    const nextCourtIdx = Array.from({ length: courtCapacity }, (_, idx) => idx)
-      .find(idx => !queuedCourtIdxs.has(idx) && !roundCourtIdxs.has(idx))
+    const openCourtIdxs = Array.from({ length: courtCapacity }, (_, idx) => idx)
+      .filter(idx => !queuedCourtIdxs.has(idx))
+    const nextCourtIdx = openCourtIdxs.find(idx => !roundCourtIdxs.has(idx)) ?? openCourtIdxs[0]
     const courtIdx = requestedCourtIdx ?? nextCourtIdx
     if (courtIdx === undefined) break
     const remainingCourtsInRound = Math.max(1, courtCapacity - projectedRoundMatchCount)
@@ -1988,8 +2834,79 @@ export function buildSuggestedMatchPayloads({
         }
       }
     }
-    const tradeoffChoices = buildLiveTradeoffChoices(result.alternatives, suggestionStateForCourt, configuredPvnaTolerance)
-    const guardedAlternative = pickGuardedLiveAlternative(
+    const guardedBaseline = pickGuardedLiveAlternative(
+      result.alternatives,
+      suggestionStateForCourt,
+      configuredPvnaTolerance,
+      previewCountableMatchCount + index + 1,
+      options.liveQualityPolicy ?? 'current',
+    ) ?? result.alternatives[0]
+    let conditionalQualityRescue: SuggestionAlternative | null = null
+    let conditionalQualityTradeoff: ReturnType<typeof findConditionalLiveQualityTradeoff> = null
+    if (guardedBaseline && remainingBatchMs > LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS + 100) {
+      const baselineMetrics = getTradeoffChoiceMetrics(
+        guardedBaseline,
+        suggestionStateForCourt,
+        configuredPvnaTolerance,
+      )
+      const shouldSearchConditionalRescue = baselineMetrics.intra_team_gap > PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT
+        || baselineMetrics.max_partner_pair > 1
+        || baselineMetrics.max_opponent_pair > 1
+        || baselineMetrics.pvna_gap >= Math.min(configuredPvnaTolerance, 0.4)
+      if (shouldSearchConditionalRescue) {
+        const conditionalDiag: ExhaustiveFallbackDiagnostic = {
+          ran: false, timedOut: false, eligibleCount: 0,
+          combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+        }
+        const conditionalResult = suggestNextMatch(suggestionStateForCourt, {
+          tier_overrides: fairnessAdjustment.tier_overrides as any,
+          busy_player_ids: buildBusyIdsForProtected(new Set()),
+          court_idx: courtIdx,
+          max_alternatives: LIVE_CONDITIONAL_RESCUE_ALTERNATIVE_LIMIT,
+          exhaustive_fallback: true,
+          max_runtime_ms: Math.min(
+            500,
+            Math.max(LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS, remainingBatchMs - 50),
+          ),
+          _exhaustiveDiag: conditionalDiag,
+        })
+        conditionalQualityRescue = findConditionalLiveQualityRescue(
+          conditionalResult.alternatives,
+          guardedBaseline,
+          suggestionStateForCourt,
+          configuredPvnaTolerance,
+          previewCountableMatchCount + index + 1,
+        )
+        conditionalQualityTradeoff = conditionalQualityRescue
+          ? null
+          : findConditionalLiveQualityTradeoff(
+            conditionalResult.alternatives,
+            guardedBaseline,
+            suggestionStateForCourt,
+            configuredPvnaTolerance,
+            previewCountableMatchCount + index + 1,
+          )
+        if (conditionalQualityRescue) {
+          const rescueKey = getAlternativeMatchKey(conditionalQualityRescue)
+          result = {
+            ...result,
+            alternatives: [
+              conditionalQualityRescue,
+              ...result.alternatives.filter(alternative => getAlternativeMatchKey(alternative) !== rescueKey),
+            ].slice(0, LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT),
+          }
+        }
+      }
+    }
+    const tradeoffChoices = guardedBaseline && conditionalQualityTradeoff
+      ? buildConditionalLiveQualityTradeoffChoices(
+        guardedBaseline,
+        conditionalQualityTradeoff,
+        suggestionStateForCourt,
+        configuredPvnaTolerance,
+      )
+      : buildLiveTradeoffChoices(result.alternatives, suggestionStateForCourt, configuredPvnaTolerance)
+    const guardedAlternative = conditionalQualityRescue ?? pickGuardedLiveAlternative(
       result.alternatives,
       suggestionStateForCourt,
       configuredPvnaTolerance,

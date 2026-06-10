@@ -4,9 +4,9 @@ import {
   createPartitioningRuntimeCache,
   type PartitioningDiagnostic,
   type PartitioningRuntimeCache,
-} from './pair'
+} from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { getPresentPlayers, pickPlayers, sortPlayersForStrategy } from './select'
+import { getPresentPlayers, pickPlayers, sortPlayersForStrategy } from './select.ts'
 import type {
   Match,
   MatchStats,
@@ -15,11 +15,12 @@ import type {
   SuggestionAlternative,
   SuggestionResult,
   SuggestionTradeoff,
-} from './types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+} from './types.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { Tier } from './classify'
+import { Tier } from './classify.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { computeAvailabilityMetrics, computeProjectedOpponentRepeatBurden, computeProjectedPartnerRepeatBurden } from './fairness/metrics'
+import { computeAvailabilityMetrics, computeProjectedOpponentRepeatBurden, computeProjectedPartnerRepeatBurden } from './fairness/metrics.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import {
   MAX_PROJECTED_OPPONENT_PAIR_COUNT,
@@ -29,7 +30,7 @@ import {
   PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
   getRecentRepeatCost,
   getProjectedRepeatSummary,
-} from './score'
+} from './score.ts'
 
 export type SuggestNextRoundOptions = {
   tier_overrides?: Record<string, Tier>

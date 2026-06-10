@@ -13,6 +13,12 @@ export const liveSessionQueryKeys = {
 
 const POLL_INTERVAL_MS = process.env.EXPO_PUBLIC_USE_COURT_LANE_BOARD === '1' ? false : 3000
 
+export function keepNewestLiveRows(previous: LiveRows | undefined, incoming: LiveRows): LiveRows {
+  const previousVersion = Number(previous?.liveStateVersion ?? -1)
+  const incomingVersion = Number(incoming.liveStateVersion ?? -1)
+  return previous && previousVersion > incomingVersion ? previous : incoming
+}
+
 export function useLiveSessionQuery(sessionId: string, playersById: Map<string, ArrangementPlayer>) {
   return useQuery<LiveRows, Error>({
     queryKey: liveSessionQueryKeys.detail(sessionId),
@@ -85,5 +91,9 @@ export function useLiveSessionQuery(sessionId: string, playersById: Map<string, 
       return liveRows
     },
     enabled: !!sessionId,
+    structuralSharing: (previous, incoming) => keepNewestLiveRows(
+      previous as LiveRows | undefined,
+      incoming as LiveRows,
+    ),
   })
 }

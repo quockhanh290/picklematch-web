@@ -1,4 +1,5 @@
-import type { SessionState } from '../types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { SessionState } from '../types.ts'
 
 export type RepeatRiskLevel = 'low' | 'medium' | 'high' | 'extreme'
 

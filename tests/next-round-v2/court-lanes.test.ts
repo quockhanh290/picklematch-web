@@ -1,4 +1,10 @@
-import { buildCourtLaneModels } from '../../features/host/session-detail/next-round-v2/court-lanes'
+import {
+  buildCourtLaneModels,
+  getMissingPreviewCourtIdxs,
+  getRequestedReplacementCourtIdxs,
+  hasFulfilledReplacementCourts,
+  isPreviewBoardComplete,
+} from '../../features/host/session-detail/next-round-v2/court-lanes'
 
 type TestMatch = {
   id: string
@@ -74,5 +80,51 @@ describe('buildCourtLaneModels', () => {
       liveMatch: null,
       suggestedMatch: { id: 'new-preview-1' },
     })
+  })
+
+  it('does not consider a partial preview board complete', () => {
+    expect(isPreviewBoardComplete({
+      matches: [match('preview-0', 0), match('preview-1', 1)],
+      expectedCount: 3,
+    })).toBe(false)
+  })
+
+  it('requires every pending replacement court before completing the board', () => {
+    expect(isPreviewBoardComplete({
+      matches: [match('preview-0', 0), match('preview-1', 1), match('preview-2', 2)],
+      expectedCount: 3,
+      replacementCourtIdxs: [1, 3],
+    })).toBe(false)
+  })
+
+  it('accepts an authoritative partial board once every replacement court is present', () => {
+    expect(hasFulfilledReplacementCourts(
+      [match('preview-1', 1), match('preview-4', 4)],
+      [1],
+    )).toBe(true)
+  })
+
+  it('requests only empty courts when retaining a partial preview board', () => {
+    expect(getMissingPreviewCourtIdxs({
+      courtCount: 6,
+      liveMatches: [match('live-1', 1)],
+      previewMatches: [match('preview-0', 0), match('preview-3', 3), match('preview-5', 5)],
+    })).toEqual([2, 4])
+  })
+
+  it('keeps a completing placeholder court in the replacement request', () => {
+    expect(getRequestedReplacementCourtIdxs({
+      pendingReplacementCourtIdxs: [1],
+      missingPreviewCourtIdxs: [4],
+      limit: 1,
+    })).toEqual([1])
+  })
+
+  it('fills other genuinely empty courts after pending replacements', () => {
+    expect(getRequestedReplacementCourtIdxs({
+      pendingReplacementCourtIdxs: [1],
+      missingPreviewCourtIdxs: [4, 5],
+      limit: 3,
+    })).toEqual([1, 4, 5])
   })
 })

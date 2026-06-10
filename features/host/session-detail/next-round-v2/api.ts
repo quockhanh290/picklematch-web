@@ -355,9 +355,12 @@ const liveMatchesPreviewInFlight = new Map<string, Promise<any>>()
 export async function fetchLiveMatchesPreview(
   sessionId: string,
   body: {
+    mode?: 'full_board' | 'replace_courts'
     count: number
     court_count: number
     pvna_tolerance: number
+    court_idxs?: number[]
+    current_preview_board?: any[]
     live_match_rows: any[]
     live_state_version: number | null
     completing_live_match_ids: string[]

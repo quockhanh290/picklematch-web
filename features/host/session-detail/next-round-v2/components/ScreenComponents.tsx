@@ -1509,7 +1509,6 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
   onOpenSwap,
 }: LiveMatchBoardProps) {
   const theme = useAppTheme()
-  if (liveMatches.length === 0 && suggestedMatches.length === 0 && !isSuggestingPreview) return null
 
   const courtCount = Math.max(1, Math.floor(roundSize))
   const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches], courtCount)
@@ -1532,7 +1531,6 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
     <View style={{ marginTop: 16, gap: 12 }}>
       <SectionEyebrow label="Court lanes preview" />
       {courtLanes.map(({ courtIdx, liveMatch, suggestedMatch }) => {
-        if (!liveMatch && !suggestedMatch) return null
         const laneCreatingNext = Boolean(
           liveMatch
             && creatingNextMatchIds.has(liveMatch.id)
@@ -1618,7 +1616,25 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
                 onOpenSettings={onOpenSettings}
                 onOpenSwap={() => onOpenSwap(suggestedMatch)}
               />
-            ) : null}
+            ) : (
+              <View
+                style={{
+                  minHeight: 96,
+                  borderRadius: RADIUS.xl,
+                  borderWidth: BORDER.hairline,
+                  borderColor: theme.outlineVariant,
+                  backgroundColor: theme.surfaceContainerLow,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 16,
+                  gap: 10,
+                }}
+              >
+                <Text style={ctaTextStyle(theme.outline, 12)}>
+                  Chờ sân khác kết thúc
+                </Text>
+              </View>
+            )}
           </View>
         )
       })}
@@ -1813,6 +1829,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   const hasCapTradeoffChoices = rawTradeoffChoices.some(choice =>
     choice.metrics.pvna_over_by > 0 ||
     choice.metrics.repeat_over_by > 0 ||
+    (choice.metrics.match_count_over_by ?? 0) > 0 ||
     choice.alternative.warnings.includes('INTRA_TEAM_GAP_RELAXED')
   )
   const tradeoffChoices = hasCapTradeoffChoices ? rawTradeoffChoices : []
@@ -1887,6 +1904,9 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     if (overPvna) costParts.push(`PVNA vượt +${formatNumber(choice.metrics.pvna_over_by, 2)}`)
     if (overIntraTeam) costParts.push(`intra +${formatNumber(choice.metrics.intra_team_over_by, 2)}`)
     if (overRepeat) costParts.push(`lặp +${choice.metrics.repeat_over_by}`)
+    if ((choice.metrics.match_count_over_by ?? 0) > 0) costParts.push(`fairness quota +${choice.metrics.match_count_over_by}`)
+    if ((choice.metrics.opponent_repeat_over_by ?? 0) > 0) costParts.push(`lặp đối thủ +${choice.metrics.opponent_repeat_over_by}`)
+    if ((choice.metrics.consecutive_play_over_by ?? 0) > 0) costParts.push(`chuỗi đánh +${choice.metrics.consecutive_play_over_by}`)
     const costText = costParts.length > 0 ? `, đổi lại ${costParts.join(', ')}` : ''
 
     if (choice.id === match.recommended_tradeoff_choice) {

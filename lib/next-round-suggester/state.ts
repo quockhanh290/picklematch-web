@@ -9,7 +9,8 @@ import type {
   SessionPlayerStateRow,
   SessionRoundRow,
   SessionState,
-} from './types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+} from './types.ts'
 
 export const DEFAULT_SCORING_WEIGHTS = {
   pvna: 1,

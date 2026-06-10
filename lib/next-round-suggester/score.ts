@@ -6,7 +6,8 @@ import type {
   ScoringWeights,
   SessionState,
   Team,
-} from './types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+} from './types.ts'
 
 const INFINITY_SCORE: MatchScore = {
   score: Infinity,

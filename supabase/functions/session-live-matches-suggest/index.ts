@@ -2,7 +2,13 @@
 import { getSessionId, handleCorsPreflight, jsonResponse, readJson } from '../_shared/live-session.ts'
 import { correctForFairness } from '../../../lib/next-round-suggester/fairness/corrector.ts'
 import { detectFairnessIssues } from '../../../lib/next-round-suggester/fairness/detector.ts'
-import { buildSuggestedMatchPayloads } from '../../../lib/next-round-suggester/live-preview.ts'
+import {
+  buildFinalPreviewBoard,
+  buildSuggestedMatchPayloads,
+  hasFulfilledPreviewBoardReplacements,
+  improvesPreviewBoardPvna,
+  needsEarlyFullBoardPvnaRescue,
+} from '../../../lib/next-round-suggester/live-preview.ts'
 import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state.ts'
 
 function optionalNumber(value: unknown): number | undefined {
@@ -59,6 +65,8 @@ Deno.serve(async (request) => {
           .map((value: unknown) => optionalNumber(value))
           .filter((value: number | undefined): value is number => value !== undefined)
       : undefined
+    const mode = body.mode === 'replace_courts' ? 'replace_courts' : 'full_board'
+    const currentPreviewBoard = Array.isArray(body.current_preview_board) ? body.current_preview_board : []
     const completingLiveMatchIds = new Set<string>(
       Array.isArray(body.completing_live_match_ids) ? body.completing_live_match_ids : []
     )
@@ -73,7 +81,7 @@ Deno.serve(async (request) => {
     }
 
     // 4. Run suggestion algorithm
-    const payloads = buildSuggestedMatchPayloads({
+    let payloads = buildSuggestedMatchPayloads({
       count,
       sessionId,
       courtCount,
@@ -86,15 +94,77 @@ Deno.serve(async (request) => {
       pvnaTolerance,
       options: courtIdxs && courtIdxs.length > 0 ? { courtIdxs } : undefined,
     })
+    let board = buildFinalPreviewBoard({
+      mode,
+      payloads,
+      currentPreviewBoard,
+      replacementCourtIdxs: courtIdxs,
+      courtCount,
+    })
+    let qualityRescueUsed = false
+    const replacementBoardIncomplete = mode === 'replace_courts'
+      && !hasFulfilledPreviewBoardReplacements(board, courtIdxs)
+    const needsQualityRescue = mode === 'replace_courts'
+      && needsEarlyFullBoardPvnaRescue(payloads, state, pvnaTolerance)
+    if (
+      mode === 'replace_courts'
+      && (replacementBoardIncomplete || needsQualityRescue)
+    ) {
+      const liveRowsWithoutRetainedPreviews = liveMatchRows.filter((match: any) => match?.status !== 'suggested')
+      const fullBoardCount = Math.min(
+        courtCount,
+        Math.max(count, currentPreviewBoard.length + count),
+      )
+      const rescuedPayloads = buildSuggestedMatchPayloads({
+        count: fullBoardCount,
+        sessionId,
+        courtCount,
+        state,
+        rows: { liveMatchRows: liveRowsWithoutRetainedPreviews, liveStateVersion },
+        completingLiveMatchIds,
+        fairnessAdjustment: adjustment,
+        fairnessWarnings: warnings,
+        playersById,
+        pvnaTolerance,
+      })
+      const rescuedBoard = buildFinalPreviewBoard({
+        mode: 'full_board',
+        payloads: rescuedPayloads,
+        currentPreviewBoard: [],
+        courtCount,
+      })
+      const fillsMoreCourts = rescuedBoard.final_preview_board.length > board.final_preview_board.length
+      const improvesQualityWithoutLosingCourts = rescuedBoard.final_preview_board.length >= board.final_preview_board.length
+        && improvesPreviewBoardPvna(rescuedPayloads, payloads, state, pvnaTolerance)
+      if (fillsMoreCourts || (!replacementBoardIncomplete && improvesQualityWithoutLosingCourts)) {
+        payloads = rescuedPayloads
+        board = rescuedBoard
+        qualityRescueUsed = true
+      }
+    }
+    const currentCountableMatchCount = liveMatchRows.filter((match: any) =>
+      match?.status !== 'cancelled' && match?.status !== 'suggested'
+    ).length
+    const finalPreviewBoard = board.final_preview_board.map(payload => ({
+      ...payload,
+      preview_live_state_version: liveStateVersion,
+      preview_countable_match_count: currentCountableMatchCount,
+    }))
 
     return jsonResponse({
       ok: true,
       payloads,
+      final_preview_board: finalPreviewBoard,
+      replaced_court_idxs: board.replaced_court_idxs,
+      locked_court_idxs: board.locked_court_idxs,
+      quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
       debug: {
         playerCount: state.players.size,
         activePlayers: [...state.players.values()].filter(p => p.checked_out_at === null).map(p => p.player_id),
         count,
         courtCount,
+        mode,
+        replacementBoardIncomplete,
       },
     })
   } catch (error) {

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
 
 import { calculateOptimalCourts } from '../lib/court-calculator'
+import { Tier } from '../lib/next-round-suggester/classify'
 import {
   buildProjectedStateAfterCompletedLiveRound,
   buildProjectedStateAfterLiveMatch,
@@ -10,7 +11,7 @@ import {
 } from '../lib/next-round-suggester/live-preview'
 import { getRecentRepeatCost } from '../lib/next-round-suggester/score'
 import { mapRowsToSessionState } from '../lib/next-round-suggester/state'
-import { suggestNextMatch } from '../lib/next-round-suggester/suggest'
+import { suggestNextMatch, suggestNextRound } from '../lib/next-round-suggester/suggest'
 import type { Match, SessionLiveMatchRow, SessionPlayerPreferenceRow, SessionPlayerStateRow, SessionState } from '../lib/next-round-suggester/types'
 
 const sessionId = process.argv[2]
@@ -39,6 +40,9 @@ const repeatRepairStartRound = Math.max(1, Number(argValue('--repeat-repair-star
 const finalPvnaRescue = argValue('--final-pvna-rescue', '0') === '1'
 const targetedPvnaRescue = argValue('--targeted-pvna-rescue', '0') === '1'
 const rosterMutation = argValue('--roster-mutation', 'none')
+const quotaGuard = argValue('--quota-guard', '0') === '1'
+const roundQuotaPlan = argValue('--round-quota-plan', '0') === '1'
+const roundQuotaStart = Math.max(1, Number(argValue('--round-quota-start', '1')))
 
 function round(n: number, digits = 2) {
   return Number(n.toFixed(digits))
@@ -619,19 +623,47 @@ async function main() {
     const activeCount = [...state.players.values()].filter(player => player.checked_out_at === null).length
     rosterByRound.push({ round: roundNo + 1, active: activeCount, checkedOut: state.players.size - activeCount })
     const startedAt = performance.now()
-    let payloads = buildSuggestedMatchPayloads({
-      count: courts,
-      sessionId,
-      courtCount: courts,
-      state,
-      rows: { liveMatchRows: liveRows, liveStateVersion: liveRows.length },
-      completingLiveMatchIds: new Set(),
-      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
-      fairnessWarnings: [],
-      playersById: new Map([...state.players.values()].map(player => [player.player_id, { name: player.player_id }])),
-      pvnaTolerance,
-      options: { liveQualityPolicy: policy },
-    })
+    const activePlayers = [...state.players.values()].filter(player => player.checked_out_at === null && !player.opted_rest)
+    const projectedSlotsAfterRound = (roundNo + 1) * courts * 4
+    const projectedMin = Math.floor(projectedSlotsAfterRound / Math.max(1, activePlayers.length))
+    const projectedMax = Math.ceil(projectedSlotsAfterRound / Math.max(1, activePlayers.length))
+    const quotaTierOverrides = quotaGuard
+      ? Object.fromEntries(activePlayers.flatMap(player => {
+        if (player.matches_played < projectedMin) return [[player.player_id, Tier.MUST_PLAY]]
+        if (player.matches_played >= projectedMax) return [[player.player_id, Tier.MUST_REST]]
+        return []
+      }))
+      : {}
+    const useRoundQuotaPlan = roundQuotaPlan && roundNo + 1 >= roundQuotaStart
+    let payloads = useRoundQuotaPlan
+      ? (suggestNextRound(state, {
+        tier_overrides: quotaTierOverrides,
+        max_alternatives: 24,
+        max_runtime_ms: 5000,
+      }).alternatives[0]?.matches.map((match, index) => ({
+        session_id: sessionId,
+        sequence_no: liveRows.length + index,
+        round_no: roundNo,
+        court_idx: match.court_idx ?? index,
+        team_a: match.team_a,
+        team_b: match.team_b,
+        resting: [],
+        warnings: [],
+        tradeoffs: [],
+      })) as SimPayload[] ?? [])
+      : buildSuggestedMatchPayloads({
+        count: courts,
+        sessionId,
+        courtCount: courts,
+        state,
+        rows: { liveMatchRows: liveRows, liveStateVersion: liveRows.length },
+        completingLiveMatchIds: new Set(),
+        fairnessAdjustment: { tier_overrides: quotaTierOverrides, applied_for_warnings: quotaGuard ? ['quota_guard_sim'] : [] },
+        fairnessWarnings: [],
+        playersById: new Map([...state.players.values()].map(player => [player.player_id, { name: player.player_id }])),
+        pvnaTolerance,
+        options: { liveQualityPolicy: policy },
+      })
     if (batchRepair) {
       payloads = repairBatchPvnaOutliers(payloads, state)
     }
@@ -746,6 +778,9 @@ async function main() {
     repeatRepairStartRound,
     finalPvnaRescue,
     targetedPvnaRescue,
+    quotaGuard,
+    roundQuotaPlan,
+    roundQuotaStart,
     rounds,
     courts,
     players: playerRows.length,
@@ -800,6 +835,9 @@ async function main() {
       repeatRepairStartRound,
       finalPvnaRescue,
       targetedPvnaRescue,
+      quotaGuard,
+      roundQuotaPlan,
+      roundQuotaStart,
       roster: report.roster,
       distribution: report.distribution,
       pvna: report.quality.pvna,

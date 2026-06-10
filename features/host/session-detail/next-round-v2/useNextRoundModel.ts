@@ -7,6 +7,7 @@ import { buildMatchCountConsistencyRows, buildFairnessPreview, buildLatestFairne
 import { applyFairnessAdjustment, correctForFairness } from '@/lib/next-round-suggester/fairness/corrector'
 import { buildGroupAliasMap, buildGroupSummaries } from '@/lib/next-round-suggester/fairness/group-audit'
 import { computeSessionFairness } from '@/lib/next-round-suggester/fairness/metrics'
+import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
 import { sanitizeSummaryForHost } from '@/lib/next-round-suggester/fairness/sanitize'
 import { buildSessionSummary } from '@/lib/next-round-suggester/fairness/summary'
 import { rebuildStateThroughRound } from '@/lib/next-round-suggester/history'
@@ -30,6 +31,7 @@ import { getComparableElo, getReliability, getSkillLevelId, getSkillTag } from '
 import { getLevelIdForElo } from '@/lib/eloSystem'
 import { markNextRoundStage } from './telemetry'
 import { buildCompletedLiveCycleRows as buildCompletedLiveCycleRowsBySequence } from './live-cycle-rows'
+import { mergePlayerStateRows } from './player-state-rows'
 
 const USE_COURT_LANE_BOARD = process.env.EXPO_PUBLIC_USE_COURT_LANE_BOARD === '1'
 
@@ -538,9 +540,16 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     pvna: 1,
   }), [rawState.config.weights])
   const baseState = useMemo(() => withWeights(rawState, baseWeights), [baseWeights, rawState])
-  const fairnessAdjustment = useMemo(() => correctForFairness(baseState), [baseState])
+  const fairnessAdjustment = useMemo(
+    () => USE_COURT_LANE_BOARD
+      ? { tier_overrides: {}, applied_for_warnings: [] }
+      : correctForFairness(baseState),
+    [baseState],
+  )
   const state = useMemo(
-    () => applyFairnessAdjustment(baseState, fairnessAdjustment),
+    () => USE_COURT_LANE_BOARD
+      ? baseState
+      : applyFairnessAdjustment(baseState, fairnessAdjustment),
     [baseState, fairnessAdjustment],
   )
   const deferredState = useDeferredValue(state)
@@ -580,7 +589,11 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   // không chạy lại khi user chỉ đổi selectedAlternative.
   const suggestedRoundActionsCache = useMemo(
     () => USE_COURT_LANE_BOARD
-      ? buildSuggestedRoundActionsCache(deferredState, [], deferredCourtCount)
+      ? {
+          audits: [],
+          pressure: computeRepeatPressure(deferredState),
+          setupPreviews: { pvnaTolerance08: null, courtsMinus1: null },
+        }
       : buildSuggestedRoundActionsCache(deferredState, suggestion.alternatives, deferredCourtCount),
     [deferredCourtCount, deferredState, suggestion.alternatives],
   )
@@ -723,6 +736,26 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     ))
   }, [])
 
+  const loadLiveState = useCallback(async (_options?: { silent?: boolean }): Promise<LiveRows | null> => {
+    try {
+      const previous = queryClient.getQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId))
+      const fetched = await queryClient.fetchQuery<LiveRows>({
+        queryKey: liveSessionQueryKeys.detail(sessionId),
+        staleTime: 0,
+      })
+      if (
+        previous
+        && Number(previous.liveStateVersion ?? -1) > Number(fetched.liveStateVersion ?? -1)
+      ) {
+        queryClient.setQueryData(liveSessionQueryKeys.detail(sessionId), previous)
+        return previous
+      }
+      return fetched
+    } catch {
+      return null
+    }
+  }, [queryClient, sessionId])
+
   return {
     activeRound,
     alternativeOrder,
@@ -761,10 +794,13 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
         if (!current) return current
         const byId = new Map(current.liveMatchRows.map(m => [m.id, m]))
         for (const m of matches) byId.set(m.id, m)
+        const nextVersion = version != null
+          ? Math.max(Number(current.liveStateVersion ?? 0), Number(version))
+          : current.liveStateVersion
         return {
           ...current,
           liveMatchRows: [...byId.values()],
-          liveStateVersion: version != null ? version : current.liveStateVersion,
+          liveStateVersion: nextVersion,
         }
       })
     }, [queryClient, sessionId]),
@@ -772,7 +808,10 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
       if (version == null) return
       queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), (current: LiveRows | undefined) => {
         if (!current) return current
-        return { ...current, liveStateVersion: version }
+        return {
+          ...current,
+          liveStateVersion: Math.max(Number(current.liveStateVersion ?? 0), Number(version)),
+        }
       })
     }, [queryClient, sessionId]),
     applyStartedRound: useCallback((round?: any, version?: number | null) => {
@@ -786,7 +825,9 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
         return {
           ...current,
           roundRows: updated,
-          liveStateVersion: version != null ? version : current.liveStateVersion,
+          liveStateVersion: version != null
+            ? Math.max(Number(current.liveStateVersion ?? 0), Number(version))
+            : current.liveStateVersion,
         }
       })
     }, [queryClient, sessionId]),
@@ -796,9 +837,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
         const roundRows = round
           ? current.roundRows.map(r => r.round_no === roundNo ? { ...r, ...round } : r)
           : current.roundRows
-        const playerRows = playerState?.length
-          ? current.playerRows.map(p => playerState.find(s => s.player_id === p.player_id) ?? p)
-          : current.playerRows
+        const playerRows = mergePlayerStateRows(current.playerRows, playerState ?? [])
         const pairById = new Map(current.pairRows.map(p => [`${p.player_a}:${p.player_b}`, p]))
         for (const p of pairHistory ?? []) pairById.set(`${p.player_a}:${p.player_b}`, p)
         return {
@@ -806,7 +845,9 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
           roundRows,
           playerRows,
           pairRows: [...pairById.values()],
-          liveStateVersion: version != null ? version : current.liveStateVersion,
+          liveStateVersion: version != null
+            ? Math.max(Number(current.liveStateVersion ?? 0), Number(version))
+            : current.liveStateVersion,
         }
       })
     }, [queryClient, sessionId]),
@@ -815,9 +856,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
         if (!current) return current
         const byId = new Map(current.liveMatchRows.map(m => [m.id, m]))
         byId.set(match.id, match)
-        const playerRows = playerState?.length
-          ? current.playerRows.map(p => playerState.find(s => s.player_id === p.player_id) ?? p)
-          : current.playerRows
+        const playerRows = mergePlayerStateRows(current.playerRows, playerState ?? [])
         const pairById = new Map(current.pairRows.map(p => [`${p.player_a}:${p.player_b}`, p]))
         for (const p of pairHistory ?? []) pairById.set(`${p.player_a}:${p.player_b}`, p)
         return {
@@ -825,7 +864,9 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
           liveMatchRows: [...byId.values()],
           playerRows,
           pairRows: [...pairById.values()],
-          liveStateVersion: version != null ? version : current.liveStateVersion,
+          liveStateVersion: version != null
+            ? Math.max(Number(current.liveStateVersion ?? 0), Number(version))
+            : current.liveStateVersion,
         }
       })
     }, [queryClient, sessionId]),
@@ -859,16 +900,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     undoRoundSelection,
     workingAlternative,
     error: actionError ?? liveRows.error,
-    loadLiveState: async (_options?: { silent?: boolean }): Promise<LiveRows | null> => {
-      try {
-        return await queryClient.fetchQuery<LiveRows>({
-          queryKey: liveSessionQueryKeys.detail(sessionId),
-          staleTime: 0,
-        })
-      } catch {
-        return null
-      }
-    },
+    loadLiveState,
     liveStateVersion: deferredRows.liveStateVersion,
     planTelemetry: {
       load_state_ms: liveRows.lastLoadStateMsRef.current,

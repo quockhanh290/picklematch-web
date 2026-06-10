@@ -205,6 +205,9 @@ export type SuggestionTradeoffChoiceMetrics = {
   max_partner_pair: number
   max_opponent_pair: number
   total_cost: number
+  match_count_over_by?: number
+  opponent_repeat_over_by?: number
+  consecutive_play_over_by?: number
 }
 
 export type SuggestionTradeoffChoice = {

@@ -1,6 +1,7 @@
-import type { Match, PlayerSessionState, SessionState, Team } from '../types'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { computeRepeatPressure } from './pressure'
+import type { Match, PlayerSessionState, SessionState, Team } from '../types.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { computeRepeatPressure } from './pressure.ts'
 
 export type MatchCountMetrics = {
   min: number

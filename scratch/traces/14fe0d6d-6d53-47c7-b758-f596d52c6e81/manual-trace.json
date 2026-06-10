@@ -1,0 +1,5055 @@
+{
+  "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+  "started_at": "2026-06-09T18:00:13.756Z",
+  "updated_at": "2026-06-09T18:06:07.684Z",
+  "entries": [
+    {
+      "captured_at": "2026-06-09T18:00:17.008Z",
+      "reason": "initial",
+      "live_state_version": 97,
+      "session": {
+        "id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+        "host_id": "24ae401a-2033-4f03-9eb8-0df47ce41e62",
+        "slot_id": "77813330-b669-4c6a-8877-b3533449dda5",
+        "elo_min": 700,
+        "elo_max": 1300,
+        "max_players": 40,
+        "status": "playing",
+        "created_at": "2026-06-09T16:47:02.702224+00:00",
+        "require_approval": false,
+        "was_full_when_cancelled": false,
+        "fill_deadline": null,
+        "court_fee_total": null,
+        "start_time": null,
+        "end_time": null,
+        "total_cost": 50000,
+        "cost_per_player": null,
+        "court_id": null,
+        "session_date": null,
+        "court_booking_status": "unconfirmed",
+        "booking_reference": null,
+        "booking_name": null,
+        "booking_phone": null,
+        "booking_notes": null,
+        "booking_confirmed_at": null,
+        "results_status": "not_submitted",
+        "results_submitted_at": null,
+        "results_confirmation_deadline": null,
+        "pending_completion_marked_at": null,
+        "completion_reminder_sent_at": null,
+        "auto_closed_at": null,
+        "auto_closed_reason": null,
+        "finalized_by": null,
+        "ghost_session_reported_at": null,
+        "elo_processed": false,
+        "elo_skip_reason": null,
+        "is_ranked": true,
+        "is_owner_managed": false,
+        "format_type": "social",
+        "sub_courts_used": 4,
+        "check_in_completed": true,
+        "live_state_version": 97
+      },
+      "settings": {
+        "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+        "court_count_override": null,
+        "court_preset": "balanced",
+        "court_duration_min": 120,
+        "pvna_tolerance": 0.5,
+        "target_rounds": null,
+        "updated_by": "24ae401a-2033-4f03-9eb8-0df47ce41e62",
+        "created_at": "2026-06-09T16:48:25.710625+00:00",
+        "updated_at": "2026-06-09T17:52:53.547697+00:00"
+      },
+      "session_players": [
+        {
+          "player_id": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Huỳnh Bình",
+            "pvna": 3.9,
+            "gender": "male",
+            "current_elo": 707,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Hoàng My",
+            "pvna": 4.12,
+            "gender": "female",
+            "current_elo": 1028,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Đỗ Thảo",
+            "pvna": 3.29,
+            "gender": "female",
+            "current_elo": 789,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Trần Kiên",
+            "pvna": 2.64,
+            "gender": "male",
+            "current_elo": 1072,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Trần Hiếu",
+            "pvna": 2.79,
+            "gender": "male",
+            "current_elo": 787,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "fcca35a3-3f37-4210-931d-fdfca923fc08",
+          "status": "confirmed",
+          "check_in_status": "pending",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Huỳnh Phong",
+            "pvna": 2.5,
+            "gender": "male",
+            "current_elo": 1084,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "91bea712-1e03-4053-904e-3c8a67334939",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Vũ Tiên",
+            "pvna": 3.53,
+            "gender": "female",
+            "current_elo": 848,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Đỗ Uyên",
+            "pvna": 3.86,
+            "gender": "female",
+            "current_elo": 1081,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Vũ Hiếu",
+            "pvna": 4.26,
+            "gender": "male",
+            "current_elo": 994,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "fa719772-f893-4d0f-b63e-ec3e3ade1fb0",
+          "status": "confirmed",
+          "check_in_status": "pending",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Phạm Hương",
+            "pvna": 3.24,
+            "gender": "female",
+            "current_elo": 767,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Ngô Cường",
+            "pvna": 2.08,
+            "gender": "male",
+            "current_elo": 1053,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "32793b87-c5cf-41f6-a270-888805776f22",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Ngô Yến",
+            "pvna": 3.36,
+            "gender": "female",
+            "current_elo": 837,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Phan Châu",
+            "pvna": 3.37,
+            "gender": "female",
+            "current_elo": 1177,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Đỗ Huy",
+            "pvna": 3.58,
+            "gender": "male",
+            "current_elo": 985,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "8691037a-0e4e-4c10-bbab-bcc345de798e",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Huỳnh Thu",
+            "pvna": 4.84,
+            "gender": "female",
+            "current_elo": 853,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Bùi Hà",
+            "pvna": 3.64,
+            "gender": "female",
+            "current_elo": 1057,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Lê Uyên",
+            "pvna": 2.51,
+            "gender": "female",
+            "current_elo": 1054,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Ngô Ngân",
+            "pvna": 3.13,
+            "gender": "female",
+            "current_elo": 873,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Đỗ Cường",
+            "pvna": 2.6,
+            "gender": "male",
+            "current_elo": 914,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "227c96ee-d384-47a5-849c-d4bcae40de20",
+          "status": "confirmed",
+          "check_in_status": "pending",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Đỗ Khang",
+            "pvna": 3.16,
+            "gender": "male",
+            "current_elo": 743,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Hồ Trang",
+            "pvna": 3.76,
+            "gender": "female",
+            "current_elo": 1115,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "5018be7d-2705-4311-8031-588bf274b098",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Vũ Châu",
+            "pvna": 2.37,
+            "gender": "female",
+            "current_elo": 1049,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Phạm Trâm",
+            "pvna": 4.78,
+            "gender": "female",
+            "current_elo": 752,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "6ba7df5b-7478-472a-87bd-ef114317c66c",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Đỗ Linh",
+            "pvna": 2.68,
+            "gender": "female",
+            "current_elo": 1060,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Hoàng Châu",
+            "pvna": 4.83,
+            "gender": "female",
+            "current_elo": 1000,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Nguyễn Kiên",
+            "pvna": 2.01,
+            "gender": "male",
+            "current_elo": 851,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Trần Phương",
+            "pvna": 2.99,
+            "gender": "female",
+            "current_elo": 1110,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Lê Quỳnh",
+            "pvna": 2.44,
+            "gender": "female",
+            "current_elo": 1167,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Huỳnh Uyên",
+            "pvna": 3.32,
+            "gender": "female",
+            "current_elo": 796,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Phan Bình",
+            "pvna": 3.94,
+            "gender": "male",
+            "current_elo": 1114,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Phạm Long",
+            "pvna": 4.29,
+            "gender": "male",
+            "current_elo": 767,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Phan Quân",
+            "pvna": 3.61,
+            "gender": "male",
+            "current_elo": 807,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Trần Bình",
+            "pvna": 2.12,
+            "gender": "male",
+            "current_elo": 1023,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Lê Linh",
+            "pvna": 2.69,
+            "gender": "female",
+            "current_elo": 1133,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "28be4f8d-c0c5-4d8d-9584-bb67d5eb8d0e",
+          "status": "confirmed",
+          "check_in_status": "pending",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Võ Nhi",
+            "pvna": 3.1,
+            "gender": "female",
+            "current_elo": 846,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "275d0c99-ea34-44c8-aac8-cef59113d3e7",
+          "status": "confirmed",
+          "check_in_status": "pending",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Ngô Hương",
+            "pvna": 3.13,
+            "gender": "female",
+            "current_elo": 1180,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "player_id": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Huỳnh Minh",
+            "pvna": 2.62,
+            "gender": "male",
+            "current_elo": 772,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "male"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Huỳnh Việt",
+            "pvna": 4.16,
+            "gender": "male",
+            "current_elo": 1178,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "player_id": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Võ Khang",
+            "pvna": 4.81,
+            "gender": "male",
+            "current_elo": 1065,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "player_id": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "status": "confirmed",
+          "check_in_status": "present",
+          "created_at": "2026-06-09T16:47:02.702224+00:00",
+          "metadata": {
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          },
+          "players": {
+            "elo": 1000,
+            "name": "Hoàng Trọng",
+            "pvna": 4.25,
+            "gender": "male",
+            "current_elo": 1052,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          }
+        }
+      ],
+      "player_rows": [
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Hoàng My",
+            "pvna": 4.12,
+            "gender": "female",
+            "current_elo": 1028,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Ngô Ngân",
+            "pvna": 3.13,
+            "gender": "female",
+            "current_elo": 873,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 2,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Huỳnh Minh",
+            "pvna": 2.62,
+            "gender": "male",
+            "current_elo": 772,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Trần Phương",
+            "pvna": 2.99,
+            "gender": "female",
+            "current_elo": 1110,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Đỗ Uyên",
+            "pvna": 3.86,
+            "gender": "female",
+            "current_elo": 1081,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Huỳnh Việt",
+            "pvna": 4.16,
+            "gender": "male",
+            "current_elo": 1178,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Vũ Hiếu",
+            "pvna": 4.26,
+            "gender": "male",
+            "current_elo": 994,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Lê Quỳnh",
+            "pvna": 2.44,
+            "gender": "female",
+            "current_elo": 1167,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 7,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 4,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Hồ Trang",
+            "pvna": 3.76,
+            "gender": "female",
+            "current_elo": 1115,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 2,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Võ Khang",
+            "pvna": 4.81,
+            "gender": "male",
+            "current_elo": 1065,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Nguyễn Kiên",
+            "pvna": 2.01,
+            "gender": "male",
+            "current_elo": 851,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Phạm Trâm",
+            "pvna": 4.78,
+            "gender": "female",
+            "current_elo": 752,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Hoàng Châu",
+            "pvna": 4.83,
+            "gender": "female",
+            "current_elo": 1000,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 2,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Đỗ Huy",
+            "pvna": 3.58,
+            "gender": "male",
+            "current_elo": 985,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 3,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Phan Châu",
+            "pvna": 3.37,
+            "gender": "female",
+            "current_elo": 1177,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "6ba7df5b-7478-472a-87bd-ef114317c66c",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Đỗ Linh",
+            "pvna": 2.68,
+            "gender": "female",
+            "current_elo": 1060,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 2,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Đỗ Thảo",
+            "pvna": 3.29,
+            "gender": "female",
+            "current_elo": 789,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 2,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Phan Quân",
+            "pvna": 3.61,
+            "gender": "male",
+            "current_elo": 807,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Đỗ Cường",
+            "pvna": 2.6,
+            "gender": "male",
+            "current_elo": 914,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Phan Bình",
+            "pvna": 3.94,
+            "gender": "male",
+            "current_elo": 1114,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "91bea712-1e03-4053-904e-3c8a67334939",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 2,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Vũ Tiên",
+            "pvna": 3.53,
+            "gender": "female",
+            "current_elo": 848,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Lê Uyên",
+            "pvna": 2.51,
+            "gender": "female",
+            "current_elo": 1054,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Phạm Long",
+            "pvna": 4.29,
+            "gender": "male",
+            "current_elo": 767,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "any"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Lê Linh",
+            "pvna": 2.69,
+            "gender": "female",
+            "current_elo": 1133,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "5018be7d-2705-4311-8031-588bf274b098",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Vũ Châu",
+            "pvna": 2.37,
+            "gender": "female",
+            "current_elo": 1049,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 2,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Trần Kiên",
+            "pvna": 2.64,
+            "gender": "male",
+            "current_elo": 1072,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 2,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Trần Hiếu",
+            "pvna": 2.79,
+            "gender": "male",
+            "current_elo": 787,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Ngô Cường",
+            "pvna": 2.08,
+            "gender": "male",
+            "current_elo": 1053,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Hoàng Trọng",
+            "pvna": 4.25,
+            "gender": "male",
+            "current_elo": 1052,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Huỳnh Bình",
+            "pvna": 3.9,
+            "gender": "male",
+            "current_elo": 707,
+            "partner_gender_pref": "any",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 7,
+          "consecutive_rest": 0,
+          "consecutive_play": 1,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Trần Bình",
+            "pvna": 2.12,
+            "gender": "male",
+            "current_elo": 1023,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Huỳnh Uyên",
+            "pvna": 3.32,
+            "gender": "female",
+            "current_elo": 796,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 5,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Bùi Hà",
+            "pvna": 3.64,
+            "gender": "female",
+            "current_elo": 1057,
+            "partner_gender_pref": "female",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "8691037a-0e4e-4c10-bbab-bcc345de798e",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 4,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Huỳnh Thu",
+            "pvna": 4.84,
+            "gender": "female",
+            "current_elo": 853,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "male"
+          }
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_id": "32793b87-c5cf-41f6-a270-888805776f22",
+          "group_id": null,
+          "checked_in_at": "2026-06-09T16:48:19.241168+00:00",
+          "checked_out_at": null,
+          "matches_played": 6,
+          "last_played_round": 6,
+          "consecutive_rest": 1,
+          "consecutive_play": 0,
+          "opted_rest": false,
+          "players": {
+            "elo": 1000,
+            "name": "Ngô Yến",
+            "pvna": 3.36,
+            "gender": "female",
+            "current_elo": 837,
+            "partner_gender_pref": "male",
+            "opponent_gender_pref": "female"
+          }
+        }
+      ],
+      "pair_rows": [
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "player_b": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "player_b": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "player_b": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "player_b": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "player_b": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "player_b": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "partner_count": 1,
+          "opponent_count": 3
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "player_b": "6ba7df5b-7478-472a-87bd-ef114317c66c",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "player_b": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6ba7df5b-7478-472a-87bd-ef114317c66c",
+          "player_b": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6ba7df5b-7478-472a-87bd-ef114317c66c",
+          "player_b": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "player_b": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "player_b": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "player_b": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "player_b": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "player_b": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "player_b": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "player_b": "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "player_b": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "player_b": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "player_b": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "player_b": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "player_b": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "player_b": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "player_b": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "partner_count": 1,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "player_b": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "partner_count": 0,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "player_b": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "player_b": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "player_b": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "player_b": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "player_b": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "player_b": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6ba7df5b-7478-472a-87bd-ef114317c66c",
+          "player_b": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "player_b": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "player_b": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6ba7df5b-7478-472a-87bd-ef114317c66c",
+          "player_b": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "partner_count": 1,
+          "opponent_count": 3
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6ba7df5b-7478-472a-87bd-ef114317c66c",
+          "player_b": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "player_b": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "player_b": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "partner_count": 2,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "player_b": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "partner_count": 1,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "player_b": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "partner_count": 0,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "player_b": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "partner_count": 1,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "player_b": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "player_b": "91bea712-1e03-4053-904e-3c8a67334939",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "91bea712-1e03-4053-904e-3c8a67334939",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8691037a-0e4e-4c10-bbab-bcc345de798e",
+          "player_b": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "player_b": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8691037a-0e4e-4c10-bbab-bcc345de798e",
+          "player_b": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "player_b": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "player_b": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8691037a-0e4e-4c10-bbab-bcc345de798e",
+          "player_b": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "partner_count": 0,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "player_b": "8691037a-0e4e-4c10-bbab-bcc345de798e",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "player_b": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "partner_count": 2,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "player_b": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "partner_count": 0,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8691037a-0e4e-4c10-bbab-bcc345de798e",
+          "player_b": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "partner_count": 0,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "player_b": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "player_b": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "player_b": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "player_b": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "player_b": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "player_b": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "partner_count": 0,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "player_b": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+          "player_b": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "player_b": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "player_b": "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "player_b": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+          "player_b": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "player_b": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "91bea712-1e03-4053-904e-3c8a67334939",
+          "player_b": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "player_b": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "player_b": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "91bea712-1e03-4053-904e-3c8a67334939",
+          "player_b": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "player_b": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "91bea712-1e03-4053-904e-3c8a67334939",
+          "player_b": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "player_b": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "partner_count": 1,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "91bea712-1e03-4053-904e-3c8a67334939",
+          "player_b": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "player_b": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "player_b": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6ba7df5b-7478-472a-87bd-ef114317c66c",
+          "player_b": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "6ba7df5b-7478-472a-87bd-ef114317c66c",
+          "partner_count": 1,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "player_b": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "player_b": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "partner_count": 1,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "player_b": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "player_b": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+          "player_b": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "player_b": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "player_b": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "partner_count": 0,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "player_b": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "player_b": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "player_b": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "player_b": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "player_b": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "player_b": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "player_b": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "player_b": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "partner_count": 0,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "player_b": "efb24a09-2186-4f64-a6b9-0de2e4077049",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "player_b": "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "player_b": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "player_b": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "player_b": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "player_b": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "player_b": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "player_b": "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+          "partner_count": 1,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8691037a-0e4e-4c10-bbab-bcc345de798e",
+          "player_b": "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "player_b": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8691037a-0e4e-4c10-bbab-bcc345de798e",
+          "player_b": "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+          "partner_count": 2,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "player_b": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "player_b": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "player_b": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "player_b": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "player_b": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "partner_count": 1,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "91bea712-1e03-4053-904e-3c8a67334939",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "player_b": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "91bea712-1e03-4053-904e-3c8a67334939",
+          "player_b": "99d49451-e53c-411c-bee0-bd35a5944289",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "player_b": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "player_b": "91bea712-1e03-4053-904e-3c8a67334939",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "player_b": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "player_b": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+          "player_b": "91bea712-1e03-4053-904e-3c8a67334939",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "724098a3-dfec-4894-bed4-9d895ccab1c7",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6ba7df5b-7478-472a-87bd-ef114317c66c",
+          "player_b": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "player_b": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "player_b": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "player_b": "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "6cd19a38-185f-4d31-8f7a-81a873de9181",
+          "player_b": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "player_b": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "player_b": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "player_b": "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "player_b": "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 2,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "player_b": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "partner_count": 0,
+          "opponent_count": 2
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "player_b": "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "player_b": "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "player_b": "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "player_b": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7256b764-14ed-400f-8db6-5c4850c9344b",
+          "player_b": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "8ae8ebb5-795e-406a-83b3-5aabda194665",
+          "player_b": "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9691979c-3d67-4a77-ad17-e3f232953358",
+          "player_b": "bd13ed75-d959-4dae-8455-f74197d852ee",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+          "player_b": "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "player_b": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "player_b": "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "4db318c7-0943-48d4-b820-b1138c6bad3a",
+          "player_b": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+          "player_b": "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "player_b": "91bea712-1e03-4053-904e-3c8a67334939",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "32793b87-c5cf-41f6-a270-888805776f22",
+          "player_b": "91bea712-1e03-4053-904e-3c8a67334939",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "91bea712-1e03-4053-904e-3c8a67334939",
+          "player_b": "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+          "partner_count": 1,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "5018be7d-2705-4311-8031-588bf274b098",
+          "player_b": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "player_b": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "partner_count": 1,
+          "opponent_count": 0
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "player_b": "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+          "partner_count": 0,
+          "opponent_count": 1
+        },
+        {
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "player_a": "702f201f-6e95-419a-81bc-087ad7973c1e",
+          "player_b": "c863e833-30c5-4c41-986f-7542f78489f8",
+          "partner_count": 0,
+          "opponent_count": 1
+        }
+      ],
+      "round_rows": [],
+      "live_match_rows": [
+        {
+          "id": "e4fdd455-69cb-4e8a-aab0-f416c2872e9d",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 0,
+          "round_no": 0,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "6cd19a38-185f-4d31-8f7a-81a873de9181"
+          ],
+          "team_b": [
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "5018be7d-2705-4311-8031-588bf274b098"
+          ],
+          "resting": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:48:33.011936+00:00",
+          "started_at": "2026-06-09T16:48:33.011936+00:00",
+          "ended_at": "2026-06-09T16:49:36.934578+00:00",
+          "created_at": "2026-06-09T16:48:33.011936+00:00",
+          "updated_at": "2026-06-09T16:49:36.934578+00:00"
+        },
+        {
+          "id": "78c1b6c8-c511-4aed-bd43-4fff9b73508f",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 1,
+          "round_no": 0,
+          "court_idx": 1,
+          "status": "completed",
+          "team_a": [
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3"
+          ],
+          "team_b": [
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5"
+          ],
+          "resting": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:48:36.985871+00:00",
+          "started_at": "2026-06-09T16:48:36.985871+00:00",
+          "ended_at": "2026-06-09T16:49:42.459204+00:00",
+          "created_at": "2026-06-09T16:48:36.985871+00:00",
+          "updated_at": "2026-06-09T16:49:42.459204+00:00"
+        },
+        {
+          "id": "f1824b98-95bd-409d-84fc-ed0d218a8b5c",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 2,
+          "round_no": 0,
+          "court_idx": 3,
+          "status": "completed",
+          "team_a": [
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3"
+          ],
+          "team_b": [
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "resting": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:48:43.91377+00:00",
+          "started_at": "2026-06-09T16:48:43.91377+00:00",
+          "ended_at": "2026-06-09T16:50:04.725045+00:00",
+          "created_at": "2026-06-09T16:48:43.91377+00:00",
+          "updated_at": "2026-06-09T16:50:04.725045+00:00"
+        },
+        {
+          "id": "8c0aca9e-5ee6-402e-a7d7-948ef94d6dd3",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 3,
+          "round_no": 0,
+          "court_idx": 2,
+          "status": "completed",
+          "team_a": [
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c"
+          ],
+          "team_b": [
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1"
+          ],
+          "resting": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:48:48.390852+00:00",
+          "started_at": "2026-06-09T16:48:48.390852+00:00",
+          "ended_at": "2026-06-09T16:49:53.448395+00:00",
+          "created_at": "2026-06-09T16:48:48.390852+00:00",
+          "updated_at": "2026-06-09T16:49:53.448395+00:00"
+        },
+        {
+          "id": "f9515155-874d-4bce-a22b-bb9bc3697e3f",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 4,
+          "round_no": 0,
+          "court_idx": 4,
+          "status": "completed",
+          "team_a": [
+            "32793b87-c5cf-41f6-a270-888805776f22",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37"
+          ],
+          "team_b": [
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "bd13ed75-d959-4dae-8455-f74197d852ee"
+          ],
+          "resting": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:48:55.155749+00:00",
+          "started_at": "2026-06-09T16:48:55.155749+00:00",
+          "ended_at": "2026-06-09T16:50:10.450198+00:00",
+          "created_at": "2026-06-09T16:48:55.155749+00:00",
+          "updated_at": "2026-06-09T16:50:10.450198+00:00"
+        },
+        {
+          "id": "d937220b-7974-4144-96b8-5681e361d6fa",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 5,
+          "round_no": 0,
+          "court_idx": 5,
+          "status": "completed",
+          "team_a": [
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7"
+          ],
+          "team_b": [
+            "4db318c7-0943-48d4-b820-b1138c6bad3a",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd"
+          ],
+          "resting": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:49:22.24442+00:00",
+          "started_at": "2026-06-09T16:49:22.24442+00:00",
+          "ended_at": "2026-06-09T16:50:16.468529+00:00",
+          "created_at": "2026-06-09T16:49:22.24442+00:00",
+          "updated_at": "2026-06-09T16:50:16.468529+00:00"
+        },
+        {
+          "id": "9ea1d69d-182a-49a8-b7ff-df44cc1bac5f",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 6,
+          "round_no": 1,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e"
+          ],
+          "team_b": [
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "99d49451-e53c-411c-bee0-bd35a5944289"
+          ],
+          "resting": [
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:50:40.031744+00:00",
+          "started_at": "2026-06-09T16:50:40.031744+00:00",
+          "ended_at": "2026-06-09T16:51:56.199088+00:00",
+          "created_at": "2026-06-09T16:50:40.031744+00:00",
+          "updated_at": "2026-06-09T16:51:56.199088+00:00"
+        },
+        {
+          "id": "1e3cdb99-da60-4a96-92e0-560d8922c7a1",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 7,
+          "round_no": 1,
+          "court_idx": 1,
+          "status": "completed",
+          "team_a": [
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd"
+          ],
+          "team_b": [
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f"
+          ],
+          "resting": [
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:50:50.776437+00:00",
+          "started_at": "2026-06-09T16:50:50.776437+00:00",
+          "ended_at": "2026-06-09T16:52:04.503097+00:00",
+          "created_at": "2026-06-09T16:50:50.776437+00:00",
+          "updated_at": "2026-06-09T16:52:04.503097+00:00"
+        },
+        {
+          "id": "24cd8f04-a984-4879-98bc-5c972f52c9a2",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 8,
+          "round_no": 1,
+          "court_idx": 2,
+          "status": "completed",
+          "team_a": [
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc"
+          ],
+          "team_b": [
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3"
+          ],
+          "resting": [
+            "32793b87-c5cf-41f6-a270-888805776f22",
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:50:59.732471+00:00",
+          "started_at": "2026-06-09T16:50:59.732471+00:00",
+          "ended_at": "2026-06-09T16:52:23.377151+00:00",
+          "created_at": "2026-06-09T16:50:59.732471+00:00",
+          "updated_at": "2026-06-09T16:52:23.377151+00:00"
+        },
+        {
+          "id": "8a37e45f-1a1c-40c0-82ab-845db15fbb52",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 9,
+          "round_no": 1,
+          "court_idx": 3,
+          "status": "completed",
+          "team_a": [
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d"
+          ],
+          "team_b": [
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "4db318c7-0943-48d4-b820-b1138c6bad3a"
+          ],
+          "resting": [
+            "32793b87-c5cf-41f6-a270-888805776f22",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:51:30.59179+00:00",
+          "started_at": "2026-06-09T16:51:30.59179+00:00",
+          "ended_at": "2026-06-09T16:52:31.365118+00:00",
+          "created_at": "2026-06-09T16:51:30.59179+00:00",
+          "updated_at": "2026-06-09T16:52:31.365118+00:00"
+        },
+        {
+          "id": "e05521c2-ed2d-467a-8b16-60e95e8a46bc",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 10,
+          "round_no": 1,
+          "court_idx": 4,
+          "status": "completed",
+          "team_a": [
+            "32793b87-c5cf-41f6-a270-888805776f22",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f"
+          ],
+          "team_b": [
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "9691979c-3d67-4a77-ad17-e3f232953358"
+          ],
+          "resting": [
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:51:40.620308+00:00",
+          "started_at": "2026-06-09T16:51:40.620308+00:00",
+          "ended_at": "2026-06-09T16:52:43.906902+00:00",
+          "created_at": "2026-06-09T16:51:40.620308+00:00",
+          "updated_at": "2026-06-09T16:52:43.906902+00:00"
+        },
+        {
+          "id": "c3853223-8fc3-4b9d-a0d6-8c3b3ab3494c",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 11,
+          "round_no": 1,
+          "court_idx": 5,
+          "status": "completed",
+          "team_a": [
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc"
+          ],
+          "team_b": [
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7"
+          ],
+          "resting": [
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:51:45.470281+00:00",
+          "started_at": "2026-06-09T16:51:45.470281+00:00",
+          "ended_at": "2026-06-09T16:52:51.948019+00:00",
+          "created_at": "2026-06-09T16:51:45.470281+00:00",
+          "updated_at": "2026-06-09T16:52:51.948019+00:00"
+        },
+        {
+          "id": "ea95fb7f-147e-475a-9d7b-86d3df7957d3",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 12,
+          "round_no": 2,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "c863e833-30c5-4c41-986f-7542f78489f8"
+          ],
+          "team_b": [
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3"
+          ],
+          "resting": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:53:19.527865+00:00",
+          "started_at": "2026-06-09T16:53:19.527865+00:00",
+          "ended_at": "2026-06-09T16:54:02.234141+00:00",
+          "created_at": "2026-06-09T16:53:19.527865+00:00",
+          "updated_at": "2026-06-09T16:54:02.234141+00:00"
+        },
+        {
+          "id": "8f630470-ec5e-49da-80b2-50ae7b56df61",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 13,
+          "round_no": 2,
+          "court_idx": 1,
+          "status": "completed",
+          "team_a": [
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f"
+          ],
+          "team_b": [
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021"
+          ],
+          "resting": [
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:53:27.173969+00:00",
+          "started_at": "2026-06-09T16:53:27.173969+00:00",
+          "ended_at": "2026-06-09T16:54:27.866633+00:00",
+          "created_at": "2026-06-09T16:53:27.173969+00:00",
+          "updated_at": "2026-06-09T16:54:27.866633+00:00"
+        },
+        {
+          "id": "f2dee03b-a54b-4ddc-bb40-1188ba1f98a7",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 14,
+          "round_no": 2,
+          "court_idx": 2,
+          "status": "completed",
+          "team_a": [
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049"
+          ],
+          "team_b": [
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1"
+          ],
+          "resting": [
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:53:34.430713+00:00",
+          "started_at": "2026-06-09T16:53:34.430713+00:00",
+          "ended_at": "2026-06-09T16:56:41.409577+00:00",
+          "created_at": "2026-06-09T16:53:34.430713+00:00",
+          "updated_at": "2026-06-09T16:56:41.409577+00:00"
+        },
+        {
+          "id": "4ec98d5b-e4c5-4545-a1a6-e2b3907157c9",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 15,
+          "round_no": 2,
+          "court_idx": 3,
+          "status": "completed",
+          "team_a": [
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd"
+          ],
+          "team_b": [
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665"
+          ],
+          "resting": [
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:53:41.04564+00:00",
+          "started_at": "2026-06-09T16:53:41.04564+00:00",
+          "ended_at": "2026-06-09T16:56:52.636305+00:00",
+          "created_at": "2026-06-09T16:53:41.04564+00:00",
+          "updated_at": "2026-06-09T16:56:52.636305+00:00"
+        },
+        {
+          "id": "974b8240-9d49-4d1f-9032-83e83ad8c2b1",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 16,
+          "round_no": 2,
+          "court_idx": 4,
+          "status": "completed",
+          "team_a": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d"
+          ],
+          "team_b": [
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd"
+          ],
+          "resting": [
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:53:48.315442+00:00",
+          "started_at": "2026-06-09T16:53:48.315442+00:00",
+          "ended_at": "2026-06-09T16:57:04.412032+00:00",
+          "created_at": "2026-06-09T16:53:48.315442+00:00",
+          "updated_at": "2026-06-09T16:57:04.412032+00:00"
+        },
+        {
+          "id": "802ab914-c187-4fd4-abdc-fb8985cd518d",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 17,
+          "round_no": 2,
+          "court_idx": 5,
+          "status": "completed",
+          "team_a": [
+            "32793b87-c5cf-41f6-a270-888805776f22",
+            "4db318c7-0943-48d4-b820-b1138c6bad3a"
+          ],
+          "team_b": [
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "resting": [
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:53:55.230399+00:00",
+          "started_at": "2026-06-09T16:53:55.230399+00:00",
+          "ended_at": "2026-06-09T16:57:18.390641+00:00",
+          "created_at": "2026-06-09T16:53:55.230399+00:00",
+          "updated_at": "2026-06-09T16:57:18.390641+00:00"
+        },
+        {
+          "id": "15edf823-a347-4213-bf27-89901ceb7a00",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 18,
+          "round_no": 3,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc"
+          ],
+          "team_b": [
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc"
+          ],
+          "resting": [
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:58:26.923085+00:00",
+          "started_at": "2026-06-09T16:58:26.923085+00:00",
+          "ended_at": "2026-06-09T17:01:23.887923+00:00",
+          "created_at": "2026-06-09T16:58:26.923085+00:00",
+          "updated_at": "2026-06-09T17:01:23.887923+00:00"
+        },
+        {
+          "id": "7009480d-8890-49b8-86e9-a56377c817e1",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 19,
+          "round_no": 3,
+          "court_idx": 1,
+          "status": "completed",
+          "team_a": [
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "5018be7d-2705-4311-8031-588bf274b098"
+          ],
+          "team_b": [
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7"
+          ],
+          "resting": [
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:58:35.177783+00:00",
+          "started_at": "2026-06-09T16:58:35.177783+00:00",
+          "ended_at": "2026-06-09T17:01:35.337645+00:00",
+          "created_at": "2026-06-09T16:58:35.177783+00:00",
+          "updated_at": "2026-06-09T17:01:35.337645+00:00"
+        },
+        {
+          "id": "5b50d935-32ff-4b48-a143-327af6b924be",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 20,
+          "round_no": 3,
+          "court_idx": 2,
+          "status": "completed",
+          "team_a": [
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1"
+          ],
+          "team_b": [
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "resting": [
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:59:14.084136+00:00",
+          "started_at": "2026-06-09T16:59:14.084136+00:00",
+          "ended_at": "2026-06-09T17:02:03.04965+00:00",
+          "created_at": "2026-06-09T16:59:14.084136+00:00",
+          "updated_at": "2026-06-09T17:02:03.04965+00:00"
+        },
+        {
+          "id": "c6216b71-7f1d-4f3e-ac35-670fb00eaf9f",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 21,
+          "round_no": 3,
+          "court_idx": 3,
+          "status": "completed",
+          "team_a": [
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3"
+          ],
+          "team_b": [
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37"
+          ],
+          "resting": [
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T16:59:57.659604+00:00",
+          "started_at": "2026-06-09T16:59:57.659604+00:00",
+          "ended_at": "2026-06-09T17:02:20.887132+00:00",
+          "created_at": "2026-06-09T16:59:57.659604+00:00",
+          "updated_at": "2026-06-09T17:02:20.887132+00:00"
+        },
+        {
+          "id": "7fd6327d-a1d1-41c2-8d67-5b9a1b1d062f",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 22,
+          "round_no": 3,
+          "court_idx": 4,
+          "status": "completed",
+          "team_a": [
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd"
+          ],
+          "team_b": [
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "c863e833-30c5-4c41-986f-7542f78489f8"
+          ],
+          "resting": [
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:00:22.363819+00:00",
+          "started_at": "2026-06-09T17:00:22.363819+00:00",
+          "ended_at": "2026-06-09T17:02:36.244581+00:00",
+          "created_at": "2026-06-09T17:00:22.363819+00:00",
+          "updated_at": "2026-06-09T17:02:36.244581+00:00"
+        },
+        {
+          "id": "4abc185a-45e2-44b9-b943-b1688f561a1c",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 23,
+          "round_no": 3,
+          "court_idx": 5,
+          "status": "completed",
+          "team_a": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665"
+          ],
+          "team_b": [
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d"
+          ],
+          "resting": [
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:00:31.452818+00:00",
+          "started_at": "2026-06-09T17:00:31.452818+00:00",
+          "ended_at": "2026-06-09T17:03:02.389762+00:00",
+          "created_at": "2026-06-09T17:00:31.452818+00:00",
+          "updated_at": "2026-06-09T17:03:02.389762+00:00"
+        },
+        {
+          "id": "1deba7a5-cbb8-466d-bbab-1a53799ed483",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 24,
+          "round_no": 4,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54"
+          ],
+          "team_b": [
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7"
+          ],
+          "resting": [
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:03:37.25068+00:00",
+          "started_at": "2026-06-09T17:03:37.25068+00:00",
+          "ended_at": "2026-06-09T17:09:19.127066+00:00",
+          "created_at": "2026-06-09T17:03:37.25068+00:00",
+          "updated_at": "2026-06-09T17:09:19.127066+00:00"
+        },
+        {
+          "id": "13252556-a9be-449c-98e4-0e3aa2e70d86",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 25,
+          "round_no": 4,
+          "court_idx": 1,
+          "status": "completed",
+          "team_a": [
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc"
+          ],
+          "team_b": [
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c"
+          ],
+          "resting": [
+            "4db318c7-0943-48d4-b820-b1138c6bad3a",
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:03:44.082494+00:00",
+          "started_at": "2026-06-09T17:03:44.082494+00:00",
+          "ended_at": "2026-06-09T17:23:43.631741+00:00",
+          "created_at": "2026-06-09T17:03:44.082494+00:00",
+          "updated_at": "2026-06-09T17:23:43.631741+00:00"
+        },
+        {
+          "id": "d6ead1aa-2d33-42fd-bdad-a58553dbbcf0",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 26,
+          "round_no": 4,
+          "court_idx": 2,
+          "status": "completed",
+          "team_a": [
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f"
+          ],
+          "team_b": [
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "4db318c7-0943-48d4-b820-b1138c6bad3a"
+          ],
+          "resting": [
+            "4db318c7-0943-48d4-b820-b1138c6bad3a",
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:08:38.565427+00:00",
+          "started_at": "2026-06-09T17:08:38.565427+00:00",
+          "ended_at": "2026-06-09T17:17:03.137791+00:00",
+          "created_at": "2026-06-09T17:08:38.565427+00:00",
+          "updated_at": "2026-06-09T17:17:03.137791+00:00"
+        },
+        {
+          "id": "08cdceaa-95cc-427f-b55e-8f1d8cc195c5",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 27,
+          "round_no": 4,
+          "court_idx": 3,
+          "status": "completed",
+          "team_a": [
+            "32793b87-c5cf-41f6-a270-888805776f22",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc"
+          ],
+          "team_b": [
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "91bea712-1e03-4053-904e-3c8a67334939"
+          ],
+          "resting": [
+            "4db318c7-0943-48d4-b820-b1138c6bad3a",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:08:46.75371+00:00",
+          "started_at": "2026-06-09T17:08:46.75371+00:00",
+          "ended_at": "2026-06-09T17:17:25.017586+00:00",
+          "created_at": "2026-06-09T17:08:46.75371+00:00",
+          "updated_at": "2026-06-09T17:17:25.017586+00:00"
+        },
+        {
+          "id": "e3dee5a8-16f4-4f58-baea-649cf9513f14",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 28,
+          "round_no": 4,
+          "court_idx": 4,
+          "status": "completed",
+          "team_a": [
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "702f201f-6e95-419a-81bc-087ad7973c1e"
+          ],
+          "team_b": [
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "c863e833-30c5-4c41-986f-7542f78489f8"
+          ],
+          "resting": [
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:08:53.811892+00:00",
+          "started_at": "2026-06-09T17:08:53.811892+00:00",
+          "ended_at": "2026-06-09T17:18:12.400249+00:00",
+          "created_at": "2026-06-09T17:08:53.811892+00:00",
+          "updated_at": "2026-06-09T17:18:12.400249+00:00"
+        },
+        {
+          "id": "b8d90689-6e46-4483-b3e2-269bc90d9c4f",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 29,
+          "round_no": 4,
+          "court_idx": 5,
+          "status": "completed",
+          "team_a": [
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd"
+          ],
+          "team_b": [
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d"
+          ],
+          "resting": [
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:09:09.640127+00:00",
+          "started_at": "2026-06-09T17:09:09.640127+00:00",
+          "ended_at": "2026-06-09T17:18:33.765068+00:00",
+          "created_at": "2026-06-09T17:09:09.640127+00:00",
+          "updated_at": "2026-06-09T17:18:33.765068+00:00"
+        },
+        {
+          "id": "54f7b20c-502d-49f3-8ce8-0a346f7ae7fd",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 30,
+          "round_no": 5,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54"
+          ],
+          "team_b": [
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd"
+          ],
+          "resting": [
+            "32793b87-c5cf-41f6-a270-888805776f22",
+            "4db318c7-0943-48d4-b820-b1138c6bad3a",
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:19:44.140869+00:00",
+          "started_at": "2026-06-09T17:19:44.140869+00:00",
+          "ended_at": "2026-06-09T17:23:17.663031+00:00",
+          "created_at": "2026-06-09T17:19:44.140869+00:00",
+          "updated_at": "2026-06-09T17:23:17.663031+00:00"
+        },
+        {
+          "id": "3c3a73e6-c127-4014-b66f-839b546cbef3",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 31,
+          "round_no": 5,
+          "court_idx": 2,
+          "status": "completed",
+          "team_a": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37"
+          ],
+          "team_b": [
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd"
+          ],
+          "resting": [
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:20:03.422908+00:00",
+          "started_at": "2026-06-09T17:20:03.422908+00:00",
+          "ended_at": "2026-06-09T17:24:00.327771+00:00",
+          "created_at": "2026-06-09T17:20:03.422908+00:00",
+          "updated_at": "2026-06-09T17:24:00.327771+00:00"
+        },
+        {
+          "id": "7359725e-5e8f-48df-9a98-b51a3120772d",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 32,
+          "round_no": 5,
+          "court_idx": 3,
+          "status": "completed",
+          "team_a": [
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+            "99d49451-e53c-411c-bee0-bd35a5944289"
+          ],
+          "team_b": [
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f"
+          ],
+          "resting": [
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:20:58.638325+00:00",
+          "started_at": "2026-06-09T17:20:58.638325+00:00",
+          "ended_at": "2026-06-09T17:32:28.482643+00:00",
+          "created_at": "2026-06-09T17:20:58.638325+00:00",
+          "updated_at": "2026-06-09T17:32:28.482643+00:00"
+        },
+        {
+          "id": "a0e85042-92c7-4a67-9931-615263763a41",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 33,
+          "round_no": 5,
+          "court_idx": 4,
+          "status": "completed",
+          "team_a": [
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021"
+          ],
+          "team_b": [
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3"
+          ],
+          "resting": [
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:21:06.371228+00:00",
+          "started_at": "2026-06-09T17:21:06.371228+00:00",
+          "ended_at": "2026-06-09T17:34:08.631247+00:00",
+          "created_at": "2026-06-09T17:21:06.371228+00:00",
+          "updated_at": "2026-06-09T17:34:08.631247+00:00"
+        },
+        {
+          "id": "ad06cdfb-8b0e-4642-8c9e-f52673ff2314",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 34,
+          "round_no": 5,
+          "court_idx": 5,
+          "status": "completed",
+          "team_a": [
+            "32793b87-c5cf-41f6-a270-888805776f22",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3"
+          ],
+          "team_b": [
+            "4db318c7-0943-48d4-b820-b1138c6bad3a",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8"
+          ],
+          "resting": [
+            "8691037a-0e4e-4c10-bbab-bcc345de798e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:22:07.782435+00:00",
+          "started_at": "2026-06-09T17:22:07.782435+00:00",
+          "ended_at": "2026-06-09T17:34:31.883919+00:00",
+          "created_at": "2026-06-09T17:22:07.782435+00:00",
+          "updated_at": "2026-06-09T17:34:31.883919+00:00"
+        },
+        {
+          "id": "1cea1ffd-676f-4527-8c00-f753d269afa2",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 35,
+          "round_no": 5,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "702f201f-6e95-419a-81bc-087ad7973c1e"
+          ],
+          "team_b": [
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049"
+          ],
+          "resting": [
+            "32793b87-c5cf-41f6-a270-888805776f22",
+            "4db318c7-0943-48d4-b820-b1138c6bad3a",
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:28:22.684182+00:00",
+          "started_at": "2026-06-09T17:28:22.684182+00:00",
+          "ended_at": "2026-06-09T17:30:07.701303+00:00",
+          "created_at": "2026-06-09T17:28:22.684182+00:00",
+          "updated_at": "2026-06-09T17:30:07.701303+00:00"
+        },
+        {
+          "id": "f9506034-36b4-40a5-8bb0-226d420c6aae",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 36,
+          "round_no": 6,
+          "court_idx": 1,
+          "status": "completed",
+          "team_a": [
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7"
+          ],
+          "team_b": [
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c"
+          ],
+          "resting": [
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:28:46.814781+00:00",
+          "started_at": "2026-06-09T17:28:46.814781+00:00",
+          "ended_at": "2026-06-09T17:30:39.468374+00:00",
+          "created_at": "2026-06-09T17:28:46.814781+00:00",
+          "updated_at": "2026-06-09T17:30:39.468374+00:00"
+        },
+        {
+          "id": "b6774700-0dea-49f6-9474-12e5add2eb02",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 37,
+          "round_no": 6,
+          "court_idx": 2,
+          "status": "completed",
+          "team_a": [
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "c863e833-30c5-4c41-986f-7542f78489f8"
+          ],
+          "team_b": [
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "9691979c-3d67-4a77-ad17-e3f232953358"
+          ],
+          "resting": [
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:29:06.12453+00:00",
+          "started_at": "2026-06-09T17:29:06.12453+00:00",
+          "ended_at": "2026-06-09T17:43:51.856318+00:00",
+          "created_at": "2026-06-09T17:29:06.12453+00:00",
+          "updated_at": "2026-06-09T17:43:51.856318+00:00"
+        },
+        {
+          "id": "1b3da50c-a29e-4147-8af4-ec60a7dd6e10",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 38,
+          "round_no": 6,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "bd13ed75-d959-4dae-8455-f74197d852ee"
+          ],
+          "team_b": [
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37"
+          ],
+          "resting": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:32:16.196472+00:00",
+          "started_at": "2026-06-09T17:32:16.196472+00:00",
+          "ended_at": "2026-06-09T17:34:53.664191+00:00",
+          "created_at": "2026-06-09T17:32:16.196472+00:00",
+          "updated_at": "2026-06-09T17:34:53.664191+00:00"
+        },
+        {
+          "id": "c94b0b6b-dce1-42c4-ac22-b94e7c3f4ee2",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 39,
+          "round_no": 6,
+          "court_idx": 3,
+          "status": "completed",
+          "team_a": [
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd"
+          ],
+          "team_b": [
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+          ],
+          "resting": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:33:01.10257+00:00",
+          "started_at": "2026-06-09T17:33:01.10257+00:00",
+          "ended_at": "2026-06-09T17:42:03.795083+00:00",
+          "created_at": "2026-06-09T17:33:01.10257+00:00",
+          "updated_at": "2026-06-09T17:42:03.795083+00:00"
+        },
+        {
+          "id": "5e09b226-ff5a-4e55-af6b-a9fe6b3f64da",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 40,
+          "round_no": 6,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "32793b87-c5cf-41f6-a270-888805776f22",
+            "702f201f-6e95-419a-81bc-087ad7973c1e"
+          ],
+          "team_b": [
+            "4db318c7-0943-48d4-b820-b1138c6bad3a",
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc"
+          ],
+          "resting": [
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:35:12.48689+00:00",
+          "started_at": "2026-06-09T17:35:12.48689+00:00",
+          "ended_at": "2026-06-09T17:36:41.166348+00:00",
+          "created_at": "2026-06-09T17:35:12.48689+00:00",
+          "updated_at": "2026-06-09T17:36:41.166348+00:00"
+        },
+        {
+          "id": "0e9b2adb-865e-44f1-8197-e4ca4ad289f9",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 41,
+          "round_no": 6,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3"
+          ],
+          "team_b": [
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3"
+          ],
+          "resting": [
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:39:30.272534+00:00",
+          "started_at": "2026-06-09T17:39:30.272534+00:00",
+          "ended_at": "2026-06-09T17:39:46.622565+00:00",
+          "created_at": "2026-06-09T17:39:30.272534+00:00",
+          "updated_at": "2026-06-09T17:39:46.622565+00:00"
+        },
+        {
+          "id": "b4214286-8f19-4329-bea9-fa1cdf465fd2",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 42,
+          "round_no": 7,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "6cd19a38-185f-4d31-8f7a-81a873de9181"
+          ],
+          "team_b": [
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049"
+          ],
+          "resting": [
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:40:40.412504+00:00",
+          "started_at": "2026-06-09T17:40:40.412504+00:00",
+          "ended_at": "2026-06-09T17:44:30.317048+00:00",
+          "created_at": "2026-06-09T17:40:40.412504+00:00",
+          "updated_at": "2026-06-09T17:44:30.317048+00:00"
+        },
+        {
+          "id": "49770495-cbef-4ab1-bb84-4f8555f36340",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 43,
+          "round_no": 7,
+          "court_idx": 1,
+          "status": "completed",
+          "team_a": [
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d"
+          ],
+          "team_b": [
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "7256b764-14ed-400f-8db6-5c4850c9344b"
+          ],
+          "resting": [
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:41:03.705597+00:00",
+          "started_at": "2026-06-09T17:41:03.705597+00:00",
+          "ended_at": "2026-06-09T17:44:05.290622+00:00",
+          "created_at": "2026-06-09T17:41:03.705597+00:00",
+          "updated_at": "2026-06-09T17:44:05.290622+00:00"
+        },
+        {
+          "id": "a68a8001-a0fa-4df8-920b-155214fe9779",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 44,
+          "round_no": 7,
+          "court_idx": 4,
+          "status": "completed",
+          "team_a": [
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d"
+          ],
+          "team_b": [
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f"
+          ],
+          "resting": [
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:41:38.994002+00:00",
+          "started_at": "2026-06-09T17:41:38.994002+00:00",
+          "ended_at": "2026-06-09T17:46:23.310839+00:00",
+          "created_at": "2026-06-09T17:41:38.994002+00:00",
+          "updated_at": "2026-06-09T17:46:23.310839+00:00"
+        },
+        {
+          "id": "a7f948b4-dc15-4446-b7d8-0d82da4980fe",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 45,
+          "round_no": 7,
+          "court_idx": 5,
+          "status": "completed",
+          "team_a": [
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "bd13ed75-d959-4dae-8455-f74197d852ee"
+          ],
+          "team_b": [
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021"
+          ],
+          "resting": [
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:41:45.944408+00:00",
+          "started_at": "2026-06-09T17:41:45.944408+00:00",
+          "ended_at": "2026-06-09T17:47:36.289226+00:00",
+          "created_at": "2026-06-09T17:41:45.944408+00:00",
+          "updated_at": "2026-06-09T17:47:36.289226+00:00"
+        },
+        {
+          "id": "5f753c55-9722-4618-a62a-1c889f528e2a",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 46,
+          "round_no": 7,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "9691979c-3d67-4a77-ad17-e3f232953358"
+          ],
+          "team_b": [
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5"
+          ],
+          "resting": [
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "9691979c-3d67-4a77-ad17-e3f232953358"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:45:51.567807+00:00",
+          "started_at": "2026-06-09T17:45:51.567807+00:00",
+          "ended_at": "2026-06-09T17:49:10.257035+00:00",
+          "created_at": "2026-06-09T17:45:51.567807+00:00",
+          "updated_at": "2026-06-09T17:49:10.257035+00:00"
+        },
+        {
+          "id": "cad59320-7127-4aa1-99fa-f9e3110f88b9",
+          "session_id": "14fe0d6d-6d53-47c7-b758-f596d52c6e81",
+          "sequence_no": 47,
+          "round_no": 7,
+          "court_idx": 0,
+          "status": "completed",
+          "team_a": [
+            "4db318c7-0943-48d4-b820-b1138c6bad3a",
+            "91bea712-1e03-4053-904e-3c8a67334939"
+          ],
+          "team_b": [
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1"
+          ],
+          "resting": [
+            "c863e833-30c5-4c41-986f-7542f78489f8"
+          ],
+          "score_a": 0,
+          "score_b": 0,
+          "suggested_at": "2026-06-09T17:51:57.467136+00:00",
+          "started_at": "2026-06-09T17:51:57.467136+00:00",
+          "ended_at": "2026-06-09T17:54:53.574587+00:00",
+          "created_at": "2026-06-09T17:51:57.467136+00:00",
+          "updated_at": "2026-06-09T17:54:53.574587+00:00"
+        }
+      ],
+      "edge_preview": {
+        "ok": true,
+        "payloads": [
+          {
+            "court_idx": 0,
+            "team_a": [
+              "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+              "32793b87-c5cf-41f6-a270-888805776f22"
+            ],
+            "team_b": [
+              "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+              "9e46c673-9442-43f8-996b-7ea2e8ac6e3d"
+            ],
+            "resting": [
+              "7256b764-14ed-400f-8db6-5c4850c9344b",
+              "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+              "8691037a-0e4e-4c10-bbab-bcc345de798e",
+              "8ae8ebb5-795e-406a-83b3-5aabda194665",
+              "c863e833-30c5-4c41-986f-7542f78489f8",
+              "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+              "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+              "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+              "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+              "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+              "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+              "efb24a09-2186-4f64-a6b9-0de2e4077049",
+              "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+              "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+            ],
+            "round_no": 8,
+            "preview_live_state_version": 97,
+            "preview_countable_match_count": 48,
+            "warnings": [
+              "INTRA_TEAM_GAP_RELAXED",
+              "REPEAT_CAP_REACHED"
+            ],
+            "tradeoffs": [
+              {
+                "type": "intra_team_gap_relaxed",
+                "severity": 5.360000000000003,
+                "over_by": 0.6700000000000004,
+                "affected_pairs": 1,
+                "affected_players": 2
+              }
+            ],
+            "approval_required": true,
+            "configured_pvna_tolerance": 0.5,
+            "effective_pvna_tolerance": 0.5,
+            "fairness_reasons": [],
+            "fairness_reason_details": []
+          },
+          {
+            "court_idx": 1,
+            "team_a": [
+              "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+              "f6d0e85c-6282-447c-aba2-f3ed031b607e"
+            ],
+            "team_b": [
+              "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+              "f05d0501-8fc7-4d6a-b070-97218c70f5dd"
+            ],
+            "resting": [
+              "32793b87-c5cf-41f6-a270-888805776f22",
+              "4db318c7-0943-48d4-b820-b1138c6bad3a",
+              "5018be7d-2705-4311-8031-588bf274b098",
+              "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+              "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+              "6ba7df5b-7478-472a-87bd-ef114317c66c",
+              "6cd19a38-185f-4d31-8f7a-81a873de9181",
+              "702f201f-6e95-419a-81bc-087ad7973c1e",
+              "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+              "724098a3-dfec-4894-bed4-9d895ccab1c7",
+              "7256b764-14ed-400f-8db6-5c4850c9344b",
+              "8691037a-0e4e-4c10-bbab-bcc345de798e",
+              "8ae8ebb5-795e-406a-83b3-5aabda194665",
+              "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+              "91bea712-1e03-4053-904e-3c8a67334939",
+              "9691979c-3d67-4a77-ad17-e3f232953358",
+              "99d49451-e53c-411c-bee0-bd35a5944289",
+              "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+              "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+              "bd13ed75-d959-4dae-8455-f74197d852ee",
+              "c863e833-30c5-4c41-986f-7542f78489f8",
+              "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+              "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+              "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+              "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+              "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+              "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+              "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+              "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+              "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+              "efb24a09-2186-4f64-a6b9-0de2e4077049"
+            ],
+            "round_no": 8,
+            "preview_live_state_version": 97,
+            "preview_countable_match_count": 48,
+            "warnings": [
+              "INTRA_TEAM_GAP_RELAXED",
+              "REPEAT_CAP_REACHED"
+            ],
+            "tradeoffs": [
+              {
+                "type": "intra_team_gap_relaxed",
+                "severity": 0.7200000000000024,
+                "over_by": 0.0900000000000003,
+                "affected_pairs": 1,
+                "affected_players": 2
+              }
+            ],
+            "approval_required": true,
+            "configured_pvna_tolerance": 0.5,
+            "effective_pvna_tolerance": 0.5,
+            "fairness_reasons": [],
+            "fairness_reason_details": []
+          },
+          {
+            "court_idx": 2,
+            "team_a": [
+              "8ae8ebb5-795e-406a-83b3-5aabda194665",
+              "c863e833-30c5-4c41-986f-7542f78489f8"
+            ],
+            "team_b": [
+              "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+              "e51e5480-9873-4f43-b5c0-6a5287d3228f"
+            ],
+            "resting": [
+              "7256b764-14ed-400f-8db6-5c4850c9344b",
+              "8691037a-0e4e-4c10-bbab-bcc345de798e",
+              "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+              "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+              "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+              "efb24a09-2186-4f64-a6b9-0de2e4077049"
+            ],
+            "round_no": 8,
+            "preview_live_state_version": 97,
+            "preview_countable_match_count": 48,
+            "warnings": [
+              "INTRA_TEAM_GAP_RELAXED"
+            ],
+            "tradeoffs": [
+              {
+                "type": "intra_team_gap_relaxed",
+                "severity": 7.920000000000002,
+                "over_by": 0.9900000000000002,
+                "affected_pairs": 1,
+                "affected_players": 2
+              }
+            ],
+            "approval_required": true,
+            "configured_pvna_tolerance": 0.5,
+            "effective_pvna_tolerance": 0.5,
+            "fairness_reasons": [],
+            "fairness_reason_details": []
+          },
+          {
+            "court_idx": 3,
+            "team_a": [
+              "8691037a-0e4e-4c10-bbab-bcc345de798e",
+              "efb24a09-2186-4f64-a6b9-0de2e4077049"
+            ],
+            "team_b": [
+              "5018be7d-2705-4311-8031-588bf274b098",
+              "7256b764-14ed-400f-8db6-5c4850c9344b"
+            ],
+            "resting": [
+              "7256b764-14ed-400f-8db6-5c4850c9344b",
+              "e8955bfb-75f7-4aaa-bb23-212b223c99bd"
+            ],
+            "round_no": 8,
+            "preview_live_state_version": 97,
+            "preview_countable_match_count": 48,
+            "warnings": [
+              "REPEAT_CAP_RELAXED",
+              "INTRA_TEAM_GAP_RELAXED",
+              "REPEAT_CAP_REACHED"
+            ],
+            "tradeoffs": [
+              {
+                "type": "repeat_cap_relaxed",
+                "severity": 30,
+                "over_by": 2,
+                "affected_pairs": 2,
+                "affected_players": 0
+              },
+              {
+                "type": "intra_team_gap_relaxed",
+                "severity": 16.64,
+                "over_by": 2.08,
+                "affected_pairs": 1,
+                "affected_players": 2
+              }
+            ],
+            "approval_required": true,
+            "configured_pvna_tolerance": 0.5,
+            "effective_pvna_tolerance": 0.5,
+            "fairness_reasons": [],
+            "fairness_reason_details": []
+          },
+          {
+            "court_idx": 4,
+            "team_a": [
+              "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+              "702f201f-6e95-419a-81bc-087ad7973c1e"
+            ],
+            "team_b": [
+              "6cd19a38-185f-4d31-8f7a-81a873de9181",
+              "e8955bfb-75f7-4aaa-bb23-212b223c99bd"
+            ],
+            "resting": [
+              "5018be7d-2705-4311-8031-588bf274b098",
+              "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+              "6ba7df5b-7478-472a-87bd-ef114317c66c",
+              "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+              "7256b764-14ed-400f-8db6-5c4850c9344b"
+            ],
+            "round_no": 8,
+            "preview_live_state_version": 97,
+            "preview_countable_match_count": 48,
+            "warnings": [
+              "INTRA_TEAM_GAP_RELAXED",
+              "REPEAT_CAP_REACHED"
+            ],
+            "tradeoffs": [
+              {
+                "type": "intra_team_gap_relaxed",
+                "severity": 11.439999999999998,
+                "over_by": 1.4299999999999997,
+                "affected_pairs": 1,
+                "affected_players": 2
+              }
+            ],
+            "approval_required": true,
+            "configured_pvna_tolerance": 0.5,
+            "effective_pvna_tolerance": 0.5,
+            "fairness_reasons": [],
+            "fairness_reason_details": []
+          },
+          {
+            "court_idx": 5,
+            "team_a": [
+              "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+              "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3"
+            ],
+            "team_b": [
+              "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+              "71b8677e-4d62-4dfb-927a-73db2d00bddc"
+            ],
+            "resting": [
+              "6ba7df5b-7478-472a-87bd-ef114317c66c"
+            ],
+            "round_no": 8,
+            "preview_live_state_version": 97,
+            "preview_countable_match_count": 48,
+            "warnings": [
+              "1 người muốn partner nam nhưng chỉ có 0 nam",
+              "REPEAT_CAP_RELAXED",
+              "INTRA_TEAM_GAP_RELAXED"
+            ],
+            "tradeoffs": [
+              {
+                "type": "repeat_cap_relaxed",
+                "severity": 45,
+                "over_by": 3,
+                "affected_pairs": 0,
+                "affected_players": 2
+              },
+              {
+                "type": "intra_team_gap_relaxed",
+                "severity": 2.0799999999999983,
+                "over_by": 0.2599999999999998,
+                "affected_pairs": 1,
+                "affected_players": 2
+              }
+            ],
+            "approval_required": true,
+            "configured_pvna_tolerance": 0.5,
+            "effective_pvna_tolerance": 0.5,
+            "fairness_reasons": [],
+            "fairness_reason_details": []
+          }
+        ],
+        "debug": {
+          "playerCount": 35,
+          "activePlayers": [
+            "8ae8ebb5-795e-406a-83b3-5aabda194665",
+            "d8268765-a8ba-4e79-b6b3-b73a80d9cdd3",
+            "d4fc56f1-b484-44be-a456-61d4e36ffcf5",
+            "c863e833-30c5-4c41-986f-7542f78489f8",
+            "f05d0501-8fc7-4d6a-b070-97218c70f5dd",
+            "8e3d62a6-a0be-49da-9100-1bfc6be2a021",
+            "e8955bfb-75f7-4aaa-bb23-212b223c99bd",
+            "57f3570e-3b06-4caa-8ce7-81926681a5dc",
+            "4db318c7-0943-48d4-b820-b1138c6bad3a",
+            "99d49451-e53c-411c-bee0-bd35a5944289",
+            "efb24a09-2186-4f64-a6b9-0de2e4077049",
+            "e55d8ca3-f438-47fc-a184-94fe7c6ace7d",
+            "7256b764-14ed-400f-8db6-5c4850c9344b",
+            "67e07b89-3489-4cc5-92c7-c21018cb8e4f",
+            "cbc8aef8-7ff1-4030-9fa8-153bae27fb37",
+            "6ba7df5b-7478-472a-87bd-ef114317c66c",
+            "9691979c-3d67-4a77-ad17-e3f232953358",
+            "bd13ed75-d959-4dae-8455-f74197d852ee",
+            "702f201f-6e95-419a-81bc-087ad7973c1e",
+            "9e46c673-9442-43f8-996b-7ea2e8ac6e3d",
+            "91bea712-1e03-4053-904e-3c8a67334939",
+            "d174690e-5c49-4f16-87ef-8813d8c7b7c3",
+            "9ab58cc8-49ed-4ee4-b641-84811abb781d",
+            "71b8677e-4d62-4dfb-927a-73db2d00bddc",
+            "5018be7d-2705-4311-8031-588bf274b098",
+            "724098a3-dfec-4894-bed4-9d895ccab1c7",
+            "dd8cc229-0e22-4a7b-ab45-ae40c9d6b0e1",
+            "6cd19a38-185f-4d31-8f7a-81a873de9181",
+            "e51e5480-9873-4f43-b5c0-6a5287d3228f",
+            "eaac8ca4-05b5-4ad4-8f59-873c77691a54",
+            "d6c0ea63-05d1-490a-be4e-f2a8d47192c8",
+            "f6d0e85c-6282-447c-aba2-f3ed031b607e",
+            "7b0523ce-c3bb-40b7-ab5b-dc77ac0b2ae7",
+            "8691037a-0e4e-4c10-bbab-bcc345de798e",
+            "32793b87-c5cf-41f6-a270-888805776f22"
+          ],
+          "count": 6,
+          "courtCount": 6
+        }
+      },
+      "edge_timing_ms": 638,
+      "edge_error": null
+    }
+  ]
+}

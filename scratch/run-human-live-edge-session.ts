@@ -35,6 +35,7 @@ const matchDurationMin = Math.max(1, Number(argValue('--match-duration-min', '15
 const pvnaTolerance = Number(argValue('--pvna-tolerance', '0.5'))
 const delayMs = Math.max(0, Number(argValue('--delay-ms', '900')))
 const courtsOverride = Number(argValue('--courts', '0'))
+const preserveCheckIn = process.argv.includes('--preserve-checkin')
 
 const CLIENT_OPTIONS = {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -96,7 +97,14 @@ async function loadRegisteredIds(client: SupabaseAny) {
     .eq('session_id', sessionId)
   if (error) throw error
   return [...new Set((data ?? [])
-    .filter((row: any) => (row.status === 'confirmed' || row.status == null) && row.check_in_status !== 'no_show')
+    .filter((row: any) =>
+      (row.status === 'confirmed' || row.status == null) &&
+      (
+        preserveCheckIn
+          ? row.check_in_status === 'present' || row.check_in_status === 'checked_in'
+          : row.check_in_status !== 'no_show'
+      )
+    )
     .map((row: any) => String(row.player_id)))]
 }
 
@@ -245,14 +253,16 @@ async function main() {
   if (registeredIds.length < 4) throw new Error(`Session has too few registered players: ${registeredIds.length}`)
 
   const syncStartedAt = now()
-  await client
-    .from('session_players')
-    .update({ check_in_status: 'present' })
-    .eq('session_id', sessionId)
-    .in('player_id', registeredIds)
+  if (!preserveCheckIn) {
+    await client
+      .from('session_players')
+      .update({ check_in_status: 'present' })
+      .eq('session_id', sessionId)
+      .in('player_id', registeredIds)
+  }
   await invokeEdge('session-sync-roster', accessToken, {
     player_ids: registeredIds,
-    revive_checked_out: true,
+    revive_checked_out: !preserveCheckIn,
   })
   await client.from('sessions').update({ status: 'playing', check_in_completed: true }).eq('id', sessionId)
   const checkInMs = now() - syncStartedAt

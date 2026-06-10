@@ -11,8 +11,9 @@ import {
   hasRepeatOverflow,
   scoreMatch,
   withRecentGroupRematchKeys,
-} from './score'
-import type { Match, MatchScore, PlayerSessionState, SessionState, Team } from './types'
+} from './score.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { Match, MatchScore, PlayerSessionState, SessionState, Team } from './types.ts'
 
 export type TeamSplitResult = {
   match: Match

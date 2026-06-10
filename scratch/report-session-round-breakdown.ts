@@ -64,11 +64,12 @@ async function main() {
         pvna: Number((row as any).players?.pvna ?? 0),
       })
     }
-    const matches = (matchRes.data ?? [])
-      .filter(row => row.status === 'completed')
+    const completedRows = (matchRes.data ?? []).filter(row => row.status === 'completed')
+    const inferredCourtCount = Math.max(1, ...completedRows.map(row => Number(row.court_idx ?? 0) + 1))
+    const matches = completedRows
       .map((row, index) => ({
         sequence_no: Number(row.sequence_no ?? index),
-        round_no: Math.floor(index / 7),
+        round_no: Number(row.round_no ?? Math.floor(index / inferredCourtCount)),
         court_idx: Number(row.court_idx ?? 0),
         team_a: row.team_a as [string, string],
         team_b: row.team_b as [string, string],

@@ -1,10 +1,11 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { classifyPlayer, getAverageMatches, Tier } from './classify'
+import { classifyPlayer, getAverageMatches, Tier } from './classify.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { computeAvailabilityMetrics } from './fairness/metrics'
+import { computeAvailabilityMetrics } from './fairness/metrics.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { isPresent } from './state'
-import type { PlayerSessionState, SessionState } from './types'
+import { isPresent } from './state.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { PlayerSessionState, SessionState } from './types.ts'
 
 export type TierOverrides = Record<string, Tier>
 

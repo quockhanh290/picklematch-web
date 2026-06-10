@@ -12,6 +12,62 @@ function courtIndexFor(match: CourtIndexedMatch) {
   return Math.max(0, Number(match.court_idx ?? match.sequence_no ?? 0))
 }
 
+export function isPreviewBoardComplete<TMatch extends CourtIndexedMatch>({
+  matches,
+  expectedCount,
+  replacementCourtIdxs,
+}: {
+  matches: TMatch[]
+  expectedCount: number
+  replacementCourtIdxs?: Iterable<number>
+}) {
+  const courts = new Set(matches.map(courtIndexFor))
+  const replacementsFulfilled = replacementCourtIdxs
+    ? [...replacementCourtIdxs].every(courtIdx => courts.has(courtIdx))
+    : true
+  return replacementsFulfilled && courts.size >= Math.max(0, Math.floor(expectedCount))
+}
+
+export function hasFulfilledReplacementCourts<TMatch extends CourtIndexedMatch>(
+  matches: TMatch[],
+  replacementCourtIdxs: Iterable<number>,
+) {
+  const courts = new Set(matches.map(courtIndexFor))
+  return [...replacementCourtIdxs].every(courtIdx => courts.has(courtIdx))
+}
+
+export function getMissingPreviewCourtIdxs<TLive extends CourtIndexedMatch, TPreview extends CourtIndexedMatch>({
+  courtCount,
+  liveMatches,
+  previewMatches,
+}: {
+  courtCount: number
+  liveMatches: TLive[]
+  previewMatches: TPreview[]
+}) {
+  const occupiedCourts = new Set(liveMatches.map(courtIndexFor))
+  const previewCourts = new Set(previewMatches.map(courtIndexFor))
+  return Array.from({ length: Math.max(1, Math.floor(courtCount)) }, (_, courtIdx) => courtIdx)
+    .filter(courtIdx => !occupiedCourts.has(courtIdx) && !previewCourts.has(courtIdx))
+}
+
+export function getRequestedReplacementCourtIdxs({
+  pendingReplacementCourtIdxs,
+  missingPreviewCourtIdxs,
+  limit,
+}: {
+  pendingReplacementCourtIdxs: Iterable<number>
+  missingPreviewCourtIdxs: Iterable<number>
+  limit: number
+}) {
+  const requested = new Set<number>()
+  for (const courtIdx of pendingReplacementCourtIdxs) requested.add(courtIdx)
+  for (const courtIdx of missingPreviewCourtIdxs) requested.add(courtIdx)
+  return [...requested]
+    .filter(courtIdx => Number.isFinite(courtIdx) && courtIdx >= 0)
+    .slice(0, Math.max(0, Math.floor(limit)))
+}
+
 export function buildCourtLaneModels<TLive extends CourtIndexedMatch, TSuggested extends CourtIndexedMatch>({
   courtCount,
   liveMatches,
