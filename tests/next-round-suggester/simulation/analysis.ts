@@ -19,6 +19,9 @@ export type AggregatedResult = {
     avg_suggest_ms: number
     p95_suggest_ms: number
     max_suggest_ms: number
+    avg_post_processing_ms: number
+    p95_post_processing_ms: number
+    max_post_processing_ms: number
   }
   engine_behavior: {
     avg_adjustments_per_session: number
@@ -109,11 +112,15 @@ function averageBreakdowns(results: SimulationResult[]): SessionFairnessScore['b
 
 function aggregatePerformance(results: SimulationResult[]): AggregatedResult['performance'] {
   const avgTimes = results.map((result) => result.avg_suggest_time_ms).sort((a, b) => a - b)
+  const avgPostTimes = results.map((result) => result.avg_post_processing_ms).sort((a, b) => a - b)
 
   return {
     avg_suggest_ms: average(avgTimes),
     p95_suggest_ms: percentile(avgTimes, 0.95),
     max_suggest_ms: Math.max(0, ...results.map((result) => result.max_suggest_time_ms)),
+    avg_post_processing_ms: average(avgPostTimes),
+    p95_post_processing_ms: percentile(avgPostTimes, 0.95),
+    max_post_processing_ms: Math.max(0, ...results.map((result) => result.max_post_processing_ms)),
   }
 }
 

@@ -15,6 +15,8 @@ import {
   computeSessionFairness,
   type SessionFairnessScore,
 } from '../../../lib/next-round-suggester/fairness/metrics'
+import { buildSuggestedRoundActionsCache } from '../../../lib/next-round-suggester/alternatives'
+import { buildFairnessPreview, buildLatestFairnessAudit } from '../../../lib/next-round-suggester/fairness/audit'
 import { suggestNextRound } from '../../../lib/next-round-suggester/suggest'
 import type {
   Match,
@@ -81,6 +83,9 @@ export type SimulationResult = {
   total_suggest_time_ms: number
   avg_suggest_time_ms: number
   max_suggest_time_ms: number
+  total_post_processing_ms: number
+  avg_post_processing_ms: number
+  max_post_processing_ms: number
   invariant_violations: string[]
 }
 
@@ -99,6 +104,8 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
   const warningsCount = new Map<WarningType, number>()
   let totalSuggestTimeMs = 0
   let maxSuggestTimeMs = 0
+  let totalPostProcessingMs = 0
+  let maxPostProcessingMs = 0
 
   for (let roundNo = 1; roundNo <= config.rounds; roundNo += 1) {
     const warnings = detectFairnessIssues(state)
@@ -119,6 +126,17 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
     const elapsedMs = performance.now() - startedAt
     totalSuggestTimeMs += elapsedMs
     maxSuggestTimeMs = Math.max(maxSuggestTimeMs, elapsedMs)
+
+    const postStart = performance.now()
+    computeSessionFairness(effectiveState)
+    buildLatestFairnessAudit(effectiveState)
+    for (const alt of suggestion.alternatives.slice(0, 3)) {
+      buildFairnessPreview(effectiveState, alt)
+    }
+    buildSuggestedRoundActionsCache(effectiveState, suggestion.alternatives, config.courts)
+    const postMs = performance.now() - postStart
+    totalPostProcessingMs += postMs
+    maxPostProcessingMs = Math.max(maxPostProcessingMs, postMs)
 
     const alternative = suggestion.alternatives[0]
     if (!alternative) {
@@ -171,6 +189,11 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
       total: totalSuggestTimeMs,
       max: maxSuggestTimeMs,
       avg: roundResults.length === 0 ? 0 : totalSuggestTimeMs / roundResults.length,
+    },
+    postProcessing: {
+      total: totalPostProcessingMs,
+      max: maxPostProcessingMs,
+      avg: roundResults.length === 0 ? 0 : totalPostProcessingMs / roundResults.length,
     },
   })
 }
@@ -292,6 +315,7 @@ function buildResult(input: {
   warnings_count: Map<WarningType, number>
   invariant_violations: string[]
   timing: { total: number; avg: number; max: number }
+  postProcessing: { total: number; avg: number; max: number }
 }): SimulationResult {
   return {
     config: input.config,
@@ -310,6 +334,9 @@ function buildResult(input: {
     total_suggest_time_ms: input.timing.total,
     avg_suggest_time_ms: input.timing.avg,
     max_suggest_time_ms: input.timing.max,
+    total_post_processing_ms: input.postProcessing.total,
+    avg_post_processing_ms: input.postProcessing.avg,
+    max_post_processing_ms: input.postProcessing.max,
     invariant_violations: input.invariant_violations,
   }
 }

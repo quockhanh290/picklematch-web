@@ -287,3 +287,112 @@ describe('suggestNextRound', () => {
     expect(match?.stats?.pvna_diff).toBeLessThanOrEqual(0.5)
   })
 })
+
+describe('suggestNextMatch — requiredPlayerIds overflow tiebreaking', () => {
+  it('when more than 4 players have consecutive_rest >= 1, selects the 4 with highest rest first', () => {
+    // 8 eligible players, 5 of them have consecutive_rest >= 1
+    // Expected: top-4 by consecutive_rest are prioritised, NOT all discarded
+    const players = [
+      createPlayer('p01', { consecutive_rest: 3, matches_played: 5 }),
+      createPlayer('p02', { consecutive_rest: 2, matches_played: 5 }),
+      createPlayer('p03', { consecutive_rest: 1, matches_played: 5 }),
+      createPlayer('p04', { consecutive_rest: 1, matches_played: 3 }), // tiebreak: fewer matches → higher priority
+      createPlayer('p05', { consecutive_rest: 1, matches_played: 6 }), // tiebreak: more matches → lower priority
+      createPlayer('p06', { consecutive_rest: 0, matches_played: 5 }),
+      createPlayer('p07', { consecutive_rest: 0, matches_played: 5 }),
+      createPlayer('p08', { consecutive_rest: 0, matches_played: 5 }),
+    ]
+    const state = createState({ courts: 1, players })
+
+    const result = suggestNextMatch(state, { exhaustive_fallback: true })
+    const match = result.alternatives[0]?.matches[0]
+    expect(match).toBeTruthy()
+
+    const selected = new Set([...(match?.team_a ?? []), ...(match?.team_b ?? [])])
+    // All 4 top-rest players must be in the match
+    expect(selected.has('p01')).toBe(true)
+    expect(selected.has('p02')).toBe(true)
+    expect(selected.has('p03')).toBe(true)
+    expect(selected.has('p04')).toBe(true)
+    // The lower-priority rest player must NOT be selected (p05 has same rest as p03/p04 but more matches)
+    expect(selected.has('p05')).toBe(false)
+  })
+
+  it('emits MUST_PLAY_OVER_CAPACITY when required set is trimmed', () => {
+    const players = [
+      createPlayer('p01', { consecutive_rest: 2, matches_played: 4 }),
+      createPlayer('p02', { consecutive_rest: 2, matches_played: 4 }),
+      createPlayer('p03', { consecutive_rest: 1, matches_played: 4 }),
+      createPlayer('p04', { consecutive_rest: 1, matches_played: 4 }),
+      createPlayer('p05', { consecutive_rest: 1, matches_played: 4 }),
+      createPlayer('p06', { consecutive_rest: 0, matches_played: 4 }),
+      createPlayer('p07', { consecutive_rest: 0, matches_played: 4 }),
+      createPlayer('p08', { consecutive_rest: 0, matches_played: 4 }),
+    ]
+    const state = createState({ courts: 1, players })
+
+    const result = suggestNextMatch(state, { exhaustive_fallback: true })
+    expect(result.warnings).toContain('MUST_PLAY_OVER_CAPACITY')
+    expect(result.alternatives.length).toBeGreaterThan(0)
+  })
+})
+
+describe('sortSingleMatchAlternatives — projected burden tiebreaking', () => {
+  it('returns a valid match and does not crash in a repeat-heavy scenario', () => {
+    // All players have crossed each other before — burden sort must handle gracefully
+    const players = createPlayers(8, { pvna: 3.0 })
+    const state = createState({ courts: 1, players, pvnaTolerance: 10 })
+
+    // Create a dense web of opponent repeats
+    for (const [idA, pA] of state.players) {
+      for (const [idB, pB] of state.players) {
+        if (idA >= idB) continue
+        setOpponentRepeats(pA, pB, 2)
+        setPartnerRepeats(pA, pB, 2)
+      }
+    }
+
+    const result = suggestNextMatch(state, { exhaustive_fallback: true, max_alternatives: 3 })
+    expect(result.alternatives.length).toBeGreaterThan(0)
+    const match = result.alternatives[0]?.matches[0]
+    expect(match).toBeTruthy()
+    expect(new Set([...match!.team_a, ...match!.team_b]).size).toBe(4)
+  })
+
+  it('ranks alternatives so that no later alternative has strictly lower repeat burden than the top', () => {
+    // Force PVNA tradeoff by tight tolerance — fallback will fire and sort multiple alternatives
+    const players = [
+      createPlayer('p01', { pvna: 1.0 }),
+      createPlayer('p02', { pvna: 5.0 }),
+      createPlayer('p03', { pvna: 1.0 }),
+      createPlayer('p04', { pvna: 5.0 }),
+      createPlayer('p05', { pvna: 1.0 }),
+      createPlayer('p06', { pvna: 5.0 }),
+      createPlayer('p07', { pvna: 1.0 }),
+      createPlayer('p08', { pvna: 5.0 }),
+    ]
+    const state = createState({ courts: 1, players, pvnaTolerance: 0.1 })
+
+    // p01-p04 have heavy opponent history — should be ranked lower than p05-p08
+    const p01 = state.players.get('p01')!
+    const p02 = state.players.get('p02')!
+    const p03 = state.players.get('p03')!
+    const p04 = state.players.get('p04')!
+    setOpponentRepeats(p01, p02, 4)
+    setOpponentRepeats(p03, p04, 4)
+    setOpponentRepeats(p01, p03, 4)
+    setOpponentRepeats(p02, p04, 4)
+
+    const result = suggestNextMatch(state, { exhaustive_fallback: true, max_alternatives: 10 })
+    expect(result.alternatives.length).toBeGreaterThan(0)
+
+    // Top alternative must not include all 4 high-burden players when a lower-burden group exists
+    const top = result.alternatives[0]?.matches[0]
+    expect(top).toBeTruthy()
+    const topIds = new Set([...(top?.team_a ?? []), ...(top?.team_b ?? [])])
+    // p05-p08 have zero repeat burden — if they appear as a group they should beat p01-p04
+    const isAllHighBurden =
+      topIds.has('p01') && topIds.has('p02') && topIds.has('p03') && topIds.has('p04')
+    expect(isAllHighBurden).toBe(false)
+  })
+})

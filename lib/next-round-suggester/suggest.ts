@@ -762,9 +762,22 @@ function sortSingleMatchAlternatives(a: SuggestionAlternative, b: SuggestionAlte
   const recentRepeatDiff = compareRecentRepeatCost(a, b, state)
   if (recentRepeatDiff !== 0) return recentRepeatDiff
 
+  const burdenA = getProjectedOpponentBurden(a, state)
+  const burdenB = getProjectedOpponentBurden(b, state)
+  if (burdenA.overThreshold !== burdenB.overThreshold) return burdenA.overThreshold - burdenB.overThreshold
+  if (burdenA.max !== burdenB.max) return burdenA.max - burdenB.max
+
+  const partnerBurdenA = getProjectedPartnerBurden(a, state)
+  const partnerBurdenB = getProjectedPartnerBurden(b, state)
+  if (partnerBurdenA.overThreshold !== partnerBurdenB.overThreshold) return partnerBurdenA.overThreshold - partnerBurdenB.overThreshold
+  if (partnerBurdenA.max !== partnerBurdenB.max) return partnerBurdenA.max - partnerBurdenB.max
+
   const scoreA = a.matches[0]?.score ?? a.score
   const scoreB = b.matches[0]?.score ?? b.score
   if (scoreA !== scoreB) return scoreA - scoreB
+
+  if (burdenA.avg !== burdenB.avg) return burdenA.avg - burdenB.avg
+  if (partnerBurdenA.avg !== partnerBurdenB.avg) return partnerBurdenA.avg - partnerBurdenB.avg
 
   const matchA = a.matches[0]
   const matchB = b.matches[0]
@@ -821,7 +834,12 @@ function suggestNextMatchExhaustiveFallback(
     }
   }
   if (requiredPlayerIds.size > 4) {
+    const ranked = eligiblePlayers
+      .filter((p) => requiredPlayerIds.has(p.player_id))
+      .sort((a, b) => b.consecutive_rest - a.consecutive_rest || a.matches_played - b.matches_played)
+      .slice(0, 4)
     requiredPlayerIds.clear()
+    for (const p of ranked) requiredPlayerIds.add(p.player_id)
     warnings.push('MUST_PLAY_OVER_CAPACITY')
   }
 
@@ -898,7 +916,7 @@ function suggestNextMatchExhaustiveFallback(
         ...alternative,
         warnings: [...new Set([
           ...alternative.warnings,
-          'EXHAUSTIVE_FALLBACK',
+          ...(getTradeoffCount(alternative) > 0 ? ['EXHAUSTIVE_FALLBACK'] : []),
           ...(!enforceRequired && requiredPlayerIds.size > 0 ? ['REST_REQUIREMENT_RELAXED'] : []),
         ])],
         matches: alternative.matches.slice(0, 1).map(match => ({
