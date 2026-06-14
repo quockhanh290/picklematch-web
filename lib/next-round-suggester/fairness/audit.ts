@@ -126,6 +126,7 @@ export function buildMatchCountConsistencyRows(
     .filter((row) => (
       row.live !== row.replay ||
       row.live_consecutive_rest !== row.replay_consecutive_rest ||
+      row.live_consecutive_play !== row.replay_consecutive_play ||
       row.live_partner_total !== row.replay_partner_total ||
       row.live_opponent_total !== row.replay_opponent_total
     ))
@@ -133,11 +134,13 @@ export function buildMatchCountConsistencyRows(
       const diffA =
         Math.abs(a.live - a.replay) +
         Math.abs(a.live_consecutive_rest - a.replay_consecutive_rest) +
+        Math.abs(a.live_consecutive_play - a.replay_consecutive_play) +
         Math.abs(a.live_partner_total - a.replay_partner_total) +
         Math.abs(a.live_opponent_total - a.replay_opponent_total)
       const diffB =
         Math.abs(b.live - b.replay) +
         Math.abs(b.live_consecutive_rest - b.replay_consecutive_rest) +
+        Math.abs(b.live_consecutive_play - b.replay_consecutive_play) +
         Math.abs(b.live_partner_total - b.replay_partner_total) +
         Math.abs(b.live_opponent_total - b.replay_opponent_total)
       if (diffA !== diffB) return diffB - diffA

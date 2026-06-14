@@ -3,6 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
 
 import { calculateOptimalCourts, type CourtPreset } from '../lib/court-calculator'
+import { correctForFairness } from '../lib/next-round-suggester/fairness/corrector'
+import { detectFairnessIssues } from '../lib/next-round-suggester/fairness/detector'
+import { buildSuggestedMatchPayloads } from '../lib/next-round-suggester/live-preview'
+import { mapRowsToSessionState } from '../lib/next-round-suggester/state'
 import { computeSessionFairness } from '../lib/next-round-suggester/fairness/metrics'
 import { loadSessionState } from '../lib/next-round-suggester/state'
 import type { SessionLiveMatchRow } from '../lib/next-round-suggester/types'
@@ -35,6 +39,8 @@ const matchDurationMin = Math.max(1, Number(argValue('--match-duration-min', '15
 const pvnaTolerance = Number(argValue('--pvna-tolerance', '0.5'))
 const delayMs = Math.max(0, Number(argValue('--delay-ms', '900')))
 const courtsOverride = Number(argValue('--courts', '0'))
+const suggestBatchMax = Math.max(1, Number(argValue('--suggest-batch-max', '999')))
+const localFallback = process.argv.includes('--local-fallback')
 const preserveCheckIn = process.argv.includes('--preserve-checkin')
 
 const CLIENT_OPTIONS = {
@@ -176,18 +182,49 @@ async function suggestBatch(client: SupabaseAny, accessToken: string, courts: nu
   const rows = await loadRows(client)
   const loadRowsMs = now() - loadStartedAt
   const suggestStartedAt = now()
-  const payload = await invokeEdge('session-live-matches-suggest', accessToken, {
-    count,
-    court_count: courts,
-    pvna_tolerance: pvnaTolerance,
-    live_match_rows: rows.liveMatchRows,
-    live_state_version: rows.liveStateVersion,
-    completing_live_match_ids: [],
-    players: rows.players,
-    player_rows: rows.playerRows,
-    pair_rows: rows.pairRows,
-    round_rows: rows.roundRows,
-  })
+  let payload
+  try {
+    payload = await invokeEdge('session-live-matches-suggest', accessToken, {
+      count,
+      court_count: courts,
+      pvna_tolerance: pvnaTolerance,
+      live_match_rows: rows.liveMatchRows,
+      live_state_version: rows.liveStateVersion,
+      completing_live_match_ids: [],
+      players: rows.players,
+      player_rows: rows.playerRows,
+      pair_rows: rows.pairRows,
+      round_rows: rows.roundRows,
+    })
+  } catch (error) {
+    if (!localFallback) throw error
+    console.log('edge suggest failed; using same-source local fallback', {
+      error: error instanceof Error ? error.message : String(error),
+      completed: countCompleted(rows.liveMatchRows),
+    })
+    const state = mapRowsToSessionState({
+      sessionId,
+      playerRows: rows.playerRows,
+      pairRows: rows.pairRows,
+      roundRows: rows.roundRows,
+      courts,
+      pvnaTolerance,
+    })
+    payload = {
+      payloads: buildSuggestedMatchPayloads({
+        count,
+        sessionId,
+        courtCount: courts,
+        state,
+        rows: { liveMatchRows: rows.liveMatchRows, liveStateVersion: rows.liveStateVersion },
+        completingLiveMatchIds: new Set(),
+        fairnessAdjustment: correctForFairness(state),
+        fairnessWarnings: detectFairnessIssues(state),
+        playersById: new Map(rows.players.map(player => [player.id, { name: player.name }])),
+        pvnaTolerance,
+      }),
+    }
+  }
   return {
     rows,
     payloads: payload.payloads ?? [],
@@ -292,7 +329,7 @@ async function main() {
     const live = countLive(rows.liveMatchRows)
     const slots = Math.max(0, courts - live)
     if (slots > 0) {
-      const batch = await suggestBatch(client, accessToken, courts, slots)
+      const batch = await suggestBatch(client, accessToken, courts, Math.min(slots, suggestBatchMax))
       suggestTimes.push(batch.suggestMs)
       if (batch.payloads.length === 0) {
         console.log('suggest returned no payloads; waiting for live matches to complete', { completed, live, slots })

@@ -12,17 +12,31 @@ export const Tier = {
 
 export type Tier = (typeof Tier)[keyof typeof Tier]
 
+export type PlayerClassificationContext = {
+  avgMatches: number
+  matchBalance?: Map<string, number>
+}
+
 export function classifyPlayer(
   player: PlayerSessionState,
-  avgMatches: number,
-  override?: Tier,
+  context: PlayerClassificationContext,
+  tierOverride?: Tier,
 ): Tier {
-  if (override !== undefined) return override
+  if (tierOverride !== undefined) return tierOverride
   if (player.opted_rest) return Tier.OPTED_REST
   if (player.consecutive_rest >= 1) return Tier.MUST_PLAY
-  if (player.matches_played < avgMatches - 1.5) return Tier.SHOULD_PLAY
+
+  const balance = context.matchBalance?.get(player.player_id)
+  if (balance !== undefined) {
+    if (balance < -1.5) return Tier.SHOULD_PLAY
+    if (player.consecutive_play >= 2) return Tier.MUST_REST
+    if (balance > 1.5) return Tier.SHOULD_REST
+    return Tier.FLEXIBLE
+  }
+
+  if (player.matches_played < context.avgMatches - 1.5) return Tier.SHOULD_PLAY
   if (player.consecutive_play >= 2) return Tier.MUST_REST
-  if (player.matches_played > avgMatches + 1.5) return Tier.SHOULD_REST
+  if (player.matches_played > context.avgMatches + 1.5) return Tier.SHOULD_REST
   return Tier.FLEXIBLE
 }
 

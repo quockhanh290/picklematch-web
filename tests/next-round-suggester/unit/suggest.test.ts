@@ -259,6 +259,48 @@ describe('suggestNextRound', () => {
     expect(tradeoff?.severity).toBeCloseTo((tradeoff?.over_by ?? 0) * 8)
   })
 
+  it('marks soft PVNA relaxation without marking open PVNA fallback', () => {
+    const state = createState({
+      courts: 1,
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('p1', { pvna: 3.0 }),
+        createPlayer('p2', { pvna: 3.0 }),
+        createPlayer('p3', { pvna: 3.0 }),
+        createPlayer('p4', { pvna: 3.8 }),
+      ],
+    })
+
+    const result = suggestNextMatch(state)
+    const tradeoff = result.alternatives[0]?.tradeoffs?.find(item => item.type === 'pvna_tolerance_relaxed')
+
+    expect(result.alternatives).toHaveLength(1)
+    expect(result.alternatives[0]?.warnings).toContain('PVNA_TOLERANCE_RELAXED')
+    expect(result.alternatives[0]?.warnings).not.toContain('PVNA_TOLERANCE_OPEN')
+    expect(tradeoff?.relaxation_level).toBe('soft')
+  })
+
+  it('marks open PVNA fallback separately from soft relaxation', () => {
+    const state = createState({
+      courts: 1,
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('p1', { pvna: 3.0 }),
+        createPlayer('p2', { pvna: 3.0 }),
+        createPlayer('p3', { pvna: 3.0 }),
+        createPlayer('p4', { pvna: 5.5 }),
+      ],
+    })
+
+    const result = suggestNextMatch(state)
+    const tradeoff = result.alternatives[0]?.tradeoffs?.find(item => item.type === 'pvna_tolerance_relaxed')
+
+    expect(result.alternatives).toHaveLength(1)
+    expect(result.alternatives[0]?.warnings).toContain('PVNA_TOLERANCE_RELAXED')
+    expect(result.alternatives[0]?.warnings).toContain('PVNA_TOLERANCE_OPEN')
+    expect(tradeoff?.relaxation_level).toBe('open')
+  })
+
   it('finds an in-cap match when priority candidates would need intra-team relaxation', () => {
     const players = createPlayers(28)
     const fallbackIds = new Set(['p25', 'p26', 'p27', 'p28'])

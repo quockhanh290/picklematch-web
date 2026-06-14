@@ -13,6 +13,7 @@ export type WarningType =
   | 'opponent_repeat_burden'
   | 'repeat_pressure'
   | 'availability_pressure'
+  | 'missing_pvna'
   | 'rest_violation'
   | 'gender_pref_unsatisfied'
   | 'gender_pref_impossible'

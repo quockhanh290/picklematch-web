@@ -80,4 +80,44 @@ describe('buildCompletedLiveCycleRows', () => {
     })
     expect(computeRestFairness(state).violations).toEqual([])
   })
+
+  it('uses reliable round_no groups when a fast lane completes ahead of slower courts', () => {
+    const playerRows = Array.from({ length: 24 }, (_, index) => playerRow(`p${index}`))
+    const matchPlayers = Array.from({ length: 6 }, (_, matchIndex) => {
+      const start = matchIndex * 4
+      return [`p${start}`, `p${start + 1}`, `p${start + 2}`, `p${start + 3}`] as [string, string, string, string]
+    })
+    const liveRows = [
+      liveMatch(0, 0, 0, matchPlayers[0]),
+      liveMatch(1, 0, 1, matchPlayers[1]),
+      liveMatch(2, 0, 2, matchPlayers[2]),
+      liveMatch(3, 1, 0, matchPlayers[3]),
+      liveMatch(4, 1, 1, matchPlayers[4]),
+      liveMatch(5, 1, 2, matchPlayers[5]),
+    ]
+
+    const roundRows = buildCompletedLiveCycleRows({
+      liveMatchRows: liveRows,
+      legacyRoundRows: [],
+      playerRows,
+      sessionId: 'session-test',
+      courtCount: 3,
+    })
+
+    expect(roundRows).toHaveLength(2)
+    expect(roundRows[0].round_no).toBe(0)
+    expect(roundRows[0].matches.map(match => match.court_idx)).toEqual([0, 1, 2])
+    expect(roundRows[0].matches.flatMap(match => [...match.team_a, ...match.team_b])).toEqual([
+      ...matchPlayers[0],
+      ...matchPlayers[1],
+      ...matchPlayers[2],
+    ])
+    expect(roundRows[1].round_no).toBe(1)
+    expect(roundRows[1].matches.map(match => match.court_idx)).toEqual([0, 1, 2])
+    expect(roundRows[1].matches.flatMap(match => [...match.team_a, ...match.team_b])).toEqual([
+      ...matchPlayers[3],
+      ...matchPlayers[4],
+      ...matchPlayers[5],
+    ])
+  })
 })

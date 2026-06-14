@@ -1,6 +1,13 @@
 import {
+  buildPreviewBatchKey,
   buildSuggestedMatchPayloads,
   buildFinalPreviewBoard,
+  deferLowViabilityRequiredIdsForCourt,
+  getLivePreviewCourtBudgetMs,
+  isLiveRoundFullyCompleted,
+  isRecentSuggestedLiveMatch,
+  warnLiveRoundProjectionDrift,
+  buildLiveTierOverrides,
   buildProjectedStateAfterCompletedLiveRound,
   buildProjectedStateAfterLiveMatch,
   buildLiveTradeoffChoices,
@@ -11,9 +18,11 @@ import {
   improvesPreviewBoardPvna,
   needsEarlyFullBoardPvnaRescue,
   repairSuggestedPayloadBatch,
+  resolveLivePreviewFinalChoice,
 } from '../../../lib/next-round-suggester/live-preview'
 import type { SessionLiveMatchRow, SuggestionAlternative } from '../../../lib/next-round-suggester/types'
 import { Tier } from '../../../lib/next-round-suggester/classify'
+import { getRecentRepeatCost } from '../../../lib/next-round-suggester/score'
 import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
 
 function alternative(teamA: [string, string], teamB: [string, string], pvnaDiff: number): SuggestionAlternative {
@@ -100,6 +109,247 @@ function previewPayload(courtIdx: number, teamA: [string, string], teamB: [strin
   }
 }
 
+describe('buildLiveTierOverrides', () => {
+  it('lets hard per-court required players win over soft overplayed hints', () => {
+    const result = buildLiveTierOverrides({
+      fairnessTierOverrides: {},
+      softOverplayedOverrides: { p1: Tier.SHOULD_REST },
+      softUnderplayedOverrides: {},
+      deferredRequiredIds: [],
+      requiredForThisCourt: ['p1'],
+    })
+
+    expect(result.p1).toBe(Tier.MUST_PLAY)
+  })
+
+  it('lets deferred required players win over soft underplayed hints', () => {
+    const result = buildLiveTierOverrides({
+      fairnessTierOverrides: {},
+      softOverplayedOverrides: {},
+      softUnderplayedOverrides: { p1: Tier.SHOULD_PLAY },
+      deferredRequiredIds: ['p1'],
+      requiredForThisCourt: [],
+    })
+
+    expect(result.p1).toBe(Tier.FLEXIBLE)
+  })
+
+  it('lets hard per-court required players win over deferred required players', () => {
+    const result = buildLiveTierOverrides({
+      fairnessTierOverrides: {},
+      softOverplayedOverrides: {},
+      softUnderplayedOverrides: {},
+      deferredRequiredIds: ['p1'],
+      requiredForThisCourt: ['p1'],
+    })
+
+    expect(result.p1).toBe(Tier.MUST_PLAY)
+  })
+})
+
+describe('getLivePreviewCourtBudgetMs', () => {
+  it('divides remaining batch time while reserving minimum time for later courts', () => {
+    expect(getLivePreviewCourtBudgetMs(3800, 4)).toBeCloseTo(687.5)
+    expect(getLivePreviewCourtBudgetMs(3800, 1)).toBe(900)
+    expect(getLivePreviewCourtBudgetMs(600, 3)).toBe(350)
+  })
+})
+
+describe('buildPreviewBatchKey', () => {
+  it('includes live quality policy so policy-specific preview caches cannot collide', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1', { pvna: 3.0 }),
+        createPlayer('p2', { pvna: 3.1 }),
+        createPlayer('p3', { pvna: 3.2 }),
+        createPlayer('p4', { pvna: 3.3 }),
+      ],
+    })
+    const fairnessAdjustment = { tier_overrides: {}, applied_for_warnings: [] }
+
+    const currentKey = buildPreviewBatchKey(
+      state.session_id,
+      state,
+      1,
+      0.5,
+      fairnessAdjustment,
+      'current',
+    )
+    const rescueKey = buildPreviewBatchKey(
+      state.session_id,
+      state,
+      1,
+      0.5,
+      fairnessAdjustment,
+      'pvna_outlier_rescue',
+    )
+
+    expect(rescueKey).not.toBe(currentKey)
+    expect(buildPreviewBatchKey(state.session_id, state, 1, 0.5, fairnessAdjustment)).toBe(currentKey)
+  })
+})
+
+describe('isRecentSuggestedLiveMatch', () => {
+  it('treats only fresh suggested rows as active preview locks', () => {
+    const now = Date.parse('2026-05-14T12:02:00.000Z')
+    const fresh = {
+      ...liveRow('fresh-suggested', 0, 'suggested', ['p1', 'p2'], ['p3', 'p4']),
+      suggested_at: '2026-05-14T12:01:30.000Z',
+    }
+    const stale = {
+      ...fresh,
+      id: 'stale-suggested',
+      suggested_at: '2026-05-14T12:00:30.000Z',
+    }
+
+    expect(isRecentSuggestedLiveMatch(fresh, now)).toBe(true)
+    expect(isRecentSuggestedLiveMatch(stale, now)).toBe(false)
+  })
+})
+
+describe('isLiveRoundFullyCompleted', () => {
+  it('does not treat an async multi-court round as complete while one court is still live', () => {
+    const matchesByRound = new Map<number, SessionLiveMatchRow[]>([
+      [0, [
+        liveRow('court-0', 0, 'completed', ['p1', 'p2'], ['p3', 'p4']),
+        liveRow('court-1', 1, 'live', ['p5', 'p6'], ['p7', 'p8']),
+      ]],
+    ])
+
+    expect(isLiveRoundFullyCompleted(0, matchesByRound, 2, new Set())).toBe(false)
+  })
+
+  it('treats a round as complete when the last live court is being completed', () => {
+    const matchesByRound = new Map<number, SessionLiveMatchRow[]>([
+      [0, [
+        liveRow('court-0', 0, 'completed', ['p1', 'p2'], ['p3', 'p4']),
+        liveRow('court-1', 1, 'live', ['p5', 'p6'], ['p7', 'p8']),
+      ]],
+    ])
+
+    expect(isLiveRoundFullyCompleted(0, matchesByRound, 2, new Set(['court-1']))).toBe(true)
+  })
+
+  it('does not count suggested rows as completed courts', () => {
+    const matchesByRound = new Map<number, SessionLiveMatchRow[]>([
+      [0, [
+        liveRow('court-0', 0, 'completed', ['p1', 'p2'], ['p3', 'p4']),
+        liveRow('court-1', 1, 'suggested', ['p5', 'p6'], ['p7', 'p8']),
+      ]],
+    ])
+
+    expect(isLiveRoundFullyCompleted(0, matchesByRound, 2, new Set())).toBe(false)
+  })
+})
+
+describe('warnLiveRoundProjectionDrift', () => {
+  it('warns only when live round projection diverges from committed state or current court capacity', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+    warnLiveRoundProjectionDrift({
+      source: 'lib',
+      sessionId: 'session-test',
+      stateCurrentRound: 1,
+      projectedRoundNo: 1,
+      projectedRoundMatchCount: 1,
+      courtCapacity: 2,
+      roundCounts: new Map([[1, 1]]),
+      courtIdxsByRound: new Map([[1, new Set([0, 1])]]),
+    })
+
+    expect(warnSpy).not.toHaveBeenCalled()
+
+    warnLiveRoundProjectionDrift({
+      source: 'lib',
+      sessionId: 'session-test',
+      stateCurrentRound: 1,
+      projectedRoundNo: 2,
+      projectedRoundMatchCount: 0,
+      courtCapacity: 3,
+      roundCounts: new Map([[1, 2]]),
+      courtIdxsByRound: new Map([[1, new Set([0, 1])]]),
+    })
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[next-round-suggester] live round projection drift monitor',
+      expect.objectContaining({
+        session_id: 'session-test',
+        current_round_drift: true,
+        court_capacity_drift: true,
+      }),
+    )
+
+    warnSpy.mockRestore()
+  })
+})
+
+describe('deferLowViabilityRequiredIdsForCourt', () => {
+  it('keeps only required players with a near-level active candidate on non-final courts', () => {
+    const state = createState({
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('r-low', { pvna: 2.5 }),
+        createPlayer('r-high', { pvna: 4.5 }),
+        createPlayer('near-low', { pvna: 2.8 }),
+        createPlayer('far-1', { pvna: 3.4 }),
+        createPlayer('far-2', { pvna: 3.5 }),
+      ],
+    })
+
+    const result = deferLowViabilityRequiredIdsForCourt({
+      requiredForThisCourt: ['r-low', 'r-high'],
+      availableRequiredIds: ['r-low', 'r-high'],
+      busyIds: new Set(),
+      remainingCourtsInRound: 2,
+      state,
+    })
+
+    expect(result).toEqual(['r-low'])
+  })
+
+  it('does not defer required players on the final court of a round', () => {
+    const state = createState({
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('r-low', { pvna: 2.5 }),
+        createPlayer('r-high', { pvna: 4.5 }),
+        createPlayer('near-low', { pvna: 2.8 }),
+      ],
+    })
+
+    const result = deferLowViabilityRequiredIdsForCourt({
+      requiredForThisCourt: ['r-low', 'r-high'],
+      availableRequiredIds: ['r-low', 'r-high'],
+      busyIds: new Set(),
+      remainingCourtsInRound: 1,
+      state,
+    })
+
+    expect(result).toEqual(['r-low', 'r-high'])
+  })
+
+  it('does not run the defer heuristic when required PVNA spread is within tolerance', () => {
+    const state = createState({
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('r1', { pvna: 2.5 }),
+        createPlayer('r2', { pvna: 2.8 }),
+        createPlayer('far', { pvna: 4.5 }),
+      ],
+    })
+
+    const result = deferLowViabilityRequiredIdsForCourt({
+      requiredForThisCourt: ['r1', 'r2'],
+      availableRequiredIds: ['r1', 'r2'],
+      busyIds: new Set(),
+      remainingCourtsInRound: 2,
+      state,
+    })
+
+    expect(result).toEqual(['r1', 'r2'])
+  })
+})
+
 describe('projected live match state', () => {
   it('counts rest only when the projected logical round is finalized', () => {
     const state = createState({
@@ -125,6 +375,40 @@ describe('projected live match state', () => {
     expect(afterRound.players.get('p5')?.consecutive_rest).toBe(1)
     expect(afterRound.players.get('p5')?.consecutive_play).toBe(0)
     expect(afterRound.players.get('p1')?.consecutive_rest).toBe(0)
+  })
+
+  it('treats an existing active round as completed only in projected state for repeat scoring', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1'),
+        createPlayer('p2'),
+        createPlayer('p3'),
+        createPlayer('p4'),
+        createPlayer('p5'),
+        createPlayer('p6'),
+      ],
+    })
+    state.rounds = [{
+      session_id: 'session-test',
+      round_no: 0,
+      status: 'active',
+      matches: [],
+      resting: [],
+      started_at: new Date('2026-05-14T12:00:00.000Z'),
+      ended_at: null,
+    }]
+
+    const projectedState = buildProjectedStateAfterLiveMatch(
+      state,
+      liveMatch(['p1', 'p2'], ['p3', 'p4'], 0),
+      0,
+    )
+    const repeatCost = getRecentRepeatCost(['p1', 'p2'], ['p5', 'p6'], projectedState, 1)
+
+    expect(state.rounds[0].status).toBe('active')
+    expect(projectedState.rounds[0].status).toBe('completed')
+    expect(repeatCost.partner).toBeGreaterThan(0)
+    expect(repeatCost.total).toBeGreaterThan(0)
   })
 
   it('does not keep completed finishing-match players busy when suggesting a replacement', () => {
@@ -159,6 +443,43 @@ describe('projected live match state', () => {
 
     expect(payloads).toHaveLength(1)
     expect(payloads[0].court_idx).toBe(0)
+    expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(new Set(['p1', 'p2', 'p3', 'p4']))
+    expect(payloads[0].live_availability_context).toEqual({
+      locked_player_count: 4,
+      live_court_count: 1,
+    })
+  })
+
+  it('ignores stale suggested rows so old previews do not block players forever', () => {
+    const state = createState({
+      courts: 1,
+      players: [
+        createPlayer('p1', { pvna: 3.0 }),
+        createPlayer('p2', { pvna: 3.1 }),
+        createPlayer('p3', { pvna: 3.2 }),
+        createPlayer('p4', { pvna: 3.3 }),
+      ],
+    })
+    const staleSuggested = {
+      ...liveRow('stale-suggested', 0, 'suggested', ['p1', 'p2'], ['p3', 'p4']),
+      suggested_at: '2026-05-14T11:00:00.000Z',
+    }
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 1,
+      state,
+      rows: { liveMatchRows: [staleSuggested], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].preview_countable_match_count).toBe(0)
     expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(new Set(['p1', 'p2', 'p3', 'p4']))
   })
 
@@ -257,6 +578,69 @@ describe('projected live match state', () => {
     expect(new Set(visiblePlayerIds).size).toBe(visiblePlayerIds.length)
   })
 
+  it('uses stored live round numbers after court capacity changes mid-session', () => {
+    const state = createState({
+      courts: 3,
+      players: [
+        ...Array.from({ length: 8 }, (_, index) =>
+          createPlayer(`p${index + 1}`, { pvna: 3 + index * 0.1 }),
+        ),
+        ...Array.from({ length: 8 }, (_, index) =>
+          createPlayer(`p${index + 9}`, {
+            pvna: 3,
+            consecutive_rest: index < 4 ? 3 : 0,
+          }),
+        ),
+        ...Array.from({ length: 4 }, (_, index) =>
+          createPlayer(`p${index + 17}`, { pvna: 3 + index * 0.1 }),
+        ),
+      ],
+    })
+    const liveMatchRows = [
+      {
+        ...liveRow('round-0-court-0', 0, 'completed', ['p1', 'p2'], ['p3', 'p4']),
+        sequence_no: 0,
+        round_no: 0,
+      },
+      {
+        ...liveRow('round-0-court-1', 1, 'completed', ['p5', 'p6'], ['p7', 'p8']),
+        sequence_no: 1,
+        round_no: 0,
+      },
+      {
+        ...liveRow('round-1-court-0', 0, 'completed', ['p9', 'p10'], ['p11', 'p12']),
+        sequence_no: 2,
+        round_no: 1,
+      },
+      {
+        ...liveRow('round-1-court-1', 1, 'completed', ['p13', 'p14'], ['p15', 'p16']),
+        sequence_no: 3,
+        round_no: 1,
+      },
+    ]
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 3,
+      state,
+      rows: { liveMatchRows, liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    const selectedPlayerIds = new Set(payloads.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].round_no).toBe(1)
+    for (const playerId of ['p9', 'p10', 'p11', 'p12', 'p13', 'p14', 'p15', 'p16']) {
+      expect(selectedPlayerIds.has(playerId)).toBe(false)
+    }
+  })
+
   it('honors explicit replacement court indexes when retained previews occupy other lanes', () => {
     const state = createState({
       courts: 3,
@@ -264,7 +648,10 @@ describe('projected live match state', () => {
         createPlayer(`p${index + 1}`, { pvna: 3 + index * 0.1 }),
       ),
     })
-    const retainedPreviewCourt0 = liveRow('retained-preview-court-0', 0, 'suggested', ['p1', 'p2'], ['p3', 'p4'])
+    const retainedPreviewCourt0 = {
+      ...liveRow('retained-preview-court-0', 0, 'suggested', ['p1', 'p2'], ['p3', 'p4']),
+      suggested_at: new Date().toISOString(),
+    }
     const completedCourt1 = liveRow('completed-court-1', 1, 'completed', ['p5', 'p6'], ['p7', 'p8'])
     const liveCourt2 = liveRow('live-court-2', 2, 'live', ['p9', 'p10'], ['p11', 'p12'])
 
@@ -621,6 +1008,115 @@ describe('conditional live quality rescue', () => {
       0.5,
       5,
     )?.alternative).toBe(qualityTradeoff)
+  })
+})
+
+describe('resolveLivePreviewFinalChoice', () => {
+  it('uses conditional tradeoff choices only when the conditional baseline is the final guarded pick', () => {
+    const state = createState({
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('a', { pvna: 3.0 }),
+        createPlayer('b', { pvna: 3.1 }),
+        createPlayer('c', { pvna: 3.2 }),
+        createPlayer('d', { pvna: 3.3 }),
+        createPlayer('e', { pvna: 3.0 }),
+        createPlayer('f', { pvna: 3.2 }),
+        createPlayer('g', { pvna: 3.4 }),
+        createPlayer('h', { pvna: 3.6 }),
+      ],
+    })
+    const baseline = alternative(['a', 'b'], ['c', 'd'], 0.1)
+    const tradeoffAlternative = alternative(['e', 'f'], ['g', 'h'], 0.2)
+    const metrics = {
+      pvna_gap: 0.2,
+      pvna_over_by: 0,
+      intra_team_gap: 0.2,
+      intra_team_over_by: 0,
+      repeat_over_by: 0,
+      affected_pairs: 0,
+      affected_players: 0,
+      max_partner_pair: 0,
+      max_opponent_pair: 0,
+      total_cost: 0.2,
+    }
+
+    const result = resolveLivePreviewFinalChoice({
+      finalAlternatives: [baseline],
+      baselineForConditionalSearch: baseline,
+      conditionalQualityTradeoff: {
+        alternative: tradeoffAlternative,
+        metrics,
+        quota: { total: 0, over: 0, under: 0 },
+        burden: { max_streak: 0, streak_gte_3: 0, streak_gte_4: 0 },
+        recent: 0,
+        quota_over_delta: 1,
+        opponent_repeat_delta: 0,
+        consecutive_play_delta: 0,
+      } as any,
+      state,
+      configuredPvnaTolerance: 0.5,
+      nextMatchIndex: 1,
+    })
+
+    expect(result.finalGuardedAlternative).toBe(baseline)
+    expect(result.usedConditionalTradeoff).toBe(true)
+    expect(result.tradeoffChoices?.choices.map(choice => choice.alternative)).toEqual([
+      baseline,
+      tradeoffAlternative,
+    ])
+  })
+
+  it('uses final alternatives when a prepended rescue is not the final guarded pick', () => {
+    const state = createState({
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('a', { pvna: 3.0 }),
+        createPlayer('b', { pvna: 3.1 }),
+        createPlayer('c', { pvna: 3.2 }),
+        createPlayer('d', { pvna: 3.3 }),
+        createPlayer('e', { pvna: 4.0 }),
+        createPlayer('f', { pvna: 4.1 }),
+        createPlayer('g', { pvna: 3.0 }),
+        createPlayer('h', { pvna: 3.1 }),
+      ],
+    })
+    const staleBaseline = alternative(['e', 'f'], ['g', 'h'], 0.4)
+    const prependedRescue = alternative(['e', 'g'], ['f', 'h'], 0.6)
+    const finalPick = alternative(['a', 'b'], ['c', 'd'], 0.1)
+    const metrics = {
+      pvna_gap: 0.2,
+      pvna_over_by: 0,
+      intra_team_gap: 0.2,
+      intra_team_over_by: 0,
+      repeat_over_by: 0,
+      affected_pairs: 0,
+      affected_players: 0,
+      max_partner_pair: 0,
+      max_opponent_pair: 0,
+      total_cost: 0.2,
+    }
+
+    const result = resolveLivePreviewFinalChoice({
+      finalAlternatives: [prependedRescue, finalPick, staleBaseline],
+      baselineForConditionalSearch: staleBaseline,
+      conditionalQualityTradeoff: {
+        alternative: prependedRescue,
+        metrics,
+        quota: { total: 0, over: 0, under: 0 },
+        burden: { max_streak: 0, streak_gte_3: 0, streak_gte_4: 0 },
+        recent: 0,
+        quota_over_delta: 1,
+        opponent_repeat_delta: 0,
+        consecutive_play_delta: 0,
+      } as any,
+      state,
+      configuredPvnaTolerance: 0.5,
+      nextMatchIndex: 1,
+    })
+
+    expect(result.finalGuardedAlternative).toBe(finalPick)
+    expect(result.usedConditionalTradeoff).toBe(false)
   })
 })
 

@@ -6,7 +6,7 @@ import {
   type PartitioningRuntimeCache,
 } from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { getPresentPlayers, pickPlayers, sortPlayersForStrategy } from './select.ts'
+import { getMatchBalanceFromAvailabilityMetrics, getPresentPlayers, pickPlayers, sortPlayersForStrategy } from './select.ts'
 import type {
   Match,
   MatchStats,
@@ -18,9 +18,9 @@ import type {
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 } from './types.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { Tier } from './classify.ts'
+import { getAverageMatches, Tier } from './classify.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { computeAvailabilityMetrics, computeProjectedOpponentRepeatBurden, computeProjectedPartnerRepeatBurden } from './fairness/metrics.ts'
+import { computeAvailabilityMetrics, computeProjectedOpponentRepeatBurden, computeProjectedPartnerRepeatBurden, type AvailabilityMetrics } from './fairness/metrics.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import {
   MAX_PROJECTED_OPPONENT_PAIR_COUNT,
@@ -39,6 +39,9 @@ export type SuggestNextRoundOptions = {
   max_alternatives?: number
   max_runtime_ms?: number
   exhaustive_fallback?: boolean
+  forced_required_player_ids?: string[]
+  availability_metrics?: AvailabilityMetrics
+  preview_seed?: string
 }
 
 export type ExhaustiveFallbackDiagnostic = {
@@ -297,7 +300,11 @@ function hasRepeatCapReached(matches: Match[], state: SessionState): boolean {
   return false
 }
 
-function getPvnaTradeoff(matches: Match[], state: SessionState): SuggestionTradeoff | null {
+function getPvnaTradeoff(
+  matches: Match[],
+  state: SessionState,
+  relaxationLevel?: 'soft' | 'open',
+): SuggestionTradeoff | null {
   let maxOverBy = 0
 
   for (const match of matches) {
@@ -310,6 +317,7 @@ function getPvnaTradeoff(matches: Match[], state: SessionState): SuggestionTrade
     type: 'pvna_tolerance_relaxed',
     severity: maxOverBy * PVNA_TRADEOFF_WEIGHT,
     over_by: maxOverBy,
+    relaxation_level: relaxationLevel,
   }
 }
 
@@ -344,9 +352,9 @@ function getIntraTeamGapTradeoff(matches: Match[], state: SessionState): Suggest
   }
 }
 
-function buildTradeoffs(partition: { matches: Match[] }, state: SessionState): SuggestionTradeoff[] {
+function buildTradeoffs(partition: { matches: Match[]; pvna_relaxation_level?: 'soft' | 'open' }, state: SessionState): SuggestionTradeoff[] {
   return [
-    getPvnaTradeoff(partition.matches, state),
+    getPvnaTradeoff(partition.matches, state, partition.pvna_relaxation_level),
     getIntraTeamGapTradeoff(partition.matches, state),
     getRepeatCapTradeoff(partition.matches, state),
   ].filter((tradeoff): tradeoff is SuggestionTradeoff => Boolean(tradeoff))
@@ -396,10 +404,12 @@ function makeAlternative(
   allowRelaxedTolerance = true,
   allowRepeatOverflow = true,
   allowRecentGroupRematch = false,
+  seedSalt?: string,
 ): SuggestionAlternative | null {
   const partition = bestPartitioning(selected, state, {
     diagnostics,
     cache: partitioningCache,
+    seedSalt,
     allowRelaxedTolerance,
     allowRepeatOverflow,
     allowRecentGroupRematch,
@@ -410,6 +420,7 @@ function makeAlternative(
   const alternativeWarnings = [...new Set([
     ...warnings,
     ...(partition.relaxed_tolerance ? ['PVNA_TOLERANCE_RELAXED'] : []),
+    ...(partition.pvna_relaxation_level === 'open' ? ['PVNA_TOLERANCE_OPEN'] : []),
     ...(partition.repeat_overflow ? ['REPEAT_CAP_RELAXED'] : []),
     ...(partition.intra_team_gap_relaxed ? ['INTRA_TEAM_GAP_RELAXED'] : []),
     ...(repeatCapReached && !partition.repeat_overflow ? ['REPEAT_CAP_REACHED'] : []),
@@ -442,7 +453,12 @@ export function suggestNextRound(
   const courtCapacity = Math.max(1, state.config.courts) * 4
   const slots = Math.min(courtCapacity, Math.floor(eligiblePlayers.length / 4) * 4)
   const tierOverrides = options.tier_overrides ?? {}
-  const basePick = pickPlayers(state, Math.max(4, slots), tierOverrides)
+  const availabilityMetrics = options.availability_metrics ?? computeAvailabilityMetrics(state)
+  const classificationContext = {
+    avgMatches: getAverageMatches(eligiblePlayers),
+    matchBalance: getMatchBalanceFromAvailabilityMetrics(availabilityMetrics, eligiblePlayers, slots),
+  }
+  const basePick = pickPlayers(state, Math.max(4, slots), tierOverrides, classificationContext)
   const warnings = [...basePick.warnings, ...detectGenderConflicts(eligiblePlayers)]
   const mustPlayOverCapacity = warnings.includes('MUST_PLAY_OVER_CAPACITY')
   const hasCompletedRounds = state.rounds.some((r) => r.status === 'completed')
@@ -465,6 +481,11 @@ export function suggestNextRound(
   if (!mustPlayOverCapacity) {
     for (const [playerId, tier] of Object.entries(tierOverrides)) {
       if (tier === Tier.MUST_PLAY && eligiblePlayers.some((player) => player.player_id === playerId)) {
+        requiredPlayerIds.add(playerId)
+      }
+    }
+    for (const playerId of options.forced_required_player_ids ?? []) {
+      if (eligiblePlayers.some((player) => player.player_id === playerId)) {
         requiredPlayerIds.add(playerId)
       }
     }
@@ -505,7 +526,7 @@ export function suggestNextRound(
   const collectAlternatives = (allowRelaxedTolerance: boolean, allowRepeatOverflow: boolean) => {
     for (const strategy of strategies) {
       if (timedOut()) break
-      const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides)
+      const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides, classificationContext)
       const candidates = getPriorityCandidates(sorted, slots, MAX_CANDIDATES_PER_STRATEGY)
       if (diagnostics && !diagnostics.strategies[strategy]) {
         diagnostics.strategies[strategy] = {
@@ -560,6 +581,8 @@ export function suggestNextRound(
           partitioningCache,
           allowRelaxedTolerance,
           allowRepeatOverflow,
+          false,
+          options.preview_seed,
         )
         if (!alternative) continue
 
@@ -641,7 +664,7 @@ export function suggestNextRound(
     if (forceRequiredIds.size > 0) {
       for (const strategy of strategies) {
         if (alternatives.length > 0) break
-        const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides)
+        const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides, classificationContext)
         const candidates = getPriorityCandidates(sorted, slots, MAX_CANDIDATES_PER_STRATEGY)
         for (const candidate of candidates) {
           if (timedOut()) break
@@ -649,7 +672,18 @@ export function suggestNextRound(
           const key = combinationKey(candidate.players)
           if (seen.has(key)) continue
           if (![...forceRequiredIds].every((id) => candidate.players.some((p) => p.player_id === id))) continue
-          const alternative = makeAlternative(candidate.players, presentPlayers, state, warnings, undefined, partitioningCache)
+          const alternative = makeAlternative(
+            candidate.players,
+            presentPlayers,
+            state,
+            warnings,
+            undefined,
+            partitioningCache,
+            true,
+            true,
+            false,
+            options.preview_seed,
+          )
           if (!alternative) continue
           alternatives.push(alternative)
           seen.add(key)
@@ -701,6 +735,14 @@ export function suggestNextMatch(
     max_alternatives: options.max_alternatives ?? 1,
   })
   const courtIdx = Math.max(0, Math.floor(options.court_idx ?? 0))
+  const forcedRequiredIds = new Set((options.forced_required_player_ids ?? []).map(String))
+  const hasForcedRequired = forcedRequiredIds.size > 0
+  const containsForcedRequired = (alternative: SuggestionAlternative) => (
+    !hasForcedRequired ||
+    [...forcedRequiredIds].every(playerId =>
+      alternative.matches.some(match => [...match.team_a, ...match.team_b].includes(playerId)),
+    )
+  )
   const mappedResult: SuggestionResult = {
     ...result,
     alternatives: result.alternatives.map(alternative => ({
@@ -709,7 +751,7 @@ export function suggestNextMatch(
         ...match,
         court_idx: courtIdx,
       })),
-    })).filter(alternative => alternative.matches.length > 0),
+    })).filter(alternative => alternative.matches.length > 0 && containsForcedRequired(alternative)),
   }
 
   const topAlternative = mappedResult.alternatives[0]
@@ -740,7 +782,7 @@ export function suggestNextMatch(
   })
   if (fallback.alternatives.length === 0) return mappedResult
 
-  const alternatives = [...mappedResult.alternatives, ...fallback.alternatives]
+  const alternatives = [...mappedResult.alternatives, ...fallback.alternatives.filter(containsForcedRequired)]
   alternatives.sort((a, b) => sortSingleMatchAlternatives(a, b, matchState))
   const uniqueAlternatives = uniqueSingleMatchAlternatives(alternatives)
 
@@ -809,7 +851,12 @@ function suggestNextMatchExhaustiveFallback(
   const presentPlayers = getPresentPlayers(state)
   const eligiblePlayers = presentPlayers.filter((player) => !player.opted_rest)
   const tierOverrides = options.tier_overrides ?? {}
-  const basePick = pickPlayers(state, 4, tierOverrides)
+  const availabilityMetrics = options.availability_metrics ?? computeAvailabilityMetrics(state)
+  const classificationContext = {
+    avgMatches: getAverageMatches(eligiblePlayers),
+    matchBalance: getMatchBalanceFromAvailabilityMetrics(availabilityMetrics, eligiblePlayers, 4),
+  }
+  const basePick = pickPlayers(state, 4, tierOverrides, classificationContext)
   const warnings = [...basePick.warnings, ...detectGenderConflicts(eligiblePlayers)]
   const mustPlayOverCapacity = warnings.includes('MUST_PLAY_OVER_CAPACITY')
   const hasCompletedRounds = state.rounds.some((r) => r.status === 'completed')
@@ -829,6 +876,11 @@ function suggestNextMatchExhaustiveFallback(
   if (!mustPlayOverCapacity) {
     for (const [playerId, tier] of Object.entries(tierOverrides)) {
       if (tier === Tier.MUST_PLAY && eligiblePlayers.some((player) => player.player_id === playerId)) {
+        requiredPlayerIds.add(playerId)
+      }
+    }
+    for (const playerId of options.forced_required_player_ids ?? []) {
+      if (eligiblePlayers.some((player) => player.player_id === playerId)) {
         requiredPlayerIds.add(playerId)
       }
     }
@@ -909,6 +961,7 @@ function suggestNextMatchExhaustiveFallback(
         allowRelaxedTolerance,
         allowRepeatOverflow,
         allowRecentGroupRematch,
+        options.preview_seed,
       )
       seen.add(key)
       if (!alternative) continue
@@ -933,10 +986,10 @@ function suggestNextMatchExhaustiveFallback(
     if (!timedOut()) evaluateStage(true, false)
     if (!timedOut()) evaluateStage(true, true)
   }
-  if (alternatives.length === 0 && requiredPlayerIds.size > 0 && !timedOut()) {
+  if (alternatives.length === 0 && requiredPlayerIds.size > 0 && !options.forced_required_player_ids?.length && !timedOut()) {
     evaluateStage(false, false, false)
   }
-  if (alternatives.length === 0 && requiredPlayerIds.size > 0 && !timedOut()) {
+  if (alternatives.length === 0 && requiredPlayerIds.size > 0 && !options.forced_required_player_ids?.length && !timedOut()) {
     evaluateStage(false, true, false)
     if (!timedOut()) evaluateStage(true, false, false)
     if (alternatives.length === 0 && !timedOut()) {

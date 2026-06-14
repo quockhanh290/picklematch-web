@@ -61,15 +61,36 @@ function legacyEloToPvna(value: number): number {
   return 5.5 + (value - 1600) * (0.1 / 200)
 }
 
+const FALLBACK_NEWBIE_PVNA = 2.1
+
 function normalizePvna(value: unknown): number | null {
   if (value == null || value === '') return null
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return null
+  if (numeric <= 0) return null
   return numeric > 10 ? Number(legacyEloToPvna(numeric).toFixed(2)) : numeric
 }
 
-function getProfilePvna(profile: SessionPlayerStateRow['players'] | SessionPlayerPreferenceRow['players']): number {
-  return normalizePvna(profile?.pvna) ?? normalizePvna(profile?.current_elo) ?? normalizePvna(profile?.elo) ?? 3.0
+type PvnaSource = 'pvna' | 'current_elo' | 'elo' | 'fallback_newbie'
+
+type PvnaResolution = {
+  pvna: number
+  source: PvnaSource
+}
+
+function resolveProfilePvna(
+  profile: SessionPlayerStateRow['players'] | SessionPlayerPreferenceRow['players'],
+): PvnaResolution {
+  const fromPvna = normalizePvna(profile?.pvna)
+  if (fromPvna !== null) return { pvna: fromPvna, source: 'pvna' }
+
+  const fromCurrentElo = normalizePvna(profile?.current_elo)
+  if (fromCurrentElo !== null) return { pvna: fromCurrentElo, source: 'current_elo' }
+
+  const fromElo = normalizePvna(profile?.elo)
+  if (fromElo !== null) return { pvna: fromElo, source: 'elo' }
+
+  return { pvna: FALLBACK_NEWBIE_PVNA, source: 'fallback_newbie' }
 }
 
 function getMetadataPref(
@@ -77,6 +98,49 @@ function getMetadataPref(
   key: 'partner_gender_pref' | 'opponent_gender_pref',
 ) {
   return metadata && Object.prototype.hasOwnProperty.call(metadata, key) ? metadata[key] : undefined
+}
+
+type GenderPrefKey = 'partner_gender_pref' | 'opponent_gender_pref'
+type GenderPrefSource =
+  | 'session_player_state_metadata'
+  | 'session_players_metadata'
+  | 'profile'
+  | 'default_any'
+
+type GenderPrefResolution = {
+  value: 'any' | 'M' | 'F'
+  source: GenderPrefSource
+  rawValue: unknown
+}
+
+function resolveGenderPreference(input: {
+  metadata: Record<string, unknown> | null | undefined
+  metadataSource: Exclude<GenderPrefSource, 'profile' | 'default_any'> | null
+  profileValue: unknown
+  key: GenderPrefKey
+}): GenderPrefResolution {
+  const metadataValue = getMetadataPref(input.metadata, input.key)
+  if (metadataValue !== undefined && input.metadataSource) {
+    return {
+      value: normalizeGenderPreference(metadataValue),
+      source: input.metadataSource,
+      rawValue: metadataValue,
+    }
+  }
+
+  if (input.profileValue !== null && input.profileValue !== undefined && input.profileValue !== '') {
+    return {
+      value: normalizeGenderPreference(input.profileValue),
+      source: 'profile',
+      rawValue: input.profileValue,
+    }
+  }
+
+  return {
+    value: 'any',
+    source: 'default_any',
+    rawValue: undefined,
+  }
 }
 
 export function normalizePairKey(playerA: string, playerB: string): [string, string] {
@@ -109,15 +173,75 @@ export function mapRowsToSessionState(input: {
   const preferencesByPlayerId = new Map(
     (input.preferenceRows ?? []).map((row) => [row.player_id, row]),
   )
+  const pvnaFallbackWarnings: Array<{
+    player_id: string
+    selected_profile_source: 'session_players' | 'session_player_state' | 'none'
+    preference_profile: SessionPlayerPreferenceRow['players'] | null | undefined
+    state_profile: SessionPlayerStateRow['players'] | null | undefined
+    state_profile_has_rating: boolean
+  }> = []
+  const metadataPreferenceOverrideWarnings: Array<{
+    player_id: string
+    key: GenderPrefKey
+    source: Exclude<GenderPrefSource, 'profile' | 'default_any'>
+    metadata_value: unknown
+    profile_value: unknown
+    normalized_metadata_value: 'any' | 'M' | 'F'
+    normalized_profile_value: 'any' | 'M' | 'F'
+  }> = []
 
   for (const row of input.playerRows) {
     const preferenceRow = preferencesByPlayerId.get(row.player_id)
     const metadata = row.session_players?.metadata ?? preferenceRow?.metadata
+    const metadataSource = row.session_players?.metadata
+      ? 'session_player_state_metadata' as const
+      : preferenceRow?.metadata
+        ? 'session_players_metadata' as const
+        : null
     const profile = preferenceRow?.players ?? row.players
+    const pvnaResolution = resolveProfilePvna(profile)
+    if (pvnaResolution.source === 'fallback_newbie') {
+      pvnaFallbackWarnings.push({
+        player_id: row.player_id,
+        selected_profile_source: preferenceRow?.players ? 'session_players' : row.players ? 'session_player_state' : 'none',
+        preference_profile: preferenceRow?.players,
+        state_profile: row.players,
+        state_profile_has_rating: row.players ? resolveProfilePvna(row.players).source !== 'fallback_newbie' : false,
+      })
+    }
+    const partnerGenderPref = resolveGenderPreference({
+      metadata,
+      metadataSource,
+      profileValue: profile?.partner_gender_pref,
+      key: 'partner_gender_pref',
+    })
+    const opponentGenderPref = resolveGenderPreference({
+      metadata,
+      metadataSource,
+      profileValue: profile?.opponent_gender_pref,
+      key: 'opponent_gender_pref',
+    })
+    for (const [key, resolution, profileValue] of [
+      ['partner_gender_pref', partnerGenderPref, profile?.partner_gender_pref],
+      ['opponent_gender_pref', opponentGenderPref, profile?.opponent_gender_pref],
+    ] as const) {
+      if (resolution.source === 'profile' || resolution.source === 'default_any') continue
+      const normalizedProfileValue = normalizeGenderPreference(profileValue)
+      if (normalizedProfileValue === 'any' || normalizedProfileValue === resolution.value) continue
+      metadataPreferenceOverrideWarnings.push({
+        player_id: row.player_id,
+        key,
+        source: resolution.source,
+        metadata_value: resolution.rawValue,
+        profile_value: profileValue,
+        normalized_metadata_value: resolution.value,
+        normalized_profile_value: normalizedProfileValue,
+      })
+    }
 
     players.set(row.player_id, {
       player_id: row.player_id,
-      pvna: getProfilePvna(profile),
+      pvna: pvnaResolution.pvna,
       group_id: row.group_id,
       checked_in_at: new Date(row.checked_in_at),
       checked_out_at: row.checked_out_at ? new Date(row.checked_out_at) : null,
@@ -129,12 +253,24 @@ export function mapRowsToSessionState(input: {
       opponent_counts: new Map(),
       opted_rest: row.opted_rest,
       gender: normalizeGender(profile?.gender),
-      partner_gender_pref: normalizeGenderPreference(
-        getMetadataPref(metadata, 'partner_gender_pref') ?? profile?.partner_gender_pref,
-      ),
-      opponent_gender_pref: normalizeGenderPreference(
-        getMetadataPref(metadata, 'opponent_gender_pref') ?? profile?.opponent_gender_pref,
-      ),
+      partner_gender_pref: partnerGenderPref.value,
+      opponent_gender_pref: opponentGenderPref.value,
+    })
+  }
+
+  if (pvnaFallbackWarnings.length > 0) {
+    console.warn('[next-round-suggester] missing player PVNA; using newbie fallback', {
+      sessionId: input.sessionId,
+      fallbackPvna: FALLBACK_NEWBIE_PVNA,
+      count: pvnaFallbackWarnings.length,
+      players: pvnaFallbackWarnings,
+    })
+  }
+  if (metadataPreferenceOverrideWarnings.length > 0) {
+    console.warn('[next-round-suggester] session metadata gender preference overrides profile preference', {
+      sessionId: input.sessionId,
+      count: metadataPreferenceOverrideWarnings.length,
+      overrides: metadataPreferenceOverrideWarnings,
     })
   }
 

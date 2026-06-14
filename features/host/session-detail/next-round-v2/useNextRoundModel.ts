@@ -5,6 +5,7 @@ import { calculateOptimalCourts, type CourtPreset } from '@/lib/court-calculator
 import { buildSuggestedRoundActions, buildSuggestedRoundActionsCache, sortAlternativesByAudit, type AlternativeAudit, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import { buildMatchCountConsistencyRows, buildFairnessPreview, buildLatestFairnessAudit } from '@/lib/next-round-suggester/fairness/audit'
 import { applyFairnessAdjustment, correctForFairness } from '@/lib/next-round-suggester/fairness/corrector'
+import type { FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
 import { buildGroupAliasMap, buildGroupSummaries } from '@/lib/next-round-suggester/fairness/group-audit'
 import { computeSessionFairness } from '@/lib/next-round-suggester/fairness/metrics'
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
@@ -55,6 +56,45 @@ function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): 
 
 function normalizeCourtCount(value: number) {
   return Math.max(1, Math.floor(value || 1))
+}
+
+function hasUsableRatingValue(value: unknown) {
+  if (value == null || value === '') return false
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0
+}
+
+function hasUsablePvnaProfile(profile: SessionPlayerStateRow['players'] | null | undefined) {
+  return hasUsableRatingValue(profile?.pvna)
+    || hasUsableRatingValue(profile?.current_elo)
+    || hasUsableRatingValue(profile?.elo)
+}
+
+function buildMissingPvnaWarnings(
+  rows: SessionPlayerStateRow[],
+  playersById: Map<string, ArrangementPlayer>,
+): FairnessWarning[] {
+  const affectedPlayers = rows
+    .filter(row => row.checked_out_at === null)
+    .filter(row => !hasUsablePvnaProfile(row.players))
+    .map(row => row.player_id)
+    .sort()
+
+  if (affectedPlayers.length === 0) return []
+
+  const visibleNames = affectedPlayers
+    .slice(0, 4)
+    .map(playerId => playersById.get(playerId)?.name ?? playerId.slice(0, 8))
+  const hiddenCount = Math.max(0, affectedPlayers.length - visibleNames.length)
+  const nameText = `${visibleNames.join(', ')}${hiddenCount > 0 ? ` +${hiddenCount}` : ''}`
+
+  return [{
+    severity: 'warning',
+    type: 'missing_pvna',
+    affected_players: affectedPlayers,
+    message: `${affectedPlayers.length} người chơi thiếu PVNA/rating hợp lệ; hệ thống đang tạm xếp họ ở mức newbie 2.1: ${nameText}.`,
+    suggested_action: 'Cập nhật PVNA cho người chơi trước khi bắt đầu nếu muốn gợi ý cân bằng và nhanh hơn.',
+  }]
 }
 
 function arrangementPlayerFromRow(row: SessionPlayerStateRow): ArrangementPlayer | null {
@@ -626,7 +666,15 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
 
   // Đổi ALT chỉ là đổi index — không tính gì thêm
   const fairnessPreview = manualFairnessPreview ?? alternativeFairnessPreviews[selectedAlternative] ?? alternativeFairnessPreviews[0] ?? null
-  const fairnessWarnings = manualFairnessWarnings ?? alternativeFairnessWarnings[selectedAlternative] ?? alternativeFairnessWarnings[0] ?? []
+  const baseFairnessWarnings = manualFairnessWarnings ?? alternativeFairnessWarnings[selectedAlternative] ?? alternativeFairnessWarnings[0] ?? []
+  const missingPvnaWarnings = useMemo(
+    () => buildMissingPvnaWarnings(enrichedPlayerRows, playersById),
+    [enrichedPlayerRows, playersById],
+  )
+  const fairnessWarnings = useMemo(
+    () => [...baseFairnessWarnings, ...missingPvnaWarnings],
+    [baseFairnessWarnings, missingPvnaWarnings],
+  )
 
   const suggestedRoundActions = useMemo(
     () => USE_COURT_LANE_BOARD

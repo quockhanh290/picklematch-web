@@ -1,7 +1,9 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { classifyPlayer, getAverageMatches, Tier } from './classify.ts'
+import { classifyPlayer, getAverageMatches, Tier, type PlayerClassificationContext } from './classify.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { computeAvailabilityMetrics } from './fairness/metrics.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import type { AvailabilityMetrics } from './fairness/metrics.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { isPresent } from './state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
@@ -55,6 +57,7 @@ export function pickPlayers(
   state: SessionState,
   slots = 4,
   tierOverrides: TierOverrides = {},
+  classificationContext?: PlayerClassificationContext,
 ): PickPlayersResult {
   const warnings: string[] = []
   const presentPlayers = getPresentPlayers(state)
@@ -70,11 +73,15 @@ export function pickPlayers(
   }
 
   const avgMatches = getAverageMatches(eligiblePlayers)
-  const matchBalance = getMatchBalanceMap(state, eligiblePlayers, slots)
+  const context = classificationContext ?? {
+    avgMatches,
+    matchBalance: getMatchBalanceMap(state, eligiblePlayers, slots),
+  }
+  const matchBalance = context.matchBalance ?? new Map<string, number>()
   const tiers = new Map(
     presentPlayers.map((player) => [
       player.player_id,
-      classifyPlayerForSelection(player, avgMatches, matchBalance, tierOverrides[player.player_id]),
+      classifyPlayer(player, context, tierOverrides[player.player_id]),
     ]),
   )
   const mustPlayCount = eligiblePlayers.filter(
@@ -104,6 +111,7 @@ export function sortPlayersForStrategy(
   players: PlayerSessionState[],
   strategy: 'fairness' | 'rest' | 'diversity' | 'group',
   tierOverrides: TierOverrides = {},
+  classificationContext?: PlayerClassificationContext,
 ): PlayerSessionState[] {
   if (strategy === 'rest') {
     return [...players].sort((a, b) => {
@@ -139,43 +147,29 @@ export function sortPlayersForStrategy(
     })
   }
 
-  const avgMatches = getAverageMatches(players)
+  const context = classificationContext ?? { avgMatches: getAverageMatches(players) }
   const tiers = new Map(
     players.map((player) => [
       player.player_id,
-      classifyPlayer(player, avgMatches, tierOverrides[player.player_id]),
+      classifyPlayer(player, context, tierOverrides[player.player_id]),
     ]),
   )
-  return [...players].sort((a, b) => comparePlayersByPriority(a, b, tiers))
+  return [...players].sort((a, b) => comparePlayersByPriority(a, b, tiers, context.matchBalance))
 }
 
-function classifyPlayerForSelection(
-  player: PlayerSessionState,
-  avgMatches: number,
-  matchBalance: Map<string, number>,
-  override?: Tier,
-): Tier {
-  if (override !== undefined) return override
-  if (player.opted_rest) return Tier.OPTED_REST
-  if (player.consecutive_rest >= 1) return Tier.MUST_PLAY
-
-  const balance = matchBalance.get(player.player_id)
-  if (balance !== undefined) {
-    if (balance < -1.5) return Tier.SHOULD_PLAY
-    if (player.consecutive_play >= 2) return Tier.MUST_REST
-    if (balance > 1.5) return Tier.SHOULD_REST
-    return Tier.FLEXIBLE
-  }
-
-  return classifyPlayer(player, avgMatches, override)
-}
-
-function getMatchBalanceMap(
+export function getMatchBalanceMap(
   state: SessionState,
   players: PlayerSessionState[],
   slots: number,
 ): Map<string, number> {
-  const availability = computeAvailabilityMetrics(state)
+  return getMatchBalanceFromAvailabilityMetrics(computeAvailabilityMetrics(state), players, slots)
+}
+
+export function getMatchBalanceFromAvailabilityMetrics(
+  availability: AvailabilityMetrics,
+  players: PlayerSessionState[],
+  slots: number,
+): Map<string, number> {
   const currentRoundExpectedShare = players.length === 0
     ? 0
     : Math.min(slots, players.length) / players.length

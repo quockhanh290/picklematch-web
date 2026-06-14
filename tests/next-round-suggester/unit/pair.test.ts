@@ -96,6 +96,31 @@ describe('bestPartitioning', () => {
     expect(result?.iterations).toBeLessThanOrEqual(12)
   })
 
+  it('uses seedSalt to keep sampled partitions stable when mutable match history changes', () => {
+    const players = Array.from({ length: 16 }, (_, index) =>
+      createPlayer(`p${String(index + 1).padStart(2, '0')}`, { pvna: 3.0 + index * 0.01 }),
+    )
+    const playersWithHistory = players.map((player, index) => ({
+      ...player,
+      matches_played: index % 3,
+    }))
+    const partitionKey = (result: ReturnType<typeof bestPartitioning>) => result?.matches
+      .map(match => [[...match.team_a].sort().join(':'), [...match.team_b].sort().join(':')].sort().join('>'))
+      .sort()
+      .join('|')
+
+    const first = bestPartitioning(players, createState({ players, courts: 4 }), {
+      maxIterations: 12,
+      seedSalt: 'preview-batch:stable',
+    })
+    const second = bestPartitioning(playersWithHistory, createState({ players: playersWithHistory, courts: 4 }), {
+      maxIterations: 12,
+      seedSalt: 'preview-batch:stable',
+    })
+
+    expect(partitionKey(second)).toBe(partitionKey(first))
+  })
+
   it('falls back to relaxed PVNA tolerance when strict tolerance has no partition', () => {
     const players = [
       createPlayer('p1', { pvna: 4.0 }),

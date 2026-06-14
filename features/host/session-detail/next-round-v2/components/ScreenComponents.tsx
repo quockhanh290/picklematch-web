@@ -117,6 +117,7 @@ function warningTitle(type: string) {
   if (type === 'opponent_repeat') return 'Lặp đối thủ'
   if (type === 'opponent_repeat_burden') return 'Một người gặp lại nhiều đối thủ'
   if (type === 'projected_opponent_repeat_burden') return 'Sắp lặp đối thủ nhiều'
+  if (type === 'missing_pvna') return 'Thiếu PVNA'
   if (type === 'rest_violation') return 'Nghỉ liên tiếp'
   if (type === 'gender_pref_unsatisfied') return 'Sở thích giới tính chưa tốt'
   if (type === 'gender_pref_impossible') return 'Sở thích giới tính khó đáp ứng'
@@ -285,6 +286,10 @@ type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   fairness_reason_details?: string[]
   tradeoff_choices?: SuggestionTradeoffChoice[]
   recommended_tradeoff_choice?: SuggestionTradeoffChoiceId
+  live_availability_context?: {
+    locked_player_count: number
+    live_court_count: number
+  }
 }
 
 type LiveDisplayMatchRow = SessionLiveMatchRow & {
@@ -1526,6 +1531,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
     suggestedMatches,
     liveYieldsToSuggested: (liveMatch) => creatingNextMatchIds.has(liveMatch.id) || completingMatchIds.has(liveMatch.id),
   })
+  const firstEmptyCourtIdx = courtLanes.find(({ liveMatch, suggestedMatch }) => !liveMatch && !suggestedMatch)?.courtIdx ?? null
 
   return (
     <View style={{ marginTop: 16, gap: 12 }}>
@@ -1555,6 +1561,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
           : suggestedMatch
             ? busy === `start-match-${suggestedMatch.id}` || startingPreviewIds.has(suggestedMatch.id)
             : false
+        const emptyLaneIsRecovering = !liveMatch && !suggestedMatch && isSuggestingPreview && courtIdx === firstEmptyCourtIdx
         return (
           <View
             key={`court-lane-${courtIdx}`}
@@ -1630,9 +1637,14 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
                   gap: 10,
                 }}
               >
+                {emptyLaneIsRecovering ? <ActivityIndicator color={theme.primary} /> : null}
+                {emptyLaneIsRecovering ? (
+                  <Text style={ctaTextStyle(theme.outline, 12)}>Đang tạo trận tiếp theo...</Text>
+                ) : (
                 <Text style={ctaTextStyle(theme.outline, 12)}>
                   Chờ sân khác kết thúc
                 </Text>
+                )}
               </View>
             )}
           </View>
@@ -1855,15 +1867,18 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       approval_required: selected.approval_required,
     }
   }, [match, selectedChoice])
+  const liveAvailabilityContext = activeMatch.live_availability_context
   const pvnaDiff = useMemo(
     () => Math.abs(getTeamPvna(activeMatch.team_a, state) - getTeamPvna(activeMatch.team_b, state)),
     [activeMatch.team_a, activeMatch.team_b, state],
   )
   const pvnaOverBy = Math.max(0, pvnaDiff - pvnaTolerance)
   const pvnaCapExceeded = pvnaOverBy > 0
-  const requiresRepeatApproval = activeMatch.approval_required || pvnaCapExceeded || activeMatch.warnings?.includes('REPEAT_CAP_RELAXED') || activeMatch.warnings?.includes('PVNA_TOLERANCE_RELAXED') || false
+  const hasPvnaOpenWarning = activeMatch.warnings?.includes('PVNA_TOLERANCE_OPEN') ?? false
+  const requiresRepeatApproval = activeMatch.approval_required || pvnaCapExceeded || activeMatch.warnings?.includes('REPEAT_CAP_RELAXED') || activeMatch.warnings?.includes('PVNA_TOLERANCE_RELAXED') || hasPvnaOpenWarning || false
   const repeatTradeoff = activeMatch.tradeoffs?.find(tradeoff => tradeoff.type === 'repeat_cap_relaxed')
   const pvnaTradeoff = activeMatch.tradeoffs?.find(tradeoff => tradeoff.type === 'pvna_tolerance_relaxed')
+  const pvnaOpenRelaxed = hasPvnaOpenWarning || pvnaTradeoff?.relaxation_level === 'open'
   const effectivePvnaTolerance = activeMatch.effective_pvna_tolerance ?? state.config.pvna_tolerance
   const configuredPvnaTolerance = activeMatch.configured_pvna_tolerance ?? pvnaTolerance
   const autoPvnaRelaxed = effectivePvnaTolerance > configuredPvnaTolerance && Boolean(pvnaTradeoff)
@@ -1982,6 +1997,11 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
                 Đổi lại: {tradeoffBenefitLines.join(' · ')}
               </Text>
             ) : null}
+            {liveAvailabilityContext ? (
+              <Text style={{ marginTop: 4, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.outline }}>
+                Giới hạn hiện tại: {liveAvailabilityContext.locked_player_count} người đang thi đấu ở {liveAvailabilityContext.live_court_count} sân live khác, nên các phương án tốt hơn chưa khả dụng.
+              </Text>
+            ) : null}
           </View>
         </View>
       ) : null}
@@ -2059,7 +2079,11 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
                   PVNA vượt tolerance {formatNumber(pvnaOverBy, 2)}
                 </Text>
               ) : null}
-              {autoPvnaRelaxed ? (
+              {pvnaOpenRelaxed ? (
+                <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
+                  Khong con phuong an trong gioi han PVNA; engine phai mo gioi han de du nguoi choi.
+                </Text>
+              ) : autoPvnaRelaxed ? (
                 <View style={{ gap: 3 }}>
                   <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
                     Engine đang nới PVNA lên {formatNumber(effectivePvnaTolerance, 2)}

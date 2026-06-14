@@ -7,6 +7,7 @@ export type CachedPartitioningResult = {
   stats: MatchScore['stats']
   iterations: number
   relaxed_tolerance?: boolean
+  pvna_relaxation_level?: 'open'
 }
 
 const SPLIT_INDEXES: Array<[number, number, number, number]> = [
@@ -116,7 +117,7 @@ function evaluatePartition(
   state: SessionState,
   cache: CachedPartitioningRuntimeCache,
   iteration: number,
-  options: { tolerance?: number; relaxedTolerance?: boolean } = {},
+  options: { tolerance?: number; relaxedTolerance?: boolean; pvnaRelaxationLevel?: 'open' } = {},
 ): CachedPartitioningResult | null {
   let score = 0
   let stats = zeroStats()
@@ -141,6 +142,7 @@ function evaluatePartition(
     stats,
     iterations: iteration,
     relaxed_tolerance: options.relaxedTolerance,
+    pvna_relaxation_level: options.pvnaRelaxationLevel,
   }
 }
 
@@ -367,7 +369,7 @@ export function bestPartitioningCached(
   const canSearchExhaustively = partitionCount > 0 && partitionCount <= maxIterations
 
   function runSearch(
-    searchOptions: { tolerance?: number; relaxedTolerance?: boolean } = {},
+    searchOptions: { tolerance?: number; relaxedTolerance?: boolean; pvnaRelaxationLevel?: 'open' } = {},
   ): { result: CachedPartitioningResult | null; iterations: number } {
     const bestRef: { current: CachedPartitioningResult | null } = { current: null }
     let iterations = 0
@@ -403,6 +405,7 @@ export function bestPartitioningCached(
               stats: bestRef.current.stats,
               iterations,
               relaxed_tolerance: bestRef.current.relaxed_tolerance,
+              pvna_relaxation_level: bestRef.current.pvna_relaxation_level,
             }
           : null,
         iterations,
@@ -425,6 +428,7 @@ export function bestPartitioningCached(
             stats: bestRef.current.stats,
             iterations,
             relaxed_tolerance: bestRef.current.relaxed_tolerance,
+            pvna_relaxation_level: bestRef.current.pvna_relaxation_level,
           }
         : null,
       iterations,
@@ -436,5 +440,6 @@ export function bestPartitioningCached(
   return runSearch({
     tolerance: Number.POSITIVE_INFINITY,
     relaxedTolerance: true,
+    pvnaRelaxationLevel: 'open',
   }).result
 }

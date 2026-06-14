@@ -57,13 +57,18 @@ Deno.serve(async (request) => {
     const warnings = detectFairnessIssues(state)
 
     // 3. Reconstruct request params
-    const count = typeof body.count === 'number' ? body.count : 1
+    const requestedCount = typeof body.count === 'number' ? body.count : 1
     const liveMatchRows = Array.isArray(body.live_match_rows) ? body.live_match_rows : []
     const liveStateVersion = optionalNumber(body.live_state_version) ?? null
+    const maxEdgePreviewCount = body.allow_large_batch === true
+      ? Math.max(1, courtCount)
+      : Math.min(2, Math.max(1, courtCount))
+    const count = Math.max(1, Math.min(requestedCount, maxEdgePreviewCount))
     const courtIdxs = Array.isArray(body.court_idxs)
       ? body.court_idxs
           .map((value: unknown) => optionalNumber(value))
           .filter((value: number | undefined): value is number => value !== undefined)
+          .slice(0, count)
       : undefined
     const mode = body.mode === 'replace_courts' ? 'replace_courts' : 'full_board'
     const currentPreviewBoard = Array.isArray(body.current_preview_board) ? body.current_preview_board : []
@@ -106,8 +111,10 @@ Deno.serve(async (request) => {
       && !hasFulfilledPreviewBoardReplacements(board, courtIdxs)
     const needsQualityRescue = mode === 'replace_courts'
       && needsEarlyFullBoardPvnaRescue(payloads, state, pvnaTolerance)
+    const allowReplacementFullBoardRescue = mode === 'replace_courts'
+      && body.allow_full_board_rescue === true
     if (
-      mode === 'replace_courts'
+      allowReplacementFullBoardRescue
       && (replacementBoardIncomplete || needsQualityRescue)
     ) {
       const liveRowsWithoutRetainedPreviews = liveMatchRows.filter((match: any) => match?.status !== 'suggested')

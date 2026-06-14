@@ -1,6 +1,6 @@
-import { Tier } from '../../../lib/next-round-suggester/classify'
-import { pickPlayers } from '../../../lib/next-round-suggester/select'
-import { createPlayer, createState } from '../helpers/factories'
+import { getAverageMatches, Tier } from '../../../lib/next-round-suggester/classify'
+import { getMatchBalanceMap, pickPlayers, sortPlayersForStrategy } from '../../../lib/next-round-suggester/select'
+import { createMatch, createPlayer, createState } from '../helpers/factories'
 
 describe('pickPlayers', () => {
   it('picks top slots by tier, low matches, and stable id ordering', () => {
@@ -101,6 +101,80 @@ describe('pickPlayers', () => {
 
     expect(pickPlayers(state, 4, { p1: Tier.MUST_PLAY }).selected.map((p) => p.player_id)).toContain(
       'p1',
+    )
+  })
+
+  it('uses availability-aware balance so truly underplayed players outrank late check-ins', () => {
+    const state = createState({
+      currentRound: 5,
+      players: [
+        createPlayer('p1', { matches_played: 5, last_played_round: 4 }),
+        createPlayer('p2', { matches_played: 5, last_played_round: 4 }),
+        createPlayer('p3', { matches_played: 5, last_played_round: 4 }),
+        createPlayer('p4', { matches_played: 4, last_played_round: 3 }),
+        createPlayer('p5', { matches_played: 1, last_played_round: 4 }),
+        createPlayer('p6', { matches_played: 1, last_played_round: 5 }),
+      ],
+    })
+    state.rounds = [
+      {
+        session_id: state.session_id,
+        round_no: 0,
+        status: 'completed',
+        matches: [createMatch(['p1', 'p2'], ['p3', 'p4'])],
+        resting: ['p6'],
+        started_at: null,
+        ended_at: null,
+      },
+      {
+        session_id: state.session_id,
+        round_no: 1,
+        status: 'completed',
+        matches: [createMatch(['p1', 'p2'], ['p3', 'p4'])],
+        resting: ['p6'],
+        started_at: null,
+        ended_at: null,
+      },
+      {
+        session_id: state.session_id,
+        round_no: 2,
+        status: 'completed',
+        matches: [createMatch(['p1', 'p2'], ['p3', 'p4'])],
+        resting: ['p6'],
+        started_at: null,
+        ended_at: null,
+      },
+      {
+        session_id: state.session_id,
+        round_no: 3,
+        status: 'completed',
+        matches: [createMatch(['p1', 'p2'], ['p3', 'p4'])],
+        resting: ['p6'],
+        started_at: null,
+        ended_at: null,
+      },
+      {
+        session_id: state.session_id,
+        round_no: 4,
+        status: 'completed',
+        matches: [createMatch(['p1', 'p2'], ['p3', 'p5'])],
+        resting: ['p4', 'p6'],
+        started_at: null,
+        ended_at: null,
+      },
+    ]
+
+    const players = [...state.players.values()]
+    const matchBalance = getMatchBalanceMap(state, players, 4)
+    const sorted = sortPlayersForStrategy(players, 'fairness', {}, {
+      avgMatches: getAverageMatches(players),
+      matchBalance,
+    })
+
+    expect(matchBalance.get('p5')).toBeGreaterThan(-1.5)
+    expect(matchBalance.get('p6')).toBeLessThan(-1.5)
+    expect(sorted.map(player => player.player_id).indexOf('p6')).toBeLessThan(
+      sorted.map(player => player.player_id).indexOf('p5'),
     )
   })
 })

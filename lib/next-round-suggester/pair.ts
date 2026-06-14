@@ -27,6 +27,7 @@ export type PartitioningResult = {
   stats: MatchScore['stats']
   iterations: number
   relaxed_tolerance?: boolean
+  pvna_relaxation_level?: 'soft' | 'open'
   repeat_overflow?: boolean
   intra_team_gap_relaxed?: boolean
   intra_team_gap_overflow?: boolean
@@ -155,6 +156,7 @@ function evaluatePartition(
   options: {
     tolerance?: number
     relaxedTolerance?: boolean
+    pvnaRelaxationLevel?: 'soft' | 'open'
     allowRepeatOverflow?: boolean
     allowRecentGroupRematch?: boolean
     intraTeamGapLimit?: number
@@ -193,6 +195,7 @@ function evaluatePartition(
     stats,
     iterations: iteration,
     relaxed_tolerance: options.relaxedTolerance,
+    pvna_relaxation_level: options.pvnaRelaxationLevel,
     repeat_overflow: repeatOverflow,
     intra_team_gap_relaxed: matches.some((match) =>
       hasIntraTeamGapOverflow(match.team_a, match.team_b, state, PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT),
@@ -541,6 +544,7 @@ export function bestPartitioning(
     maxIterations?: number
     diagnostics?: (diagnostic: PartitioningDiagnostic) => void
     cache?: PartitioningRuntimeCache
+    seedSalt?: string
     allowRelaxedTolerance?: boolean
     allowRepeatOverflow?: boolean
     allowRecentGroupRematch?: boolean
@@ -559,6 +563,7 @@ export function bestPartitioning(
     searchOptions: {
       tolerance?: number
       relaxedTolerance?: boolean
+      pvnaRelaxationLevel?: 'soft' | 'open'
       intraTeamGapLimit?: number
       allowIntraTeamGapOverflow?: boolean
     } = {},
@@ -606,6 +611,7 @@ export function bestPartitioning(
               stats: finalBest.stats,
               iterations,
               relaxed_tolerance: finalBest.relaxed_tolerance,
+              pvna_relaxation_level: finalBest.pvna_relaxation_level,
               repeat_overflow: finalBest.repeat_overflow,
               intra_team_gap_relaxed: finalBest.intra_team_gap_relaxed,
               intra_team_gap_overflow: finalBest.intra_team_gap_overflow,
@@ -617,9 +623,9 @@ export function bestPartitioning(
 
     consider(chunkIntoCourts(normalizedPlayers))
 
-    const seedBase = hashString(
-      `${state.current_round}|${normalizedPlayers.map((player) => player.player_id).join(':')}|${historySignature(normalizedPlayers)}`,
-    )
+    const playerSeedKey = normalizedPlayers.map((player) => player.player_id).join(':')
+    const historySeedKey = options.seedSalt ?? historySignature(normalizedPlayers)
+    const seedBase = hashString(`${state.current_round}|${playerSeedKey}|${historySeedKey}`)
     while (iterations < maxIterations) {
       consider(chunkIntoCourts(shuffled(normalizedPlayers, seedBase + iterations)))
     }
@@ -633,6 +639,7 @@ export function bestPartitioning(
           stats: finalBest.stats,
           iterations,
           relaxed_tolerance: finalBest.relaxed_tolerance,
+          pvna_relaxation_level: finalBest.pvna_relaxation_level,
           repeat_overflow: finalBest.repeat_overflow,
           intra_team_gap_relaxed: finalBest.intra_team_gap_relaxed,
           intra_team_gap_overflow: finalBest.intra_team_gap_overflow,
@@ -716,6 +723,7 @@ export function bestPartitioning(
     ? runSearch({
         tolerance: softTolerance,
         relaxedTolerance: true,
+        pvnaRelaxationLevel: 'soft',
       })
     : { result: null, iterations: 0 }
   if (soft.result) {
@@ -736,6 +744,7 @@ export function bestPartitioning(
     ? runSearch({
         tolerance: softTolerance,
         relaxedTolerance: true,
+        pvnaRelaxationLevel: 'soft',
         intraTeamGapLimit: INTRA_TEAM_PVNA_GAP_LIMIT,
       })
     : { result: null, iterations: 0 }
@@ -757,6 +766,7 @@ export function bestPartitioning(
     ? runSearch({
         tolerance: softTolerance,
         relaxedTolerance: true,
+        pvnaRelaxationLevel: 'soft',
         allowIntraTeamGapOverflow: true,
       })
     : { result: null, iterations: 0 }
@@ -777,6 +787,7 @@ export function bestPartitioning(
   const open = runSearch({
     tolerance: Number.POSITIVE_INFINITY,
     relaxedTolerance: true,
+    pvnaRelaxationLevel: 'open',
   })
   if (open.result) {
     options.diagnostics?.({
@@ -796,6 +807,7 @@ export function bestPartitioning(
     ? runSearch({
         tolerance: Number.POSITIVE_INFINITY,
         relaxedTolerance: true,
+        pvnaRelaxationLevel: 'open',
         intraTeamGapLimit: INTRA_TEAM_PVNA_GAP_LIMIT,
       })
     : { result: null, iterations: 0 }
@@ -817,6 +829,7 @@ export function bestPartitioning(
     ? runSearch({
         tolerance: Number.POSITIVE_INFINITY,
         relaxedTolerance: true,
+        pvnaRelaxationLevel: 'open',
         allowIntraTeamGapOverflow: true,
       })
     : { result: null, iterations: 0 }

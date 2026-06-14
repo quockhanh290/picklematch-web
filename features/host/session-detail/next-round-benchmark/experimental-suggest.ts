@@ -4,7 +4,7 @@ import {
   createCachedPartitioningRuntimeCache,
   type CachedPartitioningRuntimeCache,
 } from './experimental-pair'
-import { getPresentPlayers, pickPlayers, sortPlayersForStrategy } from '@/lib/next-round-suggester/select'
+import { getMatchBalanceMap, getPresentPlayers, pickPlayers, sortPlayersForStrategy } from '@/lib/next-round-suggester/select'
 import { detectGenderConflicts } from '@/lib/next-round-suggester/suggest'
 import { computeAvailabilityMetrics, computeProjectedOpponentRepeatBurden, computeProjectedPartnerRepeatBurden } from '@/lib/next-round-suggester/fairness/metrics'
 import type {
@@ -14,7 +14,7 @@ import type {
   SuggestionAlternative,
   SuggestionResult,
 } from '@/lib/next-round-suggester/types'
-import { Tier } from '@/lib/next-round-suggester/classify'
+import { getAverageMatches, Tier } from '@/lib/next-round-suggester/classify'
 
 type Strategy = 'fairness' | 'rest' | 'diversity' | 'group'
 
@@ -147,7 +147,11 @@ function makeAlternative(
     matches: partition.matches,
     resting,
     score: partition.score,
-    warnings: partition.relaxed_tolerance ? [...warnings, 'PVNA_TOLERANCE_RELAXED'] : warnings,
+    warnings: [
+      ...warnings,
+      ...(partition.relaxed_tolerance ? ['PVNA_TOLERANCE_RELAXED'] : []),
+      ...(partition.pvna_relaxation_level === 'open' ? ['PVNA_TOLERANCE_OPEN'] : []),
+    ],
     stats: partition.stats,
     iterations: partition.iterations,
   }
@@ -341,7 +345,11 @@ export function suggestNextRoundExperimental(
   const courtCapacity = Math.max(1, state.config.courts) * 4
   const slots = Math.min(courtCapacity, Math.floor(eligiblePlayers.length / 4) * 4)
   const tierOverrides = options.tier_overrides ?? {}
-  const basePick = pickPlayers(state, Math.max(4, slots), tierOverrides)
+  const classificationContext = {
+    avgMatches: getAverageMatches(eligiblePlayers),
+    matchBalance: getMatchBalanceMap(state, eligiblePlayers, slots),
+  }
+  const basePick = pickPlayers(state, Math.max(4, slots), tierOverrides, classificationContext)
   const warnings = [...basePick.warnings, ...detectGenderConflicts(eligiblePlayers)]
   const mustPlayOverCapacity = warnings.includes('MUST_PLAY_OVER_CAPACITY')
   const requiredPlayerIds = mustPlayOverCapacity
@@ -383,7 +391,7 @@ export function suggestNextRoundExperimental(
     : undefined
 
   for (const strategy of strategies) {
-    const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides)
+    const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides, classificationContext)
     const candidates = getPriorityCandidates(sorted, slots, MAX_CANDIDATES_PER_STRATEGY, strategy)
     diagnostic.generated[strategy] = candidates.length
     let acceptedForStrategy = 0

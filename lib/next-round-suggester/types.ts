@@ -190,6 +190,7 @@ export type SuggestionTradeoff = {
   over_by?: number
   affected_pairs?: number
   affected_players?: number
+  relaxation_level?: 'soft' | 'open'
 }
 
 export type SuggestionTradeoffChoiceId = 'balanced' | 'keep_pvna' | 'reduce_intra' | 'reduce_repeat'

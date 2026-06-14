@@ -40,7 +40,7 @@ describe('Suggester invariants', () => {
     )
     const slots = suggestion.matches.length * 4
     const avg = getAverageMatches(eligible)
-    const mustPlay = eligible.filter((player) => classifyPlayer(player, avg) === Tier.MUST_PLAY)
+    const mustPlay = eligible.filter((player) => classifyPlayer(player, { avgMatches: avg }) === Tier.MUST_PLAY)
     if (mustPlay.length <= slots) {
       for (const player of mustPlay) {
         expect(playingSet.has(player.player_id)).toBe(true)

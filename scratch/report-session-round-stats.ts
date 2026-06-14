@@ -135,6 +135,10 @@ async function main() {
   const restCounts = new Map([...players.keys()].map(id => [id, 0]))
   const consecutiveRest = new Map([...players.keys()].map(id => [id, 0]))
   const maxConsecutiveRest = new Map([...players.keys()].map(id => [id, 0]))
+  const consecutivePlay = new Map([...players.keys()].map(id => [id, 0]))
+  const maxConsecutivePlay = new Map([...players.keys()].map(id => [id, 0]))
+  const pvnaOverExposure = new Map([...players.keys()].map(id => [id, 0]))
+  const intraOverExposure = new Map([...players.keys()].map(id => [id, 0]))
   const partnerCounts = new Map<string, number>()
   const opponentCounts = new Map<string, number>()
 
@@ -168,17 +172,19 @@ async function main() {
 
       const aSum = teamSum(teamA)
       const bSum = teamSum(teamB)
+      const gap = Math.abs(aSum - bSum)
+      const maxIntraTeamGap = Math.max(
+        Math.abs(pvna(teamA[0]) - pvna(teamA[1])),
+        Math.abs(pvna(teamB[0]) - pvna(teamB[1])),
+      )
       matchStats.push({
         round: round.round_no,
         court: (match.court_idx ?? 0) + 1,
         label: `${teamLabel(teamA)} vs ${teamLabel(teamB)}`,
-        gap: Math.abs(aSum - bSum),
+        gap,
         teamA: aSum,
         teamB: bSum,
-        maxIntraTeamGap: Math.max(
-          Math.abs(pvna(teamA[0]) - pvna(teamA[1])),
-          Math.abs(pvna(teamB[0]) - pvna(teamB[1])),
-        ),
+        maxIntraTeamGap,
         partnerRepeatBefore,
         opponentRepeatBefore,
         maxProjectedPartnerPair: Math.max(projectedPartnerA, projectedPartnerB),
@@ -191,13 +197,19 @@ async function main() {
       for (const playerId of [...teamA, ...teamB]) {
         playedThisRound.add(playerId)
         matchCounts.set(playerId, (matchCounts.get(playerId) ?? 0) + 1)
+        if (gap > 0.5) pvnaOverExposure.set(playerId, (pvnaOverExposure.get(playerId) ?? 0) + 1)
+        if (maxIntraTeamGap > 1.5) intraOverExposure.set(playerId, (intraOverExposure.get(playerId) ?? 0) + 1)
       }
     }
 
     for (const playerId of players.keys()) {
       if (playedThisRound.has(playerId)) {
         consecutiveRest.set(playerId, 0)
+        const next = (consecutivePlay.get(playerId) ?? 0) + 1
+        consecutivePlay.set(playerId, next)
+        maxConsecutivePlay.set(playerId, Math.max(maxConsecutivePlay.get(playerId) ?? 0, next))
       } else {
+        consecutivePlay.set(playerId, 0)
         restCounts.set(playerId, (restCounts.get(playerId) ?? 0) + 1)
         const next = (consecutiveRest.get(playerId) ?? 0) + 1
         consecutiveRest.set(playerId, next)
@@ -216,6 +228,48 @@ async function main() {
   const opponentFinal = finalPairRows.map(row => Number(row.opponent_count ?? 0))
   const worstGaps = [...matchStats].sort((a, b) => b.gap - a.gap).slice(0, 10)
   const repeatCapMatches = matchStats.filter(row => row.maxProjectedPartnerPair > 2 || row.maxProjectedOpponentPair > 2)
+  const pairBurdenByPlayer = new Map([...players.keys()].map(id => [id, {
+    uniquePartners: 0,
+    uniqueOpponents: 0,
+    repeatedPartners: 0,
+    repeatedOpponents: 0,
+  }]))
+  for (const row of finalPairRows) {
+    const playerIds = [String(row.player_a), String(row.player_b)]
+    for (const playerId of playerIds) {
+      const burden = pairBurdenByPlayer.get(playerId)
+      if (!burden) continue
+      const partnerCount = Number(row.partner_count ?? 0)
+      const opponentCount = Number(row.opponent_count ?? 0)
+      if (partnerCount > 0) burden.uniquePartners += 1
+      if (opponentCount > 0) burden.uniqueOpponents += 1
+      burden.repeatedPartners += Math.max(0, partnerCount - 1)
+      burden.repeatedOpponents += Math.max(0, opponentCount - 1)
+    }
+  }
+  const perPlayer = [...players.keys()].map(playerId => {
+    const burden = pairBurdenByPlayer.get(playerId)!
+    return {
+      player: name(playerId),
+      pvna: format(pvna(playerId)),
+      matches: matchCounts.get(playerId) ?? 0,
+      rests: restCounts.get(playerId) ?? 0,
+      maxConsecutivePlay: maxConsecutivePlay.get(playerId) ?? 0,
+      maxConsecutiveRest: maxConsecutiveRest.get(playerId) ?? 0,
+      uniquePartners: burden.uniquePartners,
+      repeatedPartners: burden.repeatedPartners,
+      uniqueOpponents: burden.uniqueOpponents,
+      repeatedOpponents: burden.repeatedOpponents,
+      pvnaOverExposure: pvnaOverExposure.get(playerId) ?? 0,
+      intraOverExposure: intraOverExposure.get(playerId) ?? 0,
+    }
+  }).sort((left, right) =>
+    right.repeatedPartners - left.repeatedPartners
+    || right.repeatedOpponents - left.repeatedOpponents
+    || right.pvnaOverExposure - left.pvnaOverExposure
+    || right.intraOverExposure - left.intraOverExposure
+    || left.player.localeCompare(right.player),
+  )
 
   console.log(JSON.stringify({
     sessionId,
@@ -275,6 +329,7 @@ async function main() {
       maxProjectedPartnerPair: row.maxProjectedPartnerPair,
       maxProjectedOpponentPair: row.maxProjectedOpponentPair,
     })),
+    perPlayer,
   }, null, 2))
 }
 

@@ -1,11 +1,20 @@
 import { Tier } from '@/lib/next-round-suggester/classify'
 import type { FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
+import { computeAvailabilityMetrics } from '@/lib/next-round-suggester/fairness/metrics'
+import type { AvailabilityMetrics } from '@/lib/next-round-suggester/fairness/metrics'
 import {
   INTRA_TEAM_PVNA_GAP_LIMIT,
   getProjectedRepeatSummary,
 } from '@/lib/next-round-suggester/score'
 import { suggestNextMatch } from '@/lib/next-round-suggester/suggest'
-import { LIVE_PREVIEW_ALGORITHM_VERSION } from '@/lib/next-round-suggester/live-preview'
+import {
+  LIVE_PREVIEW_ALGORITHM_VERSION,
+  buildLiveSelectionGuard,
+  buildProjectedStateAfterCompletedLiveRound,
+  isLiveRoundFullyCompleted,
+  isRecentSuggestedLiveMatch,
+  warnLiveRoundProjectionDrift,
+} from '@/lib/next-round-suggester/live-preview'
 import type {
   SessionLiveMatchRow,
   SessionState,
@@ -27,6 +36,7 @@ export type BuildSuggestedMatchOptions = {
   courtIdx?: number
   stateOverride?: SessionState
   liveMatchRowsOverride?: SessionLiveMatchRow[]
+  liveQualityPolicy?: 'current' | 'intra_guard' | 'partner_repeat_heavy' | 'recent_overlap_lite' | 'pvna_outlier_rescue'
 }
 
 export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
@@ -41,6 +51,10 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   fairness_reason_details?: string[]
   tradeoff_choices?: SuggestionTradeoffChoice[]
   recommended_tradeoff_choice?: SuggestionTradeoffChoiceId
+  live_availability_context?: {
+    locked_player_count: number
+    live_court_count: number
+  }
 }
 
 export type LiveDisplayMatchRow = SessionLiveMatchRow & {
@@ -140,7 +154,9 @@ export function buildProjectedStateAfterLiveMatch(
   const existingRound = state.rounds.find(r => r.round_no === effectiveRoundNo)
   const rounds = existingRound
     ? state.rounds.map(r =>
-        r.round_no === effectiveRoundNo ? { ...r, matches: [...r.matches, newMatch] } : r,
+        r.round_no === effectiveRoundNo
+          ? { ...r, status: 'completed' as const, matches: [...r.matches, newMatch] }
+          : r,
       )
     : [
         ...state.rounds,
@@ -164,6 +180,7 @@ export function buildPreviewBatchKey(
   courtCount: number,
   pvnaTolerance: number,
   fairnessAdjustment: { tier_overrides: Record<string, Tier>; applied_for_warnings: unknown[] },
+  liveQualityPolicy: BuildSuggestedMatchOptions['liveQualityPolicy'] = 'current',
 ) {
   const playersKey = [...state.players.values()]
     .map(player => {
@@ -205,6 +222,7 @@ export function buildPreviewBatchKey(
     state.current_round,
     courtCount,
     pvnaTolerance,
+    liveQualityPolicy,
     state.config.pvna_tolerance,
     JSON.stringify(state.config.weights),
     fairnessAdjustment.applied_for_warnings.map(String).sort().join(','),
@@ -409,6 +427,39 @@ export function nowMs() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now()
 }
 
+type LiveTierOverrideMap = Record<string, Tier>
+
+function buildLiveTierOverrides({
+  fairnessTierOverrides,
+  softOverplayedOverrides,
+  softUnderplayedOverrides,
+  deferredRequiredIds,
+  requiredForThisCourt,
+}: {
+  fairnessTierOverrides: LiveTierOverrideMap
+  softOverplayedOverrides: LiveTierOverrideMap
+  softUnderplayedOverrides: LiveTierOverrideMap
+  deferredRequiredIds: string[]
+  requiredForThisCourt: string[]
+}): LiveTierOverrideMap {
+  const deferredRequiredOverrides = Object.fromEntries(
+    deferredRequiredIds.map(playerId => [playerId, Tier.FLEXIBLE]),
+  ) as LiveTierOverrideMap
+  const hardRequiredOverrides = Object.fromEntries(
+    requiredForThisCourt.map(playerId => [playerId, Tier.MUST_PLAY]),
+  ) as LiveTierOverrideMap
+
+  return {
+    // Priority is intentional: later layers win, so hard per-court requirements
+    // override soft balance hints and deferred required players.
+    ...fairnessTierOverrides,
+    ...softOverplayedOverrides,
+    ...softUnderplayedOverrides,
+    ...deferredRequiredOverrides,
+    ...hardRequiredOverrides,
+  }
+}
+
 export type BuildSuggestedMatchPayloadsParams = {
   count: number
   sessionId: string
@@ -435,19 +486,28 @@ export function buildSuggestedMatchPayloads({
   playersById,
   pvnaTolerance,
   options = {},
-}: BuildSuggestedMatchPayloadsParams): Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice'>[] {
+}: BuildSuggestedMatchPayloadsParams): Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context'>[] {
   const buildT0 = nowMs()
   let suggestMs = 0
   let projectMs = 0
   let suggestionState = options.stateOverride ?? state
-  const liveMatchRows = options.liveMatchRowsOverride ?? rows.liveMatchRows
-  const payloads: Array<Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice'>> = []
+  const previewNowMs = Date.now()
+  const liveMatchRows = (options.liveMatchRowsOverride ?? rows.liveMatchRows)
+    .filter(match => match.status !== 'suggested' || isRecentSuggestedLiveMatch(match, previewNowMs))
+  const previewSeedBase = buildPreviewBatchKey(
+    sessionId,
+    state,
+    courtCount,
+    pvnaTolerance,
+    fairnessAdjustment,
+    options.liveQualityPolicy ?? 'current',
+  )
+  const payloads: Array<Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context'>> = []
   const baseBusyIds = new Set(
     liveMatchRows
       .filter(match =>
-        match.status === 'live'
+        (match.status === 'live' && !completingLiveMatchIds.has(match.id))
         || match.status === 'suggested'
-        || completingLiveMatchIds.has(match.id),
       )
       .flatMap(match => [...match.team_a, ...match.team_b]),
   )
@@ -461,27 +521,43 @@ export function buildSuggestedMatchPayloads({
       )
       .map(match => Number(match.court_idx)),
   )
+  const liveLockedPlayerIds = new Set(
+    liveMatchRows
+      .filter(match => match.status === 'live' && !completingLiveMatchIds.has(match.id))
+      .flatMap(match => [...match.team_a, ...match.team_b]),
+  )
+  const liveAvailabilityContext = liveLockedPlayerIds.size > 0
+    ? {
+        locked_player_count: liveLockedPlayerIds.size,
+        live_court_count: liveCourtIdxs.size,
+      }
+    : undefined
   const courtCapacity = Math.max(1, Math.floor(suggestionState.config.courts || courtCount || 1))
   const roundCounts = new Map<number, number>()
   const courtIdxsByRound = new Map<number, Set<number>>()
+  const matchesByRound = new Map<number, SessionLiveMatchRow[]>()
   const countableMatches = liveMatchRows
     .filter(match => match.status !== 'cancelled')
     .sort((left, right) => left.sequence_no - right.sequence_no)
   const previewCountableMatchCount = countableMatches.length
   const logicalRoundByMatchId = new Map<string, number>()
   countableMatches.forEach((match, matchIndex) => {
-    const roundNo = Math.floor(matchIndex / courtCapacity)
-    logicalRoundByMatchId.set(match.id, match.round_no ?? roundNo)
-    roundCounts.set(roundNo, (roundCounts.get(roundNo) ?? 0) + 1)
+    const indexRoundNo = Math.floor(matchIndex / courtCapacity)
+    const logicalRoundNo = match.round_no ?? indexRoundNo
+    logicalRoundByMatchId.set(match.id, logicalRoundNo)
+    roundCounts.set(logicalRoundNo, (roundCounts.get(logicalRoundNo) ?? 0) + 1)
+    const roundMatches = matchesByRound.get(logicalRoundNo) ?? []
+    roundMatches.push(match)
+    matchesByRound.set(logicalRoundNo, roundMatches)
     if (match.court_idx !== null && match.court_idx !== undefined) {
-      const courtIdxs = courtIdxsByRound.get(roundNo) ?? new Set<number>()
+      const courtIdxs = courtIdxsByRound.get(logicalRoundNo) ?? new Set<number>()
       courtIdxs.add(Number(match.court_idx))
-      courtIdxsByRound.set(roundNo, courtIdxs)
+      courtIdxsByRound.set(logicalRoundNo, courtIdxs)
     }
   })
   const playerIdsByRound = new Map<number, Set<string>>()
-  countableMatches.forEach((match, matchIndex) => {
-    const roundNo = Math.floor(matchIndex / courtCapacity)
+  countableMatches.forEach((match) => {
+    const roundNo = logicalRoundByMatchId.get(match.id) ?? match.round_no ?? match.sequence_no
     const playerIds = playerIdsByRound.get(roundNo) ?? new Set<string>()
     match.team_a.forEach(playerId => playerIds.add(playerId))
     match.team_b.forEach(playerId => playerIds.add(playerId))
@@ -524,12 +600,23 @@ export function buildSuggestedMatchPayloads({
     || match.status === 'suggested'
     || completingLiveMatchIds.has(match.id),
   )
+  const projectedExistingRoundNos = new Set<number>()
   for (const match of projectedExistingMatches) {
+    const projectedRoundNo = logicalRoundByMatchId.get(match.id) ?? match.round_no ?? match.sequence_no
+    projectedExistingRoundNos.add(projectedRoundNo)
     suggestionState = buildProjectedStateAfterLiveMatch(
       suggestionState,
       match,
-      logicalRoundByMatchId.get(match.id) ?? match.round_no ?? match.sequence_no,
+      projectedRoundNo,
     )
+  }
+  for (const roundNo of projectedExistingRoundNos) {
+    if (isLiveRoundFullyCompleted(roundNo, matchesByRound, courtCapacity, completingLiveMatchIds)) {
+      suggestionState = buildProjectedStateAfterCompletedLiveRound(
+        suggestionState,
+        playerIdsByRound.get(roundNo) ?? new Set<string>(),
+      )
+    }
   }
   const getInitialRoundCourtIdxs = (roundNo: number) => {
     const existingRoundCourtIdxs = courtIdxsByRound.get(roundNo)
@@ -539,8 +626,36 @@ export function buildSuggestedMatchPayloads({
     ])
   }
   const queuedCourtIdxs = new Set(liveCourtIdxs)
-  let projectedRoundNo = Math.floor(countableMatches.length / courtCapacity)
-  let projectedRoundMatchCount = countableMatches.length % courtCapacity
+  const availabilityMetricsByState = new WeakMap<SessionState, AvailabilityMetrics>()
+  const getAvailabilityMetricsForState = (stateForMetrics: SessionState) => {
+    const cached = availabilityMetricsByState.get(stateForMetrics)
+    if (cached) return cached
+    const metrics = computeAvailabilityMetrics(stateForMetrics)
+    availabilityMetricsByState.set(stateForMetrics, metrics)
+    return metrics
+  }
+  let projectedRoundNo = 0
+  let projectedRoundMatchCount = 0
+  if (roundCounts.size > 0) {
+    const maxLogicalRound = Math.max(...roundCounts.keys())
+    const maxLogicalRoundMatchCount = roundCounts.get(maxLogicalRound) ?? 0
+    if (maxLogicalRoundMatchCount >= courtCapacity) {
+      projectedRoundNo = maxLogicalRound + 1
+    } else {
+      projectedRoundNo = maxLogicalRound
+      projectedRoundMatchCount = maxLogicalRoundMatchCount
+    }
+  }
+  warnLiveRoundProjectionDrift({
+    source: 'v2',
+    sessionId,
+    stateCurrentRound: state.current_round,
+    projectedRoundNo,
+    projectedRoundMatchCount,
+    courtCapacity,
+    roundCounts,
+    courtIdxsByRound,
+  })
   let roundCourtIdxs = getInitialRoundCourtIdxs(projectedRoundNo)
   let roundBusyIds = new Set(playerIdsByRound.get(projectedRoundNo) ?? [])
   roundRequiredIds = getRoundRequiredIds(projectedRoundNo, courtCapacity - projectedRoundMatchCount, roundBusyIds)
@@ -557,6 +672,7 @@ export function buildSuggestedMatchPayloads({
       .find(idx => !queuedCourtIdxs.has(idx) && !roundCourtIdxs.has(idx))
     const courtIdx = options.courtIdx ?? nextCourtIdx
     if (courtIdx === undefined) break
+    const previewSeed = `${previewSeedBase}|court:${index}`
     const suggestT0 = nowMs()
     const remainingCourtsInRound = Math.max(1, courtCapacity - projectedRoundMatchCount)
     const availableRequiredIds = [...roundRequiredIds]
@@ -590,27 +706,80 @@ export function buildSuggestedMatchPayloads({
         .filter(player => fairnessAdjustment.tier_overrides[player.player_id] === undefined)
         .map(player => [player.player_id, Tier.SHOULD_REST]),
     )
-    const tierOverrides = {
-      ...fairnessAdjustment.tier_overrides,
-      ...softOverplayedOverrides,
-      ...softUnderplayedOverrides,
-      ...Object.fromEntries(deferredRequiredIds.map(playerId => [playerId, Tier.FLEXIBLE])),
-      ...Object.fromEntries(requiredForThisCourt.map(playerId => [playerId, Tier.MUST_PLAY])),
+    const tierOverrides = buildLiveTierOverrides({
+      fairnessTierOverrides: fairnessAdjustment.tier_overrides,
+      softOverplayedOverrides: softOverplayedOverrides as LiveTierOverrideMap,
+      softUnderplayedOverrides: softUnderplayedOverrides as LiveTierOverrideMap,
+      deferredRequiredIds,
+      requiredForThisCourt,
+    })
+
+    const suggestionStateForCourt = { ...suggestionState, current_round: projectedRoundNo }
+    const liveSelectionGuard = buildLiveSelectionGuard({
+      state: suggestionStateForCourt,
+      busyIds,
+      nextMatchIndex: previewCountableMatchCount + index + 1,
+    })
+    liveSelectionGuard.protectedIds.forEach(playerId => busyIds.add(playerId))
+    const buildBusyIdsForProtected = (protectedIds: Set<string>) => new Set([
+      ...baseBusyIds,
+      ...roundBusyIds,
+      ...protectedIds,
+    ])
+    const buildRelaxedTierOverrides = () => {
+      const relaxedTierOverrides = { ...tierOverrides }
+      for (const playerId of [...requiredForThisCourt, ...deferredRequiredIds]) {
+        delete relaxedTierOverrides[playerId]
+      }
+      return relaxedTierOverrides
     }
-    
-    // In build-preview.ts, Tier is imported, we should use Tier.SHOULD_PLAY, etc. but I cast them as Tier here since Tier is an enum.
-    // Actually, I can just use the strings if I cast them to any or import Tier. Let me import Tier.
-    // Fixed: Tier enum in lib/next-round-suggester/classify.ts has SHOULD_PLAY, SHOULD_REST, FLEXIBLE, MUST_PLAY
-    const result = suggestNextMatch(suggestionState, {
-      tier_overrides: tierOverrides as any,
+    const suggestOptions = {
+      tier_overrides: tierOverrides,
       busy_player_ids: busyIds,
       court_idx: courtIdx,
       max_alternatives: __DEV__ ? 8 : LIVE_TRADEOFF_ALTERNATIVE_LIMIT,
-    })
+      availability_metrics: getAvailabilityMetricsForState(suggestionStateForCourt),
+      preview_seed: previewSeed,
+    }
+    let result = suggestNextMatch(suggestionStateForCourt, suggestOptions)
+    if (result.alternatives.length === 0) {
+      const relaxedTierOverrides = buildRelaxedTierOverrides()
+      const relaxationStages = liveSelectionGuard.relaxationStages.length > 0
+        ? liveSelectionGuard.relaxationStages
+        : [{ protectedIds: liveSelectionGuard.protectedIds, warnings: liveSelectionGuard.warnings }]
+      for (const relaxationStage of relaxationStages) {
+        if (result.alternatives.length > 0) break
+        const relaxedResult = suggestNextMatch(suggestionStateForCourt, {
+          ...suggestOptions,
+          busy_player_ids: buildBusyIdsForProtected(relaxationStage.protectedIds),
+          tier_overrides: relaxedTierOverrides,
+          max_alternatives: __DEV__ ? 8 : LIVE_TRADEOFF_ALTERNATIVE_LIMIT,
+        })
+        if (relaxedResult.alternatives.length === 0) continue
+        result = {
+          ...relaxedResult,
+          warnings: [...new Set([...relaxedResult.warnings, ...relaxationStage.warnings])],
+          alternatives: relaxedResult.alternatives.map(alternative => ({
+            ...alternative,
+            warnings: [...new Set([...alternative.warnings, ...relaxationStage.warnings])],
+          })),
+        }
+      }
+    }
+    if (liveSelectionGuard.warnings.length > 0 && result.alternatives.length > 0) {
+      result = {
+        ...result,
+        warnings: [...new Set([...result.warnings, ...liveSelectionGuard.warnings])],
+        alternatives: result.alternatives.map(alternative => ({
+          ...alternative,
+          warnings: [...new Set([...alternative.warnings, ...liveSelectionGuard.warnings])],
+        })),
+      }
+    }
     
     suggestMs += nowMs() - suggestT0
     const configuredPvnaTolerance = pvnaTolerance
-    const tradeoffChoices = buildLiveTradeoffChoices(result.alternatives, suggestionState, configuredPvnaTolerance)
+    const tradeoffChoices = buildLiveTradeoffChoices(result.alternatives, suggestionStateForCourt, configuredPvnaTolerance)
     const recommendedChoice = tradeoffChoices?.choices.find(choice => choice.id === tradeoffChoices.recommended)
       ?? tradeoffChoices?.choices[0]
     const alternative = recommendedChoice?.alternative ?? result.alternatives[0]
@@ -684,6 +853,7 @@ export function buildSuggestedMatchPayloads({
         : [],
       tradeoff_choices: tradeoffChoices?.choices,
       recommended_tradeoff_choice: tradeoffChoices?.recommended,
+      live_availability_context: liveAvailabilityContext,
     })
     
     match.team_a.forEach(playerId => busyIds.add(playerId))

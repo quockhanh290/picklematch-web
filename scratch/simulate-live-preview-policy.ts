@@ -43,6 +43,8 @@ const rosterMutation = argValue('--roster-mutation', 'none')
 const quotaGuard = argValue('--quota-guard', '0') === '1'
 const roundQuotaPlan = argValue('--round-quota-plan', '0') === '1'
 const roundQuotaStart = Math.max(1, Number(argValue('--round-quota-start', '1')))
+const requestBatchSize = Math.max(1, Number(argValue('--request-batch-size', '999')))
+const hardRoundRequiredReservation = argValue('--hard-round-required-reservation', '0') === '1'
 
 function round(n: number, digits = 2) {
   return Number(n.toFixed(digits))
@@ -69,6 +71,20 @@ function bucket(values: number[]) {
   const counts = new Map<number, number>()
   for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1)
   return [...counts.entries()].sort(([a], [b]) => a - b).map(([value, count]) => `${value}:${count}`).join(', ')
+}
+
+function getRequiredForRound(state: SessionState) {
+  return [...state.players.values()]
+    .filter(player => player.checked_out_at === null && !player.opted_rest)
+    .filter(player => player.consecutive_rest >= 1)
+    .sort((left, right) =>
+      right.consecutive_rest - left.consecutive_rest ||
+      left.matches_played - right.matches_played ||
+      left.last_played_round - right.last_played_round ||
+      right.pvna - left.pvna ||
+      left.player_id.localeCompare(right.player_id),
+    )
+    .map(player => player.player_id)
 }
 
 function hashText(value: string) {
@@ -550,6 +566,8 @@ async function main() {
   const mutationEvents: Array<{ round: number; type: 'checkout' | 'checkin'; playerId: string }> = []
   const rosterByRound: Array<{ round: number; active: number; checkedOut: number }> = []
   const mutationCheckedOut = new Set<string>()
+  const restStreakByPlayer = new Map<string, number>()
+  const maxRestStreakByPlayer = new Map<string, number>()
   const selectMutationPlayers = (roundNo: number, count: number) => {
     return [...state.players.values()]
       .filter(player => player.checked_out_at === null && !mutationCheckedOut.has(player.player_id))
@@ -624,6 +642,7 @@ async function main() {
     rosterByRound.push({ round: roundNo + 1, active: activeCount, checkedOut: state.players.size - activeCount })
     const startedAt = performance.now()
     const activePlayers = [...state.players.values()].filter(player => player.checked_out_at === null && !player.opted_rest)
+    const roundRequiredIds = hardRoundRequiredReservation ? getRequiredForRound(state) : []
     const projectedSlotsAfterRound = (roundNo + 1) * courts * 4
     const projectedMin = Math.floor(projectedSlotsAfterRound / Math.max(1, activePlayers.length))
     const projectedMax = Math.ceil(projectedSlotsAfterRound / Math.max(1, activePlayers.length))
@@ -651,19 +670,45 @@ async function main() {
         warnings: [],
         tradeoffs: [],
       })) as SimPayload[] ?? [])
-      : buildSuggestedMatchPayloads({
-        count: courts,
-        sessionId,
-        courtCount: courts,
-        state,
-        rows: { liveMatchRows: liveRows, liveStateVersion: liveRows.length },
-        completingLiveMatchIds: new Set(),
-        fairnessAdjustment: { tier_overrides: quotaTierOverrides, applied_for_warnings: quotaGuard ? ['quota_guard_sim'] : [] },
-        fairnessWarnings: [],
-        playersById: new Map([...state.players.values()].map(player => [player.player_id, { name: player.player_id }])),
-        pvnaTolerance,
-        options: { liveQualityPolicy: policy },
-      })
+      : []
+    if (!useRoundQuotaPlan) {
+      const planningRows = [...liveRows]
+      while (payloads.length < courts) {
+        const alreadyPlanned = new Set(payloads.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+        const requiredRemaining = roundRequiredIds.filter(playerId => !alreadyPlanned.has(playerId))
+        const remainingCourts = courts - payloads.length
+        const futureSlots = Math.max(0, (remainingCourts - 1) * 4)
+        const forcedRequiredPlayerIds = requiredRemaining.slice(0, Math.min(4, Math.max(0, requiredRemaining.length - futureSlots)))
+        const nextPayloads = buildSuggestedMatchPayloads({
+          count: Math.min(requestBatchSize, courts - payloads.length),
+          sessionId,
+          courtCount: courts,
+          state,
+          rows: { liveMatchRows: planningRows, liveStateVersion: planningRows.length },
+          completingLiveMatchIds: new Set(),
+          fairnessAdjustment: { tier_overrides: quotaTierOverrides, applied_for_warnings: quotaGuard ? ['quota_guard_sim'] : [] },
+          fairnessWarnings: [],
+          playersById: new Map([...state.players.values()].map(player => [player.player_id, { name: player.player_id }])),
+          pvnaTolerance,
+          options: {
+            liveQualityPolicy: policy,
+            preserveRoundRequiredThroughRescue: hardRoundRequiredReservation,
+            forcedRequiredPlayerIds,
+          },
+        })
+        if (nextPayloads.length === 0) break
+        for (const payload of nextPayloads) {
+          payloads.push(payload)
+          planningRows.push(makeRow(
+            payloadMatch(payload, Number(payload.court_idx ?? payloads.length - 1)),
+            state,
+            planningRows.length,
+            roundNo,
+            Number(payload.court_idx ?? payloads.length - 1),
+          ))
+        }
+      }
+    }
     if (batchRepair) {
       payloads = repairBatchPvnaOutliers(payloads, state)
     }
@@ -675,6 +720,18 @@ async function main() {
     }
     if (targetedPvnaRescue) {
       payloads = rescueTargetedPvnaOutlier(payloads, state, roundNo)
+    }
+    const playedThisRound = new Set(payloads.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+    for (const player of state.players.values()) {
+      if (player.checked_out_at !== null) continue
+      const nextRest = playedThisRound.has(player.player_id)
+        ? 0
+        : (restStreakByPlayer.get(player.player_id) ?? 0) + 1
+      restStreakByPlayer.set(player.player_id, nextRest)
+      maxRestStreakByPlayer.set(
+        player.player_id,
+        Math.max(maxRestStreakByPlayer.get(player.player_id) ?? 0, nextRest),
+      )
     }
     timings.push(performance.now() - startedAt)
     for (const [courtIdx, payload] of payloads.entries()) {
@@ -792,6 +849,8 @@ async function main() {
       min: Math.min(...counts),
       max: Math.max(...counts),
       bucket: bucket(counts),
+      maxConsecutiveRest: Math.max(0, ...maxRestStreakByPlayer.values()),
+      playersRestedTwoOrMore: [...maxRestStreakByPlayer.values()].filter(value => value >= 2).length,
     },
     quality: {
       pvna: summarize(pvna),
