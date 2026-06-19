@@ -290,6 +290,8 @@ type SuggestedLiveMatchRow = SessionLiveMatchRow & {
     locked_player_count: number
     live_court_count: number
   }
+  locked_player_ids?: string[]
+  available_pool_only?: boolean
 }
 
 type LiveDisplayMatchRow = SessionLiveMatchRow & {
@@ -1399,6 +1401,7 @@ type LiveMatchBoardProps = {
   pvnaTolerance: number
   playersById: Map<string, ArrangementPlayer>
   onStartMatch: (match: SuggestedLiveMatchRow) => void
+  onStartMatchNow: (match: SuggestedLiveMatchRow) => void
   onCompleteMatch: (match: SessionLiveMatchRow, score: { a: number; b: number }) => void
   onCancelMatch: (match: SessionLiveMatchRow) => void
   onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
@@ -1423,6 +1426,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   pvnaTolerance,
   playersById,
   onStartMatch,
+  onStartMatchNow,
   onCompleteMatch,
   onCancelMatch,
   onPlayerPress,
@@ -1476,6 +1480,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
                     roundPace={roundPace}
                     playersById={playersById}
                     onStart={onStartMatch}
+                    onStartNow={onStartMatchNow}
                     onPlayerPress={onPlayerPress}
                     onOpenSettings={onOpenSettings}
                     onOpenSwap={() => onOpenSwap(match)}
@@ -1507,6 +1512,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
   pvnaTolerance,
   playersById,
   onStartMatch,
+  onStartMatchNow,
   onCompleteMatch,
   onCancelMatch,
   onPlayerPress,
@@ -1619,6 +1625,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
                 roundPace={roundPace}
                 playersById={playersById}
                 onStart={onStartMatch}
+                onStartNow={onStartMatchNow}
                 onPlayerPress={onPlayerPress}
                 onOpenSettings={onOpenSettings}
                 onOpenSwap={() => onOpenSwap(suggestedMatch)}
@@ -1820,6 +1827,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   roundPace,
   playersById,
   onStart,
+  onStartNow,
   onPlayerPress,
   onOpenSettings,
   onOpenSwap,
@@ -1831,6 +1839,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   roundPace: number
   playersById: Map<string, ArrangementPlayer>
   onStart: (match: SuggestedLiveMatchRow) => void
+  onStartNow: (match: SuggestedLiveMatchRow) => void
   onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
   onOpenSettings: () => void
   onOpenSwap: (match: SuggestedLiveMatchRow) => void
@@ -1905,7 +1914,9 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   useEffect(() => {
     setRepeatTradeoffApproved(false)
   }, [selectedChoiceId])
-  const startDisabled = busy
+  const lockedPlayerIds = activeMatch.locked_player_ids ?? []
+  const hasLockedPlayers = lockedPlayerIds.length > 0
+  const startDisabled = busy || hasLockedPlayers
   const recommendedChoice = tradeoffChoices.find(choice => choice.id === match.recommended_tradeoff_choice) ?? tradeoffChoices[0]
   const describeChoice = (choice: SuggestionTradeoffChoice) => {
     const reference = recommendedChoice?.metrics
@@ -2140,18 +2151,37 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
         >
           <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: colors.textSecondary }}>ĐỔI NGƯỜI</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => onStart(activeMatch)}
-          disabled={startDisabled}
-          style={{ flex: 1, height: 46, borderRadius: RADIUS.lg, backgroundColor: startDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
-        >
-          {busy ? (
-            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-              <ActivityIndicator size="small" color={theme.onPrimary} />
-              <Text style={ctaTextStyle(theme.onPrimary, 13)}>Đang bắt đầu trận</Text>
+        {hasLockedPlayers ? (
+          <View style={{ flex: 1, gap: 6 }}>
+            <View style={{ height: 46, borderRadius: RADIUS.lg, backgroundColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
+              <Text style={ctaTextStyle(theme.onSurfaceVariant ?? colors.textSecondary, 12)}>⏳ Chờ sân khác xong</Text>
             </View>
-          ) : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Bắt đầu trận</Text>}
-        </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => onStartNow(activeMatch)}
+              disabled={busy}
+              style={{ height: 38, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
+            >
+              {busy ? (
+                <ActivityIndicator size="small" color={colors.textSecondary} />
+              ) : (
+                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: colors.textSecondary, fontWeight: '700' }}>Bắt Đầu Ngay (pool hiện tại)</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            onPress={() => onStart(activeMatch)}
+            disabled={startDisabled}
+            style={{ flex: 1, height: 46, borderRadius: RADIUS.lg, backgroundColor: startDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
+          >
+            {busy ? (
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={theme.onPrimary} />
+                <Text style={ctaTextStyle(theme.onPrimary, 13)}>Đang bắt đầu trận</Text>
+              </View>
+            ) : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Bắt đầu trận</Text>}
+          </TouchableOpacity>
+        )}
       </View>
       <TouchableOpacity
         onPress={() => {}}
@@ -2169,10 +2199,12 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   prev.match.team_b === next.match.team_b &&
   prev.match.court_idx === next.match.court_idx &&
   prev.match.round_no === next.match.round_no &&
+  prev.match.locked_player_ids === next.match.locked_player_ids &&
   prev.pvnaTolerance === next.pvnaTolerance &&
   prev.roundPace === next.roundPace &&
   prev.state === next.state &&
-  prev.playersById === next.playersById
+  prev.playersById === next.playersById &&
+  prev.onStartNow === next.onStartNow
 )
 
 export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({

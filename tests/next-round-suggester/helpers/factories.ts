@@ -147,13 +147,13 @@ export function cloneState(state: SessionState): SessionState {
   }
 }
 
-export function simulateRound(state: SessionState, matches: Match[]): SessionState {
+export function simulateRound(state: SessionState, matches: Match[], resting: string[] = []): SessionState {
   const round: RoundRecord = {
     session_id: state.session_id,
     round_no: state.current_round,
     status: 'completed',
     matches,
-    resting: [],
+    resting,
     started_at: new Date('2026-05-14T12:00:00.000Z'),
     ended_at: new Date('2026-05-14T12:15:00.000Z'),
   }
@@ -183,7 +183,7 @@ export function simulateSession(options: SimulationOptions): SimulationResult {
       tier_overrides: adjustment.tier_overrides,
     }).alternatives[0]
     if (!suggestion) break
-    state = simulateRound(state, suggestion.matches)
+    state = simulateRound(state, suggestion.matches, suggestion.resting)
 
     for (const player of state.players.values()) {
       maxRestByPlayer.set(

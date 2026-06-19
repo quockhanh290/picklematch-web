@@ -1,16 +1,18 @@
-// @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import {
   INTRA_TEAM_PVNA_GAP_LIMIT,
   PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
   RECENT_GROUP_REMATCH_BLOCK_ROUNDS,
   getMatchGroupKey,
   getMatchNearRematchKeys,
+  getNearRematchMinOverlap,
   getRecentGroupRematchKeys,
   getRecentGroupRematchKeySignature,
+  getRematchBlockRounds,
   hasIntraTeamGapOverflow,
   hasRepeatOverflow,
   scoreMatch,
   withRecentGroupRematchKeys,
+  // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 } from './score.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import type { Match, MatchScore, PlayerSessionState, SessionState, Team } from './types.ts'
@@ -114,9 +116,10 @@ function splitCacheKey(
   tolerance?: number,
   allowIntraTeamGapOverflow?: boolean,
   intraTeamGapLimit?: number,
+  recentKeySignature?: string,
 ) {
-  const recentKeySignature = getRecentGroupRematchKeySignature(state)
-  return `${players.map((player) => player.player_id).sort().join(':')}|${tolerance ?? 'strict'}|intra:${allowIntraTeamGapOverflow ? 'open' : intraTeamGapLimit ?? 'preferred'}|recent:${recentKeySignature}`
+  const sig = recentKeySignature ?? getRecentGroupRematchKeySignature(state)
+  return `${players.map((player) => player.player_id).sort().join(':')}|${tolerance ?? 'strict'}|intra:${allowIntraTeamGapOverflow ? 'open' : intraTeamGapLimit ?? 'preferred'}|recent:${sig}`
 }
 
 function matchesKey(matches: Match[]) {
@@ -161,6 +164,10 @@ function evaluatePartition(
     allowRecentGroupRematch?: boolean
     intraTeamGapLimit?: number
     allowIntraTeamGapOverflow?: boolean
+    mustRestAt?: number
+    partnerRepeatCap?: number
+    opponentRepeatCap?: number
+    recentKeySignature?: string
   } = {},
 ): PartitioningResult | null {
   let score = 0
@@ -175,6 +182,10 @@ function evaluatePartition(
       allowRecentGroupRematch: options.allowRecentGroupRematch,
       intraTeamGapLimit: options.intraTeamGapLimit,
       allowIntraTeamGapOverflow: options.allowIntraTeamGapOverflow,
+      mustRestAt: options.mustRestAt,
+      partnerRepeatCap: options.partnerRepeatCap,
+      opponentRepeatCap: options.opponentRepeatCap,
+      recentKeySignature: options.recentKeySignature,
     }, cache)
     if (!split) return null
 
@@ -323,12 +334,16 @@ function bestTeamSplitWithTolerance(
     allowRecentGroupRematch?: boolean
     intraTeamGapLimit?: number
     allowIntraTeamGapOverflow?: boolean
+    mustRestAt?: number
+    partnerRepeatCap?: number
+    opponentRepeatCap?: number
+    recentKeySignature?: string
   } = {},
   cache?: PartitioningRuntimeCache,
 ): TeamSplitResult | null {
   if (players.length !== 4) return null
 
-  const key = `${splitCacheKey(players, state, options.tolerance, options.allowIntraTeamGapOverflow, options.intraTeamGapLimit)}|repeat:${options.allowRepeatOverflow ? 'open' : 'cap'}|recent:${options.allowRecentGroupRematch ? 'open' : 'cap'}`
+  const key = `${splitCacheKey(players, state, options.tolerance, options.allowIntraTeamGapOverflow, options.intraTeamGapLimit, options.recentKeySignature)}|repeat:${options.allowRepeatOverflow ? 'open' : 'cap'}|recent:${options.allowRecentGroupRematch ? 'open' : 'cap'}`
   if (cache?.split.has(key)) return cache.split.get(key) ?? null
 
   let best: TeamSplitResult | null = null
@@ -342,6 +357,9 @@ function bestTeamSplitWithTolerance(
       allowRecentGroupRematch: options.allowRecentGroupRematch,
       intraTeamGapLimit: options.intraTeamGapLimit,
       allowIntraTeamGapOverflow: options.allowIntraTeamGapOverflow,
+      mustRestAt: options.mustRestAt,
+      partnerRepeatCap: options.partnerRepeatCap,
+      opponentRepeatCap: options.opponentRepeatCap,
     })
 
     if (!Number.isFinite(scored.score)) continue
@@ -515,26 +533,94 @@ function getSoftPvnaTolerance(state: SessionState): number {
   return Math.max(MIN_SOFT_PVNA_TOLERANCE, strictTolerance * 2)
 }
 
-function buildRecentGroupRematchKeys(state: SessionState): Set<string> {
+function getMediumPvnaTolerance(state: SessionState): number {
+  return Math.max(0.75, state.config.pvna_tolerance * 1.5)
+}
+
+function buildRecentGroupRematchKeys(state: SessionState, blockRounds: number): Set<string> {
   const keys = getRecentGroupRematchKeys(state)
   const currentRoundNo = state.current_round
+  const activeN = [...state.players.values()].filter(p => p.checked_out_at === null).length
+  // Near-rematch keys (3-player subsets) are only meaningful when a group with ≤2 overlap
+  // is actually possible. Requires at least 2 players outside the previous group (activeN - 4 ≥ 2).
+  // With only 1 player outside (e.g. 5 players, 1 court), every possible 4-player group
+  // shares 3 players with the previous group — adding near-rematch keys would block everything.
+  const addNearKeys = activeN - 4 >= 2
 
   for (const round of state.rounds) {
     if (
       round.status !== 'completed' ||
       currentRoundNo <= round.round_no ||
-      currentRoundNo > round.round_no + RECENT_GROUP_REMATCH_BLOCK_ROUNDS
+      currentRoundNo > round.round_no + blockRounds
     ) {
       continue
     }
 
     for (const match of round.matches) {
       keys.add(getMatchGroupKey(match.team_a, match.team_b))
-      getMatchNearRematchKeys(match.team_a, match.team_b).forEach(key => keys.add(key))
+      if (addNearKeys) {
+        getMatchNearRematchKeys(match.team_a, match.team_b).forEach(key => keys.add(key))
+      }
     }
   }
 
   return keys
+}
+
+function collectOpponentConflictMap(
+  players: PlayerSessionState[],
+): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>()
+  for (const player of players) {
+    for (const [opponentId, count] of player.opponent_counts) {
+      if (count < 1) continue
+      if (!map.has(player.player_id)) map.set(player.player_id, new Set())
+      map.get(player.player_id)!.add(opponentId)
+    }
+  }
+  return map
+}
+
+function separateConflictPairs(
+  players: PlayerSessionState[],
+  conflictMap: Map<string, Set<string>>,
+): PlayerSessionState[] {
+  if (conflictMap.size === 0) return players
+  const result = [...players]
+  const n = result.length
+
+  let changed = true
+  let pass = 0
+  while (changed && pass < 4) {
+    changed = false
+    pass++
+    outer: for (let i = 0; i < n; i++) {
+      const gi = (i / 4) | 0
+      const idI = result[i].player_id
+      const iConflicts = conflictMap.get(idI)
+      if (!iConflicts || iConflicts.size === 0) continue
+      for (let j = i + 1; j < n; j++) {
+        if (((j / 4) | 0) !== gi) continue
+        if (!iConflicts.has(result[j].player_id)) continue
+        // i và j là conflict pair trong cùng nhóm — di chuyển j sang nhóm khác.
+        const pvnaJ = result[j].pvna
+        let bestK = -1
+        let bestDist = Infinity
+        for (let k = 0; k < n; k++) {
+          if (((k / 4) | 0) === gi) continue
+          if (iConflicts.has(result[k].player_id)) continue
+          const dist = Math.abs(result[k].pvna - pvnaJ)
+          if (dist < bestDist) { bestDist = dist; bestK = k }
+        }
+        if (bestK >= 0) {
+          const tmp = result[j]; result[j] = result[bestK]; result[bestK] = tmp
+          changed = true
+          break outer
+        }
+      }
+    }
+  }
+  return result
 }
 
 export function bestPartitioning(
@@ -549,15 +635,24 @@ export function bestPartitioning(
     allowRepeatOverflow?: boolean
     allowRecentGroupRematch?: boolean
     allowIntraTeamGapOverflow?: boolean
+    mustRestAt?: number
+    partnerRepeatCap?: number
+    opponentRepeatCap?: number
   } = {},
 ): PartitioningResult | null {
   if (players.length < 4 || players.length % 4 !== 0) return null
 
   const normalizedPlayers = [...players].sort((a, b) => a.player_id.localeCompare(b.player_id))
-  const maxIterations = options.maxIterations ?? defaultMaxIterations(normalizedPlayers.length)
+const maxIterations = options.maxIterations ?? defaultMaxIterations(normalizedPlayers.length)
   const partitionCount = estimateUniqueCourtPartitions(normalizedPlayers.length)
   const canSearchExhaustively = partitionCount > 0 && partitionCount <= maxIterations
-  const searchState = withRecentGroupRematchKeys(state, buildRecentGroupRematchKeys(state))
+  const blockRounds = getRematchBlockRounds(normalizedPlayers.length)
+  const searchState = withRecentGroupRematchKeys(
+    state,
+    buildRecentGroupRematchKeys(state, blockRounds),
+  )
+  const recentKeySignature = getRecentGroupRematchKeySignature(searchState)
+  const conflictMap = collectOpponentConflictMap(normalizedPlayers)
 
   function runSearch(
     searchOptions: {
@@ -578,6 +673,10 @@ export function bestPartitioning(
         ...searchOptions,
         allowRepeatOverflow: options.allowRepeatOverflow,
         allowRecentGroupRematch: options.allowRecentGroupRematch,
+        mustRestAt: options.mustRestAt,
+        partnerRepeatCap: options.partnerRepeatCap,
+        opponentRepeatCap: options.opponentRepeatCap,
+        recentKeySignature,
       })
       if (!result) return
       if (shouldReplaceBestPartition(result, best, searchState, options.cache)) {
@@ -586,7 +685,7 @@ export function bestPartitioning(
     }
 
     if (canSearchExhaustively) {
-      function walk(remaining: PlayerSessionState[], groups: PlayerSessionState[][]) {
+      function walk(remaining: PlayerSessionState[], groups: PlayerSessionState[][], useConflictFilter: boolean) {
         if (iterations >= maxIterations) return
         if (remaining.length === 0) {
           consider(groups)
@@ -594,14 +693,17 @@ export function bestPartitioning(
         }
 
         const [anchor, ...rest] = remaining
+        const anchorConflicts = useConflictFilter ? conflictMap.get(anchor.player_id) : undefined
         for (const combo of getCombinations(rest, 3)) {
+          if (anchorConflicts && combo.some(p => anchorConflicts.has(p.player_id))) continue
           const comboIds = new Set(combo.map((player) => player.player_id))
           const nextRemaining = rest.filter((player) => !comboIds.has(player.player_id))
-          walk(nextRemaining, [...groups, [anchor, ...combo]])
+          walk(nextRemaining, [...groups, [anchor, ...combo]], useConflictFilter)
         }
       }
 
-      walk(normalizedPlayers, [])
+      if (conflictMap.size > 0) walk(normalizedPlayers, [], true)
+      if (!best) walk(normalizedPlayers, [], false)
       const finalBest = best as PartitioningResult | null
       return {
         result: finalBest
@@ -627,7 +729,11 @@ export function bestPartitioning(
     const historySeedKey = options.seedSalt ?? historySignature(normalizedPlayers)
     const seedBase = hashString(`${state.current_round}|${playerSeedKey}|${historySeedKey}`)
     while (iterations < maxIterations) {
-      consider(chunkIntoCourts(shuffled(normalizedPlayers, seedBase + iterations)))
+      const sh = shuffled(normalizedPlayers, seedBase + iterations)
+      const playersToChunk = conflictMap.size > 0
+        ? separateConflictPairs(sh, conflictMap)
+        : sh
+      consider(chunkIntoCourts(playersToChunk))
     }
 
     const finalBest = best as PartitioningResult | null
@@ -649,58 +755,45 @@ export function bestPartitioning(
     }
   }
 
-  const strict = runSearch()
-  if (strict.result) {
-    options.diagnostics?.({
-      player_count: normalizedPlayers.length,
-      max_iterations: maxIterations,
-      partition_count: partitionCount,
-      exhaustive: canSearchExhaustively,
-      strict_iterations: strict.iterations,
-      relaxed_iterations: 0,
-      found: true,
-      relaxed_tolerance: false,
-    })
-    return strict.result
-  }
-
+  const mediumTolerance = getMediumPvnaTolerance(state)
+  const softTolerance = getSoftPvnaTolerance(state)
   const canRelaxIntraTeamGap = options.allowIntraTeamGapOverflow !== false
-  const strictWithSoftIntraTeamGap = canRelaxIntraTeamGap
-    ? runSearch({
-        intraTeamGapLimit: INTRA_TEAM_PVNA_GAP_LIMIT,
-      })
-    : { result: null, iterations: 0 }
-  if (strictWithSoftIntraTeamGap.result) {
+  const shouldTryMedium = mediumTolerance > state.config.pvna_tolerance
+  const shouldTrySoftTolerance = softTolerance > state.config.pvna_tolerance
+
+  // Stage 1: strict PVNA + preferred intra (≤0.75)
+  const s1 = runSearch()
+  if (s1.result) {
     options.diagnostics?.({
       player_count: normalizedPlayers.length,
       max_iterations: maxIterations,
       partition_count: partitionCount,
       exhaustive: canSearchExhaustively,
-      strict_iterations: strict.iterations + strictWithSoftIntraTeamGap.iterations,
+      strict_iterations: s1.iterations,
       relaxed_iterations: 0,
       found: true,
       relaxed_tolerance: false,
     })
-    return strictWithSoftIntraTeamGap.result
+    return s1.result
   }
 
-  const strictWithIntraTeamGapOverflow = canRelaxIntraTeamGap
-    ? runSearch({
-        allowIntraTeamGapOverflow: true,
-      })
+  // Stage 2: strict PVNA + hard intra (≤1.0)
+  const s2 = canRelaxIntraTeamGap
+    ? runSearch({ intraTeamGapLimit: INTRA_TEAM_PVNA_GAP_LIMIT })
     : { result: null, iterations: 0 }
-  if (strictWithIntraTeamGapOverflow.result) {
+  const strictIter = s1.iterations + s2.iterations
+  if (s2.result) {
     options.diagnostics?.({
       player_count: normalizedPlayers.length,
       max_iterations: maxIterations,
       partition_count: partitionCount,
       exhaustive: canSearchExhaustively,
-      strict_iterations: strict.iterations + strictWithSoftIntraTeamGap.iterations + strictWithIntraTeamGapOverflow.iterations,
+      strict_iterations: strictIter,
       relaxed_iterations: 0,
       found: true,
       relaxed_tolerance: false,
     })
-    return strictWithIntraTeamGapOverflow.result
+    return s2.result
   }
 
   if (options.allowRelaxedTolerance === false) {
@@ -709,7 +802,7 @@ export function bestPartitioning(
       max_iterations: maxIterations,
       partition_count: partitionCount,
       exhaustive: canSearchExhaustively,
-      strict_iterations: strict.iterations + strictWithSoftIntraTeamGap.iterations + strictWithIntraTeamGapOverflow.iterations,
+      strict_iterations: strictIter,
       relaxed_iterations: 0,
       found: false,
       relaxed_tolerance: false,
@@ -717,131 +810,135 @@ export function bestPartitioning(
     return null
   }
 
-  const softTolerance = getSoftPvnaTolerance(state)
-  const shouldTrySoftTolerance = softTolerance > state.config.pvna_tolerance
-  const soft = shouldTrySoftTolerance
-    ? runSearch({
-        tolerance: softTolerance,
-        relaxedTolerance: true,
-        pvnaRelaxationLevel: 'soft',
-      })
+  // Stage 3: medium PVNA + preferred intra (≤0.75)
+  const s3 = shouldTryMedium
+    ? runSearch({ tolerance: mediumTolerance, relaxedTolerance: true, pvnaRelaxationLevel: 'soft' })
     : { result: null, iterations: 0 }
-  if (soft.result) {
+  let relaxedIter = s3.iterations
+  if (s3.result) {
     options.diagnostics?.({
       player_count: normalizedPlayers.length,
       max_iterations: maxIterations,
       partition_count: partitionCount,
       exhaustive: canSearchExhaustively,
-      strict_iterations: strict.iterations + strictWithSoftIntraTeamGap.iterations + strictWithIntraTeamGapOverflow.iterations,
-      relaxed_iterations: soft.iterations,
+      strict_iterations: strictIter,
+      relaxed_iterations: relaxedIter,
       found: true,
       relaxed_tolerance: true,
     })
-    return soft.result
+    return s3.result
   }
 
-  const softWithSoftIntraTeamGap = shouldTrySoftTolerance && canRelaxIntraTeamGap
-    ? runSearch({
-        tolerance: softTolerance,
-        relaxedTolerance: true,
-        pvnaRelaxationLevel: 'soft',
-        intraTeamGapLimit: INTRA_TEAM_PVNA_GAP_LIMIT,
-      })
+  // Stage 4: medium PVNA + hard intra (≤1.0)
+  const s4 = shouldTryMedium && canRelaxIntraTeamGap
+    ? runSearch({ tolerance: mediumTolerance, relaxedTolerance: true, pvnaRelaxationLevel: 'soft', intraTeamGapLimit: INTRA_TEAM_PVNA_GAP_LIMIT })
     : { result: null, iterations: 0 }
-  if (softWithSoftIntraTeamGap.result) {
+  relaxedIter += s4.iterations
+  if (s4.result) {
     options.diagnostics?.({
       player_count: normalizedPlayers.length,
       max_iterations: maxIterations,
       partition_count: partitionCount,
       exhaustive: canSearchExhaustively,
-      strict_iterations: strict.iterations + strictWithSoftIntraTeamGap.iterations + strictWithIntraTeamGapOverflow.iterations,
-      relaxed_iterations: soft.iterations + softWithSoftIntraTeamGap.iterations,
+      strict_iterations: strictIter,
+      relaxed_iterations: relaxedIter,
       found: true,
       relaxed_tolerance: true,
     })
-    return softWithSoftIntraTeamGap.result
+    return s4.result
   }
 
-  const softWithIntraTeamGapOverflow = shouldTrySoftTolerance && canRelaxIntraTeamGap
-    ? runSearch({
-        tolerance: softTolerance,
-        relaxedTolerance: true,
-        pvnaRelaxationLevel: 'soft',
-        allowIntraTeamGapOverflow: true,
-      })
+  // Stage 5: soft PVNA + hard intra (≤1.0)
+  const s5 = shouldTrySoftTolerance && canRelaxIntraTeamGap
+    ? runSearch({ tolerance: softTolerance, relaxedTolerance: true, pvnaRelaxationLevel: 'soft', intraTeamGapLimit: INTRA_TEAM_PVNA_GAP_LIMIT })
     : { result: null, iterations: 0 }
-  if (softWithIntraTeamGapOverflow.result) {
+  relaxedIter += s5.iterations
+  if (s5.result) {
     options.diagnostics?.({
       player_count: normalizedPlayers.length,
       max_iterations: maxIterations,
       partition_count: partitionCount,
       exhaustive: canSearchExhaustively,
-      strict_iterations: strict.iterations + strictWithSoftIntraTeamGap.iterations + strictWithIntraTeamGapOverflow.iterations,
-      relaxed_iterations: soft.iterations + softWithSoftIntraTeamGap.iterations + softWithIntraTeamGapOverflow.iterations,
+      strict_iterations: strictIter,
+      relaxed_iterations: relaxedIter,
       found: true,
       relaxed_tolerance: true,
     })
-    return softWithIntraTeamGapOverflow.result
+    return s5.result
   }
 
-  const open = runSearch({
-    tolerance: Number.POSITIVE_INFINITY,
-    relaxedTolerance: true,
-    pvnaRelaxationLevel: 'open',
-  })
-  if (open.result) {
+  // Stage 5.5: OPEN PVNA + hard intra (≤1.0), no overflow.
+  // Catches bimodal pools where a valid-intra split exists at pvna_diff > softTolerance.
+  const s5_5 = canRelaxIntraTeamGap
+    ? runSearch({ tolerance: Number.POSITIVE_INFINITY, relaxedTolerance: true, pvnaRelaxationLevel: 'open', intraTeamGapLimit: INTRA_TEAM_PVNA_GAP_LIMIT })
+    : { result: null, iterations: 0 }
+  relaxedIter += s5_5.iterations
+
+  // Stage 6: medium PVNA + intra overflow.
+  // Only run Stage 6 when Stage 5.5 found nothing OR found a high-pvna result: with
+  // INTRA_OVERFLOW_WEIGHT=1, a cross-split with small intra excess and much better pvna balance
+  // scores lower than Stage 5.5's same-cluster split when pvna_diff > 1.5×softTolerance per court.
+  // stats.pvna_diff is summed across all courts, so normalize by court count to get a
+  // per-court threshold — otherwise multi-court sessions incorrectly trigger Stage 6.
+  const numCourts = normalizedPlayers.length / 4
+  const stage6PvnaCrossover = softTolerance * 1.5 * numCourts
+  const needsStage6 = !s5_5.result || s5_5.result.stats.pvna_diff > stage6PvnaCrossover
+  const s6 = needsStage6 && shouldTryMedium && canRelaxIntraTeamGap
+    ? runSearch({ tolerance: mediumTolerance, relaxedTolerance: true, pvnaRelaxationLevel: 'soft', allowIntraTeamGapOverflow: true })
+    : { result: null, iterations: 0 }
+  relaxedIter += s6.iterations
+
+  {
+    const s5_5or6 =
+      s5_5.result && s6.result
+        ? (s5_5.result.score <= s6.result.score ? s5_5.result : s6.result)
+        : s5_5.result ?? s6.result ?? null
+    if (s5_5or6) {
+      options.diagnostics?.({
+        player_count: normalizedPlayers.length,
+        max_iterations: maxIterations,
+        partition_count: partitionCount,
+        exhaustive: canSearchExhaustively,
+        strict_iterations: strictIter,
+        relaxed_iterations: relaxedIter,
+        found: true,
+        relaxed_tolerance: true,
+      })
+      return s5_5or6
+    }
+  }
+
+  // Stage 7: soft PVNA + intra overflow
+  const s7 = shouldTrySoftTolerance && canRelaxIntraTeamGap
+    ? runSearch({ tolerance: softTolerance, relaxedTolerance: true, pvnaRelaxationLevel: 'soft', allowIntraTeamGapOverflow: true })
+    : { result: null, iterations: 0 }
+  relaxedIter += s7.iterations
+  if (s7.result) {
     options.diagnostics?.({
       player_count: normalizedPlayers.length,
       max_iterations: maxIterations,
       partition_count: partitionCount,
       exhaustive: canSearchExhaustively,
-      strict_iterations: strict.iterations + strictWithSoftIntraTeamGap.iterations + strictWithIntraTeamGapOverflow.iterations,
-      relaxed_iterations: soft.iterations + softWithSoftIntraTeamGap.iterations + softWithIntraTeamGapOverflow.iterations + open.iterations,
+      strict_iterations: strictIter,
+      relaxed_iterations: relaxedIter,
       found: true,
       relaxed_tolerance: true,
     })
-    return open.result
+    return s7.result
   }
 
-  const openWithSoftIntraTeamGap = canRelaxIntraTeamGap
-    ? runSearch({
-        tolerance: Number.POSITIVE_INFINITY,
-        relaxedTolerance: true,
-        pvnaRelaxationLevel: 'open',
-        intraTeamGapLimit: INTRA_TEAM_PVNA_GAP_LIMIT,
-      })
-    : { result: null, iterations: 0 }
-  if (openWithSoftIntraTeamGap.result) {
-    options.diagnostics?.({
-      player_count: normalizedPlayers.length,
-      max_iterations: maxIterations,
-      partition_count: partitionCount,
-      exhaustive: canSearchExhaustively,
-      strict_iterations: strict.iterations + strictWithSoftIntraTeamGap.iterations + strictWithIntraTeamGapOverflow.iterations,
-      relaxed_iterations: soft.iterations + softWithSoftIntraTeamGap.iterations + softWithIntraTeamGapOverflow.iterations + open.iterations + openWithSoftIntraTeamGap.iterations,
-      found: true,
-      relaxed_tolerance: true,
-    })
-    return openWithSoftIntraTeamGap.result
-  }
-
-  const openWithIntraTeamGapOverflow = canRelaxIntraTeamGap
-    ? runSearch({
-        tolerance: Number.POSITIVE_INFINITY,
-        relaxedTolerance: true,
-        pvnaRelaxationLevel: 'open',
-        allowIntraTeamGapOverflow: true,
-      })
-    : { result: null, iterations: 0 }
+  // Stage 8: open PVNA + intra overflow
+  const s8 = runSearch({ tolerance: Number.POSITIVE_INFINITY, relaxedTolerance: true, pvnaRelaxationLevel: 'open', allowIntraTeamGapOverflow: true })
+  relaxedIter += s8.iterations
   options.diagnostics?.({
     player_count: normalizedPlayers.length,
     max_iterations: maxIterations,
     partition_count: partitionCount,
     exhaustive: canSearchExhaustively,
-    strict_iterations: strict.iterations + strictWithSoftIntraTeamGap.iterations + strictWithIntraTeamGapOverflow.iterations,
-    relaxed_iterations: soft.iterations + softWithSoftIntraTeamGap.iterations + softWithIntraTeamGapOverflow.iterations + open.iterations + openWithSoftIntraTeamGap.iterations + openWithIntraTeamGapOverflow.iterations,
-    found: Boolean(openWithIntraTeamGapOverflow.result),
-    relaxed_tolerance: Boolean(openWithIntraTeamGapOverflow.result),
+    strict_iterations: strictIter,
+    relaxed_iterations: relaxedIter,
+    found: Boolean(s8.result),
+    relaxed_tolerance: Boolean(s8.result),
   })
-  return openWithIntraTeamGapOverflow.result
+  return s8.result
 }

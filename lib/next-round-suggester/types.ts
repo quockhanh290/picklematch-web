@@ -30,6 +30,10 @@ export type PlayerSessionState = {
   gender: Gender
   partner_gender_pref: GenderPreference
   opponent_gender_pref: GenderPreference
+  rounds_available: number
+  effective_pvna?: number
+  avoid_ids?: Set<string>
+  last_rest_started_round?: number
 }
 
 export type Team = [string, string]
@@ -67,6 +71,12 @@ export type RoundRecord = {
   ended_at: Date | null
 }
 
+export type AvoidPair = {
+  player_a: string
+  player_b: string
+  reason?: 'conflict' | 'skill_gap' | 'preference'
+}
+
 export type SessionState = {
   session_id: string
   current_round: number
@@ -75,6 +85,9 @@ export type SessionState = {
     courts: number
     pvna_tolerance: number
     weights: ScoringWeights
+    planned_total_rounds?: number
+    court_preset?: 'balanced' | 'play_more' | 'relaxed'
+    avoid_pairs?: AvoidPair[]
   }
   players: Map<string, PlayerSessionState>
   rounds: RoundRecord[]
@@ -105,6 +118,7 @@ export type SessionPlayerStateRow = {
     check_in_status?: string | null
     metadata?: Record<string, unknown> | null
   } | null
+  effective_pvna?: number | null
 }
 
 export type SessionPlayerPreferenceRow = {
@@ -170,6 +184,12 @@ export type HostCheckoutRequest = {
 export type HostRestRequest = {
   player_id: string
   opted_rest: boolean
+  reason?: 'voluntary' | 'system'
+}
+
+export type HostPvnaOverrideRequest = {
+  player_id: string
+  effective_pvna: number | null
 }
 
 export type SuggestionAlternative = {

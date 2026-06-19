@@ -22,6 +22,7 @@
     "test:suggester:simulation": "jest tests/next-round-suggester/simulation",
     "test:suggester:fairness": "jest tests/next-round-suggester/fairness",
     "sim": "jest tests/next-round-suggester/simulation/sanity.test.ts tests/next-round-suggester/simulation/targets.test.ts",
+    "diagnose": "npx tsx scripts/diagnose-session.ts",
     "sim:sanity": "jest tests/next-round-suggester/simulation/sanity.test.ts",
     "sim:targets": "jest tests/next-round-suggester/simulation/targets.test.ts",
     "sim:ab": "jest tests/next-round-suggester/simulation/ab-comparison.test.ts --testTimeout=900000",

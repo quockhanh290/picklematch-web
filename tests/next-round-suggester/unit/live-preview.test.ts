@@ -439,6 +439,7 @@ describe('projected live match state', () => {
       fairnessWarnings: [],
       playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
       pvnaTolerance: 0.5,
+      options: { ignoreCapacityLock: false },
     })
 
     expect(payloads).toHaveLength(1)
@@ -666,7 +667,7 @@ describe('projected live match state', () => {
       fairnessWarnings: [],
       playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
       pvnaTolerance: 0.5,
-      options: { courtIdxs: [1] },
+      options: { courtIdxs: [1], ignoreCapacityLock: false },
     })
 
     expect(payloads).toHaveLength(1)

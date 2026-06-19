@@ -350,6 +350,70 @@ export async function markSessionPlayersPresent(sessionId: string, playerIds: st
   if (error) throw error
 }
 
+export type AvoidPairEntry = {
+  player_a: string
+  player_b: string
+  reason?: string
+}
+
+export async function loadAvoidPairs(sessionId: string): Promise<AvoidPairEntry[]> {
+  const { data, error } = await supabase
+    .from('session_avoid_pairs')
+    .select('player_a, player_b, reason')
+    .eq('session_id', sessionId)
+  if (error) throw error
+  return (data ?? []) as AvoidPairEntry[]
+}
+
+// TODO(frontend): Wire these to UI — backend is live (session_avoid_pairs table with RLS).
+// Suggested entry point: roster sheet player row long-press → "Avoid pairing" action.
+// State management: call setAvoidPairs() from useNextRoundModel after each mutation.
+export async function addAvoidPair(
+  sessionId: string,
+  pair: AvoidPairEntry,
+): Promise<void> {
+  const [a, b] = [pair.player_a, pair.player_b].sort()
+  const { error } = await supabase
+    .from('session_avoid_pairs')
+    .upsert(
+      { session_id: sessionId, player_a: a, player_b: b, reason: pair.reason ?? null },
+      { onConflict: 'session_id,player_a,player_b' },
+    )
+  if (error) throw error
+}
+
+export async function removeAvoidPair(
+  sessionId: string,
+  playerA: string,
+  playerB: string,
+): Promise<void> {
+  const [a, b] = [playerA, playerB].sort()
+  const { error } = await supabase
+    .from('session_avoid_pairs')
+    .delete()
+    .eq('session_id', sessionId)
+    .eq('player_a', a)
+    .eq('player_b', b)
+  if (error) throw error
+}
+
+// TODO(frontend): Wire to UI — backend column effective_pvna on session_player_state is live.
+// Suggested entry point: roster sheet player row → long-press → "Adjust skill for this session".
+// null = remove override (revert to player's actual PVNA). Range: 1.0–6.0.
+// State: update session_player_state row in live query cache after success.
+export async function setEffectivePvna(
+  sessionId: string,
+  playerId: string,
+  effectivePvna: number | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('session_player_state')
+    .update({ effective_pvna: effectivePvna })
+    .eq('session_id', sessionId)
+    .eq('player_id', playerId)
+  if (error) throw error
+}
+
 const liveMatchesPreviewInFlight = new Map<string, Promise<any>>()
 
 export async function fetchLiveMatchesPreview(
@@ -368,6 +432,12 @@ export async function fetchLiveMatchesPreview(
     player_rows: any[]
     pair_rows: any[]
     round_rows: any[]
+    // Settings — optional, backward compatible
+    planned_total_rounds?: number
+    court_preset?: 'balanced' | 'play_more' | 'relaxed'
+    current_courts?: number
+    avoid_pairs?: AvoidPairEntry[]
+    prefer_available_pool?: boolean
   }
 ) {
   const requestKey = `${sessionId}:${JSON.stringify(body)}`

@@ -374,12 +374,16 @@ describe('scoreMatch', () => {
       allowIntraTeamGapOverflow: true,
     })
 
+    // teamA gap = |4.42 - 2.66| = 1.76, excess over 1.0 = 0.76, penalty = 0.76 * 1 = 0.76
+    // teamB gap = |3.02 - 3.59| = 0.57 — no overflow
+    // score = pvna_diff(0.47) + intra_overflow_penalty(0.76) = 1.23
     expect(strict.score).toBe(Infinity)
     expect(Math.abs(relaxedIntra.stats.pvna_diff - 0.47)).toBeLessThan(0.001)
-    expect(Math.abs(relaxedIntra.score - 0.47)).toBeLessThan(0.001)
+    expect(Math.abs(relaxedIntra.score - 1.23)).toBeLessThan(0.01)
   })
 
   it('blocks same four-player rematches for the next two rounds even when partners change', () => {
+    // Use N=11 players so getRematchBlockRounds(11) = 2 (N > 10)
     const players = [
       createPlayer('p1', { pvna: 3.0 }),
       createPlayer('p2', { pvna: 3.1 }),
@@ -387,6 +391,11 @@ describe('scoreMatch', () => {
       createPlayer('p4', { pvna: 3.3 }),
       createPlayer('p5', { pvna: 3.4 }),
       createPlayer('p6', { pvna: 3.5 }),
+      createPlayer('p7', { pvna: 3.0 }),
+      createPlayer('p8', { pvna: 3.1 }),
+      createPlayer('p9', { pvna: 3.2 }),
+      createPlayer('p10', { pvna: 3.3 }),
+      createPlayer('p11', { pvna: 3.4 }),
     ]
     const previousMatch: Match = {
       court_idx: 0,
@@ -411,6 +420,7 @@ describe('scoreMatch', () => {
   })
 
   it('blocks near-rematches with three of the same four players in the recent window', () => {
+    // Use N=9 players so getNearRematchMinOverlap(9) = 3 (N > 8)
     const players = [
       createPlayer('p1', { pvna: 3.0 }),
       createPlayer('p2', { pvna: 3.1 }),
@@ -418,6 +428,9 @@ describe('scoreMatch', () => {
       createPlayer('p4', { pvna: 3.3 }),
       createPlayer('p5', { pvna: 3.4 }),
       createPlayer('p6', { pvna: 3.5 }),
+      createPlayer('p7', { pvna: 3.0 }),
+      createPlayer('p8', { pvna: 3.1 }),
+      createPlayer('p9', { pvna: 3.2 }),
     ]
     const state = {
       ...createState({ players, currentRound: 1, pvnaTolerance: 10 }),

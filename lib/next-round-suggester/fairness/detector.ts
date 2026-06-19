@@ -1,9 +1,13 @@
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import type { PlayerSessionState, SessionState } from '../types.ts'
+import type { PlayerSessionState, RoundRecord, SessionState } from '../types.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { computeAvailabilityMetrics, computeGenderPrefSatisfaction, computeMatchCountMetrics, computeOpponentDiversity, computeOpponentRepeatBurden, computePartnerDiversity } from './metrics.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { computeRepeatPressure } from './pressure.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { getBenchDepth } from '../state.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { isAvoidPair } from '../avoid.ts'
 
 export type WarningType =
   | 'match_count_imbalance'
@@ -17,6 +21,9 @@ export type WarningType =
   | 'rest_violation'
   | 'gender_pref_unsatisfied'
   | 'gender_pref_impossible'
+  | 'avoid_partner_violation'
+  | 'avoid_opponent_violation'
+  | 'pvna_outlier'
 
 export type FairnessWarning = {
   severity: 'info' | 'warning' | 'critical'
@@ -38,6 +45,12 @@ export function detectFairnessIssues(state: SessionState): FairnessWarning[] {
   warnings.push(...detectOpponentBurdenIssues(activeState))
   warnings.push(...detectRestViolations(activeState))
   warnings.push(...detectGenderIssues(activeState))
+
+  const lastCompleted = [...state.rounds].reverse().find((r) => r.status === 'completed')
+  if (lastCompleted) {
+    warnings.push(...detectAvoidViolations(lastCompleted, state))
+  }
+  warnings.push(...detectPvnaOutliers(state))
 
   return warnings
 }
@@ -81,8 +94,13 @@ function detectOpponentBurdenIssues(state: SessionState): FairnessWarning[] {
 
   const metrics = computeOpponentRepeatBurden(state)
   const pressure = computeRepeatPressure(state)
+  const N = [...state.players.values()].filter((p) => p.checked_out_at === null).length
+  // 6.3: threshold scales with N — larger group → expected more diverse opponents
+  const warnThreshold = Math.max(3, Math.ceil(N / 4))
+  // 6.3: when repeat pressure is extreme, downgrade to 'info' (expected behavior)
+  const effectiveSeverity: 'info' | 'warning' = pressure.repeat_risk === 'extreme' ? 'info' : 'warning'
   const overloaded = metrics.per_player
-    .filter((player) => player.repeated_opponents >= 3)
+    .filter((player) => player.repeated_opponents >= warnThreshold)
     .sort((a, b) => {
       if (b.repeated_opponents !== a.repeated_opponents) {
         return b.repeated_opponents - a.repeated_opponents
@@ -92,15 +110,18 @@ function detectOpponentBurdenIssues(state: SessionState): FairnessWarning[] {
   if (overloaded.length === 0) return []
 
   const maxBurden = overloaded[0].repeated_opponents
+  // 6.4: small group context
+  const isSmallGroup = N <= 10
+  const baseMessage = pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
+    ? `${overloaded.length} người đang bị lặp đối thủ; cài đặt áp lực lặp ở mức ${pressure.repeat_risk}.`
+    : `${overloaded.length} người đang gặp lại nhiều đối thủ (lặp ${maxBurden}+ cặp).`
 
   return [
     {
-      severity: maxBurden >= 6 ? 'warning' : 'info',
+      severity: effectiveSeverity,
       type: 'opponent_repeat_burden',
       affected_players: overloaded.map((player) => player.player_id),
-      message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? `${overloaded.length} người đang bị lặp đối thủ; cài đặt áp lực lặp ở mức ${pressure.repeat_risk}.`
-        : `${overloaded.length} người đang gặp lại nhiều đối thủ (lặp ${maxBurden}+ cặp).`,
+      message: isSmallGroup ? `${baseMessage} (Nhóm nhỏ — lặp đối thủ là bình thường)` : baseMessage,
       suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
         ? 'Engine vẫn rải đều đối thủ lặp; host có thể chọn tinh chỉnh cài đặt nếu muốn giảm lặp mạnh hơn.'
         : 'Engine sẽ ưu tiên rải đều đối thủ lặp ở vòng kế tiếp.',
@@ -160,18 +181,24 @@ function getAllowedMatchCountRange(metrics: ReturnType<typeof computeMatchCountM
 function detectPartnerIssues(state: SessionState): FairnessWarning[] {
   if (state.current_round < 4) return []
 
-  const highRepeats = computePartnerDiversity(state).repeat_pairs.filter((pair) => pair.count >= 3)
+  const diversity = computePartnerDiversity(state)
+  // 6.1: only cross-group repeats are actionable warnings (intra-group same-team is expected)
+  const highRepeats = (diversity.cross_group_repeat_pairs ?? diversity.repeat_pairs).filter((pair) => pair.count >= 3)
   if (highRepeats.length === 0) return []
   const pressure = computeRepeatPressure(state)
+  const N = [...state.players.values()].filter((p) => p.checked_out_at === null).length
+  // 6.4: small group context
+  const isSmallGroup = N <= 10
+  const baseMessage = pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
+    ? `${highRepeats.length} cặp đã đánh chung 3+ lần; cài đặt áp lực lặp ở mức ${pressure.repeat_risk}.`
+    : `${highRepeats.length} cặp đã đánh chung 3+ lần.`
 
   return [
     {
       severity: 'info',
       type: 'partner_repeat',
       affected_players: uniquePlayers(highRepeats.flatMap((pair) => [pair.player_a, pair.player_b])),
-      message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? `${highRepeats.length} cặp đã đánh chung 3+ lần; cài đặt áp lực lặp ở mức ${pressure.repeat_risk}.`
-        : `${highRepeats.length} cặp đã đánh chung 3+ lần.`,
+      message: isSmallGroup ? `${baseMessage} (Nhóm nhỏ — lặp đồng đội là bình thường)` : baseMessage,
       suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
         ? 'Engine vẫn tránh lặp đồng đội; host có thể giảm sân/giảm vòng/tăng dung sai nếu muốn giảm lặp mạnh hơn.'
         : 'Engine sẽ tăng ưu tiên tránh lặp đồng đội.',
@@ -182,18 +209,24 @@ function detectPartnerIssues(state: SessionState): FairnessWarning[] {
 function detectOpponentIssues(state: SessionState): FairnessWarning[] {
   if (state.current_round < 4) return []
 
-  const highRepeats = computeOpponentDiversity(state).repeat_pairs.filter((pair) => pair.count >= 3)
+  const diversity = computeOpponentDiversity(state)
+  // 6.1: only cross-group opponent repeats are actionable
+  const highRepeats = (diversity.cross_group_repeat_pairs ?? diversity.repeat_pairs).filter((pair) => pair.count >= 3)
   if (highRepeats.length === 0) return []
   const pressure = computeRepeatPressure(state)
+  const N = [...state.players.values()].filter((p) => p.checked_out_at === null).length
+  // 6.4: small group context
+  const isSmallGroup = N <= 10
+  const baseMessage = pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
+    ? `${highRepeats.length} cặp đã đối đầu 3+ lần; cài đặt áp lực lặp ở mức ${pressure.repeat_risk}.`
+    : `${highRepeats.length} cặp đã đối đầu 3+ lần.`
 
   return [
     {
       severity: 'info',
       type: 'opponent_repeat',
       affected_players: uniquePlayers(highRepeats.flatMap((pair) => [pair.player_a, pair.player_b])),
-      message: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
-        ? `${highRepeats.length} cặp đã đối đầu 3+ lần; cài đặt áp lực lặp ở mức ${pressure.repeat_risk}.`
-        : `${highRepeats.length} cặp đã đối đầu 3+ lần.`,
+      message: isSmallGroup ? `${baseMessage} (Nhóm nhỏ — lặp đối thủ là bình thường)` : baseMessage,
       suggested_action: pressure.repeat_risk === 'high' || pressure.repeat_risk === 'extreme'
         ? 'Engine vẫn tránh lặp đối thủ; host có thể giảm sân/giảm vòng/tăng dung sai nếu muốn giảm lặp mạnh hơn.'
         : 'Engine sẽ tăng ưu tiên tránh lặp đối thủ.',
@@ -202,18 +235,23 @@ function detectOpponentIssues(state: SessionState): FairnessWarning[] {
 }
 
 function detectRestViolations(state: SessionState): FairnessWarning[] {
+  // 6.2: violation threshold scales with bench depth (more bench = more rest = higher threshold)
+  const benchDepth = getBenchDepth(state)
+  const violationThreshold = benchDepth <= 1 ? 2 : benchDepth <= 3 ? 3 : 4
+  const severity: 'critical' | 'warning' = benchDepth === 0 ? 'critical' : 'warning'
+
   const violations = [...state.players.values()]
-    .filter((player) => player.checked_out_at === null && player.consecutive_rest >= 2)
+    .filter((player) => player.checked_out_at === null && player.consecutive_rest >= violationThreshold)
     .sort((a, b) => a.player_id.localeCompare(b.player_id))
 
   if (violations.length === 0) return []
 
   return [
     {
-      severity: 'critical',
+      severity,
       type: 'rest_violation',
       affected_players: violations.map((player) => player.player_id),
-      message: `${violations.length} người đã nghỉ 2+ vòng liên tiếp.`,
+      message: `${violations.length} người đã nghỉ ${violationThreshold}+ vòng liên tiếp.`,
       suggested_action: 'Engine sẽ bắt buộc chơi ở vòng kế tiếp.',
     },
   ]
@@ -273,6 +311,72 @@ function getLowGenderSatisfactionPlayers(
 
 function uniquePlayers(playerIds: string[]): string[] {
   return [...new Set(playerIds)].sort()
+}
+
+export function detectAvoidViolations(
+  lastCompletedRound: RoundRecord,
+  state: SessionState,
+): FairnessWarning[] {
+  const warnings: FairnessWarning[] = []
+
+  for (const match of lastCompletedRound.matches) {
+    // Check partner avoid violations
+    for (const team of [match.team_a, match.team_b]) {
+      for (let i = 0; i < team.length - 1; i++) {
+        for (let j = i + 1; j < team.length; j++) {
+          const pA = state.players.get(team[i])
+          const pB = state.players.get(team[j])
+          if (pA && pB && isAvoidPair(pA, pB)) {
+            warnings.push({
+              severity: 'warning',
+              type: 'avoid_partner_violation',
+              affected_players: [pA.player_id, pB.player_id].sort(),
+              message: `Ghép đồng đội ${pA.player_id}/${pB.player_id} vi phạm danh sách tránh.`,
+              suggested_action: 'Kiểm tra danh sách avoid_pairs và tách cặp này ở vòng kế tiếp.',
+            })
+          }
+        }
+      }
+    }
+    // Check opponent avoid violations (softer — info)
+    for (const idA of match.team_a) {
+      for (const idB of match.team_b) {
+        const pA = state.players.get(idA)
+        const pB = state.players.get(idB)
+        if (pA && pB && isAvoidPair(pA, pB)) {
+          warnings.push({
+            severity: 'info',
+            type: 'avoid_opponent_violation',
+            affected_players: [pA.player_id, pB.player_id].sort(),
+            message: `Đối thủ ${pA.player_id}/${pB.player_id} trong danh sách tránh.`,
+            suggested_action: 'Engine đã cộng thêm phạt mềm; có thể không tránh được trong nhóm nhỏ.',
+          })
+        }
+      }
+    }
+  }
+
+  return warnings
+}
+
+export function detectPvnaOutliers(state: SessionState): FairnessWarning[] {
+  const activePlayers = [...state.players.values()].filter((p) => p.checked_out_at === null)
+  if (activePlayers.length < 4) return []
+
+  const avgPvna = activePlayers.reduce((sum, p) => sum + p.pvna, 0) / activePlayers.length
+  const tolerance = state.config.pvna_tolerance * 2
+  const outliers = activePlayers.filter((p) => Math.abs(p.pvna - avgPvna) > tolerance)
+  if (outliers.length === 0) return []
+
+  return [
+    {
+      severity: 'info',
+      type: 'pvna_outlier',
+      affected_players: outliers.map((p) => p.player_id).sort(),
+      message: `${outliers.length} người có PVNA cách trung bình ${tolerance.toFixed(1)}+ điểm.`,
+      suggested_action: 'Host có thể điều chỉnh PVNA hoặc tăng pvna_tolerance để ghép dễ hơn.',
+    },
+  ]
 }
 
 function getActivePlayerState(state: SessionState): SessionState {

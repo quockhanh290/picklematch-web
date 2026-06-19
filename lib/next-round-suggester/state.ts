@@ -1,6 +1,8 @@
 import type {
+  AvoidPair,
   HostCheckInRequest,
   HostCheckoutRequest,
+  HostPvnaOverrideRequest,
   HostRestRequest,
   PlayerSessionState,
   RoundRecord,
@@ -168,6 +170,12 @@ export function mapRowsToSessionState(input: {
   preferenceRows?: SessionPlayerPreferenceRow[]
   courts?: number
   pvnaTolerance?: number
+  extraConfig?: {
+    planned_total_rounds?: number
+    court_preset?: 'balanced' | 'play_more' | 'relaxed'
+    avoid_pairs?: AvoidPair[]
+    current_courts?: number
+  }
 }): SessionState {
   const players = new Map<string, PlayerSessionState>()
   const preferencesByPlayerId = new Map(
@@ -255,6 +263,9 @@ export function mapRowsToSessionState(input: {
       gender: normalizeGender(profile?.gender),
       partner_gender_pref: partnerGenderPref.value,
       opponent_gender_pref: opponentGenderPref.value,
+      rounds_available: 0,
+      effective_pvna: row.effective_pvna ?? undefined,
+      last_rest_started_round: row.consecutive_rest > 0 ? row.last_played_round + 1 : undefined,
     })
   }
 
@@ -302,14 +313,43 @@ export function mapRowsToSessionState(input: {
 
   const currentRound = rounds.reduce((max, round) => Math.max(max, round.round_no), -1) + 1
 
+  // Thay đổi B: tính rounds_available từ completed round history
+  const playerRoundsAvailable = new Map<string, number>()
+  for (const round of rounds) {
+    if (round.status !== 'completed') continue
+    const presentIds = new Set([
+      ...round.matches.flatMap(m => [...m.team_a, ...m.team_b]),
+      ...(round.resting ?? []),
+    ])
+    for (const id of presentIds) {
+      playerRoundsAvailable.set(id, (playerRoundsAvailable.get(id) ?? 0) + 1)
+    }
+  }
+  for (const [id, player] of players) {
+    player.rounds_available = playerRoundsAvailable.get(id) ?? 0
+  }
+
+  // Thay đổi C: build avoid_ids per player từ extraConfig.avoid_pairs
+  const avoidPairs = input.extraConfig?.avoid_pairs ?? []
+  for (const [id, player] of players) {
+    player.avoid_ids = new Set(
+      avoidPairs
+        .filter(p => p.player_a === id || p.player_b === id)
+        .map(p => (p.player_a === id ? p.player_b : p.player_a)),
+    )
+  }
+
   return {
     session_id: input.sessionId,
     current_round: currentRound,
     status: rounds.some((round) => round.status === 'active') ? 'active' : 'waiting',
     config: {
-      courts: input.courts ?? 1,
+      courts: input.extraConfig?.current_courts ?? input.courts ?? 1,
       pvna_tolerance: input.pvnaTolerance ?? 0.5,
       weights: DEFAULT_SCORING_WEIGHTS,
+      planned_total_rounds: input.extraConfig?.planned_total_rounds,
+      court_preset: input.extraConfig?.court_preset,
+      avoid_pairs: avoidPairs.length > 0 ? avoidPairs : undefined,
     },
     players,
     rounds,
@@ -397,6 +437,36 @@ export async function loadSessionState(
   return state
 }
 
+export function getEffectivePvna(player: PlayerSessionState): number {
+  return player.effective_pvna ?? player.pvna
+}
+
+export function getBenchDepth(state: SessionState): number {
+  const active = [...state.players.values()].filter(
+    p => p.checked_out_at === null && !p.opted_rest,
+  ).length
+  return Math.max(0, active - state.config.courts * 4)
+}
+
+export function getSessionPhase(
+  state: SessionState,
+  completedRounds: number,
+): 'warmup' | 'mid' | 'closing' {
+  if (completedRounds < 3) return 'warmup'
+  const planned = state.config.planned_total_rounds
+  if (planned != null && planned - completedRounds <= 2) return 'closing'
+  return 'mid'
+}
+
+export function buildPvnaOverridePatch(
+  request: HostPvnaOverrideRequest,
+): Pick<SessionPlayerStateRow, 'player_id' | 'effective_pvna'> {
+  return {
+    player_id: request.player_id,
+    effective_pvna: request.effective_pvna,
+  }
+}
+
 export function buildCheckInPatch(
   sessionId: string,
   request: HostCheckInRequest,
@@ -428,8 +498,26 @@ export function buildCheckoutPatch(request: HostCheckoutRequest, now: Date) {
 }
 
 export function buildRestPatch(request: HostRestRequest) {
-  return {
+  const patch: { player_id: string; opted_rest: boolean; consecutive_rest?: number } = {
     player_id: request.player_id,
     opted_rest: request.opted_rest,
   }
+  if (request.opted_rest === false && request.reason === 'voluntary') {
+    patch.consecutive_rest = 0
+  }
+  return patch
+}
+
+export function getActiveGroupId(
+  player: PlayerSessionState,
+  state: SessionState,
+): string | null {
+  if (!player.group_id) return null
+  const hasActiveGroupMember = [...state.players.values()].some(
+    (p) =>
+      p.player_id !== player.player_id &&
+      p.group_id === player.group_id &&
+      p.checked_out_at === null,
+  )
+  return hasActiveGroupMember ? player.group_id : null
 }

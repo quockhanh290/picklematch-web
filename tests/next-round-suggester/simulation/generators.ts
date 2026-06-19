@@ -41,6 +41,7 @@ export function generatePlayers(
     partner_counts: new Map(),
     opponent_counts: new Map(),
     opted_rest: false,
+    rounds_available: 0,
   }))
 }
 

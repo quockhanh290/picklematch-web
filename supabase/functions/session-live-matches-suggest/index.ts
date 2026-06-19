@@ -1,4 +1,5 @@
 /* eslint-disable import/no-unresolved */
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getSessionId, handleCorsPreflight, jsonResponse, readJson } from '../_shared/live-session.ts'
 import { correctForFairness } from '../../../lib/next-round-suggester/fairness/corrector.ts'
 import { detectFairnessIssues } from '../../../lib/next-round-suggester/fairness/detector.ts'
@@ -19,10 +20,7 @@ Deno.serve(async (request) => {
   const corsResponse = handleCorsPreflight(request)
   if (corsResponse) return corsResponse
 
-  if (request.method !== 'POST') {
-    return jsonResponse({ ok: false, error: 'Method not allowed' }, 405)
-  }
-
+  const url = new URL(request.url)
   const sessionId = getSessionId(request)
   if (!sessionId) {
     return jsonResponse({ ok: false, error: 'Missing session id' }, 400)
@@ -31,6 +29,79 @@ Deno.serve(async (request) => {
   const authorization = request.headers.get('Authorization')
   if (!authorization?.startsWith('Bearer ')) {
     return jsonResponse({ ok: false, error: 'Unauthorized' }, 401)
+  }
+
+  // Avoid pairs CRUD routes
+  if (url.pathname.endsWith('/avoid-pairs')) {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authorization } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+
+    if (request.method === 'POST') {
+      const { player_a, player_b, reason } = await readJson(request) as Record<string, unknown>
+      const [a, b] = [String(player_a), String(player_b)].sort()
+      const { error } = await userClient
+        .from('session_avoid_pairs')
+        .upsert(
+          { session_id: sessionId, player_a: a, player_b: b, reason: reason ?? null },
+          { onConflict: 'session_id,player_a,player_b' },
+        )
+      if (error) return jsonResponse({ ok: false, error: error.message }, 500)
+      return jsonResponse({ ok: true }, 200)
+    }
+
+    if (request.method === 'DELETE') {
+      const { player_a, player_b } = await readJson(request) as Record<string, unknown>
+      const [a, b] = [String(player_a), String(player_b)].sort()
+      const { error } = await userClient
+        .from('session_avoid_pairs')
+        .delete()
+        .eq('session_id', sessionId)
+        .eq('player_a', a)
+        .eq('player_b', b)
+      if (error) return jsonResponse({ ok: false, error: error.message }, 500)
+      return jsonResponse({ ok: true }, 200)
+    }
+
+    return jsonResponse({ ok: false, error: 'Method not allowed' }, 405)
+  }
+
+  // PVNA override route
+  if (url.pathname.includes('/pvna-override')) {
+    if (request.method !== 'POST') {
+      return jsonResponse({ ok: false, error: 'Method not allowed' }, 405)
+    }
+    const playerId = url.pathname.split('/').at(-2)
+    if (!playerId) {
+      return jsonResponse({ ok: false, error: 'Missing player_id' }, 400)
+    }
+    const { effective_pvna } = await readJson(request) as Record<string, unknown>
+    if (effective_pvna !== null && effective_pvna !== undefined) {
+      const numericPvna = Number(effective_pvna)
+      if (!Number.isFinite(numericPvna) || numericPvna < 1.0 || numericPvna > 6.0) {
+        return jsonResponse({ ok: false, error: 'effective_pvna must be between 1.0 and 6.0' }, 400)
+      }
+    }
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authorization } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+    const { error } = await userClient
+      .from('session_player_state')
+      .update({ effective_pvna: effective_pvna ?? null })
+      .eq('session_id', sessionId)
+      .eq('player_id', playerId)
+    if (error) return jsonResponse({ ok: false, error: error.message }, 500)
+    return jsonResponse({ ok: true }, 200)
+  }
+
+  if (request.method !== 'POST') {
+    return jsonResponse({ ok: false, error: 'Method not allowed' }, 405)
   }
 
   try {
@@ -43,6 +114,12 @@ Deno.serve(async (request) => {
     // 1. Reconstruct state from client rows — no DB queries needed
     const courtCount = optionalNumber(body.court_count) ?? 1
     const pvnaTolerance = optionalNumber(body.pvna_tolerance) ?? 0.5
+    const plannedTotalRounds = optionalNumber(body.planned_total_rounds)
+    const courtPreset = body.court_preset === 'balanced' || body.court_preset === 'play_more' || body.court_preset === 'relaxed'
+      ? body.court_preset as 'balanced' | 'play_more' | 'relaxed'
+      : undefined
+    const currentCourts = optionalNumber(body.current_courts)
+    const avoidPairs = Array.isArray(body.avoid_pairs) ? body.avoid_pairs : undefined
     const state = mapRowsToSessionState({
       sessionId,
       playerRows: body.player_rows ?? [],
@@ -50,6 +127,12 @@ Deno.serve(async (request) => {
       roundRows: body.round_rows ?? [],
       courts: courtCount,
       pvnaTolerance,
+      extraConfig: {
+        planned_total_rounds: plannedTotalRounds,
+        court_preset: courtPreset,
+        current_courts: currentCourts,
+        avoid_pairs: avoidPairs,
+      },
     })
 
     // 2. Compute fairness (pure functions, no DB)
@@ -63,6 +146,7 @@ Deno.serve(async (request) => {
     const maxEdgePreviewCount = body.allow_large_batch === true
       ? Math.max(1, courtCount)
       : Math.min(2, Math.max(1, courtCount))
+    const preferAvailablePool = body.prefer_available_pool === true
     const count = Math.max(1, Math.min(requestedCount, maxEdgePreviewCount))
     const courtIdxs = Array.isArray(body.court_idxs)
       ? body.court_idxs
@@ -86,6 +170,7 @@ Deno.serve(async (request) => {
     }
 
     // 4. Run suggestion algorithm
+    const selectionDebug: any[] = []
     let payloads = buildSuggestedMatchPayloads({
       count,
       sessionId,
@@ -97,7 +182,11 @@ Deno.serve(async (request) => {
       fairnessWarnings: warnings,
       playersById,
       pvnaTolerance,
-      options: courtIdxs && courtIdxs.length > 0 ? { courtIdxs } : undefined,
+      options: {
+        ...(courtIdxs && courtIdxs.length > 0 ? { courtIdxs } : {}),
+        ignoreCapacityLock: !preferAvailablePool,
+      },
+      debugOut: selectionDebug,
     })
     let board = buildFinalPreviewBoard({
       mode,
@@ -172,6 +261,7 @@ Deno.serve(async (request) => {
         courtCount,
         mode,
         replacementBoardIncomplete,
+        selection_debug: selectionDebug,
       },
     })
   } catch (error) {

@@ -37,6 +37,7 @@ export type BuildSuggestedMatchOptions = {
   stateOverride?: SessionState
   liveMatchRowsOverride?: SessionLiveMatchRow[]
   liveQualityPolicy?: 'current' | 'intra_guard' | 'partner_repeat_heavy' | 'recent_overlap_lite' | 'pvna_outlier_rescue'
+  ignoreCapacityLock?: boolean
 }
 
 export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
@@ -55,6 +56,8 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
     locked_player_count: number
     live_court_count: number
   }
+  locked_player_ids?: string[]
+  available_pool_only?: boolean
 }
 
 export type LiveDisplayMatchRow = SessionLiveMatchRow & {
@@ -319,7 +322,7 @@ export function compareChoiceMetrics(
   fields: Array<keyof SuggestionTradeoffChoice['metrics']>,
 ) {
   for (const field of fields) {
-    const diff = compareByNumber(left[field], right[field])
+    const diff = compareByNumber(left[field] ?? 0, right[field] ?? 0)
     if (diff !== 0) return diff
   }
   return 0
@@ -486,7 +489,7 @@ export function buildSuggestedMatchPayloads({
   playersById,
   pvnaTolerance,
   options = {},
-}: BuildSuggestedMatchPayloadsParams): Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context'>[] {
+}: BuildSuggestedMatchPayloadsParams): Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context' | 'locked_player_ids'>[] {
   const buildT0 = nowMs()
   let suggestMs = 0
   let projectMs = 0
@@ -502,11 +505,12 @@ export function buildSuggestedMatchPayloads({
     fairnessAdjustment,
     options.liveQualityPolicy ?? 'current',
   )
-  const payloads: Array<Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context'>> = []
+  const payloads: Array<Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context' | 'locked_player_ids'>> = []
+  const ignoreCapacityLock = options.ignoreCapacityLock ?? true
   const baseBusyIds = new Set(
     liveMatchRows
       .filter(match =>
-        (match.status === 'live' && !completingLiveMatchIds.has(match.id))
+        (!ignoreCapacityLock && match.status === 'live' && !completingLiveMatchIds.has(match.id))
         || match.status === 'suggested'
       )
       .flatMap(match => [...match.team_a, ...match.team_b]),
@@ -854,8 +858,11 @@ export function buildSuggestedMatchPayloads({
       tradeoff_choices: tradeoffChoices?.choices,
       recommended_tradeoff_choice: tradeoffChoices?.recommended,
       live_availability_context: liveAvailabilityContext,
+      locked_player_ids: liveLockedPlayerIds.size > 0
+        ? [...match.team_a, ...match.team_b].filter(id => liveLockedPlayerIds.has(id))
+        : undefined,
     })
-    
+
     match.team_a.forEach(playerId => busyIds.add(playerId))
     match.team_b.forEach(playerId => busyIds.add(playerId))
     match.team_a.forEach(playerId => roundBusyIds.add(playerId))

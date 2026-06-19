@@ -8,6 +8,10 @@ import type {
   Team,
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 } from './types.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { getEffectivePvna } from './state.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { getAvoidPenalty, AVOID_PARTNER_PENALTY } from './avoid.ts'
 
 const INFINITY_SCORE: MatchScore = {
   score: Infinity,
@@ -23,15 +27,30 @@ const INFINITY_SCORE: MatchScore = {
 
 export const PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT = 0.75
 export const INTRA_TEAM_PVNA_GAP_LIMIT = 1.0
+// When allowIntraTeamGapOverflow=true, each unit of gap excess over INTRA_TEAM_PVNA_GAP_LIMIT
+// costs this many score points. W=1 makes the crossover fair: intra excess beats pvna_diff when
+// total excess < pvna_diff, i.e. Stage 6 (cross-split, ~balanced pvna) beats Stage 5.5
+// (same-cluster, valid intra but high pvna_diff) when cluster_gap < 2.0.
+const INTRA_OVERFLOW_WEIGHT = 1
 export const MAX_PROJECTED_PARTNER_PAIR_COUNT = 2
 export const MAX_PROJECTED_OPPONENT_PAIR_COUNT = 2
 export const MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER = 2
 export const MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER = 2
 export const RECENT_GROUP_REMATCH_BLOCK_ROUNDS = 2
 export const RECENT_GROUP_NEAR_REMATCH_MIN_OVERLAP = 3
+
+export function getRematchBlockRounds(N: number): number {
+  return N <= 10 ? 1 : 2
+}
+
+export function getNearRematchMinOverlap(N: number): number {
+  return N <= 8 ? 4 : 3
+}
 export const RECENT_REPEAT_PENALTY_WINDOW = 3
 export const RECENT_PARTNER_REPEAT_WEIGHT = 28
 export const RECENT_OPPONENT_REPEAT_WEIGHT = 4
+export const RECENT_INTRA_GROUP_PARTNER_REPEAT_WEIGHT = 0
+export const RECENT_INTRA_GROUP_OPPONENT_REPEAT_WEIGHT = 1
 export const RECENT_OVERLAP_2_WEIGHT = 1.5
 export const RECENT_OVERLAP_3_WEIGHT = 80
 export const RECENT_EXACT_REMATCH_WEIGHT = 80
@@ -48,11 +67,11 @@ function emptyStats(pvnaDiff = 0): MatchStats {
   }
 }
 
-function getConsecutivePlayPenalty(allPlayers: string[], state: SessionState, weight: number): number {
+function getConsecutivePlayPenalty(allPlayers: string[], state: SessionState, weight: number, mustRestAt = 2): number {
   let penalty = 0
   for (const playerId of allPlayers) {
     const consecutive = state.players.get(playerId)?.consecutive_play ?? 0
-    if (consecutive >= 2) {
+    if (consecutive >= mustRestAt) {
       // Quadratic penalty: (consecutive-1)^2 × weight per player
       // consecutive=2 → 1×weight, consecutive=3 → 4×weight, consecutive=4 → 9×weight
       penalty += Math.pow(consecutive - 1, 2) * weight
@@ -190,18 +209,21 @@ export function hasRecentGroupRematch(teamA: Team, teamB: Team, state: SessionSt
   }
 
   const currentRoundNo = state.current_round
+  const activeN = [...state.players.values()].filter(p => p.checked_out_at === null).length
+  const blockRounds = getRematchBlockRounds(activeN)
+  const nearOverlap = getNearRematchMinOverlap(activeN)
   for (const round of state.rounds) {
     if (
       round.status !== 'completed' ||
       currentRoundNo <= round.round_no ||
-      currentRoundNo > round.round_no + RECENT_GROUP_REMATCH_BLOCK_ROUNDS
+      currentRoundNo > round.round_no + blockRounds
     ) {
       continue
     }
 
     for (const match of round.matches) {
       if (getMatchGroupKey(match.team_a, match.team_b) === matchGroupKey) return true
-      if (getPlayerOverlap(teamA, teamB, match.team_a, match.team_b) >= RECENT_GROUP_NEAR_REMATCH_MIN_OVERLAP) {
+      if (getPlayerOverlap(teamA, teamB, match.team_a, match.team_b) >= nearOverlap) {
         return true
       }
     }
@@ -214,7 +236,7 @@ function getTeamGap(team: Team, state: SessionState): number | null {
   const first = state.players.get(team[0])
   const second = state.players.get(team[1])
   if (!first || !second) return null
-  return Math.abs(first.pvna - second.pvna)
+  return Math.abs(getEffectivePvna(first) - getEffectivePvna(second))
 }
 
 export function hasIntraTeamGapOverflow(
@@ -272,7 +294,19 @@ function cloneCountsForPlayer(
   return new Map(state.players.get(playerId)?.[field] ?? [])
 }
 
-export function getProjectedRepeatSummary(teamA: Team, teamB: Team, state: SessionState): ProjectedRepeatSummary {
+function areSameGroup(
+  a: { group_id: string | null } | undefined,
+  b: { group_id: string | null } | undefined,
+): boolean {
+  return !!a?.group_id && a.group_id === b?.group_id
+}
+
+export function getProjectedRepeatSummary(
+  teamA: Team,
+  teamB: Team,
+  state: SessionState,
+  caps?: { partnerCap?: number; opponentCap?: number },
+): ProjectedRepeatSummary {
   let maxPartnerPairCount = 0
   let maxOpponentPairCount = 0
   let pairOverBy = 0
@@ -307,7 +341,10 @@ export function getProjectedRepeatSummary(teamA: Team, teamB: Team, state: Sessi
   for (const [playerA, playerB] of partnerPairs) {
     const projectedCount = incrementPair(playerA, playerB, projectedPartnerCounts)
     maxPartnerPairCount = Math.max(maxPartnerPairCount, projectedCount)
-    const overBy = Math.max(0, projectedCount - MAX_PROJECTED_PARTNER_PAIR_COUNT)
+    const pA = state.players.get(playerA)
+    const pB = state.players.get(playerB)
+    const partnerThreshold = areSameGroup(pA, pB) ? Infinity : (caps?.partnerCap ?? MAX_PROJECTED_PARTNER_PAIR_COUNT)
+    const overBy = Math.max(0, projectedCount - partnerThreshold)
     if (overBy > 0) {
       pairOverBy += overBy
       affectedPairs += 1
@@ -318,7 +355,7 @@ export function getProjectedRepeatSummary(teamA: Team, teamB: Team, state: Sessi
     for (const playerB of teamB) {
       const projectedCount = incrementPair(playerA, playerB, projectedOpponentCounts)
       maxOpponentPairCount = Math.max(maxOpponentPairCount, projectedCount)
-      const overBy = Math.max(0, projectedCount - MAX_PROJECTED_OPPONENT_PAIR_COUNT)
+      const overBy = Math.max(0, projectedCount - (caps?.opponentCap ?? MAX_PROJECTED_OPPONENT_PAIR_COUNT))
       if (overBy > 0) {
         pairOverBy += overBy
         affectedPairs += 1
@@ -358,8 +395,13 @@ export function getProjectedRepeatSummary(teamA: Team, teamB: Team, state: Sessi
   }
 }
 
-export function hasRepeatOverflow(teamA: Team, teamB: Team, state: SessionState): boolean {
-  const summary = getProjectedRepeatSummary(teamA, teamB, state)
+export function hasRepeatOverflow(
+  teamA: Team,
+  teamB: Team,
+  state: SessionState,
+  caps?: { partnerCap?: number; opponentCap?: number },
+): boolean {
+  const summary = getProjectedRepeatSummary(teamA, teamB, state, caps)
   return summary.pair_over_by > 0 || summary.player_over_by > 0
 }
 
@@ -377,7 +419,7 @@ function getGroupedTeamPairCount(team: Team, state: SessionState): number {
       if (
         playerA?.group_id &&
         playerA.group_id === playerB?.group_id &&
-        Math.abs(playerA.pvna - playerB.pvna) <= INTRA_TEAM_PVNA_GAP_LIMIT
+        Math.abs(getEffectivePvna(playerA) - getEffectivePvna(playerB)) <= INTRA_TEAM_PVNA_GAP_LIMIT
       ) {
         count += 1
       }
@@ -438,6 +480,36 @@ export function genderPenalty(
   return penalty
 }
 
+function computeGroupAwarePartnerPenalty(team: Team, state: SessionState, defaultWeight: number): number {
+  const [idA, idB] = team
+  const count = state.players.get(idA)?.partner_counts.get(idB) ?? 0
+  if (count === 0) return 0
+  const pA = state.players.get(idA)
+  const pB = state.players.get(idB)
+  const weight = areSameGroup(pA, pB) ? RECENT_INTRA_GROUP_PARTNER_REPEAT_WEIGHT : defaultWeight
+  return count * weight
+}
+
+function computeGroupAwareOpponentPenalty(
+  teamA: Team,
+  teamB: Team,
+  state: SessionState,
+  defaultWeight: number,
+): number {
+  let total = 0
+  for (const idA of teamA) {
+    for (const idB of teamB) {
+      const count = state.players.get(idA)?.opponent_counts.get(idB) ?? 0
+      if (count === 0) continue
+      const pA = state.players.get(idA)
+      const pB = state.players.get(idB)
+      const weight = areSameGroup(pA, pB) ? RECENT_INTRA_GROUP_OPPONENT_REPEAT_WEIGHT : defaultWeight
+      total += count * weight
+    }
+  }
+  return total
+}
+
 export function scoreMatch(
   teamA: Team,
   teamB: Team,
@@ -449,6 +521,9 @@ export function scoreMatch(
     allowIntraTeamGapOverflow?: boolean
     allowRecentGroupRematch?: boolean
     intraTeamGapLimit?: number
+    mustRestAt?: number
+    partnerRepeatCap?: number
+    opponentRepeatCap?: number
   } = {},
 ): MatchScore {
   const allPlayers = [...teamA, ...teamB]
@@ -464,18 +539,25 @@ export function scoreMatch(
   const teamB1 = state.players.get(teamB[1])
   if (!teamA0 || !teamA1 || !teamB0 || !teamB1) return INFINITY_SCORE
 
+  const teamAIntraGap = Math.abs(getEffectivePvna(teamA0) - getEffectivePvna(teamA1))
+  const teamBIntraGap = Math.abs(getEffectivePvna(teamB0) - getEffectivePvna(teamB1))
+
   if (!options.allowIntraTeamGapOverflow) {
     const intraTeamGapLimit = options.intraTeamGapLimit ?? PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT
-    if (
-      Math.abs(teamA0.pvna - teamA1.pvna) > intraTeamGapLimit ||
-      Math.abs(teamB0.pvna - teamB1.pvna) > intraTeamGapLimit
-    ) {
+    if (teamAIntraGap > intraTeamGapLimit || teamBIntraGap > intraTeamGapLimit) {
       return INFINITY_SCORE
     }
   }
 
-  const teamAPvna = teamA0.pvna + teamA1.pvna
-  const teamBPvna = teamB0.pvna + teamB1.pvna
+  const intraOverflowPenalty = options.allowIntraTeamGapOverflow
+    ? (
+        Math.max(0, teamAIntraGap - INTRA_TEAM_PVNA_GAP_LIMIT) +
+        Math.max(0, teamBIntraGap - INTRA_TEAM_PVNA_GAP_LIMIT)
+      ) * INTRA_OVERFLOW_WEIGHT
+    : 0
+
+  const teamAPvna = getEffectivePvna(teamA0) + getEffectivePvna(teamA1)
+  const teamBPvna = getEffectivePvna(teamB0) + getEffectivePvna(teamB1)
   const pvnaDiff = Math.abs(teamAPvna - teamBPvna)
   const tolerance = options.tolerance ?? state.config.pvna_tolerance
   if (pvnaDiff > tolerance) return INFINITY_SCORE
@@ -484,7 +566,18 @@ export function scoreMatch(
     return INFINITY_SCORE
   }
 
-  if (!options.allowRepeatOverflow && hasRepeatOverflow(teamA, teamB, state)) {
+  const repeatCaps = (options.partnerRepeatCap != null || options.opponentRepeatCap != null)
+    ? { partnerCap: options.partnerRepeatCap, opponentCap: options.opponentRepeatCap }
+    : undefined
+  if (!options.allowRepeatOverflow && hasRepeatOverflow(teamA, teamB, state, repeatCaps)) {
+    return INFINITY_SCORE
+  }
+
+  // Hard block: avoid pairs as partners
+  if (
+    getAvoidPenalty(teamA0, teamA1, 'partner') === AVOID_PARTNER_PENALTY ||
+    getAvoidPenalty(teamB0, teamB1, 'partner') === AVOID_PARTNER_PENALTY
+  ) {
     return INFINITY_SCORE
   }
 
@@ -494,17 +587,34 @@ export function scoreMatch(
   stats.opponent_repeats = getOpponentRepeats(teamA, teamB, state)
   stats.group_bonus = getGroupedPartnerCount(teamA, teamB, state)
   stats.gender_pref_penalty = genderPenalty(teamA, teamB, state, weights)
-  stats.consecutive_play_penalty = getConsecutivePlayPenalty([...teamA, ...teamB], state, weights.consecutive_play ?? 4)
+  stats.consecutive_play_penalty = getConsecutivePlayPenalty([...teamA, ...teamB], state, weights.consecutive_play ?? 4, options.mustRestAt)
   const recentRepeatCost = getRecentRepeatCost(teamA, teamB, state)
+
+  // Group-aware partner repeat penalty: intra-group pairs use weight=0 (they want to play together)
+  const partnerRepeatScore =
+    computeGroupAwarePartnerPenalty(teamA, state, weights.partner_repeat) +
+    computeGroupAwarePartnerPenalty(teamB, state, weights.partner_repeat)
+
+  // Group-aware opponent repeat penalty: intra-group opponents use a lower weight
+  const opponentRepeatScore = computeGroupAwareOpponentPenalty(teamA, teamB, state, weights.opponent_repeat)
+
+  // Soft penalty: avoid pairs as opponents (300 per direction)
+  const avoidOpponentPenalty =
+    getAvoidPenalty(teamA0, teamB0, 'opponent') +
+    getAvoidPenalty(teamA0, teamB1, 'opponent') +
+    getAvoidPenalty(teamA1, teamB0, 'opponent') +
+    getAvoidPenalty(teamA1, teamB1, 'opponent')
 
   const score =
     pvnaDiff * weights.pvna +
-    stats.partner_repeats * weights.partner_repeat +
-    stats.opponent_repeats * weights.opponent_repeat -
+    partnerRepeatScore +
+    opponentRepeatScore -
     stats.group_bonus * weights.group_bonus +
     stats.gender_pref_penalty +
     stats.consecutive_play_penalty +
-    recentRepeatCost.total
+    recentRepeatCost.total +
+    avoidOpponentPenalty +
+    intraOverflowPenalty
 
   return {
     score,

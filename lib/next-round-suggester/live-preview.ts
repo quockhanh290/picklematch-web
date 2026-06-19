@@ -6,15 +6,16 @@ import type { FairnessWarning } from './fairness/detector.ts'
 import { computeAvailabilityMetrics } from './fairness/metrics.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import type { AvailabilityMetrics } from './fairness/metrics.ts'
-// @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import {
   PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
+  INTRA_TEAM_PVNA_GAP_LIMIT,
   RECENT_GROUP_REMATCH_BLOCK_ROUNDS,
   getMatchGroupKey,
   getMatchNearRematchKeys,
   getRecentRepeatCost,
   getProjectedRepeatSummary,
   withRecentGroupRematchKeys,
+  // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 } from './score.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { bestPartitioning } from './pair.ts'
@@ -41,7 +42,7 @@ const LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3800
 const LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS = 350
 const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 const SUGGESTED_MATCH_BUSY_TTL_MS = 60_000
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 7
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 9
 
 export function isRecentSuggestedLiveMatch(
   match: SessionLiveMatchRow,
@@ -174,6 +175,7 @@ export type BuildSuggestedMatchOptions = {
   liveMatchRowsOverride?: SessionLiveMatchRow[]
   liveQualityPolicy?: LiveQualityPolicy
   forcedRequiredPlayerIds?: string[]
+  ignoreCapacityLock?: boolean
 }
 
 export type LiveQualityPolicy =
@@ -202,6 +204,8 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
     locked_player_count: number
     live_court_count: number
   }
+  locked_player_ids?: string[]
+  available_pool_only?: boolean
 }
 
 export type LiveDisplayMatchRow = SessionLiveMatchRow & {
@@ -213,7 +217,7 @@ export type SuggestedPreviewBatch = {
   matches: SuggestedLiveMatchRow[]
 }
 
-export type SuggestedMatchPayload = Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context'>
+export type SuggestedMatchPayload = Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context' | 'locked_player_ids'>
 
 export type PreviewBoardMode = 'full_board' | 'replace_courts'
 
@@ -604,7 +608,7 @@ function getAlternativeRecentCost(alternative: SuggestionAlternative, state: Ses
   ), 0)
 }
 
-function getProjectedCountViolation(
+export function getProjectedCountViolation(
   alternative: SuggestionAlternative,
   state: SessionState,
   targetMaxAfter: number,
@@ -632,7 +636,7 @@ function getActivePlayerCount(state: SessionState) {
     .length
 }
 
-function getProjectedTargetRangeAfter(state: SessionState, nextMatchIndex: number) {
+export function getProjectedTargetRangeAfter(state: SessionState, nextMatchIndex: number) {
   const activePlayerCount = Math.max(1, getActivePlayerCount(state))
   const slotsAfter = Math.max(0, nextMatchIndex) * 4
   return {
@@ -678,6 +682,14 @@ export function buildLiveSelectionGuard({
     .filter(player => !softRecycleProtectedIds.includes(player.player_id))
     .filter(player => player.matches_played >= target.max + LIVE_QUOTA_OVERPLAY_MARGIN)
     .map(player => player.player_id)
+  // Minimal protection for intra rescue: only absolute recycle + significantly over-quota (+1 margin).
+  // Allows recently-rested players with compatible PVNA to rescue courts with bimodal MUST_PLAY pools.
+  const intraRescueProtectedIds = new Set([
+    ...absoluteRecycleProtectedIds,
+    ...playablePlayers
+      .filter(p => p.matches_played >= target.max + 1)
+      .map(p => p.player_id),
+  ])
 
   const canFillWithout = (protectedIds: string[]) => {
     const protectedSet = new Set(protectedIds)
@@ -704,6 +716,7 @@ export function buildLiveSelectionGuard({
     return {
       protectedIds: new Set(strictProtectedIds),
       quotaProtectedIds,
+      intraRescueProtectedIds,
       warnings: [] as string[],
       relaxationStages: [] as Array<{ protectedIds: Set<string>; warnings: string[] }>,
     }
@@ -713,6 +726,7 @@ export function buildLiveSelectionGuard({
     return {
       protectedIds: new Set(recycleProtectedIds),
       quotaProtectedIds,
+      intraRescueProtectedIds,
       warnings: quotaProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_QUOTA_RELAXED'] : [] as string[],
       relaxationStages: [
         {
@@ -731,6 +745,7 @@ export function buildLiveSelectionGuard({
     return {
       protectedIds: new Set(hardRecycleIds),
       quotaProtectedIds,
+      intraRescueProtectedIds,
       warnings,
       relaxationStages: [
         {
@@ -754,6 +769,7 @@ export function buildLiveSelectionGuard({
   return {
     protectedIds: new Set(absoluteRecycleProtectedIds),
     quotaProtectedIds,
+    intraRescueProtectedIds,
     warnings: absoluteWarnings,
     relaxationStages: [
       {
@@ -775,7 +791,7 @@ export function buildLiveSelectionGuard({
   }
 }
 
-function pickGuardedLiveAlternative(
+export function pickGuardedLiveAlternative(
   alternatives: SuggestionAlternative[],
   state: SessionState,
   configuredPvnaTolerance: number,
@@ -2177,7 +2193,7 @@ export function compareChoiceMetrics(
   fields: Array<keyof SuggestionTradeoffChoice['metrics']>,
 ) {
   for (const field of fields) {
-    const diff = compareByNumber(left[field], right[field])
+    const diff = compareByNumber(left[field] ?? 0, right[field] ?? 0)
     if (diff !== 0) return diff
   }
   return 0
@@ -2515,7 +2531,7 @@ export function resolveLivePreviewFinalChoice({
 }: {
   finalAlternatives: SuggestionAlternative[]
   baselineForConditionalSearch: SuggestionAlternative | undefined
-  conditionalQualityTradeoff: ReturnType<typeof findConditionalLiveQualityTradeoff>
+  conditionalQualityTradeoff: ReturnType<typeof findConditionalLiveQualityTradeoff> | null
   state: SessionState
   configuredPvnaTolerance: number
   nextMatchIndex: number
@@ -2611,6 +2627,20 @@ export function buildLiveTierOverrides({
   }
 }
 
+export type CourtSelectionDebug = {
+  court_idx: number
+  busy_count: number
+  required_for_court: string[]
+  eligible_players: Array<{
+    id: string
+    pvna: number
+    consecutive_rest: number
+    matches_played: number
+    tier: string
+  }>
+  selected: Array<{ id: string; pvna: number; team: 'A' | 'B' }>
+}
+
 export type BuildSuggestedMatchPayloadsParams = {
   count: number
   sessionId: string
@@ -2623,6 +2653,7 @@ export type BuildSuggestedMatchPayloadsParams = {
   playersById: Map<string, PreviewPlayerInfo>
   pvnaTolerance: number
   options?: BuildSuggestedMatchOptions
+  debugOut?: CourtSelectionDebug[]
 }
 
 export function buildSuggestedMatchPayloads({
@@ -2637,6 +2668,7 @@ export function buildSuggestedMatchPayloads({
   playersById,
   pvnaTolerance,
   options = {},
+  debugOut,
 }: BuildSuggestedMatchPayloadsParams): SuggestedMatchPayload[] {
   const batchStartedAt = nowMs()
   let suggestionState = options.stateOverride ?? state
@@ -2652,10 +2684,11 @@ export function buildSuggestedMatchPayloads({
     options.liveQualityPolicy ?? 'current',
   )
   const payloads: SuggestedMatchPayload[] = []
+  const ignoreCapacityLock = options.ignoreCapacityLock ?? true
   const baseBusyIds = new Set(
     liveMatchRows
       .filter(match =>
-        (match.status === 'live' && !completingLiveMatchIds.has(match.id))
+        (!ignoreCapacityLock && match.status === 'live' && !completingLiveMatchIds.has(match.id))
         || match.status === 'suggested',
       )
       .flatMap(match => [...match.team_a, ...match.team_b]),
@@ -2937,21 +2970,71 @@ export function buildSuggestedMatchPayloads({
       }
       return relaxedTierOverrides
     }
+    const eligibleCount = [...suggestionStateForCourt.players.values()]
+      .filter(p => p.checked_out_at === null && !p.opted_rest && !busyIds.has(p.player_id)).length
     const suggestOptions = {
       tier_overrides: tierOverrides as any,
       busy_player_ids: busyIds,
       court_idx: courtIdx,
       max_alternatives: LIVE_TRADEOFF_ALTERNATIVE_LIMIT,
-      exhaustive_fallback: false,
+      exhaustive_fallback: true,
       max_runtime_ms: getRemainingCourtBudgetMs(),
       _exhaustiveDiag: exhaustiveDiag,
       forced_required_player_ids: requiredForThisCourt,
       availability_metrics: getAvailabilityMetricsForState(suggestionStateForCourt),
       preview_seed: previewSeed,
     }
+    const debugEligible = debugOut ? [...suggestionStateForCourt.players.values()]
+      .filter(p => p.checked_out_at === null && !p.opted_rest && !busyIds.has(p.player_id))
+      .map(p => ({
+        id: p.player_id,
+        pvna: p.pvna,
+        consecutive_rest: p.consecutive_rest,
+        matches_played: p.matches_played,
+        tier: String(tierOverrides[p.player_id] ?? 'FLEXIBLE'),
+      }))
+      .sort((a, b) => b.consecutive_rest - a.consecutive_rest || a.matches_played - b.matches_played)
+      : null
     let result = suggestNextMatch(suggestionStateForCourt, suggestOptions)
-    if (result.alternatives.length === 0) {
-      const relaxedTierOverrides = buildRelaxedTierOverrides()
+
+    const hasOnlyHardIntraViolations = (alts: SuggestionAlternative[]) =>
+      alts.length > 0 && alts.every(
+        alt => getAlternativeIntraTeamGap(alt, suggestionStateForCourt) > INTRA_TEAM_PVNA_GAP_LIMIT,
+      )
+    const relaxedTierOverrides = buildRelaxedTierOverrides()
+
+    if (hasOnlyHardIntraViolations(result.alternatives)) {
+      // Intra rescue: all alternatives violate HARD intra cap.
+      // Pool is bimodal (e.g. all MUST_PLAY players have incompatible PVNAs among themselves).
+      // Bypass relaxationStages entirely — use minimal protection: only absolute recycle (consecutive ≥4)
+      // and players significantly over quota (+1 above target.max). This opens recently-played players
+      // with compatible PVNA to rescue the court, while protecting true over-quota players.
+      const intraRescueDiag: ExhaustiveFallbackDiagnostic = {
+        ran: false, timedOut: false, eligibleCount: 0,
+        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+      }
+      const intraRescueResult = suggestNextMatch(suggestionStateForCourt, {
+        ...suggestOptions,
+        busy_player_ids: buildBusyIdsForProtected(liveSelectionGuard.intraRescueProtectedIds),
+        tier_overrides: relaxedTierOverrides as any,
+        max_alternatives: LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT,
+        max_runtime_ms: getRemainingCourtBudgetMs(),
+        _exhaustiveDiag: intraRescueDiag,
+      })
+      if (intraRescueResult.alternatives.length > 0 && !hasOnlyHardIntraViolations(intraRescueResult.alternatives)) {
+        result = {
+          ...intraRescueResult,
+          warnings: [...new Set([
+            ...intraRescueResult.warnings.filter(w => w !== 'NO_VALID_MATCH'),
+            'LIVE_REPLACEMENT_INTRA_RESCUE',
+          ])],
+          alternatives: intraRescueResult.alternatives.map(alt => ({
+            ...alt,
+            warnings: [...new Set([...alt.warnings, 'LIVE_REPLACEMENT_INTRA_RESCUE'])],
+          })),
+        }
+      }
+    } else if (result.alternatives.length === 0) {
       const relaxationStages = liveSelectionGuard.relaxationStages.length > 0
         ? liveSelectionGuard.relaxationStages
         : [{ protectedIds: liveSelectionGuard.protectedIds, warnings: liveSelectionGuard.warnings }]
@@ -2978,10 +3061,7 @@ export function buildSuggestedMatchPayloads({
           ])],
           alternatives: relaxedResult.alternatives.map(alternative => ({
             ...alternative,
-            warnings: [...new Set([
-              ...alternative.warnings,
-              ...relaxationStage.warnings,
-            ])],
+            warnings: [...new Set([...alternative.warnings, ...relaxationStage.warnings])],
           })),
         }
       }
@@ -3147,7 +3227,7 @@ export function buildSuggestedMatchPayloads({
       options.liveQualityPolicy ?? 'current',
     ) ?? result.alternatives[0]
     let conditionalQualityRescue: SuggestionAlternative | null = null
-    let conditionalQualityTradeoff: ReturnType<typeof findConditionalLiveQualityTradeoff> = null
+    let conditionalQualityTradeoff: ReturnType<typeof findConditionalLiveQualityTradeoff> | null = null
     if (baselineForConditionalSearch && remainingBatchMs > LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS + 100) {
       const baselineMetrics = getTradeoffChoiceMetrics(
         baselineForConditionalSearch,
@@ -3261,8 +3341,23 @@ export function buildSuggestedMatchPayloads({
       tradeoff_choices: tradeoffChoices?.choices,
       recommended_tradeoff_choice: recommendedTradeoffChoice,
       live_availability_context: liveAvailabilityContext,
+      locked_player_ids: liveLockedPlayerIds.size > 0
+        ? [...match.team_a, ...match.team_b].filter(id => liveLockedPlayerIds.has(id))
+        : undefined,
     })
-    
+
+    if (debugOut && debugEligible) {
+      debugOut.push({
+        court_idx: courtIdx,
+        busy_count: busyIds.size,
+        required_for_court: requiredForThisCourt,
+        eligible_players: debugEligible,
+        selected: [
+          ...match.team_a.map(id => ({ id, pvna: suggestionStateForCourt.players.get(id)?.pvna ?? 0, team: 'A' as const })),
+          ...match.team_b.map(id => ({ id, pvna: suggestionStateForCourt.players.get(id)?.pvna ?? 0, team: 'B' as const })),
+        ],
+      })
+    }
     match.team_a.forEach(playerId => busyIds.add(playerId))
     match.team_b.forEach(playerId => busyIds.add(playerId))
     match.team_a.forEach(playerId => batchBusyIds.add(playerId))

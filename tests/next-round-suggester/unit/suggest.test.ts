@@ -361,12 +361,14 @@ describe('suggestNextMatch — requiredPlayerIds overflow tiebreaking', () => {
   })
 
   it('emits MUST_PLAY_OVER_CAPACITY when required set is trimmed', () => {
+    // With 8 players + 1 court: benchDepth=4, mustPlayAt=1.
+    // To trigger overflow, need > 4 players with consecutive_rest >= 1.
     const players = [
       createPlayer('p01', { consecutive_rest: 2, matches_played: 4 }),
       createPlayer('p02', { consecutive_rest: 2, matches_played: 4 }),
-      createPlayer('p03', { consecutive_rest: 1, matches_played: 4 }),
-      createPlayer('p04', { consecutive_rest: 1, matches_played: 4 }),
-      createPlayer('p05', { consecutive_rest: 1, matches_played: 4 }),
+      createPlayer('p03', { consecutive_rest: 2, matches_played: 4 }),
+      createPlayer('p04', { consecutive_rest: 2, matches_played: 4 }),
+      createPlayer('p05', { consecutive_rest: 2, matches_played: 4 }),
       createPlayer('p06', { consecutive_rest: 0, matches_played: 4 }),
       createPlayer('p07', { consecutive_rest: 0, matches_played: 4 }),
       createPlayer('p08', { consecutive_rest: 0, matches_played: 4 }),

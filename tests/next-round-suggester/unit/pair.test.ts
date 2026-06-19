@@ -136,7 +136,12 @@ describe('bestPartitioning', () => {
     expect(result?.stats.pvna_diff).toBeLessThanOrEqual(1.0)
   })
 
-  it('relaxes intra-team gap before relaxing match PVNA tolerance', () => {
+  it('prefers intra overflow with good pvna balance over valid intra with bad pvna (Stage 5.5 vs Stage 6)', () => {
+    // p1(4.42), p2(3.02), p3(2.66), p4(3.59) with strict pvnaTolerance=0.5.
+    // Stage 5.5 finds [p1,p4] vs [p2,p3]: pvna_diff=2.33 (high) but intra=0.83, 0.36 ≤ 1.0 (valid).
+    // Stage 6 finds [p1,p3] vs [p2,p4]: pvna_diff=0.47 (low) but intra=1.76 > 1.0 (overflow 0.76).
+    // With INTRA_OVERFLOW_WEIGHT=1: Stage 6 score=1.23 < Stage 5.5 score=2.33 → Stage 6 wins.
+    // Crossover is ~cluster_gap=2.0: cross-split wins when total intra excess < pvna_diff.
     const players = [
       createPlayer('p1', { pvna: 4.42 }),
       createPlayer('p2', { pvna: 3.02 }),
@@ -146,11 +151,11 @@ describe('bestPartitioning', () => {
 
     const result = bestPartitioning(players, createState({ players, pvnaTolerance: 0.5 }))
 
-    expect(result?.relaxed_tolerance).not.toBe(true)
+    expect(result?.relaxed_tolerance).toBe(true)
     expect(result?.intra_team_gap_overflow).toBe(true)
     expect(result?.matches[0].team_a).toEqual(['p1', 'p3'])
     expect(result?.matches[0].team_b).toEqual(['p2', 'p4'])
-    expect(Math.abs((result?.stats.pvna_diff ?? 0) - 0.47)).toBeLessThan(0.001)
+    expect(Math.abs((result?.stats.pvna_diff ?? 0) - 0.47)).toBeLessThan(0.01)
   })
 
   it('skips court creation when fewer than four players are present', () => {

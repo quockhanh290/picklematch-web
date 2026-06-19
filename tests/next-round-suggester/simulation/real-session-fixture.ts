@@ -79,6 +79,7 @@ export function createRealSessionPlayers(options: { includePending?: boolean } =
     gender: normalizeGender(item.gender),
     partner_gender_pref: normalizePref(item.partner),
     opponent_gender_pref: normalizePref(item.opponent),
+    rounds_available: 0,
   }))
 }
 

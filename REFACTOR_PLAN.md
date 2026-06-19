@@ -1,6 +1,6 @@
 # Kế hoạch Refactor — Next Round Suggester
 
-> Tổng hợp từ session review ngày 2026-06-13. Cập nhật lần cuối: 2026-06-14 (sau review codebase thực tế).
+> Tổng hợp từ session review ngày 2026-06-13. Cập nhật lần cuối: 2026-06-14 (sau review court suggester, pace controls, target rounds).
 > Toàn bộ là plan — chưa có code nào được thay đổi.
 
 ---
@@ -101,7 +101,10 @@ Thêm vào `SessionState.config`:
 ```typescript
 planned_total_rounds?: number
 session_phase?: 'warmup' | 'mid' | 'closing'  // derived, không lưu DB
+court_preset?: 'balanced' | 'play_more' | 'relaxed'  // từ host settings, ảnh hưởng dynamic thresholds
 ```
+
+> `courts` trong config phải phản ánh **court count của vòng hiện tại** (dynamic), không phải session-level constant. Host có thể thay đổi số sân giữa session qua `courtCountOverride`. `getBenchDepth()` phải dùng giá trị này.
 
 Thêm vào `SessionPlayerStateRow`:
 ```typescript
@@ -132,6 +135,7 @@ avoid_pairs?: AvoidPair[]
 
 - `mapRowsToSessionState`: tính `rounds_available` **từ round history** — `computeAvailabilityMetrics()` đã làm việc này (field `per_player[].rounds_available`). Tuy nhiên cần expose lên `PlayerSessionState` để `classifyPlayer()` dùng được. Cách đơn giản nhất: tính trong `mapRowsToSessionState()` bằng cách đếm số completed rounds mà player có mặt trong roster (dựa vào `round.resting` và `round.matches`). **Không cần DB column**.
 - `mapRowsToSessionState`: load `effective_pvna` từ DB, populate `avoid_ids` từ config
+- `mapRowsToSessionState` nhận thêm params từ caller (UI layer): `effectiveTargetRounds` và `courtPreset` — map vào `config.planned_total_rounds` và `config.court_preset`. **Không lưu DB**, lấy từ `useNextRoundModel` đã tính sẵn.
 - Helper mới `getEffectivePvna(player)`: `player.effective_pvna ?? player.pvna`
 - `buildRestPatch`: khi `opted_rest === false && reason === 'voluntary'` → thêm `consecutive_rest: 0`
 - Helper mới `getSessionPhase(state)`: `warmup` nếu completed < 3, `closing` nếu planned - completed <= 2, else `mid`
@@ -253,7 +257,23 @@ if (alternatives.length === 0 && !timedOut()) {
 }
 ```
 
-### 2.3 `classify.ts` + `score.ts` — Dynamic thresholds
+### 2.3 `suggest.ts` — `should_end` trigger từ target rounds
+
+Hiện tại `should_end: true` chỉ khi < 4 eligible players. Thêm trigger thứ hai:
+
+```typescript
+// Đầu suggestNextRound(), sau khi tính completedRounds:
+if (
+  state.config.planned_total_rounds != null &&
+  completedRounds >= state.config.planned_total_rounds
+) {
+  return { alternatives: [], warnings: [], should_end: true }
+}
+```
+
+Caller (UI layer) đã có `reportReady` và `targetReached` logic — `should_end` từ suggester là tín hiệu xác nhận độc lập, không phụ thuộc vào UI state.
+
+### 2.4 `classify.ts` + `score.ts` — Dynamic thresholds
 
 Helper mới trong `classify.ts`:
 ```typescript
@@ -265,9 +285,15 @@ export type DynamicThresholds = {
   rematchBlockRounds: number
 }
 
-export function computeDynamicThresholds(benchDepth: number, N: number): DynamicThresholds {
+export function computeDynamicThresholds(
+  benchDepth: number,
+  N: number,
+  preset: 'balanced' | 'play_more' | 'relaxed' = 'balanced',
+): DynamicThresholds {
+  // preset ảnh hưởng rest tolerance: relaxed → bench nhiều hơn → ngưỡng nghỉ cao hơn
+  const presetRestBonus = preset === 'relaxed' ? 1 : preset === 'play_more' ? 0 : 0
   return {
-    mustRestAt: Math.max(2, 1 + Math.ceil(benchDepth / 2)),
+    mustRestAt: Math.max(2, 1 + Math.ceil(benchDepth / 2)) + presetRestBonus,
     mustPlayAt: Math.max(1, Math.ceil(benchDepth / 3)),
     partnerRepeatCap: Math.max(2, Math.ceil(N / 6)),
     opponentRepeatCap: Math.max(3, Math.ceil(N / 6) + 1),
@@ -276,7 +302,7 @@ export function computeDynamicThresholds(benchDepth: number, N: number): Dynamic
 }
 ```
 
-`PlayerClassificationContext` thêm `thresholds?: DynamicThresholds`. `suggestNextRound()` compute và thread thresholds vào `classifyPlayer()`, `hasRepeatOverflow()`, `bestPartitioning()`.
+`PlayerClassificationContext` thêm `thresholds?: DynamicThresholds`. `suggestNextRound()` compute và thread thresholds vào `classifyPlayer()`, `hasRepeatOverflow()`, `bestPartitioning()`. Truyền `config.court_preset` vào `computeDynamicThresholds()`.
 
 **Cũng cần fix `getConsecutivePlayPenalty()` trong `score.ts` (line 55)** — hiện hardcode `if (consecutive >= 2)`. Cần nhận `mustRestAt` từ thresholds:
 ```typescript
@@ -510,6 +536,8 @@ fixed_courts?: Match[]    // courts đã set, optimize xung quanh
 ```
 
 Players trong `fixed_courts` bị mark busy. `bestPartitioning()` nhận `fixedCourts` parameter.
+
+> **Alignment với UI:** `CourtSuggestionOptions` trong ScreenComponents.tsx cho phép host chọn ít sân hơn recommended — đây chính xác là input cho `active_courts`. Data flow: host chọn option → `courtCountOverride` giảm → rebuild state với `courts` mới → `suggestNextRound()` suggest ít sân hơn. Phase 5.4 là extension cho case đặc biệt hơn (giữ vài court cố định, suggest phần còn lại).
 
 ### 5.5 `state.ts` + `select.ts` — Waiting time proxy
 

@@ -79,7 +79,12 @@ export function buildCompletedLiveCycleRows({
 }): LiveRows['roundRows'] {
   const normalizedCourtCount = normalizeCourtCount(courtCount)
   const baseRoundNo = legacyRoundRows.reduce((max, row) => Math.max(max, row.round_no), -1) + 1
-  const completedLive = sortLiveMatchesBySequence(liveMatchRows.filter(match => match.status === 'completed'))
+  const legacyRoundNos = new Set(legacyRoundRows.map(r => r.round_no))
+  // Exclude completed live matches whose round_no is already covered by legacyRoundRows to avoid
+  // double-counting when the RPC returns synthetic round_rows derived from the same live matches.
+  const completedLive = sortLiveMatchesBySequence(
+    liveMatchRows.filter(match => match.status === 'completed' && (match.round_no == null || !legacyRoundNos.has(match.round_no))),
+  )
   const presentPlayerIds = playerRows
     .filter(row => !row.checked_out_at)
     .map(row => row.player_id)

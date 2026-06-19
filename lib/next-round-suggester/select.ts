@@ -29,6 +29,12 @@ function comparePlayersByPriority(
   if (b.consecutive_rest !== a.consecutive_rest) {
     return b.consecutive_rest - a.consecutive_rest
   }
+  // Same consecutive_rest: prefer player who started resting earlier (smaller round number)
+  const aRestStart = a.last_rest_started_round ?? Infinity
+  const bRestStart = b.last_rest_started_round ?? Infinity
+  if (aRestStart !== bRestStart) {
+    return aRestStart - bRestStart
+  }
 
   const balanceA = matchBalance.get(a.player_id) ?? a.matches_played
   const balanceB = matchBalance.get(b.player_id) ?? b.matches_played
@@ -43,6 +49,8 @@ function comparePlayersByPriority(
   if (a.last_played_round !== b.last_played_round) {
     return a.last_played_round - b.last_played_round
   }
+
+  if (a.pvna !== b.pvna) return a.pvna - b.pvna
 
   return a.player_id.localeCompare(b.player_id)
 }

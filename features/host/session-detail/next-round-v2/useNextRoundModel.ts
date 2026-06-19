@@ -15,6 +15,8 @@ import { rebuildStateThroughRound } from '@/lib/next-round-suggester/history'
 import { mapRowsToSessionState } from '@/lib/next-round-suggester/state'
 import { suggestNextRound } from '@/lib/next-round-suggester/suggest'
 import type { SessionLiveMatchRow, SessionPairHistoryRow, SessionPlayerStateRow, SuggestionAlternative } from '@/lib/next-round-suggester/types'
+import type { AvoidPairEntry } from './api'
+import { loadAvoidPairs } from './api'
 import {
   getPlayerPvna,
   isConfirmedNonNoShow,
@@ -273,6 +275,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   const [courtDurationMin, setCourtDurationMin] = useState(120)
   const [targetRounds, setTargetRounds] = useState<number | null>(null)
   const [settingsHydrated, setSettingsHydrated] = useState(false)
+  const [avoidPairs, setAvoidPairs] = useState<AvoidPairEntry[]>([])
   const [groupSelection, setGroupSelection] = useState<string[]>([])
   const [showEngineStats, setShowEngineStats] = useState(false)
   const [showSessionReport, setShowSessionReport] = useState(initialShowReport)
@@ -300,13 +303,17 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     setCourtDurationMin(120)
     setPvnaTolerance(0.5)
     setTargetRounds(null)
+    setAvoidPairs([])
     void (async () => {
       const raw = await safeStorageGetItem(settingsStorageKey)
       if (cancelled) return
       if (raw) {
         try {
           const parsed = JSON.parse(raw) as PersistedSettings
-          applyPersistedSettings(parsed)
+          // Exclude courtCountOverride from localStorage — only DB is authoritative for court count.
+          // Stale localStorage values (e.g. from a prior 6-court session) would cause wrong queueCourtCount.
+          const { courtCountOverride: _ignored, ...localSettingsWithoutCourts } = parsed
+          applyPersistedSettings(localSettingsWithoutCourts)
         } catch {
           // Ignore stale/bad local settings and fall back to calculator defaults.
         }
@@ -316,6 +323,12 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
         if (!cancelled && dbSettings) applyPersistedSettings(dbSettings)
       } catch (error) {
         if (__DEV__) console.warn('[NextRoundV2] could not load DB settings', error)
+      }
+      try {
+        const pairs = await loadAvoidPairs(sessionId)
+        if (!cancelled) setAvoidPairs(pairs)
+      } catch (error) {
+        if (__DEV__) console.warn('[NextRoundV2] could not load avoid pairs', error)
       }
       if (cancelled) return
       setSettingsHydrated(true)
@@ -582,7 +595,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   const baseState = useMemo(() => withWeights(rawState, baseWeights), [baseWeights, rawState])
   const fairnessAdjustment = useMemo(
     () => USE_COURT_LANE_BOARD
-      ? { tier_overrides: {}, applied_for_warnings: [] }
+      ? { type: 'none' as const, config_changes: {}, tier_overrides: {}, applied_for_warnings: [] }
       : correctForFairness(baseState),
     [baseState],
   )
@@ -807,6 +820,8 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   return {
     activeRound,
     alternativeOrder,
+    avoidPairs,
+    setAvoidPairs,
     alternativeAudits: suggestedRoundActionsCache.audits,
     applySuggestedRoundAction,
     checkedInPlayers,

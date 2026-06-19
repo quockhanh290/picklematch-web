@@ -75,11 +75,12 @@ describe('Partner Diversity', () => {
     expect(metrics.per_player.find((player) => player.player_id === 'p1')?.diversity_ratio).toBe(1)
   })
 
-  it('returns lower ratio with repeats', () => {
+  it('returns lower ratio with repeats when other partners exist', () => {
     const p1 = createPlayer('p1', { matches_played: 3 })
     p1.partner_counts.set('p2', 3)
 
-    const metrics = computePartnerDiversity(createState({ players: [p1, createPlayer('p2')] }))
+    // 3 players: p1 only played with p2, ignoring p3 → ratio < 1
+    const metrics = computePartnerDiversity(createState({ players: [p1, createPlayer('p2'), createPlayer('p3')] }))
 
     expect(metrics.per_player.find((player) => player.player_id === 'p1')?.diversity_ratio).toBeLessThan(1)
     expect(metrics.repeat_pairs).toEqual([{ player_a: 'p1', player_b: 'p2', count: 3 }])
@@ -95,7 +96,7 @@ describe('Partner Diversity', () => {
     expect(metrics.per_player.find((player) => player.player_id === 'p1')?.diversity_ratio).toBe(1)
   })
 
-  it('reduces partner diversity after more than two same-group matches', () => {
+  it('does not reduce partner diversity for same-group matches', () => {
     const p1 = createPlayer('p1', { group_id: 'g1', matches_played: 3 })
     const p2 = createPlayer('p2', { group_id: 'g1', matches_played: 3 })
     setPartnerRepeats(p1, p2, 3)
@@ -103,7 +104,7 @@ describe('Partner Diversity', () => {
     const metrics = computePartnerDiversity(createState({ players: [p1, p2] }))
 
     const ratio = metrics.per_player.find((player) => player.player_id === 'p1')?.diversity_ratio ?? 0
-    expect(Math.abs(ratio - 2 / 3)).toBeLessThan(0.001)
+    expect(ratio).toBe(1)
   })
 
   it('handles single-match players', () => {
@@ -157,15 +158,16 @@ describe('Opponent Diversity', () => {
     expect(metrics.per_player.find((player) => player.player_id === 'p1')?.diversity_ratio).toBe(1)
   })
 
-  it('reduces opponent diversity after more than two same-group oppositions', () => {
+  it('does not reduce opponent diversity for same-group oppositions when all opponents are same-group', () => {
     const p1 = createPlayer('p1', { group_id: 'g1', matches_played: 2 })
     const p2 = createPlayer('p2', { group_id: 'g1', matches_played: 2 })
-    setOpponentRepeats(p1, p2, 3)
+    setOpponentRepeats(p1, p2, 4)
 
     const metrics = computeOpponentDiversity(createState({ players: [p1, p2] }))
 
     const ratio = metrics.per_player.find((player) => player.player_id === 'p1')?.diversity_ratio ?? 0
-    expect(Math.abs(ratio - 0.5)).toBeLessThan(0.001)
+    // All 4 opponent slots (2 matches × 2) filled by same-group member → crossGroupExpectedOppositions = 0 → ratio = 1
+    expect(ratio).toBe(1)
   })
 
   it('does not count same-group repeats as burden until more than two matches', () => {
@@ -182,15 +184,16 @@ describe('Opponent Diversity', () => {
     expect(computeOpponentRepeatBurden(state).per_player.find((player) => player.player_id === 'p1')?.repeated_opponents).toBe(1)
   })
 
-  it('counts same-group repeats as burden after two matches', () => {
+  it('counts same-group opponent repeats as burden only above threshold 4', () => {
     const p1 = createPlayer('p1', { group_id: 'g1' })
     const p2 = createPlayer('p2', { group_id: 'g1' })
-    setPartnerRepeats(p1, p2, 3)
-    setOpponentRepeats(p1, p2, 3)
+    setPartnerRepeats(p1, p2, 5)
+    setOpponentRepeats(p1, p2, 5)
 
     const state = createState({ players: [p1, p2] })
 
-    expect(computePartnerRepeatBurden(state).per_player.find((player) => player.player_id === 'p1')?.repeated_partners).toBe(1)
+    // Same-group partners are never burden; same-group opponents need count > 4
+    expect(computePartnerRepeatBurden(state).per_player.find((player) => player.player_id === 'p1')?.repeated_partners).toBe(0)
     expect(computeOpponentRepeatBurden(state).per_player.find((player) => player.player_id === 'p1')?.repeated_opponents).toBe(1)
   })
 })
@@ -377,10 +380,11 @@ describe('Session Fairness Score', () => {
   })
 
   it('penalizes rest violations heavily', () => {
+    // 3 rounds to exit warmup; benchDepth=0 → penaltyPerViolation=7 → rest = 20 - 7 = 13
     const state = createState({ players: [createPlayer('p1'), createPlayer('p2')] })
-    state.rounds = [makeRound(0, ['p1']), makeRound(1, ['p1'])]
+    state.rounds = [makeRound(0, ['p1']), makeRound(1, ['p1']), makeRound(2, ['p1'])]
 
-    expect(computeSessionFairness(state).breakdown.rest).toBe(10)
+    expect(computeSessionFairness(state).breakdown.rest).toBe(13)
   })
 
   it('does not over-penalize warm-up rounds', () => {

@@ -15,7 +15,6 @@ import {
   computeSessionFairness,
   type SessionFairnessScore,
 } from '../../../lib/next-round-suggester/fairness/metrics'
-import { buildSuggestedRoundActionsCache } from '../../../lib/next-round-suggester/alternatives'
 import { buildFairnessPreview, buildLatestFairnessAudit } from '../../../lib/next-round-suggester/fairness/audit'
 import { suggestNextRound } from '../../../lib/next-round-suggester/suggest'
 import type {
@@ -133,7 +132,6 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
     for (const alt of suggestion.alternatives.slice(0, 3)) {
       buildFairnessPreview(effectiveState, alt)
     }
-    buildSuggestedRoundActionsCache(effectiveState, suggestion.alternatives, config.courts)
     const postMs = performance.now() - postStart
     totalPostProcessingMs += postMs
     maxPostProcessingMs = Math.max(maxPostProcessingMs, postMs)

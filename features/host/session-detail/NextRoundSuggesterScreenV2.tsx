@@ -85,6 +85,7 @@ import {
   MAX_PROJECTED_PARTNER_PAIR_COUNT,
   MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER,
   MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER,
+  INTRA_TEAM_PVNA_GAP_LIMIT,
   getProjectedRepeatSummary,
   scoreMatch,
 } from '@/lib/next-round-suggester/score'
@@ -448,6 +449,8 @@ type SuggestedLiveMatchRow = SessionLiveMatchRow & {
     locked_player_count: number
     live_court_count: number
   }
+  locked_player_ids?: string[]
+  available_pool_only?: boolean
 }
 
 type LiveDisplayMatchRow = SessionLiveMatchRow & {
@@ -477,11 +480,23 @@ function getSuggestedMatchPvnaGap(match: Pick<SessionLiveMatchRow, 'team_a' | 't
   return Math.abs(getTeamPvna(match.team_a) - getTeamPvna(match.team_b))
 }
 
+function getSuggestedMatchIntraTeamGap(match: Pick<SessionLiveMatchRow, 'team_a' | 'team_b'>, state: SessionState) {
+  const getTeamIntraGap = (team: readonly string[]) => {
+    if (team.length < 2) return 0
+    const pvnas = team.map(playerId => state.players.get(String(playerId))?.pvna ?? 0)
+    return Math.abs(pvnas[0] - pvnas[1])
+  }
+  return Math.max(getTeamIntraGap(match.team_a), getTeamIntraGap(match.team_b))
+}
+
 function hasHardPreviewQualityViolation(
   match: SuggestedLiveMatchRow,
   state: SessionState,
   pvnaTolerance: number,
 ) {
+  const intraGap = getSuggestedMatchIntraTeamGap(match, state)
+  if (intraGap > INTRA_TEAM_PVNA_GAP_LIMIT) return true
+
   const pvnaGap = getSuggestedMatchPvnaGap(match, state)
   const pvnaOverBy = pvnaGap - pvnaTolerance
   if (pvnaOverBy > 1) return true
@@ -570,6 +585,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
   const previewRecoveryKeyRef = useRef<string | null>(null)
   const previewIncompleteRetryRef = useRef<{ key: string; count: number }>({ key: '', count: 0 })
   const previewBlockedIncompleteKeysRef = useRef(new Set<string>())
+  const previewUnblockNonceRef = useRef(0)
   const startingPreviewIdsRef = useRef(new Set<string>())
   const endingLiveMatchIdsRef = useRef(new Set<string>())
   const completedLiveMatchCommitIdsRef = useRef(new Set<string>())
@@ -592,6 +608,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     activeRound,
     alternativeOrder,
     alternativeAudits,
+    avoidPairs,
+    setAvoidPairs,
     applyCompletedLiveMatch,
     applyEndedRound,
     applyLiveMatches,
@@ -742,6 +760,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     previewBaseKeyRef.current = null
     previewPendingRequestKeysRef.current.clear()
     previewBlockedIncompleteKeysRef.current.clear()
+    previewUnblockNonceRef.current = 0
     previewIncompleteRetryRef.current = { key: '', count: 0 }
     previewRetryTimeoutsRef.current.forEach(clearTimeout)
     previewRetryTimeoutsRef.current.clear()
@@ -1220,6 +1239,78 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       setError(safeMessage)
       await loadLiveState()
       Alert.alert('Lỗi', safeMessage)
+    }
+  }
+
+  const startMatchNow = async (lockedMatch: SuggestedLiveMatchRow) => {
+    const courtIdx = getSuggestedLaneCourtIdx(lockedMatch)
+    if (courtIdx === null) return
+    const snap = previewBodyRef.current
+    const snapshotLiveStateVersion = Math.max(
+      Number(snap.liveStateVersion ?? 0),
+      Number(liveStateVersionRef.current ?? 0),
+    )
+    const snapshotCountableMatchCount = snap.effectiveLiveMatchRows.filter(match => match.status !== 'cancelled').length
+    // Cancel any in-flight background batch so it cannot overwrite the start-now result.
+    previewRequestSerialRef.current += 1
+    try {
+      const res = await fetchLiveMatchesPreview(snap.sessionId, {
+        mode: 'replace_courts',
+        count: 1,
+        court_count: snap.queueCourtCount,
+        pvna_tolerance: snap.pvnaTolerance,
+        court_idxs: [courtIdx],
+        current_preview_board: [],
+        live_match_rows: snap.effectiveLiveMatchRows.filter(
+          m => !(m.status === 'suggested' && Number(m.court_idx ?? m.sequence_no) === courtIdx),
+        ),
+        live_state_version: snap.liveStateVersion,
+        completing_live_match_ids: Array.from(snap.completingLiveMatchIds),
+        players: Array.from(snap.playersById.entries()).map(([id, p]) => ({ id, name: p.name })),
+        player_rows: snap.rows.playerRows,
+        pair_rows: snap.rows.pairRows,
+        round_rows: snap.rows.roundRows,
+        planned_total_rounds: snap.effectiveTargetRounds > 0 ? snap.effectiveTargetRounds : undefined,
+        court_preset: snap.courtPreset,
+        current_courts: snap.queueCourtCount,
+        avoid_pairs: snap.avoidPairs.length > 0 ? snap.avoidPairs : undefined,
+        prefer_available_pool: true,
+      })
+      const responsePayloads = Array.isArray(res.final_preview_board) && res.final_preview_board.length > 0
+        ? res.final_preview_board
+        : (res.payloads ?? [])
+      const rawMatch = responsePayloads.find((m: any) => Number(m.court_idx ?? 0) === courtIdx)
+      if (!rawMatch) return
+      const constrainedMatch: SuggestedLiveMatchRow = {
+        ...rawMatch,
+        id: `preview-${courtIdx}-now-${rawMatch.team_a.join('-')}-${rawMatch.team_b.join('-')}`,
+        session_id: snap.sessionId,
+        sequence_no: snapshotCountableMatchCount,
+        round_no: rawMatch.round_no,
+        court_idx: courtIdx,
+        status: 'suggested',
+        team_a: rawMatch.team_a,
+        team_b: rawMatch.team_b,
+        resting: rawMatch.resting ?? [],
+        preview_live_state_version: snapshotLiveStateVersion,
+        preview_countable_match_count: snapshotCountableMatchCount,
+        score_a: 0,
+        score_b: 0,
+        suggested_at: new Date().toISOString(),
+        started_at: null,
+        ended_at: null,
+        available_pool_only: true,
+        locked_player_ids: undefined,
+      }
+      suggestedPreviewBatchRef.current = null
+      suggestedLaneCacheRef.current = new Map(suggestedLaneCacheRef.current)
+      suggestedLaneCacheRef.current.set(courtIdx, constrainedMatch)
+      setSuggestedLiveMatches(prev =>
+        prev.map(m => Number(m.court_idx) === courtIdx ? constrainedMatch : m),
+      )
+      await startLiveMatch(constrainedMatch)
+    } catch {
+      // Edge call failed; locked suggestion remains
     }
   }
 
@@ -1747,11 +1838,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
   )
 
   const capacityOccupyingLiveMatchCount = useMemo(
-    () => effectiveLiveMatchRows.filter(match =>
-      match.status === 'live'
-      && !completedLiveMatchCommitIdsRef.current.has(match.id)
-    ).length,
-    [completedLiveMatchCommitNonce, effectiveLiveMatchRows],
+    () => {
+      const effectiveCourtCount = Math.max(1, Math.floor(courtCount || 1))
+      return effectiveLiveMatchRows.filter(match => {
+        if (match.status !== 'live' || completedLiveMatchCommitIdsRef.current.has(match.id)) return false
+        const courtIdx = match.court_idx != null ? Number(match.court_idx) : null
+        // Only count matches within the active court range. Out-of-range live courts
+        // (from a prior larger-court round) don't occupy a slot in the current round.
+        return courtIdx === null || courtIdx < effectiveCourtCount
+      }).length
+    },
+    [completedLiveMatchCommitNonce, courtCount, effectiveLiveMatchRows],
   )
   const completedLiveMatches = useMemo(
     () => effectiveLiveMatchRows.filter(match => match.status === 'completed'),
@@ -1811,7 +1908,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       if (occupiedCourts.has(courtIdx)) continue
       if (match.preview_live_state_version == null || match.preview_countable_match_count == null) continue
       if (isPreviewInvalidatedByCompletedMatch(match)) continue
-      if (hasHardPreviewQualityViolation(match, state, pvnaTolerance)) continue
+      if (!match.available_pool_only && hasHardPreviewQualityViolation(match, state, pvnaTolerance)) continue
 
       const playerIds = getMatchPlayerIds(match)
       if (playerIds.some(playerId => usedPlayerIds.has(playerId))) continue
@@ -1838,6 +1935,13 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       const courtIdx = getSuggestedLaneCourtIdx(match)
       if (courtIdx !== null && !candidates.has(courtIdx)) candidates.set(courtIdx, match)
     }
+    // After refresh, suggestedLiveMatches is empty but DB may still have suggested matches.
+    // Include them as fallback candidates so we don't re-request courts that already have suggestions.
+    for (const match of rows.liveMatchRows) {
+      if (match.status !== 'suggested') continue
+      const courtIdx = getSuggestedLaneCourtIdx(match)
+      if (courtIdx !== null && !candidates.has(courtIdx)) candidates.set(courtIdx, match as SuggestedLiveMatchRow)
+    }
 
     const board: SuggestedLiveMatchRow[] = []
     for (const [courtIdx, match] of [...candidates.entries()].sort(([left], [right]) => left - right)) {
@@ -1851,7 +1955,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       board.push(match)
     }
     return board
-  }, [activeLiveMatches, queueCourtCount, startedPreviewIds, startingPreviewIds, suggestedLiveMatches])
+  }, [activeLiveMatches, queueCourtCount, rows.liveMatchRows, startedPreviewIds, startingPreviewIds, suggestedLiveMatches])
   const previewBatchKey = useMemo(
     () => buildPreviewBatchKey(sessionId, state, queueCourtCount, pvnaTolerance, fairnessAdjustment),
     [fairnessAdjustment, pvnaTolerance, queueCourtCount, sessionId, state],
@@ -1949,17 +2053,24 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     pvnaTolerance,
     suggestedQueueCount,
     sessionId,
+    avoidPairs,
+    effectiveTargetRounds,
+    courtPreset,
   })
-  previewBodyRef.current = { effectiveLiveMatchRows, liveStateVersion: rows.liveStateVersion, completingLiveMatchIds, playersById, rows, queueCourtCount, pvnaTolerance, suggestedQueueCount, sessionId }
+  previewBodyRef.current = { effectiveLiveMatchRows, liveStateVersion: rows.liveStateVersion, completingLiveMatchIds, playersById, rows, queueCourtCount, pvnaTolerance, suggestedQueueCount, sessionId, avoidPairs, effectiveTargetRounds, courtPreset }
 
   useEffect(() => {
     if (!USE_COURT_LANE_BOARD) return
     if (phase !== 'plan' || !settingsHydrated || rows.playerRows.length === 0) return
     if (isSuggestingPreview || previewRequestInFlightRef.current || suggestedQueueCount === 0) return
-    if (suggestedPreviewBatchRef.current?.key !== previewRequestKey) return
+    // Stale batch from a prior request — don't recover against it.
+    // null means incomplete batch (edge returned fewer than needed) — allow recovery.
+    if (suggestedPreviewBatchRef.current !== null && suggestedPreviewBatchRef.current.key !== previewRequestKey) return
 
     const visibleSuggestedCount = suggestedLiveMatches.filter(match => !startedPreviewIds.has(match.id)).length
-    if (visibleSuggestedCount > 0 && visibleSuggestedCount === suggestedPreviewBatchRef.current.matches.length) return
+    const batchMatchCount = suggestedPreviewBatchRef.current?.matches.length ?? 0
+    const batchWasComplete = batchMatchCount >= suggestedQueueCount
+    if (visibleSuggestedCount > 0 && batchWasComplete && visibleSuggestedCount === batchMatchCount) return
     if (visibleSuggestedCount >= suggestedQueueCount) return
 
     const recoveryKey = [
@@ -2007,7 +2118,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         .filter((match: SuggestedLiveMatchRow) => !startedPreviewIds.has(match.id))
         .filter((match: SuggestedLiveMatchRow) => !isPreviewInvalidatedByCompletedMatch(match))
       const newMatches = reusableCachedMatches
-        .filter((match: SuggestedLiveMatchRow) => !hasHardPreviewQualityViolation(match, state, pvnaTolerance))
+        .filter((match: SuggestedLiveMatchRow) => match.available_pool_only || !hasHardPreviewQualityViolation(match, state, pvnaTolerance))
         .slice(0, suggestedQueueCount)
       if (newMatches.length < Math.min(reusableCachedMatches.length, suggestedQueueCount)) {
         suggestedPreviewBatchRef.current = null
@@ -2042,8 +2153,18 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     // by the just-completed match. Edge revalidates and restamps retained lanes.
     const reusableMatches = getReusableSuggestedLaneMatches()
     const hasHardReusableQualityViolation = currentPreviewBoardForEdge.some(match =>
-      hasHardPreviewQualityViolation(match, state, pvnaTolerance)
+      !match.available_pool_only && hasHardPreviewQualityViolation(match, state, pvnaTolerance)
     )
+    // When getCurrentPreviewBoardForEdge returns [] (e.g. live-player filter drops all courts),
+    // fall back to suggestedLiveMatches so already-suggested courts are still treated as present.
+    const effectivePreviewBoard = currentPreviewBoardForEdge.length > 0
+      ? currentPreviewBoardForEdge
+      : suggestedLiveMatches
+          .filter(m => !startedPreviewIds.has(m.id) && !startingPreviewIds.has(m.id) && !startingPreviewIdsRef.current.has(m.id))
+          .filter(m => {
+            const courtIdx = getSuggestedLaneCourtIdx(m)
+            return courtIdx !== null && courtIdx >= 0 && courtIdx < queueCourtCount
+          })
     const pendingReplacementCourts = new Set<number>()
     completingLiveMatchPlaceholdersRef.current.forEach(match => {
       const courtIdx = getSuggestedLaneCourtIdx(match)
@@ -2054,7 +2175,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     const missingPreviewCourtIdxsForRecovery = getMissingPreviewCourtIdxs({
       courtCount: queueCourtCount,
       liveMatches: activeLiveMatches,
-      previewMatches: currentPreviewBoardForEdge,
+      previewMatches: effectivePreviewBoard,
     })
     const shouldRecoverMissingPreviewCourts = !hasHardReusableQualityViolation
       && missingPreviewCourtIdxsForRecovery.length > 0
@@ -2083,6 +2204,18 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       })
       return
     }
+    // If any visible suggestion was invalidated by a just-completed match, remove it
+    // from the UI before firing the edge call so the user can't tap a stale match
+    // during re-fetch. The state update triggers a re-run that starts the edge call.
+    const invalidatedBoardMatches = currentPreviewBoardForEdge.filter(
+      match => isPreviewInvalidatedByCompletedMatch(match)
+    )
+    if (invalidatedBoardMatches.length > 0) {
+      const invalidatedIds = new Set(invalidatedBoardMatches.map(m => m.id))
+      setSuggestedLiveMatches(prev => prev.filter(m => !invalidatedIds.has(m.id)))
+      suggestedPreviewBatchRef.current = null
+      return
+    }
     const fetchSuggestedCount = Math.max(
       1,
       Math.min(
@@ -2095,6 +2228,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     )
     const incompleteRequestKey = [
       previewBatchKey,
+      previewUnblockNonceRef.current,
       rows.liveStateVersion ?? 'noversion',
       suggestedQueueCount,
       [...pendingReplacementCourts].sort((left, right) => left - right).join(','),
@@ -2104,7 +2238,14 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       reusableMatches.map(match => getSuggestedLaneCourtIdx(match)).join(','),
       effectiveLiveMatchRows.map(match => `${match.id}:${match.status}:${match.court_idx ?? ''}`).join(','),
     ].join('||')
-    if (previewBlockedIncompleteKeysRef.current.has(incompleteRequestKey)) return
+    if (previewBlockedIncompleteKeysRef.current.has(incompleteRequestKey)) {
+      if (__DEV__) console.log('[NextRoundSuggesterV2] preview blocked — edge could not fill courts after retries', {
+        missingCourts: missingPreviewCourtIdxsForRecovery,
+        effectivePreviewCourts: effectivePreviewBoard.map(m => getSuggestedLaneCourtIdx(m)),
+        suggestedQueueCount,
+      })
+      return
+    }
     if (previewPendingRequestKeysRef.current.has(incompleteRequestKey)) return
     previewPendingRequestKeysRef.current.add(incompleteRequestKey)
     let cancelledBeforeStart = false
@@ -2146,9 +2287,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       const missingPreviewCourtIdxs = getMissingPreviewCourtIdxs({
         courtCount: snap.queueCourtCount,
         liveMatches: activeLiveMatches,
-        previewMatches: currentPreviewBoardForEdge,
+        previewMatches: effectivePreviewBoard,
       })
-      const snapHardPreviewQualityCourtIdxs = currentPreviewBoardForEdge
+      const snapHardPreviewQualityCourtIdxs = effectivePreviewBoard
         .filter(match => hasHardPreviewQualityViolation(match, state, pvnaTolerance))
         .map(match => getSuggestedLaneCourtIdx(match))
         .filter((courtIdx): courtIdx is number => courtIdx !== null)
@@ -2165,7 +2306,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         && courtIdxs.indexOf(courtIdx) === index
       ).slice(0, fetchSuggestedCount)
       const requestedReplacementCourtSet = new Set(requestedReplacementCourtIdxs)
-      const retainedPreviewBusyRows = currentPreviewBoardForEdge
+      const retainedPreviewBusyRows = effectivePreviewBoard
         .filter(match => {
           const courtIdx = getSuggestedLaneCourtIdx(match)
           return courtIdx === null || !requestedReplacementCourtSet.has(courtIdx)
@@ -2187,7 +2328,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         court_count: snap.queueCourtCount,
         pvna_tolerance: snap.pvnaTolerance,
         court_idxs: requestedReplacementCourtIdxs,
-        current_preview_board: currentPreviewBoardForEdge,
+        current_preview_board: effectivePreviewBoard,
         live_match_rows: [...snap.effectiveLiveMatchRows, ...retainedPreviewBusyRows],
         live_state_version: snapshotLiveStateVersion,
         completing_live_match_ids: Array.from(snap.completingLiveMatchIds),
@@ -2195,14 +2336,18 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         player_rows: snap.rows.playerRows,
         pair_rows: snap.rows.pairRows,
         round_rows: snap.rows.roundRows,
+        planned_total_rounds: snap.effectiveTargetRounds > 0 ? snap.effectiveTargetRounds : undefined,
+        court_preset: snap.courtPreset,
+        current_courts: snap.queueCourtCount,
+        avoid_pairs: snap.avoidPairs.length > 0 ? snap.avoidPairs : undefined,
       }
       const buildLocalFallbackPreview = (): SuggestedLiveMatchRow[] => {
         const fallbackCourtIdx = requestedReplacementCourtIdxs[0]
           ?? missingPreviewCourtIdxs[0]
-          ?? currentPreviewBoardForEdge[0]?.court_idx
+          ?? effectivePreviewBoard[0]?.court_idx
           ?? 0
         const busyPlayerIds = new Set<string>()
-        for (const match of [...snap.effectiveLiveMatchRows, ...currentPreviewBoardForEdge]) {
+        for (const match of [...snap.effectiveLiveMatchRows, ...effectivePreviewBoard]) {
           if (
             match.status === 'cancelled'
             || (match.status === 'completed' && !snap.completingLiveMatchIds.has(match.id))
@@ -2248,21 +2393,35 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           effective_pvna_tolerance: state.config.pvna_tolerance,
         }
         return [
-          ...currentPreviewBoardForEdge.filter(match => Number(match.court_idx) !== Number(fallbackCourtIdx)),
+          ...effectivePreviewBoard.filter(match => Number(match.court_idx) !== Number(fallbackCourtIdx)),
           fallbackMatch,
         ].sort((left, right) => Number(left.court_idx ?? 0) - Number(right.court_idx ?? 0))
       }
       if (__DEV__) console.log('[NextRoundSuggesterV2] preview request board', {
         mode: previewMode,
-        currentPreviewCourts: currentPreviewBoardForEdge.map(match => getSuggestedLaneCourtIdx(match)),
+        effectivePreviewCourts: effectivePreviewBoard.map(match => getSuggestedLaneCourtIdx(match)),
+        rawPreviewCourts: currentPreviewBoardForEdge.map(match => getSuggestedLaneCourtIdx(match)),
         pendingReplacementCourts: [...pendingReplacementCourts],
         requestedReplacementCourts: requestedReplacementCourtIdxs,
+        missingPreviewCourtIdxs,
+        snapHardPreviewQualityCourtIdxs,
+        hasHardReusableQualityViolation,
+        suggestedQueueCount: snap.queueCourtCount,
       })
 
       withPreviewSoftTimeout(fetchLiveMatchesPreview(snap.sessionId, body))
         .then(res => {
           if (!isCurrentPreviewRequest()) return
           setEdgeDebug(res.debug)
+          if (__DEV__ && Array.isArray(res.debug?.selection_debug)) {
+            res.debug.selection_debug.forEach((court: any) => {
+              console.log(`[selection_debug] sân ${court.court_idx + 1} — busy:${court.busy_count} eligible:${court.eligible_players.length} required:${court.required_for_court.length}`, {
+                eligible: court.eligible_players.map((p: any) => `${p.id.slice(0,8)} pvna=${p.pvna} rest=${p.consecutive_rest} played=${p.matches_played} tier=${p.tier}`),
+                required: court.required_for_court,
+                selected: court.selected.map((p: any) => `${p.id.slice(0,8)} pvna=${p.pvna} team=${p.team}`),
+              })
+            })
+          }
           if (__DEV__) {
             const riskyMatches = (res.payloads ?? []).filter((p: any) => p._exhaustive_diag)
             riskyMatches.forEach((p: any) => {
@@ -2349,7 +2508,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                     .filter((courtIdx: number) => Number.isFinite(courtIdx))
                 : [],
             )
-            const fulfilledPendingReplacementCourts = [...replacementCourtIdxs].every(courtIdx =>
+            const fulfilledPendingReplacementCourts = requestedReplacementCourtIdxs.every(courtIdx =>
               nextLaneCache.has(courtIdx) && (edgeReplacedCourtIdxs.size === 0 || edgeReplacedCourtIdxs.has(courtIdx)),
             )
             const previewBatchComplete = isPreviewBoardComplete({
@@ -2443,6 +2602,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                   previewRetryTimeoutsRef.current.delete(retryTimeout)
                   if (sessionGenerationRef.current !== requestSessionGeneration) return
                   previewBlockedIncompleteKeysRef.current.delete(incompleteRequestKey)
+                  previewUnblockNonceRef.current += 1
+                  if (__DEV__) console.log('[NextRoundSuggesterV2] preview unblock — retrying with new nonce', { nonce: previewUnblockNonceRef.current })
                   setPreviewRefreshNonce(value => value + 1)
                 }, 3000)
                 previewRetryTimeoutsRef.current.add(retryTimeout)
@@ -2605,7 +2766,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             && !previewBatchComplete
             && currentPreviewBatchComplete
           const shouldCommitPreviewBatch = previewBatchComplete
-            || (previewMode === 'replace_courts' && !hasPendingReplacementCourts)
+            || (previewMode === 'replace_courts' && (!hasPendingReplacementCourts || requestedReplacementCourtIdxs.every(idx => nextLaneCache.has(idx))))
           if (shouldCommitPreviewBatch) {
             suggestedLaneCacheRef.current = nextLaneCache
             suggestedPreviewBatchRef.current = previewBatchComplete
@@ -2985,6 +3146,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                 pvnaTolerance={pvnaTolerance}
                 playersById={playersById}
                 onStartMatch={startLiveMatch}
+                onStartMatchNow={startMatchNow}
                 onCompleteMatch={completeLiveMatch}
                 onCancelMatch={cancelLiveMatch}
                 onPlayerPress={openSwapForPlayer}
