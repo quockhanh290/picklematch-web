@@ -26,6 +26,7 @@ export const BASELINE_SCENARIOS: SimulationConfig[] = [
   scenario('wide_48', 48, 12, 10, 'wide', 0.35, 0.15, 5, [2, 4]),
   scenario('rotate_50', 50, 12, 15, 'wide', 0.45, 0.2, 6, [2, 5]),
   scenario('extreme_40', 40, 10, 12, 'extreme', 0.4, 0.15, 3, [4, 6]),
+  scenario('extreme_36', 36, 6, 10, 'extreme', 0.5, 0, 0, [2, 4]),
 ]
 
 export const FAIRNESS_TARGETS: Record<string, { min: number; ideal: number }> = {

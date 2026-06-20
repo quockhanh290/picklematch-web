@@ -40,6 +40,7 @@ export type SimulationConfig = {
   seed: number
   scenario_name?: string
   initial_players?: PlayerSessionState[]
+  first_round_alt_idx?: number
 }
 
 export type RoundResult = {
@@ -119,6 +120,7 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
         ? previewScoreAfterSuggestion(state, null, roundNo)
         : undefined
     const effectiveState = adjustment ? applyFairnessAdjustment(state, adjustment) : state
+    const altIdx = roundNo === 1 ? (config.first_round_alt_idx ?? 0) : 0
     const suggestion = suggestNextRound(effectiveState, {
       tier_overrides: adjustment?.tier_overrides ?? {},
     })
@@ -136,7 +138,7 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
     totalPostProcessingMs += postMs
     maxPostProcessingMs = Math.max(maxPostProcessingMs, postMs)
 
-    const alternative = suggestion.alternatives[0]
+    const alternative = suggestion.alternatives[altIdx] ?? suggestion.alternatives[0]
     if (!alternative) {
       invariantViolations.push(`R${roundNo}: no suggestion available`)
       break
