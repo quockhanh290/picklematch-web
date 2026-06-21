@@ -280,6 +280,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   const [showEngineStats, setShowEngineStats] = useState(false)
   const [showSessionReport, setShowSessionReport] = useState(initialShowReport)
   const lastSuggestMsRef = useRef<number | null>(null)
+  const lastStableSuggestionRef = useRef<ReturnType<typeof suggestNextRound> | null>(null)
   const settingsStorageKey = `${SETTINGS_STORAGE_PREFIX}:${sessionId}`
 
   const applyPersistedSettings = useCallback((settings: Partial<PersistedSettings | PersistedNextRoundSettings>) => {
@@ -619,9 +620,18 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
       lastSuggestMsRef.current = 0
       return { alternatives: [] }
     }
+    // Freeze suggestion while any courts are actively playing. Re-running suggestNextRound
+    // as courts complete one by one causes the assignment to shift each time, making players
+    // appear/disappear ("flickering"). Only recompute once all courts in the current round finish.
+    const hasLiveCourts = deferredRows.liveMatchRows.some(m => m.status === 'live')
+    if (hasLiveCourts && lastStableSuggestionRef.current !== null) {
+      lastSuggestMsRef.current = 0
+      return lastStableSuggestionRef.current
+    }
     const startedAt = Date.now()
-    const result = suggestNextRound(deferredState, { tier_overrides: deferredTierOverrides })
+    const result = suggestNextRound(deferredState, { tier_overrides: deferredTierOverrides, max_runtime_ms: 4000 })
     lastSuggestMsRef.current = Date.now() - startedAt
+    lastStableSuggestionRef.current = result
     if (deferredRows.liveStateVersion != null) {
       markNextRoundStage(sessionId, 'suggestion_ready', {
         suggest_ms: lastSuggestMsRef.current,
@@ -631,7 +641,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
       })
     }
     return result
-  }, [deferredRows.liveStateVersion, deferredState, deferredTierOverrides, sessionId])
+  }, [deferredRows.liveStateVersion, deferredRows.liveMatchRows, deferredState, deferredTierOverrides, sessionId])
   const selected = suggestion.alternatives[selectedAlternative] ?? suggestion.alternatives[0]
   const workingAlternative = manualAlternative ?? selected
   const hasManualSwapHardGuard = Boolean(workingAlternative?.warnings.includes('MANUAL_SWAP_HARD_GUARD'))

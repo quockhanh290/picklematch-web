@@ -417,6 +417,7 @@ function makeAlternative(
   allowRecentGroupRematch = false,
   seedSalt?: string,
   thresholds?: { mustRestAt?: number; partnerRepeatCap?: number; opponentRepeatCap?: number },
+  maxRuntimeMs?: number,
 ): SuggestionAlternative | null {
   const partition = bestPartitioning(selected, state, {
     diagnostics,
@@ -428,6 +429,7 @@ function makeAlternative(
     mustRestAt: thresholds?.mustRestAt,
     partnerRepeatCap: thresholds?.partnerRepeatCap,
     opponentRepeatCap: thresholds?.opponentRepeatCap,
+    maxRuntimeMs,
   })
   if (!partition) return null
   const tradeoffs = buildTradeoffs(partition, state)
@@ -625,6 +627,7 @@ export function suggestNextRound(
           false,
           options.preview_seed,
           thresholds,
+          maxRuntimeMs !== null ? Math.max(0, maxRuntimeMs - (Date.now() - startedAt)) : undefined,
         )
         if (!alternative) continue
 

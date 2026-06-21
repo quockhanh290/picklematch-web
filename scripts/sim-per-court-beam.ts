@@ -297,7 +297,7 @@ function simulateSession(
   courts: number,
   rounds: number,
   rng: seedrandom.PRNG,
-  mode: 'greedy' | 'beam',
+  mode: Mode,
 ): SessionMetrics {
   const startedAt = Date.now()
   let state = initState(players, { courts })
@@ -440,7 +440,7 @@ function printSeedPlayers(scenario: typeof SCENARIOS[0]): void {
     const high = pvnas.filter(v => v >= 3.5)
     const mean = pvnas.reduce((s, v) => s + v, 0) / pvnas.length
     const females = players.filter(p => p.gender === 'F').length
-    const hasPref = players.filter(p => p.gender_pref !== null).length
+    const hasPref = players.filter(p => p.partner_gender_pref !== 'any').length
     console.log(
       `  ${seed}: n=${players.length}  ` +
       `pvna=[${pvnas[0].toFixed(2)}..${pvnas.at(-1)!.toFixed(2)}] mean=${mean.toFixed(2)}  ` +

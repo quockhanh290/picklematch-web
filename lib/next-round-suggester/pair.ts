@@ -638,12 +638,14 @@ export function bestPartitioning(
     mustRestAt?: number
     partnerRepeatCap?: number
     opponentRepeatCap?: number
+    maxRuntimeMs?: number
   } = {},
 ): PartitioningResult | null {
   if (players.length < 4 || players.length % 4 !== 0) return null
 
   const normalizedPlayers = [...players].sort((a, b) => a.player_id.localeCompare(b.player_id))
-const maxIterations = options.maxIterations ?? defaultMaxIterations(normalizedPlayers.length)
+  const maxIterations = options.maxIterations ?? defaultMaxIterations(normalizedPlayers.length)
+  const partitionStartMs = options.maxRuntimeMs != null ? Date.now() : 0
   const partitionCount = estimateUniqueCourtPartitions(normalizedPlayers.length)
   const canSearchExhaustively = partitionCount > 0 && partitionCount <= maxIterations
   const blockRounds = getRematchBlockRounds(normalizedPlayers.length)
@@ -653,6 +655,17 @@ const maxIterations = options.maxIterations ?? defaultMaxIterations(normalizedPl
   )
   const recentKeySignature = getRecentGroupRematchKeySignature(searchState)
   const conflictMap = collectOpponentConflictMap(normalizedPlayers)
+
+  // For large sessions (5+ courts), random sampling rarely finds level-based groupings needed
+  // for bimodal PVNA distributions. Pre-compute a PVNA-sorted seed to try as a first attempt
+  // in runSearch stage 1 only (not every stage, to avoid per-stage evaluation overhead).
+  const pvnaSortedPlayers = normalizedPlayers.length >= 20
+    ? ((): PlayerSessionState[] => {
+        const sorted = [...normalizedPlayers].sort((a, b) => a.pvna - b.pvna)
+        return conflictMap.size > 0 ? separateConflictPairs(sorted, conflictMap) : sorted
+      })()
+    : null
+  let pvnaSeedTried = false
 
   function runSearch(
     searchOptions: {
@@ -725,10 +738,16 @@ const maxIterations = options.maxIterations ?? defaultMaxIterations(normalizedPl
 
     consider(chunkIntoCourts(normalizedPlayers))
 
+    if (!pvnaSeedTried && pvnaSortedPlayers) {
+      pvnaSeedTried = true
+      consider(chunkIntoCourts(pvnaSortedPlayers))
+    }
+
     const playerSeedKey = normalizedPlayers.map((player) => player.player_id).join(':')
     const historySeedKey = options.seedSalt ?? historySignature(normalizedPlayers)
     const seedBase = hashString(`${state.current_round}|${playerSeedKey}|${historySeedKey}`)
     while (iterations < maxIterations) {
+      if (options.maxRuntimeMs != null && Date.now() - partitionStartMs >= options.maxRuntimeMs) break
       const sh = shuffled(normalizedPlayers, seedBase + iterations)
       const playersToChunk = conflictMap.size > 0
         ? separateConflictPairs(sh, conflictMap)

@@ -8,6 +8,7 @@ import { mapRowsToSessionState } from '../lib/next-round-suggester/state'
 import { classifyPlayer, computeDynamicThresholds, getAverageMatches, Tier } from '../lib/next-round-suggester/classify'
 import { detectFairnessIssues } from '../lib/next-round-suggester/fairness/detector'
 import { computeSessionFairness } from '../lib/next-round-suggester/fairness/metrics'
+import { calculateOptimalCourts } from '../lib/court-calculator/calculator'
 import type { SessionState } from '../lib/next-round-suggester/types'
 
 const SUPABASE_URL = 'https://mzqsxgfvtgmsscbqugni.supabase.co'
@@ -93,8 +94,10 @@ async function main() {
     }),
   ])
 
-  // ── Config từ DB (fallback về defaults nếu chưa có settings) ──────────────
-  const courtCount = Number(settings?.court_count_override ?? settings?.court_count ?? 4)
+  // ── Config từ DB (fallback về calculated nếu chưa có settings) ─────────────
+  const rawPresentCount = rawPlayerRows.filter((r: any) => r.check_in_status === 'checked_in').length || rawPlayerRows.length
+  const calculatedCourts = calculateOptimalCourts({ n_players: rawPresentCount, session_duration_min: 90, match_duration_min: 15, preset: 'balanced' }).recommended.courts
+  const courtCount = Number(settings?.court_count_override ?? calculatedCourts)
   const pvnaTolerance = Number(settings?.pvna_tolerance ?? 0.5)
   const targetRounds = settings?.target_rounds ? Number(settings.target_rounds) : null
   const courtPreset: string = settings?.court_preset ?? 'balanced'

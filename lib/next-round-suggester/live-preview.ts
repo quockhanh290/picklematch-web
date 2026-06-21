@@ -42,7 +42,11 @@ const LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3800
 const LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS = 350
 const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 const SUGGESTED_MATCH_BUSY_TTL_MS = 60_000
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 9
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 10
+
+const BEAM_K = 3
+const BEAM_ACTIVE_PLAYER_LIMIT = 50
+const BEAM_PER_CANDIDATE_MAX_MS = 100
 
 export function isRecentSuggestedLiveMatch(
   match: SessionLiveMatchRow,
@@ -2656,6 +2660,115 @@ export type BuildSuggestedMatchPayloadsParams = {
   debugOut?: CourtSelectionDebug[]
 }
 
+function beamMatchScore(
+  teamA: [string, string],
+  teamB: [string, string],
+  state: SessionState,
+  interW: number,
+  intraW: number,
+): number {
+  const pvna = (id: string) => state.players.get(id)?.pvna ?? 0
+  const inter = Math.abs((pvna(teamA[0]) + pvna(teamA[1])) - (pvna(teamB[0]) + pvna(teamB[1])))
+  const intra = Math.max(
+    Math.abs(pvna(teamA[0]) - pvna(teamA[1])),
+    Math.abs(pvna(teamB[0]) - pvna(teamB[1])),
+  )
+  const partnerRepeat =
+    ((state.players.get(teamA[0])?.partner_counts.get(teamA[1]) ?? 0) > 0 ? 1 : 0) +
+    ((state.players.get(teamB[0])?.partner_counts.get(teamB[1]) ?? 0) > 0 ? 1 : 0)
+  const oppRepeat = [teamA[0], teamA[1]].flatMap(a =>
+    [teamB[0], teamB[1]].map(b =>
+      (state.players.get(a)?.opponent_counts.get(b) ?? 0) > 0 ? 1 : 0
+    )
+  ).reduce<number>((a, b) => a + b, 0)
+  return inter * interW + intra * intraW + partnerRepeat * 4 + oppRepeat * 2
+}
+
+function beamHybridWeights(busyIds: Set<string>, state: SessionState): { interW: number; intraW: number } {
+  const activeCount = [...state.players.values()]
+    .filter(p => p.checked_out_at === null && !p.opted_rest).length
+  if (activeCount < 25) {
+    const pvnas = [...state.players.values()]
+      .filter(p => p.checked_out_at === null && !p.opted_rest && !busyIds.has(p.player_id))
+      .map(p => p.pvna)
+    const spread = pvnas.length < 2 ? 0 : Math.max(...pvnas) - Math.min(...pvnas)
+    return { interW: 7 + spread * 3, intraW: Math.max(5, 7 - spread) }
+  }
+  return { interW: 7, intraW: 7 }
+}
+
+function pickBeamAlternative(
+  candidates: SuggestionAlternative[],
+  futureCourtsCount: number,
+  state: SessionState,
+  baseSimBusy: Set<string>,
+  budgetMs: number,
+): SuggestionAlternative | null {
+  const validCandidates = candidates.filter(alt => alt.matches.length > 0)
+  if (validCandidates.length <= 1) return null
+  const { interW, intraW } = beamHybridWeights(baseSimBusy, state)
+  const perCandidateMs = Math.floor(budgetMs / validCandidates.length)
+  let bestAlt: SuggestionAlternative | null = null
+  let bestScore = Infinity
+  for (const alt of validCandidates) {
+    const match = alt.matches[0]
+    if (!match) continue
+    const simBusy = new Set([...baseSimBusy, ...match.team_a, ...match.team_b])
+    let totalScore = beamMatchScore(match.team_a, match.team_b, state, interW, intraW)
+    const simStart = nowMs()
+    let simState = buildProjectedStateAfterLiveMatch(state, {
+      id: 'beam-lookahead',
+      session_id: state.session_id,
+      sequence_no: 0,
+      round_no: state.current_round,
+      court_idx: 0,
+      status: 'completed' as const,
+      team_a: match.team_a,
+      team_b: match.team_b,
+      resting: [],
+      score_a: 0,
+      score_b: 0,
+      suggested_at: new Date().toISOString(),
+      started_at: null,
+      ended_at: null,
+    })
+    for (let i = 0; i < futureCourtsCount; i++) {
+      if (nowMs() - simStart >= perCandidateMs) break
+      const futureResult = suggestNextMatch(simState, {
+        busy_player_ids: simBusy,
+        max_alternatives: 1,
+        max_runtime_ms: Math.max(20, perCandidateMs - (nowMs() - simStart)),
+      })
+      const futureMatch = futureResult.alternatives[0]?.matches[0]
+      if (!futureMatch) break
+      totalScore += beamMatchScore(futureMatch.team_a, futureMatch.team_b, simState, interW, intraW)
+      futureMatch.team_a.forEach(id => simBusy.add(id))
+      futureMatch.team_b.forEach(id => simBusy.add(id))
+      simState = buildProjectedStateAfterLiveMatch(simState, {
+        id: `beam-lookahead-${i}`,
+        session_id: simState.session_id,
+        sequence_no: i + 1,
+        round_no: simState.current_round,
+        court_idx: i + 1,
+        status: 'completed' as const,
+        team_a: futureMatch.team_a,
+        team_b: futureMatch.team_b,
+        resting: [],
+        score_a: 0,
+        score_b: 0,
+        suggested_at: new Date().toISOString(),
+        started_at: null,
+        ended_at: null,
+      })
+    }
+    if (totalScore < bestScore) {
+      bestScore = totalScore
+      bestAlt = alt
+    }
+  }
+  return bestAlt
+}
+
 export function buildSuggestedMatchPayloads({
   count,
   sessionId,
@@ -3298,7 +3411,28 @@ export function buildSuggestedMatchPayloads({
       nextMatchIndex: previewCountableMatchCount + index + 1,
       policy: options.liveQualityPolicy ?? 'current',
     })
-    const alternative = finalGuardedAlternative ?? finalAlternatives[0]
+    let alternative = finalGuardedAlternative ?? finalAlternatives[0]
+    const beamFutureCourts = count === 1 ? liveCourtIdxs.size : 0
+    const beamPlayerCount = [...suggestionStateForCourt.players.values()]
+      .filter(p => p.checked_out_at === null && !p.opted_rest).length
+    if (beamFutureCourts > 0 && finalAlternatives.length > 1 && beamPlayerCount <= BEAM_ACTIVE_PLAYER_LIMIT) {
+      const beamBudgetMs = Math.min(
+        getRemainingCourtBudgetMs(BEAM_PER_CANDIDATE_MAX_MS * BEAM_K),
+        BEAM_PER_CANDIDATE_MAX_MS * BEAM_K,
+      )
+      const beamBaseSimBusy = new Set([
+        ...batchBusyIds,
+        ...[...roundBusyIds].filter(id => !liveLockedPlayerIds.has(id)),
+      ])
+      const beamAlt = pickBeamAlternative(
+        finalAlternatives.slice(0, BEAM_K),
+        beamFutureCourts,
+        suggestionStateForCourt,
+        beamBaseSimBusy,
+        beamBudgetMs,
+      )
+      if (beamAlt) alternative = beamAlt
+    }
     const match = alternative?.matches[0]
     if (!alternative || !match) break
     const effectivePvnaTolerance = suggestionState.config.pvna_tolerance

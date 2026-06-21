@@ -132,7 +132,7 @@ async function main() {
   const [rawPlayerRows, pairRows, legacyRoundRows, liveMatchRows] = await Promise.all([
     query('session_player_state', {
       session_id: `eq.${argSessionId}`,
-      select: '*,players(pvna,elo,current_elo,gender)',
+      select: '*,players(pvna,elo,current_elo,gender,name)',
     }),
     query('session_pair_history', { session_id: `eq.${argSessionId}`, select: '*' }),
     query('session_rounds', { session_id: `eq.${argSessionId}`, select: '*', order: 'round_no.asc' }),
@@ -142,6 +142,8 @@ async function main() {
       status: 'neq.cancelled',
     }),
   ])
+
+  const nameMap = new Map<string, string>((rawPlayerRows as any[]).map((r: any) => [r.player_id, r.players?.name ?? r.player_id]))
 
   const playerRows = rawPlayerRows.map((row: any) => ({
     ...row,
@@ -233,6 +235,19 @@ async function main() {
     }
   }
   console.log(`Global busy (live/suggested): ${globalBusyIds.size}`)
+
+  // Print live match details
+  const liveMatches = (liveMatchRows as any[]).filter((m: any) => m.status === 'live' || m.status === 'suggested')
+  if (liveMatches.length > 0) {
+    const fmt = (ids: string[]) => (ids ?? []).map((id: string) => {
+      const p = state.players.get(id)
+      return `${nameMap.get(id) ?? id}(${p?.pvna?.toFixed(2) ?? '?'})`
+    }).join(' + ')
+    console.log(`Live courts (round_no = 0-indexed):`)
+    for (const m of liveMatches.sort((a: any, b: any) => (a.court_idx ?? 0) - (b.court_idx ?? 0))) {
+      console.log(`  Sân ${(m.court_idx ?? 0) + 1} [round ${m.round_no}]: ${fmt(m.team_a)} vs ${fmt(m.team_b)}`)
+    }
+  }
   console.log()
 
   // ===== SIMULATE COURTS SEQUENTIALLY =====
