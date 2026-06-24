@@ -13,7 +13,8 @@ describe('scoreMatch', () => {
       ],
     })
 
-    expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], state).score).toBe(0.5)
+    // pvnaDiff=0.5, intraGapSoftPenalty=(0.5+0.5)*0.15=0.15
+    expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], state).score).toBeCloseTo(0.65, 5)
   })
 
   it('adds partner repeat penalty', () => {
@@ -102,7 +103,8 @@ describe('scoreMatch', () => {
       allowRepeatOverflow: true,
     })
 
-    expect(result.score).toBe(0.5 + 3 + 1.5 + 4)
+    // pvnaDiff=0.5, partnerRepeat=3, opponentRepeat=1.5, genderPenalty=4, intraGapSoftPenalty=(0.5+0.5)*0.15=0.15
+    expect(result.score).toBeCloseTo(0.5 + 3 + 1.5 + 4 + 0.15, 5)
   })
 
   it('adds decayed recent-repeat soft cost for the last three rounds', () => {
@@ -374,12 +376,12 @@ describe('scoreMatch', () => {
       allowIntraTeamGapOverflow: true,
     })
 
-    // teamA gap = |4.42 - 2.66| = 1.76, excess over 1.0 = 0.76, penalty = 0.76 * 1 = 0.76
-    // teamB gap = |3.02 - 3.59| = 0.57 — no overflow
-    // score = pvna_diff(0.47) + intra_overflow_penalty(0.76) = 1.23
+    // teamA gap = |4.42 - 2.66| = 1.76, soft=1.76*0.15=0.264, overflow=(1.76-1.0)*1=0.76
+    // teamB gap = |3.02 - 3.59| = 0.57, soft=0.57*0.15=0.0855, no overflow
+    // score = pvna_diff(0.47) + intra_soft((1.76+0.57)*0.15=0.3495) + intra_overflow(0.76) ≈ 1.58
     expect(strict.score).toBe(Infinity)
     expect(Math.abs(relaxedIntra.stats.pvna_diff - 0.47)).toBeLessThan(0.001)
-    expect(Math.abs(relaxedIntra.score - 1.23)).toBeLessThan(0.01)
+    expect(Math.abs(relaxedIntra.score - 1.58)).toBeLessThan(0.01)
   })
 
   it('blocks same four-player rematches for the next two rounds even when partners change', () => {

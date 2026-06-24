@@ -447,6 +447,10 @@ export function computeRestFairness(state: SessionState): RestFairnessMetrics {
   for (const round of [...state.rounds].sort((a, b) => a.round_no - b.round_no)) {
     const roster = getRoundRoster(round)
     const resting = new Set(round.resting)
+    // Only count rest-run increments from fully completed rounds.
+    // Partial rounds (some courts still live) have an incomplete resting list:
+    // players in live-but-not-finished courts appear as "resting" even though they're playing.
+    const roundFullyCompleted = round.status === 'completed'
 
     for (const [playerId, metrics] of byPlayer) {
       if (!roster.has(playerId)) {
@@ -455,25 +459,37 @@ export function computeRestFairness(state: SessionState): RestFairnessMetrics {
       }
 
       if (resting.has(playerId)) {
-        const nextRun = (currentRestRun.get(playerId) ?? 0) + 1
-        currentRestRun.set(playerId, nextRun)
-        metrics.total_rests += 1
-        metrics.max_consecutive_rest = Math.max(metrics.max_consecutive_rest, nextRun)
-        if (nextRun === 1) metrics.rest_segments += 1
+        if (roundFullyCompleted) {
+          const nextRun = (currentRestRun.get(playerId) ?? 0) + 1
+          currentRestRun.set(playerId, nextRun)
+          metrics.total_rests += 1
+          metrics.max_consecutive_rest = Math.max(metrics.max_consecutive_rest, nextRun)
+          if (nextRun === 1) metrics.rest_segments += 1
+        }
+        // Partial round: don't increment — player may be live in a court not yet completed.
       } else {
         currentRestRun.set(playerId, 0)
       }
     }
   }
 
-  // Use currentRestRun (derived from complete rounds) instead of player.consecutive_rest (from DB,
-  // which may be inflated in live mode where DB increments per match rather than per complete round).
+  // Extend the rest run by 1 when the current round is NOT yet in state.rounds (not started or
+  // no match has completed yet) but players are already active in it (last_played_round updated).
+  // Guard: skip when the active round is already tracked in state.rounds — in that case the main
+  // loop above already processed it (or will once it completes).
+  const activeRoundAlreadyTracked = state.rounds.some(r => r.round_no === state.current_round)
+  const hasPlayersInCurrentRound = !activeRoundAlreadyTracked && [...state.players.values()].some(
+    p => p.last_played_round >= state.current_round,
+  )
   for (const [playerId, currentRun] of currentRestRun) {
     const metrics = byPlayer.get(playerId)
     const player = state.players.get(playerId)
     if (!metrics || !player) continue
     if (player.checked_out_at !== null || player.opted_rest) continue
-    metrics.max_consecutive_rest = Math.max(metrics.max_consecutive_rest, currentRun)
+    const extendedRun = hasPlayersInCurrentRound && currentRun > 0 && player.last_played_round < state.current_round
+      ? currentRun + 1
+      : currentRun
+    metrics.max_consecutive_rest = Math.max(metrics.max_consecutive_rest, extendedRun)
   }
 
   const perPlayer = [...byPlayer.values()]

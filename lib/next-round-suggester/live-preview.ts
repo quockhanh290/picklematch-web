@@ -207,6 +207,8 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   live_availability_context?: {
     locked_player_count: number
     live_court_count: number
+    locked_beam_quality?: number
+    available_pool_quality?: number
   }
   locked_player_ids?: string[]
   available_pool_only?: boolean
@@ -2769,6 +2771,56 @@ function pickBeamAlternative(
   return bestAlt
 }
 
+function computeBeamQuality(
+  teamA: [string, string],
+  teamB: [string, string],
+  state: SessionState,
+): number {
+  const pvna = (id: string) => state.players.get(id)?.pvna ?? 0
+  const inter = Math.abs((pvna(teamA[0]) + pvna(teamA[1])) - (pvna(teamB[0]) + pvna(teamB[1])))
+  const intra = Math.max(
+    Math.abs(pvna(teamA[0]) - pvna(teamA[1])),
+    Math.abs(pvna(teamB[0]) - pvna(teamB[1])),
+  )
+  return inter + intra * 0.4
+}
+
+function findBestAvailablePoolQuality(
+  availableIds: string[],
+  state: SessionState,
+  pvnaTolerance: number,
+): number | undefined {
+  const pvna = (id: string) => state.players.get(id)?.pvna ?? 0
+  const n = availableIds.length
+  let best: number | undefined
+  for (let a = 0; a < n - 3; a++) {
+    for (let b = a + 1; b < n - 2; b++) {
+      for (let c = b + 1; c < n - 1; c++) {
+        for (let d = c + 1; d < n; d++) {
+          const ids = [availableIds[a], availableIds[b], availableIds[c], availableIds[d]]
+          const pairings: [[string, string], [string, string]][] = [
+            [[ids[0], ids[1]], [ids[2], ids[3]]],
+            [[ids[0], ids[2]], [ids[1], ids[3]]],
+            [[ids[0], ids[3]], [ids[1], ids[2]]],
+          ]
+          for (const [teamA, teamB] of pairings) {
+            const inter = Math.abs((pvna(teamA[0]) + pvna(teamA[1])) - (pvna(teamB[0]) + pvna(teamB[1])))
+            if (inter > pvnaTolerance) continue
+            const intra = Math.max(
+              Math.abs(pvna(teamA[0]) - pvna(teamA[1])),
+              Math.abs(pvna(teamB[0]) - pvna(teamB[1])),
+            )
+            if (intra > INTRA_TEAM_PVNA_GAP_LIMIT) continue
+            const q = inter + intra * 0.4
+            if (best === undefined || q < best) best = q
+          }
+        }
+      }
+    }
+  }
+  return best
+}
+
 export function buildSuggestedMatchPayloads({
   count,
   sessionId,
@@ -2821,7 +2873,12 @@ export function buildSuggestedMatchPayloads({
       .filter(match => match.status === 'live' && !completingLiveMatchIds.has(match.id))
       .flatMap(match => [...match.team_a, ...match.team_b]),
   )
-  const liveAvailabilityContext = liveLockedPlayerIds.size > 0
+  const liveAvailabilityContext: {
+    locked_player_count: number
+    live_court_count: number
+    locked_beam_quality?: number
+    available_pool_quality?: number
+  } | undefined = liveLockedPlayerIds.size > 0
     ? {
         locked_player_count: liveLockedPlayerIds.size,
         live_court_count: liveCourtIdxs.size,
@@ -2831,6 +2888,7 @@ export function buildSuggestedMatchPayloads({
   const roundCounts = new Map<number, number>()
   const courtIdxsByRound = new Map<number, Set<number>>()
   const matchesByRound = new Map<number, SessionLiveMatchRow[]>()
+  const lastCompletedRoundByCourtIdx = new Map<number, number>()
   const countableMatches = liveMatchRows
     .filter(match => match.status !== 'cancelled')
     .sort((left, right) => left.sequence_no - right.sequence_no)
@@ -2845,9 +2903,16 @@ export function buildSuggestedMatchPayloads({
     roundMatches.push(match)
     matchesByRound.set(logicalRoundNo, roundMatches)
     if (match.court_idx !== null && match.court_idx !== undefined) {
+      const idx = Number(match.court_idx)
       const courtIdxs = courtIdxsByRound.get(logicalRoundNo) ?? new Set<number>()
-      courtIdxs.add(Number(match.court_idx))
+      courtIdxs.add(idx)
       courtIdxsByRound.set(logicalRoundNo, courtIdxs)
+      if (match.status === 'completed') {
+        const existing = lastCompletedRoundByCourtIdx.get(idx)
+        if (existing === undefined || logicalRoundNo > existing) {
+          lastCompletedRoundByCourtIdx.set(idx, logicalRoundNo)
+        }
+      }
     }
   })
   const playerIdsByRound = new Map<number, Set<string>>()
@@ -2987,11 +3052,20 @@ export function buildSuggestedMatchPayloads({
     const nextCourtIdx = openCourtIdxs.find(idx => !roundCourtIdxs.has(idx)) ?? openCourtIdxs[0]
     const courtIdx = requestedCourtIdx ?? nextCourtIdx
     if (courtIdx === undefined) break
+    const courtLastCompletedRound = lastCompletedRoundByCourtIdx.get(courtIdx)
+    const payloadRoundNo = courtLastCompletedRound !== undefined
+      ? courtLastCompletedRound + 1
+      : projectedRoundNo
     const previewSeed = `${previewSeedBase}|court:${index}`
     const remainingCourtsInRound = Math.max(1, courtCapacity - projectedRoundMatchCount)
     const availableRequiredIds = [...roundRequiredIds]
       .filter(playerId => !roundBusyIds.has(playerId) && !batchBusyIds.has(playerId))
-    const futureRoundSlots = Math.max(0, (remainingCourtsInRound - 1) * 4)
+    // When ignoreCapacityLock is false (available-pool mode), we're suggesting a single replacement
+    // court in isolation. Don't defer MUST_PLAY players to "future courts" that aren't part of
+    // this request — they must be placed here or they'll stay resting another round.
+    const futureRoundSlots = ignoreCapacityLock
+      ? Math.max(0, (remainingCourtsInRound - 1) * 4)
+      : 0
     const minRequiredForThisCourt = Math.min(
       4,
       Math.max(0, availableRequiredIds.length - futureRoundSlots),
@@ -3062,8 +3136,8 @@ export function buildSuggestedMatchPayloads({
       combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
     }
     const suggestionStateForCourt = withRecentGroupRematchKeys(
-      { ...suggestionState, current_round: projectedRoundNo },
-      getBlockedRecentGroupRematchKeys(completedMatchGroups, projectedRoundNo),
+      { ...suggestionState, current_round: payloadRoundNo },
+      getBlockedRecentGroupRematchKeys(completedMatchGroups, payloadRoundNo),
     )
     const liveSelectionGuard = buildLiveSelectionGuard({
       state: suggestionStateForCourt,
@@ -3453,12 +3527,41 @@ export function buildSuggestedMatchPayloads({
     const visibleWarnings = shouldSurfaceAutoPvnaTradeoff
       ? [...new Set([...alternative.warnings, 'PVNA_TOLERANCE_RELAXED'])]
       : alternative.warnings
+    const matchLockedPlayerIds = liveLockedPlayerIds.size > 0
+      ? [...match.team_a, ...match.team_b].filter(id => liveLockedPlayerIds.has(id))
+      : []
+    let perMatchAvailabilityContext = liveAvailabilityContext
+    if (matchLockedPlayerIds.length > 0 && liveAvailabilityContext) {
+      const lockedBeamQuality = computeBeamQuality(
+        match.team_a as [string, string],
+        match.team_b as [string, string],
+        suggestionStateForCourt,
+      )
+      const availablePool = [...suggestionStateForCourt.players.values()]
+        .filter(p =>
+          p.checked_out_at === null &&
+          !p.opted_rest &&
+          !busyIds.has(p.player_id) &&
+          !liveLockedPlayerIds.has(p.player_id),
+        )
+        .map(p => p.player_id)
+      const availablePoolQuality = findBestAvailablePoolQuality(
+        availablePool,
+        suggestionStateForCourt,
+        effectivePvnaTolerance,
+      )
+      perMatchAvailabilityContext = {
+        ...liveAvailabilityContext,
+        locked_beam_quality: lockedBeamQuality,
+        available_pool_quality: availablePoolQuality,
+      }
+    }
     payloads.push({
       court_idx: courtIdx,
       team_a: match.team_a,
       team_b: match.team_b,
       resting: alternative.resting,
-      round_no: projectedRoundNo,
+      round_no: payloadRoundNo,
       preview_live_state_version: rows.liveStateVersion,
       preview_countable_match_count: previewCountableMatchCount,
       warnings: visibleWarnings,
@@ -3474,10 +3577,8 @@ export function buildSuggestedMatchPayloads({
         : [],
       tradeoff_choices: tradeoffChoices?.choices,
       recommended_tradeoff_choice: recommendedTradeoffChoice,
-      live_availability_context: liveAvailabilityContext,
-      locked_player_ids: liveLockedPlayerIds.size > 0
-        ? [...match.team_a, ...match.team_b].filter(id => liveLockedPlayerIds.has(id))
-        : undefined,
+      live_availability_context: perMatchAvailabilityContext,
+      locked_player_ids: matchLockedPlayerIds.length > 0 ? matchLockedPlayerIds : undefined,
     })
 
     if (debugOut && debugEligible) {
@@ -3508,7 +3609,7 @@ export function buildSuggestedMatchPayloads({
       id: `preview-projected-${index}`,
       session_id: sessionId,
       sequence_no: index,
-      round_no: projectedRoundNo,
+      round_no: payloadRoundNo,
       court_idx: courtIdx,
       status: 'completed',
       team_a: match.team_a,
@@ -3520,9 +3621,9 @@ export function buildSuggestedMatchPayloads({
       started_at: null,
       ended_at: null,
     }
-    suggestionState = buildProjectedStateAfterLiveMatch(suggestionState, projectedMatch, projectedRoundNo)
+    suggestionState = buildProjectedStateAfterLiveMatch(suggestionState, projectedMatch, payloadRoundNo)
     completedMatchGroups.push({
-      round_no: projectedRoundNo,
+      round_no: payloadRoundNo,
       team_a: projectedMatch.team_a,
       team_b: projectedMatch.team_b,
     })

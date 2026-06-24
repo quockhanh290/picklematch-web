@@ -55,6 +55,8 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   live_availability_context?: {
     locked_player_count: number
     live_court_count: number
+    locked_beam_quality?: number
+    available_pool_quality?: number
   }
   locked_player_ids?: string[]
   available_pool_only?: boolean

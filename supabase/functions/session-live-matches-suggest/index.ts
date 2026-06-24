@@ -241,10 +241,13 @@ Deno.serve(async (request) => {
     const currentCountableMatchCount = liveMatchRows.filter((match: any) =>
       match?.status !== 'cancelled' && match?.status !== 'suggested'
     ).length
+    const currentMaxSequenceNo = liveMatchRows.reduce((max: number, m: any) =>
+      Math.max(max, typeof m?.sequence_no === 'number' ? m.sequence_no : -1), -1)
     const finalPreviewBoard = board.final_preview_board.map(payload => ({
       ...payload,
       preview_live_state_version: liveStateVersion,
       preview_countable_match_count: currentCountableMatchCount,
+      preview_max_sequence_no: currentMaxSequenceNo,
     }))
 
     return jsonResponse({

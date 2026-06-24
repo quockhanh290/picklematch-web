@@ -1,28 +1,40 @@
-## Task: Fix 6-circles bug + "Bắt Đầu Ngay" not working
+## Task: Watch script alignment + UX improvements
 Status: IN PROGRESS
 
 ### Completed
-- [x] Fix 6-circles bug in `buildCompletedLiveCycleRows` — deduplicate live matches against legacyRoundRows
-  - File: `features/host/session-detail/next-round-v2/live-cycle-rows.ts`
-  - Thêm `legacyRoundNos` set, filter completedLive để loại match có `round_no` đã có trong legacyRoundRows
-- [x] Run tests — 135 unit tests pass, 13 next-round-v2 tests pass
-- [x] Investigate "Bắt Đầu Ngay" không hoạt động trên sân 1 vòng 5
-  - Root cause: `buildFinalPreviewBoard` trong `replace_courts` mode lock các sân khác trong `currentPreviewBoard`, đánh dấu players của họ là "used". Court 0's available-pool suggestion bị reject vì players cũng dùng trong locked courts.
-- [x] Fix "Bắt Đầu Ngay" — 2 thay đổi trong `startMatchNow`:
-  1. `current_preview_board: []` thay vì `getCurrentPreviewBoardForEdge()` — cho phép edge function suggest court 0 mà không bị block bởi other courts' previews
-  2. `previewRequestSerialRef.current += 1` — cancel in-flight background batch để tránh race condition overwrite
+- [x] Fix fairness bug: c_rest=2 false positive từ partial rounds (metrics.ts)
+- [x] Fix available pool skipping MUST_PLAY players (live-preview.ts)
+- [x] Deploy 2 bug fixes lên 4 Supabase edge functions
+- [x] Redesign capacity/tradeoff UX (ScreenComponents.tsx):
+  - ℹ info block "Tốt nhất từ X/Y người đang rảnh"
+  - startDisabled = busy || hasLockedPlayers (fix: không cho start khi có locked player)
+  - "Xem lineup thay thế" dùng hasLockedPlayers thay vì showWaitUI
+  - Invalidate suggestions chất lượng kém sau khi sân hoàn thành
+- [x] Fix watch script sai mode và thiếu params:
+  - Bỏ prefer_available_pool: true
+  - Thêm planned_total_rounds và court_preset
+  - Fix TypeScript errors
+  - Luôn dùng replace_courts (không dùng full_board — UI không bao giờ dùng full_board)
+- [x] Điều tra watch script vs UI mismatch (session 7d64d01b-...):
+  - Player pool GIỐNG NHAU (34 players, cùng pvna, cùng cr=0/mp=0)
+  - Algorithm là stochastic (beamsearch) — không phải simple pvna sort
+  - Tìm optimal grouping (ghép 6 trận cân bằng) → nhiều local optima khác nhau
+  - Cả hai giải pháp đều valid (pvna_gap=0.00 cho tất cả sân)
+  - KẾT LUẬN: Expected behavior — watch script không cần phải exact match UI ở vòng đầu
 
 ### In progress
-- [ ] Chờ typecheck:guard pass
+- [ ] Hoàn thiện UX của ScreenComponents.tsx
 
 ### Next steps
-- [ ] Bump `LIVE_PREVIEW_ALGORITHM_VERSION` trước khi deploy
-- [ ] Test thực tế trên UI
+- [ ] [FUTURE — developer only] Debug view: expose full candidate list từ engine để verify lineup quality
 
 ### Key decisions
-- `current_preview_board: []` trong startMatchNow: chỉ cần gợi ý cho 1 sân, không cần giữ preview sân khác vì chỉ update court 0 trong UI; sân khác sẽ được background batch re-suggest sau
-- Increment serial trước await: đảm bảo old batch stale TRƯỚC khi bắt đầu edge call của startMatchNow
+- Watch script mismatch vs UI là expected khi không có match history (nhiều equally-valid solutions)
+- Watch script hữu ích để debug algorithm flow và fairness qua nhiều vòng, không để verify exact lineup
 
 ### Files touched
-features/host/session-detail/next-round-v2/live-cycle-rows.ts
+features/host/session-detail/next-round-v2/components/ScreenComponents.tsx
 features/host/session-detail/NextRoundSuggesterScreenV2.tsx
+lib/next-round-suggester/fairness/metrics.ts
+lib/next-round-suggester/live-preview.ts
+scripts/watch-court-lane.ts

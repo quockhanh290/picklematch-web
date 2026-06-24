@@ -27,6 +27,10 @@ const INFINITY_SCORE: MatchScore = {
 
 export const PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT = 0.75
 export const INTRA_TEAM_PVNA_GAP_LIMIT = 1.0
+// Soft penalty for intra-team gap across the full range [0, 1.0].
+// At W=0.15, an intra improvement of 0.33 per team outweighs a pvna_diff increase of 0.05.
+// pvna still dominates for large differences (e.g. pvna=0.4 beats intra_gain=0.7).
+const INTRA_GAP_SOFT_WEIGHT = 0.15
 // When allowIntraTeamGapOverflow=true, each unit of gap excess over INTRA_TEAM_PVNA_GAP_LIMIT
 // costs this many score points. W=1 makes the crossover fair: intra excess beats pvna_diff when
 // total excess < pvna_diff, i.e. Stage 6 (cross-split, ~balanced pvna) beats Stage 5.5
@@ -605,6 +609,8 @@ export function scoreMatch(
     getAvoidPenalty(teamA1, teamB0, 'opponent') +
     getAvoidPenalty(teamA1, teamB1, 'opponent')
 
+  const intraGapSoftPenalty = (teamAIntraGap + teamBIntraGap) * INTRA_GAP_SOFT_WEIGHT
+
   const score =
     pvnaDiff * weights.pvna +
     partnerRepeatScore +
@@ -614,6 +620,7 @@ export function scoreMatch(
     stats.consecutive_play_penalty +
     recentRepeatCost.total +
     avoidOpponentPenalty +
+    intraGapSoftPenalty +
     intraOverflowPenalty
 
   return {
