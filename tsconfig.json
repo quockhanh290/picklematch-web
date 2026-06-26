@@ -20,7 +20,7 @@
   ],
   "exclude": [
     "supabase/functions/**/*.ts",
-    "scratch/**/*",
+    "scripts/diagnostics/**/*",
     "tests/**/*"
   ]
 }

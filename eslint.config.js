@@ -13,7 +13,6 @@ module.exports = defineConfig([
       'test-results/**',
       'web-build/**',
       'docs/**',
-      'scratch/**',
       'supabase/functions/**',
       '**/*.bak',
       '**/*.tmp',
