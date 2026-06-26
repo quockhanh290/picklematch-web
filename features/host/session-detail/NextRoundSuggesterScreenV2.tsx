@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   SessionDashboardCard,
   StatusInlineItem,
@@ -148,7 +149,8 @@ import {
   playerName,
   repeatRiskLabel,
 } from './next-round-v2/helpers'
-import type { NextRoundSuggesterV2Props } from './next-round-v2/types'
+import type { NextRoundSuggesterV2Props, LiveRows } from './next-round-v2/types'
+import { liveSessionQueryKeys } from './next-round-v2/queries'
 import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
 import { useCheckInMutation, useCheckOutMutation, useStartMatchMutation, useCompleteMatchMutation } from './next-round-v2/mutations'
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
@@ -568,6 +570,7 @@ function shouldInvalidatePreviewAfterStartError(error: unknown) {
 
 
 export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bootstrapTelemetry = null, initialShowReport = false }: NextRoundSuggesterV2Props) {
+  const queryClient = useQueryClient()
   const checkInMutation = useCheckInMutation(sessionId)
   const checkOutMutation = useCheckOutMutation(sessionId)
   const startMatchMutation = useStartMatchMutation(sessionId)
@@ -1117,76 +1120,120 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
 
     const executeStart = async () => {
       const actionT0 = nowMs()
-      const expectedVersion = liveStateVersionRef.current
-      if (expectedVersion === null) throw new Error('Session changed')
-      const payloadBuildT0 = nowMs()
-      const rpcPayload = {
-        p_session_id: sessionId,
-        p_expected_live_state_version: expectedVersion,
-        p_match: {
-          court_idx: match.court_idx,
-          team_a: match.team_a,
-          team_b: match.team_b,
-          resting: match.resting ?? [],
-          round_no: match.round_no ?? -1,
-        },
-        p_audit_payload: {
-          client_request_id: createClientRequestId('match'),
-          source: 'client-preview-start-live-match',
-          preview_id: match.id,
-          preview_live_state_version: previewVersion,
-          preview_countable_match_count: previewCountableMatchCount,
-          expected_round_matches: queueCourtCount,
-        },
-      }
-      const payloadBuildMs = nowMs() - payloadBuildT0
-      const rpcT0 = nowMs()
-      const payload = await startMatchMutation.mutateAsync({ rpcPayload })
-      const rpcMs = nowMs() - rpcT0
-      const nextVersion = Number(payload?.live_state_version)
-      if (Number.isFinite(nextVersion)) {
-        liveStateVersionRef.current = liveStateVersionRef.current === null
-          ? nextVersion
-          : Math.max(liveStateVersionRef.current, nextVersion)
-      }
-      if (payload.match) {
-        setLiveMatchDisplayKeys(current => ({
-          ...current,
-          [payload.match.id]: match.id,
-        }))
-        setStartedPreviewIds(current => {
-          const next = new Set(current)
-          next.add(match.id)
-          return next
-        })
-        setSuggestedLiveMatches(prev => prev.filter(row => row.id !== match.id))
-        setOptimisticLiveMatches(current => [
-          ...current.filter(row => row.id !== match.id && row.id !== payload.match.id),
-          {
-            ...payload.match,
-            client_preview_id: match.id,
+
+      for (let attempt = 0; attempt <= 1; attempt++) {
+        if (attempt > 0) {
+          // Refetch latest snapshot and sync version synchronously from cache.
+          // Do NOT read liveStateVersionRef here — it may lag behind a render cycle.
+          await queryClient.refetchQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) })
+          const cached = queryClient.getQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId))
+          const fresh = Number(cached?.liveStateVersion ?? 0)
+          if (Number.isFinite(fresh) && fresh > 0) {
+            liveStateVersionRef.current = Math.max(liveStateVersionRef.current ?? 0, fresh)
+          }
+          // Idempotency guard: if the match is already live (e.g. committed by the first
+          // attempt despite the 'Session changed' error), treat it as success.
+          const alreadyLive = cached?.liveMatchRows.find(
+            row => row.status === 'live' && isSameCourtAndPlayers(row, match),
+          )
+          if (alreadyLive) {
+            const reconciledVersion = Number(cached?.liveStateVersion)
+            if (Number.isFinite(reconciledVersion)) {
+              liveStateVersionRef.current = Math.max(liveStateVersionRef.current ?? 0, reconciledVersion)
+            }
+            setLiveMatchDisplayKeys(current => ({ ...current, [alreadyLive.id]: match.id }))
+            setSuggestedLiveMatches(prev => prev.filter(row => row.id !== match.id))
+            setOptimisticLiveMatches(current => [
+              ...current.filter(row => row.id !== match.id && row.id !== alreadyLive.id),
+              { ...alreadyLive, client_preview_id: match.id },
+            ])
+            applyLiveMatches([alreadyLive], cached?.liveStateVersion)
+            if (__DEV__) console.log('[NextRoundSuggesterV2] start match already live (idempotency), aborting retry', { matchId: match.id, liveId: alreadyLive.id })
+            return { reload: false, reconcileAfterMs: 600 }
+          }
+        }
+
+        const expectedVersion = liveStateVersionRef.current
+        if (expectedVersion === null) throw new Error('Session changed')
+        const payloadBuildT0 = nowMs()
+        const rpcPayload = {
+          p_session_id: sessionId,
+          p_expected_live_state_version: expectedVersion,
+          p_match: {
+            court_idx: match.court_idx,
+            team_a: match.team_a,
+            team_b: match.team_b,
+            resting: match.resting ?? [],
+            round_no: match.round_no ?? -1,
           },
-        ])
+          p_audit_payload: {
+            client_request_id: createClientRequestId('match'),
+            source: 'client-preview-start-live-match',
+            preview_id: match.id,
+            preview_live_state_version: previewVersion,
+            preview_countable_match_count: previewCountableMatchCount,
+            expected_round_matches: queueCourtCount,
+          },
+        }
+        const payloadBuildMs = nowMs() - payloadBuildT0
+        const rpcT0 = nowMs()
+        try {
+          const payload = await startMatchMutation.mutateAsync({ rpcPayload })
+          const rpcMs = nowMs() - rpcT0
+          const nextVersion = Number(payload?.live_state_version)
+          if (Number.isFinite(nextVersion)) {
+            liveStateVersionRef.current = liveStateVersionRef.current === null
+              ? nextVersion
+              : Math.max(liveStateVersionRef.current, nextVersion)
+          }
+          if (payload.match) {
+            setLiveMatchDisplayKeys(current => ({
+              ...current,
+              [payload.match.id]: match.id,
+            }))
+            setStartedPreviewIds(current => {
+              const next = new Set(current)
+              next.add(match.id)
+              return next
+            })
+            setSuggestedLiveMatches(prev => prev.filter(row => row.id !== match.id))
+            setOptimisticLiveMatches(current => [
+              ...current.filter(row => row.id !== match.id && row.id !== payload.match.id),
+              {
+                ...payload.match,
+                client_preview_id: match.id,
+              },
+            ])
+          }
+          const applyT0 = nowMs()
+          applyLiveMatches(payload.match ? [payload.match] : [], payload.live_state_version)
+          const applyMs = nowMs() - applyT0
+          if (__DEV__) console.log('[NextRoundSuggesterV2] start live match timing', {
+            matchId: match.id,
+            courtIdx: match.court_idx,
+            roundNo: match.round_no,
+            expectedVersion,
+            nextVersion: payload?.live_state_version,
+            retried: attempt > 0,
+            payloadBuildMs: Math.round(payloadBuildMs),
+            rpcMs: Math.round(rpcMs),
+            applyMs: Math.round(applyMs),
+            actionMs: Math.round(nowMs() - actionT0),
+            totalMs: Math.round(nowMs() - startT0),
+          })
+          return {
+            reload: false,
+            reconcileAfterMs: 600,
+          }
+        } catch (err: unknown) {
+          if (attempt === 0 && (err as any)?.message === 'Session changed') {
+            if (__DEV__) console.log('[NextRoundSuggesterV2] start match Session changed, retrying', { matchId: match.id, expectedVersion })
+            continue
+          }
+          throw err
+        }
       }
-      const applyT0 = nowMs()
-      applyLiveMatches(payload.match ? [payload.match] : [], payload.live_state_version)
-      const applyMs = nowMs() - applyT0
-      if (__DEV__) console.log('[NextRoundSuggesterV2] start live match timing', {
-        matchId: match.id,
-        courtIdx: match.court_idx,
-        roundNo: match.round_no,
-        expectedVersion,
-        nextVersion: payload?.live_state_version,
-        payloadBuildMs: Math.round(payloadBuildMs),
-        rpcMs: Math.round(rpcMs),
-        applyMs: Math.round(applyMs),
-        actionMs: Math.round(nowMs() - actionT0),
-        totalMs: Math.round(nowMs() - startT0),
-      })
-      return {
-        reload: false,
-        reconcileAfterMs: 600,
-      }
+      throw new Error('Session changed')
     }
 
     const queuedStart = liveMatchMutationQueueRef.current
@@ -1393,8 +1440,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
 
     const executeComplete = async () => {
       const actionT0 = nowMs()
-      const expectedVersion = liveStateVersionRef.current
-      if (expectedVersion === null) throw new Error('Session changed')
+
+      // Projection is static across attempts (match + state don't change between retries).
       const projectT0 = nowMs()
       const projectedState = buildProjectedStateAfterLiveMatch(state, match)
       const projectMs = nowMs() - projectT0
@@ -1408,91 +1455,126 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       const fairnessT0 = nowMs()
       const projectedScore = computeSessionFairness(projectedState).total
       const fairnessMs = nowMs() - fairnessT0
-      const rpcT0 = nowMs()
-      const payload = await completeMatchMutation.mutateAsync({
-        rpcPayload: {
-          p_session_id: sessionId,
-          p_expected_live_state_version: expectedVersion,
-          p_match_id: match.id,
-          p_score_a: score.a,
-          p_score_b: score.b,
-          p_score_after: Math.round(projectedScore),
-          p_audit_payload: {
-            client_request_id: createClientRequestId('match'),
-            sequence_no: match.sequence_no,
-            expected_round_matches: queueCourtCount,
-            source: 'client-direct-complete-live-match',
-          },
-        },
-      })
-      const rpcMs = nowMs() - rpcT0
-      const nextVersion = Number(payload?.live_state_version)
-      if (Number.isFinite(nextVersion)) {
-        liveStateVersionRef.current = liveStateVersionRef.current === null
-          ? nextVersion
-          : Math.max(liveStateVersionRef.current, nextVersion)
+
+      for (let attempt = 0; attempt <= 1; attempt++) {
+        if (attempt > 0) {
+          // Refetch latest snapshot and sync version synchronously from cache.
+          await queryClient.refetchQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) })
+          const cached = queryClient.getQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId))
+          const fresh = Number(cached?.liveStateVersion ?? 0)
+          if (Number.isFinite(fresh) && fresh > 0) {
+            liveStateVersionRef.current = Math.max(liveStateVersionRef.current ?? 0, fresh)
+          }
+          // Idempotency guard: if already completed by a concurrent action, treat as success.
+          const alreadyCompleted = cached?.liveMatchRows.find(
+            row => row.id === match.id && row.status === 'completed',
+          )
+          if (alreadyCompleted) {
+            applyCompletedLiveMatch(alreadyCompleted, [], [], cached?.liveStateVersion)
+            if (__DEV__) console.log('[NextRoundSuggesterV2] complete match already committed (idempotency), aborting retry', { matchId: match.id })
+            return { reload: false, reconcileAfterMs: 600, targetReachedAfterMatch }
+          }
+        }
+
+        const expectedVersion = liveStateVersionRef.current
+        if (expectedVersion === null) throw new Error('Session changed')
+
+        const rpcT0 = nowMs()
+        try {
+          const payload = await completeMatchMutation.mutateAsync({
+            rpcPayload: {
+              p_session_id: sessionId,
+              p_expected_live_state_version: expectedVersion,
+              p_match_id: match.id,
+              p_score_a: score.a,
+              p_score_b: score.b,
+              p_score_after: Math.round(projectedScore),
+              p_audit_payload: {
+                client_request_id: createClientRequestId('match'),
+                sequence_no: match.sequence_no,
+                expected_round_matches: queueCourtCount,
+                source: 'client-direct-complete-live-match',
+              },
+            },
+          })
+          const rpcMs = nowMs() - rpcT0
+          const nextVersion = Number(payload?.live_state_version)
+          if (Number.isFinite(nextVersion)) {
+            liveStateVersionRef.current = liveStateVersionRef.current === null
+              ? nextVersion
+              : Math.max(liveStateVersionRef.current, nextVersion)
+          }
+          if (__DEV__) console.log('[NextRoundSuggesterV2] complete live match committed', {
+            matchId: match.id,
+            status: payload?.match?.status,
+            liveStateVersion: payload?.live_state_version,
+            targetReachedAfterMatch,
+            retried: attempt > 0,
+            projectMs: Math.round(projectMs),
+            fairnessMs: Math.round(fairnessMs),
+            rpcMs: Math.round(rpcMs),
+            sincePressMs: Math.round(nowMs() - completeT0),
+          })
+          const applyT0 = nowMs()
+          const completedMatch = (payload.match ?? { ...match, status: 'completed', ended_at: new Date().toISOString() }) as SessionLiveMatchRow
+          applyCompletedLiveMatch(
+            completedMatch,
+            payload.changed_player_state ?? [],
+            payload.changed_pair_history ?? [],
+            payload.live_state_version,
+          )
+          const applyMs = nowMs() - applyT0
+          // Any in-flight preview was built from the pre-completion player/pair state.
+          previewRequestSerialRef.current += 1
+          previewRequestInFlightRef.current = false
+          previewRequestInFlightSerialRef.current = null
+          previewRetryTimeoutsRef.current.forEach(clearTimeout)
+          previewRetryTimeoutsRef.current.clear()
+          setIsSuggestingPreview(false)
+          completedLiveMatchCommitIdsRef.current.add(match.id)
+          setCompletedLiveMatchCommitNonce(value => value + 1)
+          suggestedPreviewBatchRef.current = null
+          setStartedPreviewIds(new Set())
+          const freedPlayerIds = new Set([...completedMatch.team_a, ...completedMatch.team_b])
+          setSuggestedLiveMatches(current => current.filter(m => {
+            if (m.locked_player_ids?.some(id => freedPlayerIds.has(id))) return false
+            if (m.live_availability_context != null && (
+              getSuggestedMatchIntraTeamGap(m, state) > PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT ||
+              getSuggestedMatchPvnaGap(m, state) > pvnaTolerance ||
+              (m.tradeoffs?.length ?? 0) > 0
+            )) return false
+            return true
+          }))
+          setPreviewRefreshNonce(value => value + 1)
+          if (__DEV__) console.log('[NextRoundSuggesterV2] complete live match timing', {
+            matchId: match.id,
+            courtIdx: match.court_idx,
+            completedStatus: completedMatch.status,
+            expectedVersion,
+            nextVersion: payload.live_state_version,
+            targetReachedAfterMatch,
+            projectMs: Math.round(projectMs),
+            fairnessMs: Math.round(fairnessMs),
+            rpcMs: Math.round(rpcMs),
+            applyMs: Math.round(applyMs),
+            targetMs: Math.round(targetMs),
+            actionMs: Math.round(nowMs() - actionT0),
+            totalMs: Math.round(nowMs() - completeT0),
+          })
+          return {
+            reload: false,
+            reconcileAfterMs: 600,
+            targetReachedAfterMatch,
+          }
+        } catch (err: unknown) {
+          if (attempt === 0 && (err as any)?.message === 'Session changed') {
+            if (__DEV__) console.log('[NextRoundSuggesterV2] complete match Session changed, retrying', { matchId: match.id, expectedVersion })
+            continue
+          }
+          throw err
+        }
       }
-      if (__DEV__) console.log('[NextRoundSuggesterV2] complete live match committed', {
-        matchId: match.id,
-        status: payload?.match?.status,
-        liveStateVersion: payload?.live_state_version,
-        targetReachedAfterMatch,
-        projectMs: Math.round(projectMs),
-        fairnessMs: Math.round(fairnessMs),
-        rpcMs: Math.round(rpcMs),
-        sincePressMs: Math.round(nowMs() - completeT0),
-      })
-      const applyT0 = nowMs()
-      const completedMatch = (payload.match ?? { ...match, status: 'completed', ended_at: new Date().toISOString() }) as SessionLiveMatchRow
-      applyCompletedLiveMatch(
-        completedMatch,
-        payload.changed_player_state ?? [],
-        payload.changed_pair_history ?? [],
-        payload.live_state_version,
-      )
-      const applyMs = nowMs() - applyT0
-      // Any in-flight preview was built from the pre-completion player/pair state.
-      previewRequestSerialRef.current += 1
-      previewRequestInFlightRef.current = false
-      previewRequestInFlightSerialRef.current = null
-      previewRetryTimeoutsRef.current.forEach(clearTimeout)
-      previewRetryTimeoutsRef.current.clear()
-      setIsSuggestingPreview(false)
-      completedLiveMatchCommitIdsRef.current.add(match.id)
-      setCompletedLiveMatchCommitNonce(value => value + 1)
-      suggestedPreviewBatchRef.current = null
-      setStartedPreviewIds(new Set())
-      const freedPlayerIds = new Set([...completedMatch.team_a, ...completedMatch.team_b])
-      setSuggestedLiveMatches(current => current.filter(m => {
-        if (m.locked_player_ids?.some(id => freedPlayerIds.has(id))) return false
-        if (m.live_availability_context != null && (
-          getSuggestedMatchIntraTeamGap(m, state) > PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT ||
-          getSuggestedMatchPvnaGap(m, state) > pvnaTolerance ||
-          (m.tradeoffs?.length ?? 0) > 0
-        )) return false
-        return true
-      }))
-      setPreviewRefreshNonce(value => value + 1)
-      if (__DEV__) console.log('[NextRoundSuggesterV2] complete live match timing', {
-        matchId: match.id,
-        courtIdx: match.court_idx,
-        completedStatus: completedMatch.status,
-        expectedVersion,
-        nextVersion: payload.live_state_version,
-        targetReachedAfterMatch,
-        projectMs: Math.round(projectMs),
-        fairnessMs: Math.round(fairnessMs),
-        rpcMs: Math.round(rpcMs),
-        applyMs: Math.round(applyMs),
-        targetMs: Math.round(targetMs),
-        actionMs: Math.round(nowMs() - actionT0),
-        totalMs: Math.round(nowMs() - completeT0),
-      })
-      return {
-        reload: false,
-        reconcileAfterMs: 600,
-        targetReachedAfterMatch,
-      }
+      throw new Error('Session changed')
     }
 
     const queuedComplete = liveMatchMutationQueueRef.current
