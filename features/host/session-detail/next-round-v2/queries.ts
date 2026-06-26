@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useIsMutating, useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import type { SessionLiveMatchRow, SessionPairHistoryRow, SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
@@ -20,9 +20,10 @@ export function keepNewestLiveRows(previous: LiveRows | undefined, incoming: Liv
 }
 
 export function useLiveSessionQuery(sessionId: string, playersById: Map<string, ArrangementPlayer>) {
+  const isMutating = useIsMutating({ mutationKey: ['liveSession', sessionId] })
   return useQuery<LiveRows, Error>({
     queryKey: liveSessionQueryKeys.detail(sessionId),
-    refetchInterval: POLL_INTERVAL_MS,
+    refetchInterval: isMutating > 0 ? false : POLL_INTERVAL_MS,
     refetchIntervalInBackground: false,
     retry: 1,
     retryDelay: 600,

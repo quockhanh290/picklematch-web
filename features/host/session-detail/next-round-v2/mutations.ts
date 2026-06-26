@@ -8,6 +8,7 @@ import { checkInLiveSessionPlayers, checkOutLiveSessionPlayers } from './api'
 export function useCheckInMutation(sessionId: string) {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: ['liveSession', sessionId],
     mutationFn: async ({ playerIds }: { playerIds: string[]; optimisticRows: SessionPlayerStateRow[] }) => {
       return checkInLiveSessionPlayers(sessionId, playerIds)
     },
@@ -27,14 +28,13 @@ export function useCheckInMutation(sessionId: string) {
         queryClient.setQueryData(liveSessionQueryKeys.detail(sessionId), context.previousState)
       }
     },
-    // onSettled removed to prevent race condition with Realtime
-    // Realtime subscription in queries.ts will invalidate when DB actually changes.
   })
 }
 
 export function useCheckOutMutation(sessionId: string) {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: ['liveSession', sessionId],
     mutationFn: async ({ playerIds }: { playerIds: string[] }) => {
       return checkOutLiveSessionPlayers(sessionId, playerIds)
     },
@@ -45,7 +45,7 @@ export function useCheckOutMutation(sessionId: string) {
         const idSet = new Set(playerIds)
         queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), {
           ...previousState,
-          playerRows: previousState.playerRows.map(row => 
+          playerRows: previousState.playerRows.map(row =>
             idSet.has(row.player_id) ? { ...row, checked_out_at: new Date().toISOString() } : row
           ),
         })
@@ -57,64 +57,38 @@ export function useCheckOutMutation(sessionId: string) {
         queryClient.setQueryData(liveSessionQueryKeys.detail(sessionId), context.previousState)
       }
     },
-    // onSettled removed to prevent race condition with Realtime
   })
 }
 
+// onMutate only cancels any in-flight poll (no optimistic update — screen manages its own
+// optimistic state via optimisticLiveMatches + setStartedPreviewIds).
+// onError omitted: screen catch block handles cleanup; no cache state to roll back.
 export function useStartMatchMutation(sessionId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ rpcPayload }: { rpcPayload: any; optimisticMatch: any }) => {
+    mutationKey: ['liveSession', sessionId],
+    mutationFn: async ({ rpcPayload }: { rpcPayload: any }) => {
       const { data, error } = await supabase.rpc('start_live_session_match_from_payload_versioned', rpcPayload)
       if (error) throw error
       return data
     },
-    onMutate: async ({ optimisticMatch }) => {
+    onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) })
-      const previousState = queryClient.getQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId))
-      if (previousState) {
-        queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), {
-          ...previousState,
-          liveMatchRows: [...previousState.liveMatchRows, optimisticMatch],
-        })
-      }
-      return { previousState }
     },
-    onError: (err, variables, context) => {
-      if (context?.previousState) {
-        queryClient.setQueryData(liveSessionQueryKeys.detail(sessionId), context.previousState)
-      }
-    },
-    // onSettled removed to prevent race condition with Realtime
   })
 }
 
 export function useCompleteMatchMutation(sessionId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ rpcPayload }: { rpcPayload: any; matchId: string }) => {
+    mutationKey: ['liveSession', sessionId],
+    mutationFn: async ({ rpcPayload }: { rpcPayload: any }) => {
       const { data, error } = await supabase.rpc('complete_live_session_match_versioned', rpcPayload)
       if (error) throw error
       return data
     },
-    onMutate: async ({ matchId }) => {
+    onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) })
-      const previousState = queryClient.getQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId))
-      if (previousState) {
-        queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), {
-          ...previousState,
-          liveMatchRows: previousState.liveMatchRows.map(row =>
-            row.id === matchId ? { ...row, status: 'completed' as const } : row
-          ),
-        })
-      }
-      return { previousState }
     },
-    onError: (err, variables, context) => {
-      if (context?.previousState) {
-        queryClient.setQueryData(liveSessionQueryKeys.detail(sessionId), context.previousState)
-      }
-    },
-    // onSettled removed to prevent race condition with Realtime
   })
 }

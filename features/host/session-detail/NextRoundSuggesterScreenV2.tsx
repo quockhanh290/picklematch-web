@@ -1141,10 +1141,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       }
       const payloadBuildMs = nowMs() - payloadBuildT0
       const rpcT0 = nowMs()
-      const { data: payload, error: rpcError } = await supabase.rpc('start_live_session_match_from_payload_versioned', {
-        ...rpcPayload,
-      })
-      if (rpcError) throw rpcError
+      const payload = await startMatchMutation.mutateAsync({ rpcPayload })
       const rpcMs = nowMs() - rpcT0
       const nextVersion = Number(payload?.live_state_version)
       if (Number.isFinite(nextVersion)) {
@@ -1411,34 +1408,24 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       const fairnessT0 = nowMs()
       const projectedScore = computeSessionFairness(projectedState).total
       const fairnessMs = nowMs() - fairnessT0
-      const completePayload = {
-        expected_live_state_version: expectedVersion,
-        match_id: match.id,
-        score_a: score.a,
-        score_b: score.b,
-        score_after: Math.round(projectedScore),
-        audit_payload: {
-          client_request_id: createClientRequestId('match'),
-          sequence_no: match.sequence_no,
-          expected_round_matches: queueCourtCount,
-        },
-      }
       const rpcT0 = nowMs()
-      const { data, error: rpcError } = await supabase.rpc('complete_live_session_match_versioned', {
-        p_session_id: sessionId,
-        p_expected_live_state_version: completePayload.expected_live_state_version,
-        p_match_id: completePayload.match_id,
-        p_score_a: completePayload.score_a,
-        p_score_b: completePayload.score_b,
-        p_score_after: completePayload.score_after,
-        p_audit_payload: {
-          ...completePayload.audit_payload,
-          source: 'client-direct-complete-live-match',
+      const payload = await completeMatchMutation.mutateAsync({
+        rpcPayload: {
+          p_session_id: sessionId,
+          p_expected_live_state_version: expectedVersion,
+          p_match_id: match.id,
+          p_score_a: score.a,
+          p_score_b: score.b,
+          p_score_after: Math.round(projectedScore),
+          p_audit_payload: {
+            client_request_id: createClientRequestId('match'),
+            sequence_no: match.sequence_no,
+            expected_round_matches: queueCourtCount,
+            source: 'client-direct-complete-live-match',
+          },
         },
       })
-      if (rpcError) throw rpcError
       const rpcMs = nowMs() - rpcT0
-      const payload = data
       const nextVersion = Number(payload?.live_state_version)
       if (Number.isFinite(nextVersion)) {
         liveStateVersionRef.current = liveStateVersionRef.current === null
