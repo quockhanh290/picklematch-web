@@ -444,7 +444,7 @@ async function fromSnapshotMode(snapshotFile: string) {
     ...row,
     players: { pvna: row.effective_pvna ?? row.players?.pvna ?? null, ...row.players },
   }))
-  lastState = mapRowsToSessionState({ playerRows: playerRowsForState as any, pairRows: pairRows as any, roundRows })
+  lastState = mapRowsToSessionState({ sessionId: snapshot.session_id, playerRows: playerRowsForState as any, pairRows: pairRows as any, roundRows })
 
   const liveCourts = new Set((liveMatchRows as any[]).filter((m: any) => m.status === 'live').map((m: any) => m.court_idx))
   const emptyCourts = Array.from({ length: courtCount }, (_, i) => i).filter(i => !liveCourts.has(i))
