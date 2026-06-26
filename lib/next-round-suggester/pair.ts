@@ -657,15 +657,14 @@ export function bestPartitioning(
   const conflictMap = collectOpponentConflictMap(normalizedPlayers)
 
   // For large sessions (5+ courts), random sampling rarely finds level-based groupings needed
-  // for bimodal PVNA distributions. Pre-compute a PVNA-sorted seed to try as a first attempt
-  // in runSearch stage 1 only (not every stage, to avoid per-stage evaluation overhead).
+  // for bimodal PVNA distributions. Pre-compute a PVNA-sorted seed and try it at every stage
+  // so later (more relaxed) stages also benefit from the level-based starting point.
   const pvnaSortedPlayers = normalizedPlayers.length >= 20
     ? ((): PlayerSessionState[] => {
         const sorted = [...normalizedPlayers].sort((a, b) => a.pvna - b.pvna)
         return conflictMap.size > 0 ? separateConflictPairs(sorted, conflictMap) : sorted
       })()
     : null
-  let pvnaSeedTried = false
 
   function runSearch(
     searchOptions: {
@@ -738,8 +737,7 @@ export function bestPartitioning(
 
     consider(chunkIntoCourts(normalizedPlayers))
 
-    if (!pvnaSeedTried && pvnaSortedPlayers) {
-      pvnaSeedTried = true
+    if (pvnaSortedPlayers) {
       consider(chunkIntoCourts(pvnaSortedPlayers))
     }
 

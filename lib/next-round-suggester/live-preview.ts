@@ -3509,7 +3509,7 @@ export function buildSuggestedMatchPayloads({
       if (beamAlt) alternative = beamAlt
     }
     const match = alternative?.matches[0]
-    if (!alternative || !match) break
+    if (!alternative || !match) continue
     const effectivePvnaTolerance = suggestionState.config.pvna_tolerance
     const pvnaDiff = match.stats?.pvna_diff ?? 0
     const displayPvnaOverBy = Math.max(0, pvnaDiff - configuredPvnaTolerance)

@@ -566,9 +566,9 @@ export function suggestNextRound(
     'group',
   ]
 
-  const collectAlternatives = (allowRelaxedTolerance: boolean, allowRepeatOverflow: boolean) => {
+  const collectAlternatives = (allowRelaxedTolerance: boolean, allowRepeatOverflow: boolean, force = false) => {
     for (const strategy of strategies) {
-      if (timedOut()) break
+      if (!force && timedOut()) break
       const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides, classificationContext)
       const candidates = getPriorityCandidates(sorted, slots, MAX_CANDIDATES_PER_STRATEGY)
       if (diagnostics && !diagnostics.strategies[strategy]) {
@@ -589,7 +589,7 @@ export function suggestNextRound(
       let acceptedForStrategy = 0
 
       for (const candidate of candidates) {
-        if (timedOut()) break
+        if (!force && timedOut()) break
         if (acceptedForStrategy >= maxAcceptedPerStrategy) break
         const key = `${combinationKey(candidate.players)}|pvna:${allowRelaxedTolerance ? 'relaxed' : 'strict'}|repeat:${allowRepeatOverflow ? 'overflow' : 'cap'}`
         if (seen.has(key)) {
@@ -648,6 +648,11 @@ export function suggestNextRound(
     collectAlternatives(false, true)
     if (!timedOut()) collectAlternatives(true, false)
     if (!timedOut()) collectAlternatives(true, true)
+  }
+  // Forced pass: if all regular passes produced nothing (e.g. board-stuck large pool with tight
+  // gender prefs), run once more with full relaxation and no timeout guard.
+  if (alternatives.length === 0) {
+    collectAlternatives(true, true, true)
   }
 
   const isClosing = phase === 'closing'
