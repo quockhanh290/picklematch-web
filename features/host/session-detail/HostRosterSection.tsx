@@ -18,7 +18,6 @@ type Props = {
   requireApproval?: boolean
   sessionId?: string
   onUpdated?: () => void
-  onArrangementPress?: () => void
   checkInCompleted?: boolean
   isCheckInMode?: boolean
   startTime?: string
@@ -105,7 +104,6 @@ export function HostRosterSection({
   requireApproval = false,
   sessionId,
   onUpdated,
-  onArrangementPress,
   checkInCompleted = false,
   isCheckInMode = false,
   startTime,

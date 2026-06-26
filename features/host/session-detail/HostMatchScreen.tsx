@@ -8,7 +8,7 @@ import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
 import { router } from 'expo-router'
-import { LayoutDashboard, Minus, Plus, SwordsIcon } from 'lucide-react-native'
+import { Minus, Plus, SwordsIcon } from 'lucide-react-native'
 import React, { useState, useEffect, useMemo } from 'react'
 import { Alert, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { MatchControlHeader } from './MatchControlHeader'
@@ -16,7 +16,6 @@ import { MatchControlSection } from './MatchControlSection'
 import { MatchPlayerManagementPanel } from './MatchPlayerManagementPanel'
 import { ScheduleCoverageReport } from './ScheduleCoverageReport'
 import { ScheduleSetupPanel, type ScheduleMode } from './ScheduleSetupPanel'
-import { TeamArrangementScreen, type DraftScheduledMatch } from './TeamArrangementScreen'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const RESPONSIVE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 80 : SCREEN_WIDTH > 360 ? 70 : 64
@@ -64,7 +63,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   const [appliedMinGames, setAppliedMinGames] = useState(1)
   const [showScheduleDiagnostics, setShowScheduleDiagnostics] = useState(false)
   const [showScheduleSetupPage, setShowScheduleSetupPage] = useState(false)
-  const [showInlineTeamArrangement, setShowInlineTeamArrangement] = useState(false)
   const [pendingRoundRobinMatches, setPendingRoundRobinMatches] = useState<PendingMatch[]>([])
   const [fullRotationSchedule, setFullRotationSchedule] = useState<PendingMatch[]>([])
   const [scheduleQuality, setScheduleQuality] = useState<{ runtimeMs: number, timedOut: boolean, fallbackUsed: boolean } | undefined>()
@@ -82,7 +80,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   useEffect(() => {
     if (scheduleSetupBackSignal <= 0) return
     setShowScheduleSetupPage(false)
-    setShowInlineTeamArrangement(false)
   }, [scheduleSetupBackSignal])
 
   useEffect(() => {
@@ -561,35 +558,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
 
   const getPlayerNames = (teamNo: number) => teamGroups[String(teamNo)]?.map(p => p.name).join(' - ') || `Đội ${teamNo}`
 
-  const handleApplyFixedDraftSchedule = (payload: {
-    matches: DraftScheduledMatch[]
-    players: ArrangementPlayer[]
-    quality: { runtimeMs: number, timedOut: boolean, fallbackUsed: boolean }
-    mode: 'full' | 'limited'
-    minGames: number
-  }) => {
-    const schedule: PendingMatch[] = payload.matches.map(match => ({
-      teamA: match.teamA,
-      teamB: match.teamB,
-      teamANo: match.teamANo,
-      teamBNo: match.teamBNo,
-      rotation: match.rotation,
-      court: match.court,
-    }))
-
-    setScheduledPlayers(payload.players)
-    setPendingRoundRobinMatches(schedule)
-    setFullRotationSchedule(schedule)
-    setSittingOutPlayers([])
-    setScheduleQuality(payload.quality)
-    setAppliedScheduleMode(payload.mode)
-    setAppliedMinGames(payload.minGames)
-    setShowRotationTable(true)
-    setShowInlineTeamArrangement(false)
-  }
-
-
-
   const handleGenerateRoundRobinRound = () => {
     if (isAfterEnd) return
     
@@ -783,10 +751,10 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
         needsScheduleRefresh={scheduleNeedsRefresh}
         updatingPlayerId={updatingPlayerId}
         onSetPlayerStatus={handleSetPlayerAvailability}
-        onRegenerateSchedule={isRoundRobinMode ? handleGenerateFixedSchedule : () => setShowInlineTeamArrangement(true)}
+        onRegenerateSchedule={isRoundRobinMode ? handleGenerateFixedSchedule : () => {}}
       />
 
-      {isRoundRobinMode ? (
+      {isRoundRobinMode && (
         <ScheduleSetupPanel
           activePlayerCount={activePlayers.length}
           defaultCourtCount={courtCount}
@@ -799,86 +767,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
           scheduleCourtCount={scheduleCourtCount}
           onScheduleCourtCountChange={setScheduleCourtCount}
         />
-      ) : (
-        <View style={{ marginBottom: 12 }}>
-          <TouchableOpacity
-            onPress={() => router.push(`/host/session/${sessionId}/one-click-optimization` as any)}
-            disabled={activePlayers.length < 4}
-            style={{
-              backgroundColor: activePlayers.length >= 4 ? '#12352F' : '#9CA3AF',
-              borderRadius: RADIUS.lg,
-              paddingVertical: 14,
-              alignItems: 'center',
-              opacity: activePlayers.length >= 4 ? 1 : 0.65,
-              ...LAYOUT_SHADOW.sm,
-            }}
-          >
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: '#FFF5DE', fontWeight: '900' }}>
-              TỐI ƯU TỰ ĐỘNG 1-CLICK
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setShowInlineTeamArrangement(true)}
-            style={{ marginTop: 10, backgroundColor: 'white', borderRadius: RADIUS.lg, borderWidth: 1, borderColor: '#D8D3C8', paddingVertical: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
-          >
-            <LayoutDashboard size={16} color="#1A2E2A" />
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#1A2E2A', fontWeight: '900' }}>
-              Tạo / chỉnh thủ công
-            </Text>
-          </TouchableOpacity>
-          {false && <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#596864', lineHeight: 16 }}>
-            Chế độ cố định dùng các đội đã xếp sẵn. Cần số người chẵn để tạo lịch giữa các đội.
-          </Text>}
-          {false && <TouchableOpacity
-            onPress={() => setShowInlineTeamArrangement(true)}
-            style={{ marginTop: 10, backgroundColor: 'white', borderRadius: RADIUS.md, borderWidth: 1, borderColor: '#0F6E56', paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
-          >
-            <LayoutDashboard size={16} color="#0F6E56" />
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
-              TẠO / CHỈNH CẶP & XEM LỊCH NHÁP
-            </Text>
-          </TouchableOpacity>}
-          {false && <TouchableOpacity
-            onPress={() => router.push(`/host/session/${sessionId}/one-click-optimization` as any)}
-            disabled={activePlayers.length < 4}
-            style={{
-              marginTop: 8,
-              backgroundColor: activePlayers.length >= 4 ? '#12352F' : '#9CA3AF',
-              borderRadius: RADIUS.md,
-              paddingVertical: 11,
-              alignItems: 'center',
-              opacity: activePlayers.length >= 4 ? 1 : 0.65,
-            }}
-          >
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#FFF5DE', fontWeight: '900' }}>
-              TỐI ƯU TỰ ĐỘNG 1-CLICK
-            </Text>
-          </TouchableOpacity>}
-        </View>
-      )}
-
-      {false && isRoundRobinMode && (
-      <TouchableOpacity
-        onPress={isRoundRobinMode ? handleGenerateFixedSchedule : () => setShowInlineTeamArrangement(true)}
-        disabled={submitting || activePlayers.length < 4}
-        style={{
-          backgroundColor: activePlayers.length >= 4 ? '#2563EB' : '#64748b',
-          borderRadius: RADIUS.lg,
-          paddingVertical: 13,
-          alignItems: 'center',
-          opacity: submitting ? 0.65 : 1,
-          marginTop: 4,
-          marginBottom: 16,
-        }}
-      >
-        <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: 'white', fontWeight: '900' }}>
-          {isRoundRobinMode
-            ? activePlayers.length >= 4 ? `TẠO LỊCH XOAY VÒNG (${activePlayers.length})` : `CẦN >= 4 NGƯỜI (${activePlayers.length})`
-            : activePlayers.length >= 4
-              ? fixedTeamIds.length >= 2 ? `XEM / ÁP DỤNG LỊCH CỐ ĐỊNH (${fixedTeamIds.length} ĐỘI)` : 'TẠO CẶP & LỊCH NHÁP'
-              : `CẦN >= 4 NGƯỜI (${activePlayers.length})`}
-        </Text>
-      </TouchableOpacity>
       )}
 
       {false && isRoundRobinMode && (
@@ -902,31 +790,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   )
 
   if (showScheduleSetupPage && !isAfterEnd) {
-    if (showInlineTeamArrangement) {
-      return (
-        <View style={{ flex: 1, backgroundColor: 'white' }}>
-          <TouchableOpacity
-            onPress={() => setShowInlineTeamArrangement(false)}
-            style={{ alignSelf: 'flex-start', backgroundColor: '#F5F1E8', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, margin: 20, marginBottom: 0, borderWidth: 1, borderColor: '#E5E3DC' }}
-          >
-            <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 11, color: '#0F6E56', fontWeight: '900' }}>
-              ← QUAY LẠI THIẾT LẬP LỊCH
-            </Text>
-          </TouchableOpacity>
-          <TeamArrangementScreen
-            sessionId={sessionId}
-            players={activePlayers}
-            maxPlayers={maxPlayers || players.length}
-            courtCount={scheduleCourtCount}
-            onUpdated={onUpdated}
-            onClose={() => setShowInlineTeamArrangement(false)}
-            onApplySchedule={handleApplyFixedDraftSchedule}
-            isAfterEnd={isAfterEnd}
-          />
-        </View>
-      )
-    }
-
     return (
       <View style={{ flex: 1, backgroundColor: 'white' }}>
         <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
@@ -1750,7 +1613,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                 const canOpenFixedSetup = activePlayers.length >= 4
                 return (
                   <TouchableOpacity
-                    onPress={canOpenFixedSetup ? () => { setScheduleSetupPageOpen(true); setShowInlineTeamArrangement(true) } : undefined}
+                    onPress={canOpenFixedSetup ? () => { setScheduleSetupPageOpen(true) } : undefined}
                     disabled={!canOpenFixedSetup}
                     style={{ backgroundColor: canOpenFixedSetup ? '#E1F5EE' : '#F0EDE6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, opacity: canOpenFixedSetup ? 1 : 0.6 }}
                   >

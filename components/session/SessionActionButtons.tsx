@@ -25,7 +25,6 @@ interface SessionActionButtonsProps {
   leaving: boolean
   onSaveArrangement: () => void
   leaveSession: () => void
-  onArrangementPress?: () => void
   checkInCompleted?: boolean
   hideArrangementCta?: boolean
   hideInputResult?: boolean
@@ -295,7 +294,6 @@ const HostActiveActionsView = ({
   hostActionBusy,
   onSaveArrangement,
   leaveSession,
-  onArrangementPress,
   checkInCompleted,
   hideArrangementCta,
   hideInputResult,
@@ -305,47 +303,9 @@ const HostActiveActionsView = ({
   const { onEditSession } = useSessionNav()
   const confirmedCount = (session?.session_players ?? []).filter((p: any) => p.status === 'confirmed').length
   const maxPlayers = session?.max_players || 4
-  const isFull = confirmedCount >= maxPlayers
 
   return (
     <View style={{ width: '100%' }}>
-      {/* New Top CTA */}
-      {checkInCompleted && !hideArrangementCta && (
-        <TouchableOpacity
-          onPress={onArrangementPress}
-          disabled={!isFull}
-        activeOpacity={0.8}
-        style={{
-          width: '100%',
-          minHeight: 52,
-          paddingVertical: 12,
-          borderRadius: RADIUS.md,
-          backgroundColor: isFull ? theme.primary : theme.surfaceContainerHigh,
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: 10,
-          borderWidth: isFull ? 0 : 1,
-          borderColor: isFull ? 'transparent' : theme.outlineVariant,
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {isFull ? (
-            <LayoutDashboard size={18} color={theme.onPrimary} />
-          ) : (
-            <Hourglass size={18} color={theme.outline} />
-          )}
-          <Text style={{ 
-            fontFamily: SCREEN_FONTS.headline, 
-            fontSize: 15, 
-            color: isFull ? theme.onPrimary : theme.outline, 
-            textTransform: 'uppercase' 
-          }}>
-            {isFull ? t('session_actions.arrange_teams') : t('session_actions.need_more_players', { count: maxPlayers - confirmedCount })}
-          </Text>
-        </View>
-        </TouchableOpacity>
-      )}
-
       <View style={{ width: '100%', flexDirection: 'row', alignSelf: 'center' }}>
       <TouchableOpacity
         onPress={() => {
@@ -460,7 +420,6 @@ const HostActions = ({
   hostActionBusy,
   onSaveArrangement,
   leaveSession,
-  onArrangementPress,
   editPathname,
   checkInCompleted,
   hideArrangementCta,
@@ -577,7 +536,6 @@ const HostActions = ({
       hostActionBusy={hostActionBusy}
       onSaveArrangement={onSaveArrangement}
       leaveSession={leaveSession}
-      onArrangementPress={onArrangementPress}
       checkInCompleted={checkInCompleted}
       hideArrangementCta={hideArrangementCta}
       hideInputResult={hideInputResult}
@@ -905,7 +863,6 @@ export const SessionActionButtons: React.FC<SessionActionButtonsProps> = ({
   leaving,
   onSaveArrangement,
   leaveSession,
-  onArrangementPress,
   checkInCompleted,
   hideArrangementCta,
   hideInputResult,
@@ -978,7 +935,6 @@ export const SessionActionButtons: React.FC<SessionActionButtonsProps> = ({
             hostActionBusy={hostActionBusy}
             onSaveArrangement={onSaveArrangement}
             leaveSession={leaveSession}
-            onArrangementPress={onArrangementPress}
             checkInCompleted={checkInCompleted}
             hideArrangementCta={hideArrangementCta}
             isCancelled={isCancelled}

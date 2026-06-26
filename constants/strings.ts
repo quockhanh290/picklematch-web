@@ -852,24 +852,6 @@ export const STRINGS = {
       description: 'Sau khi hoàn thành các trận đã chơi, phần lịch sử sẽ hiển thị tại đây.',
     },
   },
-  session_arrangement: {
-    invalid_teams: {
-      title: 'Đội hình không hợp lệ',
-      message: 'Mỗi đội chỉ được phép có tối đa {count} người cho kèo {type}.',
-      type_double: 'đánh đôi',
-      type_single: 'đánh đơn',
-      understand: 'Đã hiểu',
-    },
-    save_failed: {
-      title: 'Không lưu được đội',
-      understand: 'Đã hiểu',
-    },
-    save_success: {
-      title: 'Đã lưu thay đổi',
-      message: 'Đội hình đã được cập nhật.',
-      understand: 'Đã hiểu',
-    },
-  },
   find_session_dialogs: {
     dialogs: {
       network_error: {
@@ -953,12 +935,6 @@ export const STRINGS = {
       approve: 'Duyệt',
       reject: 'Từ chối',
       check_in: 'Điểm danh',
-    },
-    team_arrangement: {
-      not_enough_players: 'Chưa đủ đội',
-      invalid_team_count: 'Mỗi đội cần đúng 2 người. Đội cần chỉnh: {info}',
-      waiting_no_partner: 'CÓ {count} NGƯỜI CHƯA CÓ CẶP',
-      waiting_no_partner_hint: '{names} sẽ ngồi ngoài lịch cố định cặp. Chuyển sang Xoay vòng nếu muốn tất cả người chơi được xếp trận.',
     },
     check_in: {
       alert_incomplete: 'Chưa hoàn tất',

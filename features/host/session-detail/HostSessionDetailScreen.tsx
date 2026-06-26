@@ -425,7 +425,6 @@ export function HostSessionDetailScreen({
             requireApproval={session.require_approval || session.owner_sessions?.require_approval}
             sessionId={id}
             onUpdated={onRefresh}
-            onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
             checkInCompleted={isCheckInCompleted}
             isCheckInMode={isCheckInMode}
             startTime={session.slot.start_time}
@@ -494,7 +493,6 @@ export function HostSessionDetailScreen({
               leaving={isCancelling}
               onSaveArrangement={() => {}}
               leaveSession={handleCancelSession}
-              onArrangementPress={() => router.push(`/host/session/${id}/arrangement` as any)}
               checkInCompleted={isCheckInCompleted}
               hideArrangementCta={true}
               hideInputResult={false}
