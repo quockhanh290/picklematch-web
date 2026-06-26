@@ -1,3 +1,4 @@
+// Kept for future Round Robin scheduling — intentionally not wired yet.
 import { type ArrangementPlayer } from '@/lib/sessionDetail'
 import { getPlayerSkill, matchesGenderPref } from './scoring'
 
