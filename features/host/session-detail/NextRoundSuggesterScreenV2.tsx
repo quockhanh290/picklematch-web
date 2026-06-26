@@ -1226,7 +1226,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             reconcileAfterMs: 600,
           }
         } catch (err: unknown) {
-          if (attempt === 0 && (err as any)?.message === 'Session changed') {
+          if (attempt === 0 && String((err as any)?.message ?? '').includes('Session changed')) {
             if (__DEV__) console.log('[NextRoundSuggesterV2] start match Session changed, retrying', { matchId: match.id, expectedVersion })
             continue
           }
@@ -1471,6 +1471,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           )
           if (alreadyCompleted) {
             applyCompletedLiveMatch(alreadyCompleted, [], [], cached?.liveStateVersion)
+            completedLiveMatchCommitIdsRef.current.add(match.id)
+            setCompletedLiveMatchCommitNonce(value => value + 1)
+            setOptimisticLiveMatches(current => current.filter(row => row.id !== alreadyCompleted.id))
             if (__DEV__) console.log('[NextRoundSuggesterV2] complete match already committed (idempotency), aborting retry', { matchId: match.id })
             return { reload: false, reconcileAfterMs: 600, targetReachedAfterMatch }
           }
@@ -1567,7 +1570,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             targetReachedAfterMatch,
           }
         } catch (err: unknown) {
-          if (attempt === 0 && (err as any)?.message === 'Session changed') {
+          if (attempt === 0 && String((err as any)?.message ?? '').includes('Session changed')) {
             if (__DEV__) console.log('[NextRoundSuggesterV2] complete match Session changed, retrying', { matchId: match.id, expectedVersion })
             continue
           }
@@ -1657,6 +1660,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         next.delete(match.id)
         return next
       })
+      setOptimisticLiveMatches(current => current.filter(row => row.id !== match.id))
       const safeMessage = toUserSafeActionError(err)
       console.warn('[NextRoundSuggesterV2] complete match failed', err)
       setError(safeMessage)
