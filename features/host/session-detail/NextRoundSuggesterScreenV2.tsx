@@ -3059,15 +3059,27 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           Alert.alert('Lỗi gợi ý trận đấu', err.message || 'Không thể lấy gợi ý trận đấu từ server')
         })
         .finally(() => {
-          const requestBecameStale = !isCurrentPreviewRequest()
-            && sessionGenerationRef.current === requestSessionGeneration
+          const isStillCurrent = isCurrentPreviewRequest()
+          const ownsSlot = previewRequestInFlightSerialRef.current === requestSerial
           previewPendingRequestKeysRef.current.delete(incompleteRequestKey)
-          if (previewRequestInFlightSerialRef.current === requestSerial) {
+          if (ownsSlot) {
             previewRequestInFlightRef.current = false
             previewRequestInFlightSerialRef.current = null
+            // Always clear spinner when we own the in-flight slot, even if generation
+            // changed mid-fetch. Without this, isSuggestingPreview latches true
+            // (isCurrentPreviewRequest() returns false → old guard skips the clear).
+            setIsSuggestingPreview(false)
+          } else if (isStillCurrent) {
+            setIsSuggestingPreview(false)
           }
-          if (isCurrentPreviewRequest()) setIsSuggestingPreview(false)
-          if (requestBecameStale) setPreviewRefreshNonce(value => value + 1)
+          if (__DEV__) console.log('[NextRoundSuggesterV2] preview finally', {
+            isStillCurrent,
+            ownsSlot,
+            generationChanged: sessionGenerationRef.current !== requestSessionGeneration,
+          })
+          // Re-trigger for ANY reason this request is no longer current (serial OR
+          // generation changed), not only the generation-same (stale) case.
+          if (!isStillCurrent) setPreviewRefreshNonce(value => value + 1)
         })
     }, 80)
 
