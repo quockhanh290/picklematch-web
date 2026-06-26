@@ -2975,7 +2975,22 @@ export function buildSuggestedMatchPayloads({
       )
     }
   }
-  const repairState = suggestionState
+  // repairRoundOnePayloadBatchWithCleanPool samples from state.players filtered by
+  // checked_out_at === null. Without this, it can re-pick players who are already
+  // busy in override rows (e.g. cap-2 partial-fill calls), causing double-booking.
+  const repairState = baseBusyIds.size > 0
+    ? {
+        ...suggestionState,
+        players: new Map(
+          [...suggestionState.players.entries()].map(([id, player]) => [
+            id,
+            baseBusyIds.has(id) && player.checked_out_at === null
+              ? { ...player, checked_out_at: new Date() }
+              : player,
+          ])
+        ),
+      }
+    : suggestionState
   const getInitialRoundCourtIdxs = (roundNo: number) => {
     const existingRoundCourtIdxs = courtIdxsByRound.get(roundNo)
     return new Set([
