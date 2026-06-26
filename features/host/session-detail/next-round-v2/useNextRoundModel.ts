@@ -2,9 +2,8 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { useQueryClient } from '@tanstack/react-query'
 
 import { calculateOptimalCourts, type CourtPreset } from '@/lib/court-calculator'
-import { buildSuggestedRoundActions, buildSuggestedRoundActionsCache, sortAlternativesByAudit, type AlternativeAudit, type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
+import { type SuggestedRoundAction } from '@/lib/next-round-suggester/alternatives'
 import { buildMatchCountConsistencyRows, buildFairnessPreview, buildLatestFairnessAudit } from '@/lib/next-round-suggester/fairness/audit'
-import { applyFairnessAdjustment, correctForFairness } from '@/lib/next-round-suggester/fairness/corrector'
 import type { FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
 import { buildGroupAliasMap, buildGroupSummaries } from '@/lib/next-round-suggester/fairness/group-audit'
 import { computeSessionFairness } from '@/lib/next-round-suggester/fairness/metrics'
@@ -13,7 +12,6 @@ import { sanitizeSummaryForHost } from '@/lib/next-round-suggester/fairness/sani
 import { buildSessionSummary } from '@/lib/next-round-suggester/fairness/summary'
 import { rebuildStateThroughRound } from '@/lib/next-round-suggester/history'
 import { mapRowsToSessionState } from '@/lib/next-round-suggester/state'
-import { suggestNextRound } from '@/lib/next-round-suggester/suggest'
 import type { SessionLiveMatchRow, SessionPairHistoryRow, SessionPlayerStateRow, SuggestionAlternative } from '@/lib/next-round-suggester/types'
 import type { AvoidPairEntry } from './api'
 import { loadAvoidPairs } from './api'
@@ -35,8 +33,6 @@ import { getLevelIdForElo } from '@/lib/eloSystem'
 import { markNextRoundStage } from './telemetry'
 import { buildCompletedLiveCycleRows as buildCompletedLiveCycleRowsBySequence } from './live-cycle-rows'
 import { mergePlayerStateRows } from './player-state-rows'
-
-const USE_COURT_LANE_BOARD = process.env.EXPO_PUBLIC_USE_COURT_LANE_BOARD === '1'
 
 function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): SuggestionAlternative | null {
   if (!alternative) return null
@@ -279,8 +275,6 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   const [groupSelection, setGroupSelection] = useState<string[]>([])
   const [showEngineStats, setShowEngineStats] = useState(false)
   const [showSessionReport, setShowSessionReport] = useState(initialShowReport)
-  const lastSuggestMsRef = useRef<number | null>(null)
-  const lastStableSuggestionRef = useRef<ReturnType<typeof suggestNextRound> | null>(null)
   const settingsStorageKey = `${SETTINGS_STORAGE_PREFIX}:${sessionId}`
 
   const applyPersistedSettings = useCallback((settings: Partial<PersistedSettings | PersistedNextRoundSettings>) => {
@@ -595,87 +589,36 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   }), [rawState.config.weights])
   const baseState = useMemo(() => withWeights(rawState, baseWeights), [baseWeights, rawState])
   const fairnessAdjustment = useMemo(
-    () => USE_COURT_LANE_BOARD
-      ? { type: 'none' as const, config_changes: {}, tier_overrides: {}, applied_for_warnings: [] }
-      : correctForFairness(baseState),
-    [baseState],
+    () => ({ type: 'none' as const, config_changes: {}, tier_overrides: {}, applied_for_warnings: [] }),
+    [],
   )
-  const state = useMemo(
-    () => USE_COURT_LANE_BOARD
-      ? baseState
-      : applyFairnessAdjustment(baseState, fairnessAdjustment),
-    [baseState, fairnessAdjustment],
-  )
+  const state = baseState
   const deferredState = useDeferredValue(state)
   const deferredTierOverrides = useDeferredValue(fairnessAdjustment.tier_overrides)
-  const deferredCourtCount = useDeferredValue(courtCount)
   const deferredPvnaTolerance = useDeferredValue(pvnaTolerance)
   const suggestionIsUpdating = deferredState !== state
     || deferredTierOverrides !== fairnessAdjustment.tier_overrides
     || engineCourtCount !== courtCount
     || deferredPvnaTolerance !== pvnaTolerance
     || deferredRows !== liveRows.rows
-  const suggestion = useMemo(() => {
-    if (USE_COURT_LANE_BOARD) {
-      lastSuggestMsRef.current = 0
-      return { alternatives: [] }
-    }
-    // Freeze suggestion while any courts are actively playing. Re-running suggestNextRound
-    // as courts complete one by one causes the assignment to shift each time, making players
-    // appear/disappear ("flickering"). Only recompute once all courts in the current round finish.
-    const hasLiveCourts = deferredRows.liveMatchRows.some(m => m.status === 'live')
-    if (hasLiveCourts && lastStableSuggestionRef.current !== null) {
-      lastSuggestMsRef.current = 0
-      return lastStableSuggestionRef.current
-    }
-    const startedAt = Date.now()
-    const result = suggestNextRound(deferredState, { tier_overrides: deferredTierOverrides, max_runtime_ms: 4000 })
-    lastSuggestMsRef.current = Date.now() - startedAt
-    lastStableSuggestionRef.current = result
-    if (deferredRows.liveStateVersion != null) {
-      markNextRoundStage(sessionId, 'suggestion_ready', {
-        suggest_ms: lastSuggestMsRef.current,
-        alternatives: result.alternatives.length,
-        player_count: deferredState.players.size,
-        live_state_version: deferredRows.liveStateVersion,
-      })
-    }
-    return result
-  }, [deferredRows.liveStateVersion, deferredRows.liveMatchRows, deferredState, deferredTierOverrides, sessionId])
-  const selected = suggestion.alternatives[selectedAlternative] ?? suggestion.alternatives[0]
+  const suggestion = { alternatives: [] as const }
+  const selected = undefined
   const workingAlternative = manualAlternative ?? selected
   const hasManualSwapHardGuard = Boolean(workingAlternative?.warnings.includes('MANUAL_SWAP_HARD_GUARD'))
   const fairnessScore = useMemo(() => computeSessionFairness(state), [state])
   const fairnessAudit = useMemo(() => buildLatestFairnessAudit(state), [state])
 
-  // Pre-compute cho tất cả alternatives — chỉ chạy khi engine tạo suggestion mới,
-  // không chạy lại khi user chỉ đổi selectedAlternative.
   const suggestedRoundActionsCache = useMemo(
-    () => USE_COURT_LANE_BOARD
-      ? {
-          audits: [],
-          pressure: computeRepeatPressure(deferredState),
-          setupPreviews: { pvnaTolerance08: null, courtsMinus1: null },
-        }
-      : buildSuggestedRoundActionsCache(deferredState, suggestion.alternatives, deferredCourtCount),
-    [deferredCourtCount, deferredState, suggestion.alternatives],
+    () => ({
+      audits: [],
+      pressure: computeRepeatPressure(deferredState),
+      setupPreviews: { pvnaTolerance08: null, courtsMinus1: null },
+    }),
+    [deferredState],
   )
-  const alternativeOrder = useMemo(
-    () => sortAlternativesByAudit(suggestedRoundActionsCache.audits),
-    [suggestedRoundActionsCache],
-  )
-  const alternativeFairnessPreviews = useMemo(
-    () => USE_COURT_LANE_BOARD
-      ? []
-      : suggestion.alternatives.map(alt => buildFairnessPreview(deferredState, withoutRestPenalty(alt))),
-    [deferredState, suggestion.alternatives],
-  )
-  const alternativeFairnessWarnings = useMemo(
-    () => USE_COURT_LANE_BOARD
-      ? []
-      : suggestion.alternatives.map(alt => buildFairnessWarningsForBanner(deferredState, alt)),
-    [deferredState, suggestion.alternatives],
-  )
+  const alternativeOrder: never[] = []
+  const alternativeFairnessPreviews: never[] = []
+  const alternativeFairnessWarnings: never[] = []
 
   // manualAlternative cần tính riêng vì không nằm trong suggestion.alternatives
   const manualFairnessPreview = useMemo(
@@ -687,9 +630,8 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     [deferredState, manualAlternative],
   )
 
-  // Đổi ALT chỉ là đổi index — không tính gì thêm
-  const fairnessPreview = manualFairnessPreview ?? alternativeFairnessPreviews[selectedAlternative] ?? alternativeFairnessPreviews[0] ?? null
-  const baseFairnessWarnings = manualFairnessWarnings ?? alternativeFairnessWarnings[selectedAlternative] ?? alternativeFairnessWarnings[0] ?? []
+  const fairnessPreview = manualFairnessPreview ?? null
+  const baseFairnessWarnings = manualFairnessWarnings ?? []
   const missingPvnaWarnings = useMemo(
     () => buildMissingPvnaWarnings(enrichedPlayerRows, playersById),
     [enrichedPlayerRows, playersById],
@@ -699,19 +641,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     [baseFairnessWarnings, missingPvnaWarnings],
   )
 
-  const suggestedRoundActions = useMemo(
-    () => USE_COURT_LANE_BOARD
-      ? []
-      : buildSuggestedRoundActions({
-      state: deferredState,
-      alternatives: suggestion.alternatives,
-      cache: suggestedRoundActionsCache,
-      selectedIndex: selectedAlternative,
-      pvnaTolerance: deferredPvnaTolerance,
-      courtCount: deferredCourtCount,
-    }),
-    [deferredCourtCount, deferredPvnaTolerance, deferredState, selectedAlternative, suggestedRoundActionsCache, suggestion.alternatives],
-  )
+  const suggestedRoundActions: SuggestedRoundAction[] = []
 
   const activeRound = useMemo(() => state.rounds.find(row => row.status === 'active') ?? null, [state.rounds])
   const effectiveTargetRounds = targetRounds ?? courtCalculator.recommended.total_rounds
@@ -977,10 +907,8 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     liveStateVersion: deferredRows.liveStateVersion,
     planTelemetry: {
       load_state_ms: liveRows.lastLoadStateMsRef.current,
-      suggest_ms: lastSuggestMsRef.current,
-      total_plan_ms: liveRows.lastLoadStateMsRef.current !== null && lastSuggestMsRef.current !== null
-        ? liveRows.lastLoadStateMsRef.current + lastSuggestMsRef.current
-        : null,
+      suggest_ms: null,
+      total_plan_ms: null,
     },
     loading: liveRows.loading,
     refreshing: liveRows.refreshing,
