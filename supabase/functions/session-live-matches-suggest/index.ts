@@ -17,6 +17,7 @@ function optionalNumber(value: unknown): number | undefined {
 }
 
 Deno.serve(async (request) => {
+  console.log('[suggest] engine-build AB-FIX3', new Date().toISOString())
   const corsResponse = handleCorsPreflight(request)
   if (corsResponse) return corsResponse
 
