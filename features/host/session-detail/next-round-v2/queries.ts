@@ -1,4 +1,4 @@
-import { useIsMutating, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import type { SessionLiveMatchRow, SessionPairHistoryRow, SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
@@ -11,8 +11,6 @@ export const liveSessionQueryKeys = {
   detail: (sessionId: string) => [...liveSessionQueryKeys.all, sessionId] as const,
 }
 
-const POLL_INTERVAL_MS = process.env.EXPO_PUBLIC_USE_COURT_LANE_BOARD === '1' ? false : 3000
-
 export function keepNewestLiveRows(previous: LiveRows | undefined, incoming: LiveRows): LiveRows {
   const previousVersion = Number(previous?.liveStateVersion ?? -1)
   const incomingVersion = Number(incoming.liveStateVersion ?? -1)
@@ -20,11 +18,9 @@ export function keepNewestLiveRows(previous: LiveRows | undefined, incoming: Liv
 }
 
 export function useLiveSessionQuery(sessionId: string, playersById: Map<string, ArrangementPlayer>) {
-  const isMutating = useIsMutating({ mutationKey: ['liveSession', sessionId] })
   return useQuery<LiveRows, Error>({
     queryKey: liveSessionQueryKeys.detail(sessionId),
-    refetchInterval: isMutating > 0 ? false : POLL_INTERVAL_MS,
-    refetchIntervalInBackground: false,
+    refetchInterval: false,
     retry: 1,
     retryDelay: 600,
     queryFn: async () => {
