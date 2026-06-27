@@ -176,6 +176,12 @@ const LIVE_RECYCLE_HARD_CONSECUTIVE_PLAY_LIMIT = 3
 const LIVE_RECYCLE_ABSOLUTE_CONSECUTIVE_PLAY_LIMIT = 4
 const LIVE_QUOTA_OVERPLAY_MARGIN = 0
 
+export type IncompleteDump = {
+  session_id: string
+  missing_courts: number[]
+  payload: unknown
+}
+
 export type BuildSuggestedMatchOptions = {
   courtIdx?: number
   courtIdxs?: number[]
@@ -184,6 +190,7 @@ export type BuildSuggestedMatchOptions = {
   liveQualityPolicy?: LiveQualityPolicy
   forcedRequiredPlayerIds?: string[]
   ignoreCapacityLock?: boolean
+  onIncompleteDump?: (dump: IncompleteDump) => void
 }
 
 export type LiveQualityPolicy =
@@ -3004,6 +3011,13 @@ export function buildSuggestedMatchPayloads({
   }
   const queuedCourtIdxs = new Set(liveCourtIdxs)
   const batchBusyIds = new Set(baseBusyIds)
+  // Cap courts to what the available player pool can physically fill.
+  // When many courts complete simultaneously, available players drop below courts×4.
+  // Running the engine on impossible courts burns CPU to 546 (Supabase worker limit).
+  const availableForBatch = [...suggestionState.players.values()].filter(
+    p => p.checked_out_at === null && !p.opted_rest && !baseBusyIds.has(p.player_id),
+  ).length
+  const effectiveCount = Math.min(count, Math.floor(availableForBatch / 4))
   const availabilityMetricsByState = new WeakMap<SessionState, AvailabilityMetrics>()
   const getAvailabilityMetricsForState = (stateForMetrics: SessionState) => {
     const cached = availabilityMetricsByState.get(stateForMetrics)
@@ -3042,7 +3056,7 @@ export function buildSuggestedMatchPayloads({
     new Set([...roundBusyIds, ...batchBusyIds]),
   )
   
-  for (let index = 0; index < count; index += 1) {
+  for (let index = 0; index < effectiveCount; index += 1) {
     const remainingBatchMs = LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)
     if (remainingBatchMs <= LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS) break
     const remainingCourtsInBatch = Math.max(1, count - index)
@@ -3655,51 +3669,33 @@ export function buildSuggestedMatchPayloads({
   }
   const filledCourtIdxs = new Set(payloads.map(p => p.court_idx))
   const missingCourts = Array.from({ length: courtCount }, (_, i) => i).filter(idx => !filledCourtIdxs.has(idx))
-  if (missingCourts.length > 0) {
-    console.log('[DUMP_INCOMPLETE]', JSON.stringify({
-      players: [...suggestionState.players.values()].map(p => ({
-        id: p.player_id,
-        pvna: p.pvna,
-        gender: p.gender,
-        partner_gender_pref: p.partner_gender_pref,
-        opponent_gender_pref: p.opponent_gender_pref,
-        matches_played: p.matches_played,
-        consecutive_rest: p.consecutive_rest,
-        consecutive_play: p.consecutive_play,
-        rounds_available: p.rounds_available,
-        opted_rest: p.opted_rest,
-        checked_out: p.checked_out_at !== null,
-        partner_counts: Object.fromEntries(p.partner_counts),
-        opponent_counts: Object.fromEntries(p.opponent_counts),
-      })),
-      pair_rows: liveMatchRows.map(m => ({
-        id: m.id,
-        court_idx: m.court_idx,
-        round_no: m.round_no,
-        status: m.status,
-        team_a: m.team_a,
-        team_b: m.team_b,
-      })),
-      round_rows: state.rounds.map(r => ({
-        id: r.id,
-        round_no: r.round_no,
-        status: r.status,
-        matches: r.matches.map(m => ({
-          team_a: m.team_a,
-          team_b: m.team_b,
-          court_idx: m.court_idx,
-        })),
-        resting: r.resting,
-      })),
-      avoid_pairs: state.config.avoid_pairs ?? [],
-      busy_player_ids: [...baseBusyIds],
-      court_count: courtCount,
-      current_round: projectedRoundNo,
+  if (missingCourts.length > 0 && options.onIncompleteDump) {
+    options.onIncompleteDump({
+      session_id: sessionId,
       missing_courts: missingCourts,
-      filled_court_idxs: [...filledCourtIdxs],
-      count_requested: count,
-      count_filled: payloads.length,
-    }))
+      payload: {
+        players: [...suggestionState.players.values()].map(p => ({
+          id: p.player_id,
+          pvna: p.pvna,
+          gender: p.gender,
+          partner_gender_pref: p.partner_gender_pref,
+          opponent_gender_pref: p.opponent_gender_pref,
+          matches_played: p.matches_played,
+          consecutive_rest: p.consecutive_rest,
+          consecutive_play: p.consecutive_play,
+          rounds_available: p.rounds_available,
+          opted_rest: p.opted_rest,
+          checked_out: p.checked_out_at !== null,
+          partner_counts: Object.fromEntries(p.partner_counts),
+          opponent_counts: Object.fromEntries(p.opponent_counts),
+        })),
+        avoid_pairs: state.config.avoid_pairs ?? [],
+        busy_player_ids: [...baseBusyIds],
+        court_count: courtCount,
+        current_round: projectedRoundNo,
+        missing_courts: missingCourts,
+      },
+    })
   }
   return repairSuggestedPayloadBatch(payloads, repairState, pvnaTolerance)
 }

@@ -1,6 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { getSessionId, handleCorsPreflight, jsonResponse, readJson } from '../_shared/live-session.ts'
+import { createServiceClient, getSessionId, handleCorsPreflight, jsonResponse, readJson } from '../_shared/live-session.ts'
 import { correctForFairness } from '../../../lib/next-round-suggester/fairness/corrector.ts'
 import { detectFairnessIssues } from '../../../lib/next-round-suggester/fairness/detector.ts'
 import {
@@ -171,6 +171,16 @@ Deno.serve(async (request) => {
     }
 
     // 4. Run suggestion algorithm
+    const serviceClient = createServiceClient()
+    const onIncompleteDump = (dump: { session_id: string; missing_courts: number[]; payload: unknown }) => {
+      serviceClient.from('debug_dumps').insert({
+        session_id: dump.session_id,
+        missing_courts: dump.missing_courts,
+        payload: dump.payload,
+      }).then(({ error }) => {
+        if (error) console.warn('[suggest] debug_dumps insert failed', error.message)
+      })
+    }
     const selectionDebug: any[] = []
     let payloads = buildSuggestedMatchPayloads({
       count,
@@ -186,6 +196,7 @@ Deno.serve(async (request) => {
       options: {
         ...(courtIdxs && courtIdxs.length > 0 ? { courtIdxs } : {}),
         ignoreCapacityLock: !preferAvailablePool,
+        onIncompleteDump,
       },
       debugOut: selectionDebug,
     })
@@ -223,6 +234,7 @@ Deno.serve(async (request) => {
         fairnessWarnings: warnings,
         playersById,
         pvnaTolerance,
+        options: { onIncompleteDump },
       })
       const rescuedBoard = buildFinalPreviewBoard({
         mode: 'full_board',
@@ -251,6 +263,7 @@ Deno.serve(async (request) => {
       preview_max_sequence_no: currentMaxSequenceNo,
     }))
 
+    const playerLimitedCourts = Math.max(0, count - payloads.length)
     return jsonResponse({
       ok: true,
       payloads,
@@ -258,6 +271,7 @@ Deno.serve(async (request) => {
       replaced_court_idxs: board.replaced_court_idxs,
       locked_court_idxs: board.locked_court_idxs,
       quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
+      player_limited_courts: playerLimitedCourts,
       debug: {
         playerCount: state.players.size,
         activePlayers: [...state.players.values()].filter(p => p.checked_out_at === null).map(p => p.player_id),

@@ -2733,6 +2733,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
               previewRetryTimeoutsRef.current.forEach(clearTimeout)
               previewRetryTimeoutsRef.current.clear()
             }
+            if (typeof res.player_limited_courts === 'number' && res.player_limited_courts > 0) {
+              const filledCourts = stampedMatches.length
+              setError(`Chỉ đủ người cho ${filledCourts} sân lúc này.`)
+              setTimeout(() => setError(null), 4000)
+            }
             if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch done', {
               totalMs: Math.round(nowMs() - previewT0),
               matchCount: stampedMatches.length,
