@@ -42,8 +42,9 @@ const LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3800
 const LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS = 350
 const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // Shared force-rescue budget for the whole buildSuggestedMatchPayloads call.
-// Prevents per-court forceStartedAt resets from stacking (3 courts × 1500 ms = 546).
-const FORCE_RESCUE_TOTAL_MS = 500
+// effectiveCount already prevents engine from running on impossible courts,
+// so this only needs to guard legitimately hard search cases.
+const FORCE_RESCUE_TOTAL_MS = 1500
 const SUGGESTED_MATCH_BUSY_TTL_MS = 60_000
 export const LIVE_PREVIEW_ALGORITHM_VERSION = 11
 
