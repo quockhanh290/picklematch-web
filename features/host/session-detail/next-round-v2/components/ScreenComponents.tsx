@@ -1435,6 +1435,7 @@ type LiveMatchBoardProps = {
   onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
   onOpenSettings: () => void
   onOpenSwap: (match: SuggestedLiveMatchRow) => void
+  courtShortageBreakdown?: { temp: number; real: number } | null
 }
 
 export const LiveMatchBoard = React.memo(function LiveMatchBoard({
@@ -1555,6 +1556,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
   onPlayerPress,
   onOpenSettings,
   onOpenSwap,
+  courtShortageBreakdown,
 }: LiveMatchBoardProps) {
   const theme = useAppTheme()
 
@@ -1586,6 +1588,27 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
     liveYieldsToSuggested: (liveMatch) => creatingNextMatchIds.has(liveMatch.id) || completingMatchIds.has(liveMatch.id),
   })
   const firstEmptyCourtIdx = courtLanes.find(({ liveMatch, suggestedMatch }) => !liveMatch && !suggestedMatch)?.courtIdx ?? null
+  // Map each empty lane to its shortage type, distributing TẠM slots first
+  const emptyLaneStatus = useMemo(() => {
+    const result = new Map<number, 'recovering' | 'temp' | 'real' | 'waiting'>()
+    let tempRemaining = courtShortageBreakdown?.temp ?? 0
+    let realRemaining = courtShortageBreakdown?.real ?? 0
+    for (const { courtIdx, liveMatch, suggestedMatch } of courtLanes) {
+      if (liveMatch || suggestedMatch) continue
+      if (courtIdx === firstEmptyCourtIdx && isSuggestingPreview) {
+        result.set(courtIdx, 'recovering')
+      } else if (tempRemaining > 0) {
+        result.set(courtIdx, 'temp')
+        tempRemaining--
+      } else if (realRemaining > 0) {
+        result.set(courtIdx, 'real')
+        realRemaining--
+      } else {
+        result.set(courtIdx, 'waiting')
+      }
+    }
+    return result
+  }, [courtLanes, courtShortageBreakdown, firstEmptyCourtIdx, isSuggestingPreview])
 
   return (
     <View style={{ marginTop: 16, gap: 12 }}>
@@ -1615,7 +1638,8 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
           : suggestedMatch
             ? busy === `start-match-${suggestedMatch.id}` || startingPreviewIds.has(suggestedMatch.id)
             : false
-        const emptyLaneIsRecovering = !liveMatch && !suggestedMatch && isSuggestingPreview && courtIdx === firstEmptyCourtIdx
+        const emptyLaneStatus_ = emptyLaneStatus.get(courtIdx)
+        const emptyLaneIsRecovering = emptyLaneStatus_ === 'recovering'
         return (
           <View
             key={`court-lane-${courtIdx}`}
@@ -1697,13 +1721,13 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
                 }}
               >
                 {emptyLaneIsRecovering ? <ActivityIndicator color={theme.primary} /> : null}
-                {emptyLaneIsRecovering ? (
-                  <Text style={ctaTextStyle(theme.outline, 12)}>Đang tạo trận tiếp theo...</Text>
-                ) : (
                 <Text style={ctaTextStyle(theme.outline, 12)}>
-                  Chờ sân khác kết thúc
+                  {emptyLaneIsRecovering
+                    ? 'Đang tạo trận tiếp theo...'
+                    : emptyLaneStatus_ === 'real'
+                      ? 'Chưa đủ người'
+                      : 'Chờ sân khác xong'}
                 </Text>
-                )}
               </View>
             )}
           </View>

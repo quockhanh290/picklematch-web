@@ -414,6 +414,17 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   const setCourtCount = useCallback((value: number) => {
     setCourtCountOverride(normalizeCourtCount(value))
   }, [])
+
+  // Once settings are hydrated and there are enough players, lock the court count to
+  // recommended.courts at that moment. Prevents mid-session check-ins from silently
+  // raising courtCount (which would cause the engine to attempt impossible courts → 546).
+  // After this fires, courtCountOverride is non-null and the ?? fallback never triggers.
+  useEffect(() => {
+    if (!settingsHydrated) return
+    if (courtCountOverride !== null) return
+    if (presentCount < 4) return
+    setCourtCountOverride(courtCalculator.recommended.courts)
+  }, [settingsHydrated, courtCountOverride, presentCount, courtCalculator])
   const frozenEngineCourtCountRef = useRef(courtCount)
   const engineCourtCount = useMemo(() => {
     if (!rosterSheetOpen) frozenEngineCourtCountRef.current = courtCount

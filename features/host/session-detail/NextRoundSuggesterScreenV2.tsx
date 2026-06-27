@@ -596,6 +596,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
   const [completingLiveMatchPlaceholders, setCompletingLiveMatchPlaceholders] = useState<Map<string, SessionLiveMatchRow>>(() => new Map())
   const [previewRefreshNonce, setPreviewRefreshNonce] = useState(0)
   const [isSuggestingPreview, setIsSuggestingPreview] = useState(false)
+  const [courtShortageBreakdown, setCourtShortageBreakdown] = useState<{ temp: number; real: number } | null>(null)
   const completingLiveMatchPlaceholdersRef = useRef(completingLiveMatchPlaceholders)
   const [suggestedSwapMatch, setSuggestedSwapMatch] = useState<SuggestedLiveMatchRow | null>(null)
   const {
@@ -2733,10 +2734,15 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
               previewRetryTimeoutsRef.current.forEach(clearTimeout)
               previewRetryTimeoutsRef.current.clear()
             }
-            if (typeof res.player_limited_courts === 'number' && res.player_limited_courts > 0) {
-              const filledCourts = stampedMatches.length
-              setError(`Chỉ đủ người cho ${filledCourts} sân lúc này.`)
-              setTimeout(() => setError(null), 4000)
+            if (typeof res.temp_limited_courts === 'number' || typeof res.real_limited_courts === 'number') {
+              const temp = typeof res.temp_limited_courts === 'number' ? res.temp_limited_courts : 0
+              const real = typeof res.real_limited_courts === 'number' ? res.real_limited_courts : 0
+              setCourtShortageBreakdown(temp > 0 || real > 0 ? { temp, real } : null)
+            } else if (typeof res.player_limited_courts === 'number' && res.player_limited_courts > 0) {
+              // Fallback for older edge function responses
+              setCourtShortageBreakdown({ temp: res.player_limited_courts, real: 0 })
+            } else {
+              setCourtShortageBreakdown(null)
             }
             if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch done', {
               totalMs: Math.round(nowMs() - previewT0),
@@ -3292,6 +3298,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                 onPlayerPress={openSwapForPlayer}
                 onOpenSettings={() => setSheet('settings')}
                 onOpenSwap={(match) => { setSuggestedSwapMatch(match); setSwapFromPlayerId(null); setSheet('swap') }}
+                courtShortageBreakdown={courtShortageBreakdown}
               />
               {planningInProgress ? (
                 <PlanningRoundCard syncingRoster={busy === 'sync' || isSuggestingPreview} />

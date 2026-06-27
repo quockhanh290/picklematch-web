@@ -263,7 +263,25 @@ Deno.serve(async (request) => {
       preview_max_sequence_no: currentMaxSequenceNo,
     }))
 
+    // Compute player shortage breakdown: TẠM (busy players will free up) vs THẬT (genuinely not enough)
+    const liveBusyIds = new Set<string>(
+      liveMatchRows
+        .filter((m: any) => m.status === 'live' && !completingLiveMatchIds.has(m.id))
+        .flatMap((m: any) => [...(m.team_a ?? []), ...(m.team_b ?? [])])
+    )
+    const allOccupiedIds = new Set<string>([
+      ...liveBusyIds,
+      ...liveMatchRows
+        .filter((m: any) => m.status === 'suggested')
+        .flatMap((m: any) => [...(m.team_a ?? []), ...(m.team_b ?? [])]),
+    ])
+    const freeCount = [...state.players.values()].filter(
+      (p: any) => p.checked_out_at === null && !p.opted_rest && !allOccupiedIds.has(p.player_id)
+    ).length
     const playerLimitedCourts = Math.max(0, count - payloads.length)
+    const maxCourtsWithEveryone = Math.floor((freeCount + liveBusyIds.size) / 4)
+    const tempLimitedCourts = Math.min(playerLimitedCourts, Math.max(0, maxCourtsWithEveryone - payloads.length))
+    const realLimitedCourts = playerLimitedCourts - tempLimitedCourts
     return jsonResponse({
       ok: true,
       payloads,
@@ -272,6 +290,8 @@ Deno.serve(async (request) => {
       locked_court_idxs: board.locked_court_idxs,
       quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
       player_limited_courts: playerLimitedCourts,
+      temp_limited_courts: tempLimitedCourts,
+      real_limited_courts: realLimitedCourts,
       debug: {
         playerCount: state.players.size,
         activePlayers: [...state.players.values()].filter(p => p.checked_out_at === null).map(p => p.player_id),
