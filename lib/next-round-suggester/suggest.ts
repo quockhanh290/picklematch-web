@@ -251,6 +251,9 @@ function emptyStats(): MatchStats {
 
 const MAX_CANDIDATES_PER_STRATEGY = 60
 const MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY = 8
+// Forced rescue pass gets its own hard deadline independent of the main budget.
+// Keeps total edge-function wall-clock well under Supabase WORKER_LIMIT (546).
+const FORCE_RESCUE_BUDGET_MS = 1500
 const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
 const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
 const PVNA_TRADEOFF_WEIGHT = 10
@@ -567,8 +570,12 @@ export function suggestNextRound(
   ]
 
   const collectAlternatives = (allowRelaxedTolerance: boolean, allowRepeatOverflow: boolean, force = false) => {
+    const forceStartedAt = force ? Date.now() : null
+    const forceTimedOut = () => forceStartedAt !== null && (Date.now() - forceStartedAt) > FORCE_RESCUE_BUDGET_MS
+
     for (const strategy of strategies) {
       if (!force && timedOut()) break
+      if (force && (alternatives.length > 0 || forceTimedOut())) break
       const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides, classificationContext)
       const candidates = getPriorityCandidates(sorted, slots, MAX_CANDIDATES_PER_STRATEGY)
       if (diagnostics && !diagnostics.strategies[strategy]) {
@@ -590,6 +597,7 @@ export function suggestNextRound(
 
       for (const candidate of candidates) {
         if (!force && timedOut()) break
+        if (force && (alternatives.length > 0 || forceTimedOut())) break
         if (acceptedForStrategy >= maxAcceptedPerStrategy) break
         const key = `${combinationKey(candidate.players)}|pvna:${allowRelaxedTolerance ? 'relaxed' : 'strict'}|repeat:${allowRepeatOverflow ? 'overflow' : 'cap'}`
         if (seen.has(key)) {
