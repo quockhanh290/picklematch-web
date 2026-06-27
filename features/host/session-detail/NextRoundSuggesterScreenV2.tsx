@@ -151,6 +151,7 @@ import type { NextRoundSuggesterV2Props, LiveRows } from './next-round-v2/types'
 import { liveSessionQueryKeys } from './next-round-v2/queries'
 import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
 import { useCheckInMutation, useCheckOutMutation, useStartMatchMutation, useCompleteMatchMutation } from './next-round-v2/mutations'
+import { getMatchPlayerIds, isSameCourtAndPlayers, shouldInvalidatePreviewAfterStartError } from './liveMatchGuards'
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const LIVE_SCORE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 90 : SCREEN_WIDTH > 360 ? 80 : 72
 const LIVE_SCORE_CARD_HEIGHT = LIVE_SCORE_CARD_WIDTH * 1.25
@@ -487,11 +488,6 @@ const getSuggestedLaneCourtIdx = (match: Pick<SessionLiveMatchRow, 'court_idx' |
   return Number.isFinite(courtIdx) ? courtIdx : null
 }
 
-const getMatchPlayerIds = (match: Pick<SessionLiveMatchRow, 'team_a' | 'team_b'>): string[] => [
-  ...match.team_a.map(String),
-  ...match.team_b.map(String),
-]
-
 function getSuggestedMatchPvnaGap(match: Pick<SessionLiveMatchRow, 'team_a' | 'team_b'>, state: SessionState) {
   const getTeamPvna = (team: readonly string[]) => team.reduce(
     (sum, playerId) => sum + (state.players.get(String(playerId))?.pvna ?? 0),
@@ -528,30 +524,6 @@ function hasHardPreviewQualityViolation(
   return pvnaOverBy > 0.25
 }
 
-function isSameCourtAndPlayers(
-  left: Pick<SessionLiveMatchRow, 'court_idx' | 'team_a' | 'team_b'>,
-  right: Pick<SessionLiveMatchRow, 'court_idx' | 'team_a' | 'team_b'>,
-) {
-  if (Number(left.court_idx ?? -1) !== Number(right.court_idx ?? -1)) return false
-  const leftPlayers = getMatchPlayerIds(left).sort()
-  const rightPlayers = getMatchPlayerIds(right).sort()
-  return leftPlayers.length === rightPlayers.length
-    && leftPlayers.every((playerId, index) => playerId === rightPlayers[index])
-}
-
-function shouldInvalidatePreviewAfterStartError(error: unknown) {
-  const message = error instanceof Error
-    ? error.message
-    : error && typeof error === 'object' && 'message' in error
-      ? String((error as { message?: unknown }).message ?? '')
-      : String(error ?? '')
-  return message.includes('Session changed')
-    || message.includes('Preview is stale')
-    || message.includes('Preview version')
-    || message.includes('A player is already in a live match')
-    || message.includes('Court already has a live match')
-    || message.includes('available checked-in players')
-}
 
 
 
