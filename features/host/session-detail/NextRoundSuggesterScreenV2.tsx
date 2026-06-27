@@ -304,7 +304,7 @@ function toUserSafeActionError(error: unknown): string {
   if (message.includes('Round commit audit failed')) return 'Đánh giá lưu vòng thất bại. Vui lòng làm mới trước khi tiếp tục.'
 
   // Preview / network
-  if (message.includes('Preview is stale') || message.includes('Preview version')) return 'Gợi ý trên màn hình đã cũ. Vui lòng làm mới gợi ý rồi bắt đầu lại.'
+  if (message.includes('Preview is stale') || message.includes('Preview version')) return 'Gợi ý vừa được cập nhật. Bấm bắt đầu lại nhé.'
   if (message.includes('Request timed out')) return 'Yêu cầu quá hạn. Vui lòng kiểm tra kết nối mạng và thử lại.'
   if (message.includes('Temporary network issue')) return 'Lỗi kết nối mạng tạm thời. Vui lòng thử lại.'
 
@@ -1271,6 +1271,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         setSuggestedLiveMatches(current => current.filter(row => row.id !== match.id))
         suggestedPreviewBatchRef.current = null
         setPreviewRefreshNonce(value => value + 1)
+        const safeMessage = toUserSafeActionError(err)
+        console.warn('[NextRoundSuggesterV2] start match failed (stale preview)', err)
+        setError(safeMessage)
+        setTimeout(() => setError(null), 3500)
+        await loadLiveState()
+        return
       } else if (startedCourtIdx !== null) {
         suggestedLaneCacheRef.current.set(startedCourtIdx, match)
       }
