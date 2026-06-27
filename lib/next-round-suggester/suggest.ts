@@ -46,6 +46,11 @@ export type SuggestNextRoundOptions = {
   preview_seed?: string
   active_courts?: number      // override court count for this suggestion
   fixed_courts?: Match[]      // courts already assigned; suggest remaining courts only
+  // Absolute-timestamp deadline shared across all courts in one buildSuggestedMatchPayloads call.
+  // Prevents the per-court forceStartedAt from resetting on each court, which lets force passes
+  // stack (e.g. 3 courts × 1500 ms = 4500 ms) and hit the Supabase WORKER_LIMIT (546).
+  // When absent the per-call FORCE_RESCUE_BUDGET_MS fallback applies.
+  force_budget_deadline?: number
 }
 
 export type ExhaustiveFallbackDiagnostic = {
@@ -570,8 +575,13 @@ export function suggestNextRound(
   ]
 
   const collectAlternatives = (allowRelaxedTolerance: boolean, allowRepeatOverflow: boolean, force = false) => {
-    const forceStartedAt = force ? Date.now() : null
-    const forceTimedOut = () => forceStartedAt !== null && (Date.now() - forceStartedAt) > FORCE_RESCUE_BUDGET_MS
+    // Use the shared batch deadline when provided; fall back to a fresh per-call budget.
+    const forceStartedAt = (force && options.force_budget_deadline === undefined) ? Date.now() : null
+    const forceTimedOut = () => {
+      if (!force) return false
+      if (options.force_budget_deadline !== undefined) return Date.now() > options.force_budget_deadline
+      return forceStartedAt !== null && (Date.now() - forceStartedAt) > FORCE_RESCUE_BUDGET_MS
+    }
 
     for (const strategy of strategies) {
       if (!force && timedOut()) break

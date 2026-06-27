@@ -41,6 +41,9 @@ const LIVE_STRICT_RESCUE_TIMEOUT_MS = 300
 const LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3800
 const LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS = 350
 const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
+// Shared force-rescue budget for the whole buildSuggestedMatchPayloads call.
+// Prevents per-court forceStartedAt resets from stacking (3 courts × 1500 ms = 546).
+const FORCE_RESCUE_TOTAL_MS = 2000
 const SUGGESTED_MATCH_BUSY_TTL_MS = 60_000
 export const LIVE_PREVIEW_ALGORITHM_VERSION = 11
 
@@ -2837,6 +2840,7 @@ export function buildSuggestedMatchPayloads({
   debugOut,
 }: BuildSuggestedMatchPayloadsParams): SuggestedMatchPayload[] {
   const batchStartedAt = nowMs()
+  const forceBudgetDeadline = nowMs() + FORCE_RESCUE_TOTAL_MS
   let suggestionState = options.stateOverride ?? state
   const previewNowMs = Date.now()
   const liveMatchRows = (options.liveMatchRowsOverride ?? rows.liveMatchRows)
@@ -3186,6 +3190,7 @@ export function buildSuggestedMatchPayloads({
       forced_required_player_ids: requiredForThisCourt,
       availability_metrics: getAvailabilityMetricsForState(suggestionStateForCourt),
       preview_seed: previewSeed,
+      force_budget_deadline: forceBudgetDeadline,
     }
     const debugEligible = debugOut ? [...suggestionStateForCourt.players.values()]
       .filter(p => p.checked_out_at === null && !p.opted_rest && !busyIds.has(p.player_id))
@@ -3458,6 +3463,7 @@ export function buildSuggestedMatchPayloads({
           max_runtime_ms: getRemainingCourtBudgetMs(500),
           _exhaustiveDiag: conditionalDiag,
           forced_required_player_ids: requiredForThisCourt,
+          force_budget_deadline: forceBudgetDeadline,
         })
         conditionalQualityRescue = findConditionalLiveQualityRescue(
           conditionalResult.alternatives,
