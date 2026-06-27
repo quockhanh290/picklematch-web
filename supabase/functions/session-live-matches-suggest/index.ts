@@ -146,7 +146,7 @@ Deno.serve(async (request) => {
     const liveStateVersion = optionalNumber(body.live_state_version) ?? null
     const maxEdgePreviewCount = body.allow_large_batch === true
       ? Math.max(1, courtCount)
-      : Math.min(2, Math.max(1, courtCount))
+      : Math.min(1, Math.max(1, courtCount))
     const preferAvailablePool = body.prefer_available_pool === true
     const count = Math.max(1, Math.min(requestedCount, maxEdgePreviewCount))
     const courtIdxs = Array.isArray(body.court_idxs)

@@ -43,7 +43,7 @@ const LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS = 350
 const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // Shared force-rescue budget for the whole buildSuggestedMatchPayloads call.
 // Prevents per-court forceStartedAt resets from stacking (3 courts × 1500 ms = 546).
-const FORCE_RESCUE_TOTAL_MS = 2000
+const FORCE_RESCUE_TOTAL_MS = 500
 const SUGGESTED_MATCH_BUSY_TTL_MS = 60_000
 export const LIVE_PREVIEW_ALGORITHM_VERSION = 11
 
@@ -3652,6 +3652,54 @@ export function buildSuggestedMatchPayloads({
     if (projectedRoundMatchCount >= courtCapacity) {
       suggestionState = buildProjectedStateAfterCompletedLiveRound(suggestionState, roundBusyIds)
     }
+  }
+  const filledCourtIdxs = new Set(payloads.map(p => p.court_idx))
+  const missingCourts = Array.from({ length: courtCount }, (_, i) => i).filter(idx => !filledCourtIdxs.has(idx))
+  if (missingCourts.length > 0) {
+    console.log('[DUMP_INCOMPLETE]', JSON.stringify({
+      players: [...suggestionState.players.values()].map(p => ({
+        id: p.player_id,
+        pvna: p.pvna,
+        gender: p.gender,
+        partner_gender_pref: p.partner_gender_pref,
+        opponent_gender_pref: p.opponent_gender_pref,
+        matches_played: p.matches_played,
+        consecutive_rest: p.consecutive_rest,
+        consecutive_play: p.consecutive_play,
+        rounds_available: p.rounds_available,
+        opted_rest: p.opted_rest,
+        checked_out: p.checked_out_at !== null,
+        partner_counts: Object.fromEntries(p.partner_counts),
+        opponent_counts: Object.fromEntries(p.opponent_counts),
+      })),
+      pair_rows: liveMatchRows.map(m => ({
+        id: m.id,
+        court_idx: m.court_idx,
+        round_no: m.round_no,
+        status: m.status,
+        team_a: m.team_a,
+        team_b: m.team_b,
+      })),
+      round_rows: state.rounds.map(r => ({
+        id: r.id,
+        round_no: r.round_no,
+        status: r.status,
+        matches: r.matches.map(m => ({
+          team_a: m.team_a,
+          team_b: m.team_b,
+          court_idx: m.court_idx,
+        })),
+        resting: r.resting,
+      })),
+      avoid_pairs: state.config.avoid_pairs ?? [],
+      busy_player_ids: [...baseBusyIds],
+      court_count: courtCount,
+      current_round: projectedRoundNo,
+      missing_courts: missingCourts,
+      filled_court_idxs: [...filledCourtIdxs],
+      count_requested: count,
+      count_filled: payloads.length,
+    }))
   }
   return repairSuggestedPayloadBatch(payloads, repairState, pvnaTolerance)
 }
