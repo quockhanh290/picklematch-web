@@ -13,7 +13,6 @@ import {
   EngineExplainCard,
   NextMatchSuggestionCard,
   CourtLaneLiveMatchBoard,
-  LiveMatchBoard,
   RoundDivider,
   SuggestedRoundHeader,
   SectionEyebrow,
@@ -40,7 +39,6 @@ import {
   RestingRow,
   EngineConstraintNotice,
   PlanningRoundCard,
-  EmptyPlanCard,
   SettingsSheet,
   CourtSuggestionOptions,
   FairnessSheet,
@@ -91,7 +89,7 @@ import {
   getProjectedRepeatSummary,
   scoreMatch,
 } from '@/lib/next-round-suggester/score'
-import { suggestNextMatch, suggestNextRound } from '@/lib/next-round-suggester/suggest'
+import { suggestNextMatch } from '@/lib/next-round-suggester/suggest'
 import { buildSessionStateFingerprint } from '@/lib/next-round-suggester/state-version'
 import type { FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
 import {
@@ -160,13 +158,7 @@ const LIVE_SCORE_FONT_SIZE = SCREEN_WIDTH > 400 ? 56 : SCREEN_WIDTH > 360 ? 48 :
 const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
 const LIVE_PREVIEW_EDGE_MAX_COUNT = 2
 const LIVE_PREVIEW_SOFT_TIMEOUT_MS = 3500
-function isCourtLaneBoardEnabled() {
-  return process.env.EXPO_PUBLIC_USE_COURT_LANE_BOARD === '1'
-}
-const USE_COURT_LANE_BOARD = isCourtLaneBoardEnabled()
-const LiveMatchBoardComponent: typeof LiveMatchBoard = USE_COURT_LANE_BOARD
-  ? CourtLaneLiveMatchBoard as typeof LiveMatchBoard
-  : LiveMatchBoard
+const LiveMatchBoardComponent = CourtLaneLiveMatchBoard
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_REPEAT_COST_WEIGHT = 3
 const BALANCED_AFFECTED_PLAYER_COST_WEIGHT = 1
@@ -2009,15 +2001,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       .filter(match => match.status === 'live')
       .flatMap(match => [...match.team_a, ...match.team_b]),
   ), [effectiveLiveMatchRows])
-  const nextMatchSuggestion = useMemo(
-    () => USE_COURT_LANE_BOARD
-      ? null
-      : suggestNextMatch(state, {
-        tier_overrides: fairnessAdjustment.tier_overrides,
-        busy_player_ids: busyLiveMatchPlayerIds,
-      }),
-    [busyLiveMatchPlayerIds, fairnessAdjustment.tier_overrides, state],
-  )
+  const nextMatchSuggestion = null
   const [suggestedLiveMatches, setSuggestedLiveMatches] = useState<SuggestedLiveMatchRow[]>([])
   const [edgeDebug, setEdgeDebug] = useState<any>(null)
   const queueCourtCount = Math.max(1, Math.floor(courtCount || 1))
@@ -2203,7 +2187,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
   previewBodyRef.current = { effectiveLiveMatchRows, liveStateVersion: rows.liveStateVersion, completingLiveMatchIds, playersById, rows, queueCourtCount, pvnaTolerance, suggestedQueueCount, sessionId, avoidPairs, effectiveTargetRounds, courtPreset }
 
   useEffect(() => {
-    if (!USE_COURT_LANE_BOARD) return
     if (phase !== 'plan' || !settingsHydrated || rows.playerRows.length === 0) return
     if (isSuggestingPreview || previewRequestInFlightRef.current || suggestedQueueCount === 0) return
     // Stale batch from a prior request — don't recover against it.
@@ -3133,7 +3116,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     checkedOutCount: rows.playerRows.filter(row => Boolean(row.checked_out_at)).length,
     requestedRestCount: rows.playerRows.filter(row => !row.checked_out_at && row.opted_rest).length,
   }), [rows.playerRows])
-  const planningInProgress = phase === 'plan' && (!settingsHydrated || (!USE_COURT_LANE_BOARD && !workingAlternative)) && (
+  const planningInProgress = phase === 'plan' && !settingsHydrated && (
     !settingsHydrated
     || suggestionIsUpdating
     || busy === 'sync'
@@ -3327,19 +3310,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                 onOpenSettings={() => setSheet('settings')}
                 onOpenSwap={(match) => { setSuggestedSwapMatch(match); setSwapFromPlayerId(null); setSheet('swap') }}
               />
-              {planningInProgress || (!USE_COURT_LANE_BOARD && isSuggestingPreview) ? (
+              {planningInProgress ? (
                 <PlanningRoundCard syncingRoster={busy === 'sync' || isSuggestingPreview} />
-              ) : !USE_COURT_LANE_BOARD && suggestedLiveMatches.length === 0 && activeLiveMatches.length === 0 && nextMatchSuggestion ? (
-                <EmptyPlanCard
-                  state={state}
-                  suggestion={nextMatchSuggestion}
-                  courtCount={1}
-                  tierOverrides={fairnessAdjustment.tier_overrides}
-                  onSetCourtCount={setCourtCount}
-                  onOpenSettings={() => setSheet('settings')}
-                  onSyncRoster={syncRoster}
-                  busy={busy === 'sync'}
-                />
               ) : null}
             </>
           )}
