@@ -290,10 +290,19 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     else if ('targetRounds' in settings && settings.targetRounds === null) setTargetRounds(null)
   }, [])
 
+  // Guard: only reset courtCountOverride when the session itself changes.
+  // Re-runs of the load-settings effect within the same session must NOT wipe
+  // a value that was already locked by the auto-lock effect, otherwise court
+  // count would keep tracking presentCount dynamically.
+  const courtOverrideInitSessionIdRef = useRef<string | null>(null)
+
   useEffect(() => {
     let cancelled = false
     setSettingsHydrated(false)
-    setCourtCountOverride(sessionCourtSetup)
+    if (courtOverrideInitSessionIdRef.current !== sessionId) {
+      courtOverrideInitSessionIdRef.current = sessionId
+      setCourtCountOverride(sessionCourtSetup)
+    }
     setCourtPreset('balanced')
     setCourtDurationMin(120)
     setPvnaTolerance(0.5)
