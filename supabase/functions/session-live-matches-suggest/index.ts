@@ -170,15 +170,21 @@ Deno.serve(async (request) => {
 
     // 4. Run suggestion algorithm
     const serviceClient = createServiceClient()
-    const onIncompleteDump = (dump: { session_id: string; missing_courts: number[]; payload: unknown }) => {
-      serviceClient.from('debug_dumps').insert({
-        session_id: dump.session_id,
-        missing_courts: dump.missing_courts,
-        payload: dump.payload,
-      }).then(({ error }) => {
-        if (error) console.warn('[suggest] debug_dumps insert failed', error.message)
-      })
-    }
+    const verifyDumpEnabled = Deno.env.get('VERIFY_DUMP') === '1'
+    const onIncompleteDump = verifyDumpEnabled
+      ? (dump: { session_id: string; missing_courts: number[]; payload: unknown; chosen_matches: unknown; pvna_tolerance: number; rounds: unknown }) => {
+          serviceClient.from('debug_dumps').insert({
+            session_id: dump.session_id,
+            missing_courts: dump.missing_courts,
+            payload: dump.payload,
+            chosen_matches: dump.chosen_matches,
+            pvna_tolerance: dump.pvna_tolerance,
+            rounds: dump.rounds,
+          }).then(({ error }) => {
+            if (error) console.warn('[suggest] debug_dumps insert failed', error.message)
+          })
+        }
+      : undefined
     const onInstrumentEvent = (event: { event: string; detail: string; court_count?: number; available?: number }) => {
       serviceClient.from('engine_instrumentation').insert({
         session_id: sessionId,

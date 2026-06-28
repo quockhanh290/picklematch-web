@@ -181,6 +181,9 @@ export type IncompleteDump = {
   session_id: string
   missing_courts: number[]
   payload: unknown
+  chosen_matches: { court_idx: number; team_a: string[]; team_b: string[] }[]
+  pvna_tolerance: number
+  rounds: { round_no: number; status: string; matches: { team_a: string[]; team_b: string[] }[]; resting: string[] }[]
 }
 
 export type BuildSuggestedMatchOptions = {
@@ -3679,23 +3682,33 @@ export function buildSuggestedMatchPayloads({
   }
   const filledCourtIdxs = new Set(payloads.map(p => p.court_idx))
   const missingCourts = Array.from({ length: courtCount }, (_, i) => i).filter(idx => !filledCourtIdxs.has(idx))
-  if (missingCourts.length > 0 && options.onIncompleteDump) {
+  if (options.onIncompleteDump) {
     options.onIncompleteDump({
       session_id: sessionId,
       missing_courts: missingCourts,
+      chosen_matches: payloads.map(p => ({ court_idx: p.court_idx ?? -1, team_a: [...p.team_a], team_b: [...p.team_b] })),
+      pvna_tolerance: pvnaTolerance,
+      rounds: state.rounds.map(r => ({
+        round_no: r.round_no,
+        status: r.status,
+        matches: r.matches.map(m => ({ team_a: [...m.team_a], team_b: [...m.team_b] })),
+        resting: [...r.resting],
+      })),
       payload: {
-        players: [...suggestionState.players.values()].map(p => ({
+        players: [...state.players.values()].map(p => ({
           id: p.player_id,
           pvna: p.pvna,
           gender: p.gender,
           partner_gender_pref: p.partner_gender_pref,
           opponent_gender_pref: p.opponent_gender_pref,
           matches_played: p.matches_played,
+          last_played_round: p.last_played_round ?? 0,
           consecutive_rest: p.consecutive_rest,
           consecutive_play: p.consecutive_play,
           rounds_available: p.rounds_available,
           opted_rest: p.opted_rest,
           checked_out: p.checked_out_at !== null,
+          group_id: p.group_id ?? null,
           partner_counts: Object.fromEntries(p.partner_counts),
           opponent_counts: Object.fromEntries(p.opponent_counts),
         })),
