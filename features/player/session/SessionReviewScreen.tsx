@@ -466,7 +466,7 @@ export default function HostReviewCenterScreen() {
         : prev
     )
 
-    const slotTime = new Date(session.slot.start_time).toLocaleTimeString('vi-VN', {
+    const slotTime = new Date(session.slot?.start_time ?? 0).toLocaleTimeString('vi-VN', {
       hour: '2-digit',
       minute: '2-digit',
     })
@@ -527,7 +527,7 @@ export default function HostReviewCenterScreen() {
     const playerIdsToNotify = session.session_players
       .filter((player) => player.player_id !== session.host.id)
       .map((player) => player.player_id)
-    const slotTime = new Date(session.slot.start_time).toLocaleTimeString('vi-VN', {
+    const slotTime = new Date(session.slot?.start_time ?? 0).toLocaleTimeString('vi-VN', {
       hour: '2-digit',
       minute: '2-digit',
     })
@@ -641,7 +641,7 @@ export default function HostReviewCenterScreen() {
               courtName={session.slot.court.name}
               courtAddress={session.slot.court.address}
               courtCity={session.slot.court.city}
-              timeLabel={formatTimeLabel(session.slot.start_time, session.slot.end_time)}
+              timeLabel={formatTimeLabel(session.slot?.start_time, session.slot?.end_time)}
               priceLabel={formatPricePerPerson(session.slot.price, session.max_players)}
               isRanked={session.is_ranked ?? true}
               hostNote={session.booking_notes}

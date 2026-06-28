@@ -342,7 +342,7 @@ export function ProfileHistoryList({
                 <Text className="text-[16px]" style={{ color: theme.onSurface, fontFamily: SCREEN_FONTS.cta }}>{item.slot.court.name}</Text>
                 <View className="mt-1 flex-row items-center">
                   <MapPin size={12} color={theme.outline} />
-                  <Text className="ml-1 text-[12px]" style={{ color: theme.outline, fontFamily: SCREEN_FONTS.body }}>{formatTime(item.slot.start_time)}</Text>
+                  <Text className="ml-1 text-[12px]" style={{ color: theme.outline, fontFamily: SCREEN_FONTS.body }}>{formatTime(item.slot?.start_time)}</Text>
                   
                   {item.is_host && (
                     <View className="ml-2 flex-row items-center rounded-full px-2 py-0.5" style={{ backgroundColor: theme.primaryFixed }}>

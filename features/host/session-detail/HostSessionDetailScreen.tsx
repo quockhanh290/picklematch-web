@@ -57,7 +57,7 @@ export function HostSessionDetailScreen({
 
 
   const now = new Date().getTime()
-  const startTime = new Date(session.slot.start_time).getTime()
+  const startTime = new Date(session.slot?.start_time ?? 0).getTime()
   const oneHour = 3600000
   // For testing: allow check-in anytime if not completed
   const canCheckIn = !session.check_in_completed
@@ -82,9 +82,9 @@ export function HostSessionDetailScreen({
     }
     return 0
   }
-  const startTs = parseRobustDate(session.slot.start_time)
+  const startTs = parseRobustDate(session.slot?.start_time)
   const isWayPastStart = startTs > 0 && (Date.now() - startTs) > (12 * 3600000)
-  const isAfterEnd = parseRobustDate(session.slot.end_time) <= Date.now() || ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion'].includes(session.status) || isWayPastStart
+  const isAfterEnd = parseRobustDate(session.slot?.end_time) <= Date.now() || ['completed', 'finished', 'archived', 'done', 'pending_results', 'pending_completion'].includes(session.status) || isWayPastStart
   const confirmedPlayerCount = (session?.session_players ?? []).filter((p: any) => p.status === 'confirmed').length
   const HostDetails = session.owner_sessions?.[0] || session.owner_sessions || {}
   const matchFormat = HostDetails.match_format || 'doubles'
@@ -427,7 +427,7 @@ export function HostSessionDetailScreen({
             onUpdated={onRefresh}
             checkInCompleted={isCheckInCompleted}
             isCheckInMode={isCheckInMode}
-            startTime={session.slot.start_time}
+            startTime={session.slot?.start_time}
             isHost={isHost}
             isAfterEnd={isAfterEnd}
           />
@@ -483,7 +483,7 @@ export function HostSessionDetailScreen({
               isHost={isHost}
               hasJoined={false}
               isAfterEnd={isAfterEnd}
-              isDuringMatch={parseRobustDate(session.slot.start_time) <= Date.now() && !isAfterEnd}
+              isDuringMatch={parseRobustDate(session.slot?.start_time) <= Date.now() && !isAfterEnd}
               isCancelled={isCancelled}
               viewerSessionPlayer={null}
               hostPrimaryMode="edit"

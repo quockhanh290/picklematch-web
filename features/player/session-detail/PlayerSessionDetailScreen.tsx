@@ -99,8 +99,8 @@ export function PlayerSessionDetailScreen({
   })
 
   const now = new Date().getTime()
-  const startTs = new Date(session.slot.start_time).getTime()
-  const endTs = new Date(session.slot.end_time).getTime()
+  const startTs = new Date(session.slot?.start_time ?? 0).getTime()
+  const endTs = new Date(session.slot?.end_time ?? 0).getTime()
   
   const isPast = endTs <= Date.now() || ['completed', 'finished', 'archived', 'done'].includes(session.status)
   const isDuringMatch = now >= startTs && now <= endTs
@@ -209,7 +209,7 @@ export function PlayerSessionDetailScreen({
               requireApproval={session.require_approval}
               sessionId={id}
               checkInCompleted={session.check_in_completed}
-              startTime={session.slot.start_time}
+              startTime={session.slot?.start_time}
               isHost={isHost}
             />
           </View>

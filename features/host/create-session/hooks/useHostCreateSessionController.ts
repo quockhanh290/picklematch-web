@@ -128,8 +128,8 @@ export function useHostCreateSessionController(editSessionId: string | null) {
         const HostDetails = session.owner_sessions?.[0] || session.owner_sessions || {}
         
         // Court & Time
-        const nextStart = new Date(session.slot.start_time)
-        const nextEnd = new Date(session.slot.end_time)
+        const nextStart = new Date(session.slot?.start_time ?? 0)
+        const nextEnd = new Date(session.slot?.end_time ?? 0)
         const nextDate = new Date(nextStart)
         nextDate.setHours(0, 0, 0, 0)
         

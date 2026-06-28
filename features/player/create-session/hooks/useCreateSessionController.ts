@@ -137,8 +137,8 @@ export function useCreateSessionController(editSessionId: string | null) {
         return
       }
 
-      const nextStart = new Date(session.slot.start_time)
-      const nextEnd = new Date(session.slot.end_time)
+      const nextStart = new Date(session.slot?.start_time ?? 0)
+      const nextEnd = new Date(session.slot?.end_time ?? 0)
       const nextDate = new Date(nextStart)
       nextDate.setHours(0, 0, 0, 0)
 

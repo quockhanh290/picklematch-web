@@ -135,7 +135,7 @@ export default function ZaloRegisterScreen() {
   const isEnded = useMemo(() => {
     if (!session) return false
     const now = new Date()
-    const endTime = new Date(session.slot.end_time)
+    const endTime = new Date(session.slot?.end_time ?? 0)
     return ['done', 'cancelled', 'pending_completion'].includes(session.status) || now > endTime
   }, [session])
 
