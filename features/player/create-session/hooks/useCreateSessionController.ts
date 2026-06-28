@@ -137,8 +137,17 @@ export function useCreateSessionController(editSessionId: string | null) {
         return
       }
 
-      const nextStart = new Date(session.slot?.start_time ?? 0)
-      const nextEnd = new Date(session.slot?.end_time ?? 0)
+      if (!session.slot) {
+        setDialogConfig({
+          title: 'Không thể chỉnh sửa',
+          message: 'Kèo này không có thông tin sân.',
+          actions: [{ label: 'Đã hiểu', onPress: () => router.back() }],
+        })
+        return
+      }
+
+      const nextStart = new Date(session.slot.start_time)
+      const nextEnd = new Date(session.slot.end_time)
       const nextDate = new Date(nextStart)
       nextDate.setHours(0, 0, 0, 0)
 

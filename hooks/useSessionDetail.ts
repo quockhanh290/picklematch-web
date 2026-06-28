@@ -70,7 +70,7 @@ export type SessionDetailRecord = {
       address: string
       city: string
     }
-  }
+  } | null
   session_players: SessionPlayer[]
   has_rated?: boolean
   is_owner_managed?: boolean
