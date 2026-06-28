@@ -132,6 +132,24 @@ function warningTone(theme: ReturnType<typeof useAppTheme>, severity: FairnessWa
   return { bg: theme.successBg, border: theme.secondaryContainer, text: theme.successText }
 }
 
+const WARNING_LABELS: Record<string, { severity: 'info' | 'warning'; text: string }> = {
+  NOT_ENOUGH_PRESENT:                  { severity: 'warning', text: 'Không đủ người để lên sân.' },
+  MUST_PLAY_OVER_CAPACITY:             { severity: 'warning', text: 'Số người bắt buộc chơi vượt chỗ trên sân — một số sẽ phải nghỉ vòng này.' },
+  NO_VALID_MATCH:                      { severity: 'warning', text: 'Không tìm được trận hợp lệ với điều kiện hiện tại.' },
+  PVNA_TOLERANCE_RELAXED:              { severity: 'info',    text: 'Engine đã nới nhẹ giới hạn chênh PVNA để tìm đủ người.' },
+  PVNA_TOLERANCE_OPEN:                 { severity: 'warning', text: 'Engine phải bỏ giới hạn PVNA hoàn toàn — không đủ người cùng trình độ.' },
+  REPEAT_CAP_RELAXED:                  { severity: 'info',    text: 'Engine vượt cap lặp — có cặp hoặc đối thủ đã từng đấu gần đây.' },
+  INTRA_TEAM_GAP_RELAXED:              { severity: 'info',    text: 'Hai người cùng đội chênh trình độ hơn mức lý tưởng.' },
+  REPEAT_CAP_REACHED:                  { severity: 'info',    text: 'Tất cả phương án đều chạm giới hạn lặp — trận này là tốt nhất có thể.' },
+  PARTIAL_COURTS:                      { severity: 'info',    text: 'Không đủ người lấp đầy tất cả sân — một số sân trống vòng này.' },
+  EXHAUSTIVE_FALLBACK:                 { severity: 'info',    text: 'Engine dùng tìm kiếm toàn diện vì các phương án thông thường không khả thi.' },
+  REST_REQUIREMENT_RELAXED:            { severity: 'warning', text: 'Engine buộc đưa người cần nghỉ vào sân do không đủ người.' },
+  MUST_REST_FORCED_PLAY:               { severity: 'warning', text: 'Có người đang bắt buộc nghỉ nhưng phải thi đấu vì thiếu người thay.' },
+  LIVE_REPLACEMENT_QUOTA_RELAXED:      { severity: 'info',    text: 'Dùng người từ vùng chờ quá định mức — một số chưa được nghỉ đủ.' },
+  LIVE_REPLACEMENT_RECYCLE_RELAXED:    { severity: 'info',    text: 'Engine tái sử dụng người vừa chơi xong để lấp đầy sân thay thế.' },
+  LIVE_REPLACEMENT_RECYCLE_HARD_RELAXED: { severity: 'warning', text: 'Engine phải dùng người vừa kết thúc trận ngay lập tức — không còn lựa chọn nào khác.' },
+}
+
 function toUserSafeActionError(error: unknown): string {
   const message = error instanceof Error
     ? error.message
@@ -2104,6 +2122,17 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     }
     capacityInfoLines.push(`Tự cập nhật khi có sân khác hoàn thành`)
   }
+  const engineWarnings = useMemo(() =>
+    (activeMatch.warnings ?? []).map(code => {
+      const label = WARNING_LABELS[code]
+      if (!label) {
+        console.warn('[SuggestedLiveMatchCard] unknown warning code:', code)
+        return { code, severity: 'warning' as const, text: code }
+      }
+      return { code, ...label }
+    }),
+    [activeMatch.warnings],
+  )
   return (
     <View style={{ borderRadius: 16, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
@@ -2142,6 +2171,19 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
               </Text>
             ))}
           </View>
+        </View>
+      ) : null}
+      {engineWarnings.length > 0 ? (
+        <View style={{ marginHorizontal: 14, marginBottom: 10, gap: 4 }}>
+          {engineWarnings.map(({ code, severity, text }) => {
+            const tone = warningTone(theme, severity)
+            return (
+              <View key={code} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 9, paddingVertical: 6 }}>
+                <AlertTriangle size={12} color={tone.text} style={{ marginTop: 1 }} />
+                <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: tone.text }}>{text}</Text>
+              </View>
+            )
+          })}
         </View>
       ) : null}
       {tradeoffChoices.length > 1 ? (
