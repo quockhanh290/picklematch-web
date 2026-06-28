@@ -179,6 +179,17 @@ Deno.serve(async (request) => {
         if (error) console.warn('[suggest] debug_dumps insert failed', error.message)
       })
     }
+    const onInstrumentEvent = (event: { event: string; detail: string; court_count?: number; available?: number }) => {
+      serviceClient.from('engine_instrumentation').insert({
+        session_id: sessionId,
+        event: event.event,
+        detail: event.detail,
+        court_count: event.court_count ?? courtCount,
+        available: event.available ?? null,
+      }).then(({ error }) => {
+        if (error) console.warn('[suggest] engine_instrumentation insert failed', error.message)
+      })
+    }
     const selectionDebug: any[] = []
     let payloads = buildSuggestedMatchPayloads({
       count,
@@ -195,6 +206,7 @@ Deno.serve(async (request) => {
         ...(courtIdxs && courtIdxs.length > 0 ? { courtIdxs } : {}),
         ignoreCapacityLock: !preferAvailablePool,
         onIncompleteDump,
+        onInstrumentEvent,
       },
       debugOut: selectionDebug,
     })
@@ -232,7 +244,7 @@ Deno.serve(async (request) => {
         fairnessWarnings: warnings,
         playersById,
         pvnaTolerance,
-        options: { onIncompleteDump },
+        options: { onIncompleteDump, onInstrumentEvent },
       })
       const rescuedBoard = buildFinalPreviewBoard({
         mode: 'full_board',

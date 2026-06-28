@@ -34,6 +34,13 @@ import {
   // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 } from './score.ts'
 
+export type EngineInstrumentEvent = {
+  event: 'stage_resolved' | 'rescue' | 'repair' | 'forced_pass'
+  detail: string
+  court_count?: number
+  available?: number
+}
+
 export type SuggestNextRoundOptions = {
   tier_overrides?: Record<string, Tier>
   diagnostics?: SuggestionDiagnostic
@@ -51,6 +58,7 @@ export type SuggestNextRoundOptions = {
   // stack (e.g. 3 courts × 1500 ms = 4500 ms) and hit the Supabase WORKER_LIMIT (546).
   // When absent the per-call FORCE_RESCUE_BUDGET_MS fallback applies.
   force_budget_deadline?: number
+  onInstrumentEvent?: (event: EngineInstrumentEvent) => void
 }
 
 export type ExhaustiveFallbackDiagnostic = {
@@ -657,21 +665,32 @@ export function suggestNextRound(
     }
   }
 
+  let stageDetail: 'strict' | 'relaxed' | 'none' = 'none'
   collectAlternatives(false, false)
+  if (alternatives.length > 0) stageDetail = 'strict'
   if (alternatives.length === 0 && !timedOut()) {
     // Try overflow-ok (strict tolerance) before relaxed tolerance (no overflow).
     // In sessions with many repeat pairs, Pass B (relaxed + no overflow) runs all 8 stages
     // and still finds nothing — wasted iterations. Pass C (overflow ok) finds the result in
     // Stage 1. Swapping them avoids the expensive failed Pass B in overflow-heavy rounds.
     collectAlternatives(false, true)
-    if (!timedOut()) collectAlternatives(true, false)
-    if (!timedOut()) collectAlternatives(true, true)
+    if (alternatives.length > 0 && stageDetail === 'none') stageDetail = 'strict'
+    if (!timedOut()) {
+      collectAlternatives(true, false)
+      if (alternatives.length > 0 && stageDetail === 'none') stageDetail = 'relaxed'
+    }
+    if (!timedOut()) {
+      collectAlternatives(true, true)
+      if (alternatives.length > 0 && stageDetail === 'none') stageDetail = 'relaxed'
+    }
   }
   // Forced pass: if all regular passes produced nothing (e.g. board-stuck large pool with tight
   // gender prefs), run once more with full relaxation and no timeout guard.
   if (alternatives.length === 0) {
+    try { options.onInstrumentEvent?.({ event: 'forced_pass', detail: 'forced_pass' }) } catch { /* noop */ }
     collectAlternatives(true, true, true)
   }
+  try { options.onInstrumentEvent?.({ event: 'stage_resolved', detail: stageDetail }) } catch { /* noop */ }
 
   const isClosing = phase === 'closing'
 

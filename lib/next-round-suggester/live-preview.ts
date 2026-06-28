@@ -192,6 +192,7 @@ export type BuildSuggestedMatchOptions = {
   forcedRequiredPlayerIds?: string[]
   ignoreCapacityLock?: boolean
   onIncompleteDump?: (dump: IncompleteDump) => void
+  onInstrumentEvent?: (event: import('./suggest').EngineInstrumentEvent) => void
 }
 
 export type LiveQualityPolicy =
@@ -2131,6 +2132,7 @@ export function repairSuggestedPayloadBatch(
   payloads: SuggestedMatchPayload[],
   state: SessionState,
   pvnaTolerance: number,
+  onRepairUsed?: (detail: 'swap' | 'early' | 'repeat') => void,
 ) {
   let current = payloads
   let currentStats = getPayloadBatchStats(current, state, pvnaTolerance)
@@ -2174,7 +2176,7 @@ export function repairSuggestedPayloadBatch(
     if (!bestPayloads) break
     current = bestPayloads
     currentStats = bestStats
-    changed = true
+    if (!changed) { changed = true; try { onRepairUsed?.('swap') } catch { /* noop */ } }
   }
 
   if (
@@ -2185,6 +2187,7 @@ export function repairSuggestedPayloadBatch(
     if (qualityRepaired !== current) {
       current = qualityRepaired
       changed = true
+      try { onRepairUsed?.('early') } catch { /* noop */ }
     }
   }
 
@@ -2193,6 +2196,7 @@ export function repairSuggestedPayloadBatch(
     if (repeatRepaired !== current) {
       current = repeatRepaired
       changed = true
+      try { onRepairUsed?.('repeat') } catch { /* noop */ }
     }
   }
 
@@ -3206,6 +3210,7 @@ export function buildSuggestedMatchPayloads({
       availability_metrics: getAvailabilityMetricsForState(suggestionStateForCourt),
       preview_seed: previewSeed,
       force_budget_deadline: forceBudgetDeadline,
+      onInstrumentEvent: options.onInstrumentEvent,
     }
     const debugEligible = debugOut ? [...suggestionStateForCourt.players.values()]
       .filter(p => p.checked_out_at === null && !p.opted_rest && !busyIds.has(p.player_id))
@@ -3330,6 +3335,7 @@ export function buildSuggestedMatchPayloads({
         previewCountableMatchCount + index + 1,
       )
       if (quotaRelaxedRescue) {
+        try { options.onInstrumentEvent?.({ event: 'rescue', detail: 'quota', court_count: courtCount, available: availableForBatch }) } catch { /* noop */ }
         const rescueKey = getAlternativeMatchKey(quotaRelaxedRescue)
         result = {
           ...result,
@@ -3373,6 +3379,7 @@ export function buildSuggestedMatchPayloads({
         initialSelectedMetrics,
       )
       if (outlierRescue) {
+        try { options.onInstrumentEvent?.({ event: 'rescue', detail: 'pvna_outlier', court_count: courtCount, available: availableForBatch }) } catch { /* noop */ }
         const rescueKey = getAlternativeMatchKey(outlierRescue)
         result = {
           ...result,
@@ -3426,6 +3433,7 @@ export function buildSuggestedMatchPayloads({
         seedSalt: previewSeed,
       })
       if (strictAlternative && containsForcedRequired(strictAlternative)) {
+        try { options.onInstrumentEvent?.({ event: 'rescue', detail: 'strict_clean', court_count: courtCount, available: availableForBatch }) } catch { /* noop */ }
         result = {
           ...result,
           alternatives: [
@@ -3497,6 +3505,7 @@ export function buildSuggestedMatchPayloads({
             previewCountableMatchCount + index + 1,
           )
         if (conditionalQualityRescue) {
+          try { options.onInstrumentEvent?.({ event: 'rescue', detail: 'conditional', court_count: courtCount, available: availableForBatch }) } catch { /* noop */ }
           const rescueKey = getAlternativeMatchKey(conditionalQualityRescue)
           result = {
             ...result,
@@ -3698,5 +3707,10 @@ export function buildSuggestedMatchPayloads({
       },
     })
   }
-  return repairSuggestedPayloadBatch(payloads, repairState, pvnaTolerance)
+  const onRepairInstrument = options.onInstrumentEvent
+    ? (detail: 'swap' | 'early' | 'repeat') => {
+        try { options.onInstrumentEvent!({ event: 'repair', detail, court_count: courtCount, available: availableForBatch }) } catch { /* noop */ }
+      }
+    : undefined
+  return repairSuggestedPayloadBatch(payloads, repairState, pvnaTolerance, onRepairInstrument)
 }
