@@ -3662,6 +3662,51 @@ export function EngineConstraintNotice({
   )
 }
 
+export function RestRiskBanner({
+  state,
+  suggestedMatches,
+  playersById,
+}: {
+  state: SessionState
+  suggestedMatches: SuggestedLiveMatchRow[]
+  playersById: Map<string, ArrangementPlayer>
+}) {
+  const theme = useAppTheme()
+  const { riskPlayers, unavoidable } = useMemo(() => {
+    const scheduledIds = new Set(suggestedMatches.flatMap(m => [...(m.team_a ?? []), ...(m.team_b ?? [])]))
+    const engineUnavoidable = suggestedMatches.some(m =>
+      m.warnings?.includes('REST_REQUIREMENT_RELAXED') ||
+      m.warnings?.includes('MUST_PLAY_OVER_CAPACITY'),
+    )
+    const riskPlayers = [...state.players.values()].filter(p => {
+      if (p.checked_out_at !== null) return false
+      if (p.opted_rest) return false
+      if (scheduledIds.has(p.player_id)) return false
+      const threshold = p.matches_played === 0 ? 2 : 1
+      return p.consecutive_rest >= threshold
+    })
+    return { riskPlayers, unavoidable: engineUnavoidable }
+  }, [state.players, suggestedMatches])
+
+  if (riskPlayers.length === 0) return null
+
+  const names = riskPlayers.map(p => playerName(p.player_id, playersById))
+  const nameStr = names.join(', ')
+  const message = unavoidable
+    ? `${nameStr} phải nghỉ thêm 1 lượt — không đủ người/sân lúc này.`
+    : riskPlayers.length === 1
+      ? `${nameStr} sẽ nghỉ 2 lượt liên tiếp nếu không xếp vào trận tới.`
+      : `${nameStr} sẽ nghỉ 2 lượt liên tiếp nếu không xếp vào.`
+  const tone = warningTone(theme, unavoidable ? 'info' : 'warning')
+
+  return (
+    <View style={{ marginTop: 12, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, padding: 12, flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+      <AlertTriangle size={15} color={tone.text} style={{ marginTop: 1 }} />
+      <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: tone.text }}>{message}</Text>
+    </View>
+  )
+}
+
 export function PlanningRoundCard({ syncingRoster }: { syncingRoster: boolean }) {
   const theme = useAppTheme()
   return (

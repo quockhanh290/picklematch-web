@@ -38,6 +38,7 @@ import {
   TeamBlock,
   RestingRow,
   EngineConstraintNotice,
+  RestRiskBanner,
   PlanningRoundCard,
   SettingsSheet,
   CourtSuggestionOptions,
@@ -3272,6 +3273,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                   </TouchableOpacity>
                 </Card>
               ) : null}
+              <RestRiskBanner
+                state={state}
+                suggestedMatches={suggestedLiveMatches}
+                playersById={playersById}
+              />
               <LiveMatchBoardComponent
                 liveMatches={activeLiveMatches}
                 suggestedMatches={suggestedLiveMatches}
