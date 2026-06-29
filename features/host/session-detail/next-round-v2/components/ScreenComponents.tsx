@@ -2133,6 +2133,17 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     }),
     [activeMatch.warnings],
   )
+  const replacementWarnings = useMemo(() => {
+    if (!availablePoolPreview || availablePoolPreview === 'loading') return []
+    return (availablePoolPreview.warnings ?? []).map(code => {
+      const label = WARNING_LABELS[code]
+      if (!label) {
+        console.warn('[SuggestedLiveMatchCard] unknown replacement warning code:', code)
+        return { code, severity: 'warning' as const, text: code }
+      }
+      return { code, ...label }
+    })
+  }, [availablePoolPreview])
   return (
     <View style={{ borderRadius: 16, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
@@ -2149,6 +2160,19 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
               playersById={playersById}
               onPlayerPress={(playerId) => onPlayerPress(playerId, availablePoolPreview)}
             />
+            {replacementWarnings.length > 0 ? (
+              <View style={{ marginTop: 6, gap: 4 }}>
+                {replacementWarnings.map(({ code, severity, text }) => {
+                  const tone = warningTone(theme, severity)
+                  return (
+                    <View key={code} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 9, paddingVertical: 6 }}>
+                      <AlertTriangle size={12} color={tone.text} style={{ marginTop: 1 }} />
+                      <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: tone.text }}>{text}</Text>
+                    </View>
+                  )
+                })}
+              </View>
+            ) : null}
           </>
         ) : (
           <SuggestedMatchTile
