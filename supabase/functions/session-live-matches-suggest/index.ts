@@ -171,15 +171,17 @@ Deno.serve(async (request) => {
     // 4. Run suggestion algorithm
     const serviceClient = createServiceClient()
     const verifyDumpEnabled = Deno.env.get('VERIFY_DUMP') === '1'
+    const decisionSource = preferAvailablePool ? 'host_replacement' : 'engine_auto'
     const onIncompleteDump = verifyDumpEnabled
-      ? (dump: { session_id: string; missing_courts: number[]; payload: unknown; chosen_matches: unknown; pvna_tolerance: number; rounds: unknown }) => {
+      ? (dump: import('../../../lib/next-round-suggester/live-preview.ts').IncompleteDump) => {
           serviceClient.from('debug_dumps').insert({
             session_id: dump.session_id,
             missing_courts: dump.missing_courts,
             payload: dump.payload,
-            chosen_matches: dump.chosen_matches,
+            chosen_matches: dump.chosen_matches.map(m => ({ ...m, is_replacement: preferAvailablePool })),
             pvna_tolerance: dump.pvna_tolerance,
             rounds: dump.rounds,
+            decision_source: decisionSource,
           }).then(({ error }) => {
             if (error) console.warn('[suggest] debug_dumps insert failed', error.message)
           })

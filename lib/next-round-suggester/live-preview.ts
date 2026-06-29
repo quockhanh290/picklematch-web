@@ -181,7 +181,14 @@ export type IncompleteDump = {
   session_id: string
   missing_courts: number[]
   payload: unknown
-  chosen_matches: { court_idx: number; team_a: string[]; team_b: string[] }[]
+  chosen_matches: {
+    court_idx: number
+    team_a: string[]
+    team_b: string[]
+    is_replacement: boolean
+    warnings: string[]
+    tradeoffs: import('./types').SuggestionTradeoff[]
+  }[]
   pvna_tolerance: number
   rounds: { round_no: number; status: string; matches: { team_a: string[]; team_b: string[] }[]; resting: string[] }[]
 }
@@ -3686,7 +3693,14 @@ export function buildSuggestedMatchPayloads({
     options.onIncompleteDump({
       session_id: sessionId,
       missing_courts: missingCourts,
-      chosen_matches: payloads.map(p => ({ court_idx: p.court_idx ?? -1, team_a: [...p.team_a], team_b: [...p.team_b] })),
+      chosen_matches: payloads.map(p => ({
+        court_idx: p.court_idx ?? -1,
+        team_a: [...p.team_a],
+        team_b: [...p.team_b],
+        is_replacement: false,
+        warnings: p.warnings ?? [],
+        tradeoffs: p.tradeoffs ?? [],
+      })),
       pvna_tolerance: pvnaTolerance,
       rounds: state.rounds.map(r => ({
         round_no: r.round_no,
