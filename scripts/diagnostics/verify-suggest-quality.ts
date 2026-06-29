@@ -2,30 +2,30 @@
  * verify-suggest-quality.ts
  *
  * Kiểm chứng OFFLINE: trận engine đã chọn có phải tối ưu tuyệt đối cho từng sân không.
+ * V2: phân tách engine_auto vs host_replacement + invariant nghỉ-2-vòng.
  *
  * Cách dùng:
  *   1. Lấy 1 dòng dump từ debug_dumps (SQL Editor):
- *        select json_build_object('payload', payload, 'chosen_matches', chosen_matches)
+ *        select json_build_object(
+ *          'decision_source', decision_source,
+ *          'payload', payload,
+ *          'chosen_matches', chosen_matches,
+ *          'rounds', rounds,
+ *          'pvna_tolerance', pvna_tolerance
+ *        )
  *        from debug_dumps order by created_at desc limit 1;
  *      Lưu kết quả vào 1 file .json, vd dump.json
- *      (file phải có dạng { "payload": {...}, "chosen_matches": [...] }
- *       hoặc chỉ { ...payload..., "chosen_matches": [...] } — script tự nhận cả hai)
  *
  *   2. Chạy:
  *        npx tsx --tsconfig tsconfig.sandbox.json scripts/diagnostics/verify-suggest-quality.ts dump.json
  *
  * Ý nghĩa kết quả:
- *   delta = chosen_score - brute_best_score (đã chuẩn hoá: số CÀNG NHỎ càng tốt)
- *     delta ≈ 0  → engine ra ĐÚNG trận tốt nhất tuyệt đối cho sân đó.
- *     delta > 0  → engine BỎ LỠ; script in ra trận tối ưu vs trận engine chọn.
+ *   delta = chosen_score - brute_best_score (số CÀNG NHỎ càng tốt)
+ *     delta ≈ 0  → engine ra ĐÚNG trận tốt nhất.
+ *     delta > 0  → engine BỎ LỠ.
  *
- * LƯU Ý FIDELITY:
- *   - scoreMatch dùng aggregate partner/opponent counts (có trong dump) → phần repeat-overflow
- *     + partner/opponent repeat penalty CHÍNH XÁC.
- *   - recentRepeatCost (phạt lặp theo cửa sổ 3 vòng gần nhất) cần state.rounds. Dump KHÔNG có
- *     per-round history → recentRepeatCost = 0 cho MỌI ứng viên. Vì cả chosen lẫn brute-force
- *     đều bị thiếu phần này NHƯ NHAU, delta tương đối vẫn có nghĩa, nhưng nếu muốn tuyệt đối
- *     chính xác thì cần thêm `rounds` vào dump (xem ghi chú cuối file).
+ *   Chỉ TÍNH ENGINE QUALITY cho trận decision_source='engine_auto' và is_replacement=false.
+ *   Trận host_replacement báo riêng, KHÔNG tính engine bỏ lỡ.
  */
 
 // @ts-ignore
@@ -53,7 +53,16 @@ type DumpPlayer = {
   last_played_round?: number
 }
 
+type ChosenMatch = {
+  court_idx: number
+  team_a: Team
+  team_b: Team
+  is_replacement?: boolean
+  warnings?: string[]
+}
+
 type Dump = {
+  decision_source?: string
   players: DumpPlayer[]
   court_count: number
   current_round: number
@@ -61,7 +70,7 @@ type Dump = {
   avoid_pairs?: Array<{ player_a: string; player_b: string }>
   pvna_tolerance?: number
   rounds?: RoundRecord[]
-  chosen_matches?: Array<{ court_idx: number; team_a: Team; team_b: Team }>
+  chosen_matches?: ChosenMatch[]
 }
 
 function loadDump(path: string): Dump {
@@ -69,7 +78,10 @@ function loadDump(path: string): Dump {
   // chấp nhận { payload, chosen_matches } hoặc payload phẳng
   const payload = raw.payload ?? raw
   const chosen = raw.chosen_matches ?? payload.chosen_matches
-  return { ...payload, chosen_matches: chosen }
+  const decision_source = raw.decision_source ?? payload.decision_source
+  const rounds = raw.rounds ?? payload.rounds
+  const pvna_tolerance = raw.pvna_tolerance ?? payload.pvna_tolerance
+  return { ...payload, chosen_matches: chosen, decision_source, rounds, pvna_tolerance }
 }
 
 function toPlayer(p: DumpPlayer): PlayerSessionState {
@@ -135,6 +147,24 @@ function splits(four: string[]): [Team, Team][] {
   ]
 }
 
+// Kiểm xem player có thể xếp vào 1 trận bất kỳ từ pool available không
+function canPlace(playerId: string, available: string[], state: SessionState, tolerance: number): boolean {
+  const others = available.filter(id => id !== playerId)
+  for (const three of combinations(others, 3)) {
+    const four = [playerId, ...three]
+    for (const [teamA, teamB] of splits(four)) {
+      const r = scoreMatch(teamA, teamB, state, {
+        tolerance,
+        allowRepeatOverflow: true,
+        allowIntraTeamGapOverflow: true,
+        allowRecentGroupRematch: true,
+      })
+      if (Number.isFinite(r.score)) return true
+    }
+  }
+  return false
+}
+
 // Brute-force: tìm trận điểm thấp nhất (tốt nhất) từ pool available cho 1 sân
 function bruteForceBest(available: string[], state: SessionState, tolerance: number) {
   let best: { score: number; teamA: Team; teamB: Team } | null = null
@@ -181,65 +211,127 @@ function main() {
   const dump = loadDump(path)
   const state = buildState(dump)
   const tolerance = dump.pvna_tolerance ?? 0.5
+  const decisionSource = dump.decision_source ?? 'unknown'
 
   if (!dump.chosen_matches || dump.chosen_matches.length === 0) {
     console.error('Dump KHÔNG có chosen_matches — cần thêm field này vào debug_dumps để verify.')
-    console.error('(Xem prompt thêm chosen_matches trong hội thoại.)')
     process.exit(1)
   }
   if (!dump.rounds || dump.rounds.length === 0) {
-    console.warn('⚠️  Dump không có `rounds` → recentRepeatCost bị bỏ qua (cả 2 phía như nhau, delta vẫn dùng được nhưng không tuyệt đối chính xác).\n')
+    console.warn('⚠️  Dump không có `rounds` → recentRepeatCost bị bỏ qua (delta vẫn dùng được nhưng không tuyệt đối chính xác).\n')
   }
 
   const busy = new Set(dump.busy_player_ids ?? [])
-  // pool available ban đầu: không busy, không checked_out, không opted_rest
-  let pool = dump.players
+  const pool = dump.players
     .filter((p) => !p.checked_out && !p.opted_rest && !busy.has(p.id))
     .map((p) => p.id)
 
   console.log(`State: ${dump.players.length} players, court_count=${dump.court_count}, round=${dump.current_round}`)
+  console.log(`decision_source: ${decisionSource}`)
   console.log(`Available ban đầu: ${pool.length} | busy=${busy.size} | tolerance=${tolerance}`)
   console.log(`Engine chọn ${dump.chosen_matches.length} sân.\n`)
 
-  // Replay per-court GREEDY ORDER: mỗi sân, brute-force trên pool CÒN LẠI, so với trận engine chọn,
-  // rồi loại 4 người engine đã dùng khỏi pool (đúng thứ tự greedy production).
-  const used = new Set<string>()
-  let totalDelta = 0
-  let suboptimalCourts = 0
+  // Phân loại: engine_auto vs host_replacement
+  const engineMatches = dump.chosen_matches.filter(m => !m.is_replacement && decisionSource !== 'host_replacement')
+  const replacementMatches = dump.chosen_matches.filter(m => m.is_replacement || decisionSource === 'host_replacement')
 
-  for (const cm of dump.chosen_matches) {
-    const avail = pool.filter((id) => !used.has(id))
-    const chosenPlayers = [...cm.team_a, ...cm.team_b]
-
-    // kiểm trận engine chọn có nằm trong pool available không (sanity)
-    const allInPool = chosenPlayers.every((id) => avail.includes(id))
-    const chosenScore = scoreChosen(cm.team_a, cm.team_b, state, tolerance)
-    const best = bruteForceBest(avail, state, tolerance)
-
-    console.log(`── Sân ${cm.court_idx} (pool ${avail.length} người) ──`)
-    console.log(`  Engine chọn : ${fmtMatch(cm.team_a, cm.team_b, state)}  | score=${chosenScore.toFixed(3)}${allInPool ? '' : '  ⚠️ KHÔNG nằm trong pool available!'}`)
-    if (best) {
-      const delta = chosenScore - best.score
-      totalDelta += Math.max(0, delta)
-      const isOptimal = delta <= 0.01
-      console.log(`  Tối ưu nhất : ${fmtMatch(best.teamA, best.teamB, state)}  | score=${best.score.toFixed(3)}`)
-      console.log(`  DELTA = ${delta.toFixed(3)}  ${isOptimal ? '✅ engine tối ưu' : '⚠️ engine BỎ LỠ (' + delta.toFixed(3) + ' điểm)'}`)
-      if (!isOptimal) suboptimalCourts++
-    } else {
-      console.log(`  Brute-force không tìm được trận hợp lệ nào (pool quá nhỏ?).`)
+  // ── HOST REPLACEMENT ──────────────────────────────────────────────────────
+  if (replacementMatches.length > 0) {
+    console.log('══ HOST REPLACEMENT (host chủ động chọn — không tính engine bỏ lỡ) ══')
+    for (const cm of replacementMatches) {
+      const chosenPlayers = [...cm.team_a, ...cm.team_b]
+      const allInPool = chosenPlayers.every((id) => pool.includes(id))
+      console.log(`  Sân ${cm.court_idx}: ${fmtMatch(cm.team_a, cm.team_b, state)}${allInPool ? '' : '  ⚠️ KHÔNG nằm trong pool!'}`)
+      if (cm.warnings && cm.warnings.length > 0) {
+        console.log(`    warnings: ${cm.warnings.join(', ')}`)
+      }
     }
     console.log('')
-
-    // loại người engine đã dùng (greedy order)
-    chosenPlayers.forEach((id) => used.add(id))
   }
 
-  console.log('═══════════════════════════════════')
-  console.log(`Tổng kết: ${dump.chosen_matches.length} sân | ${suboptimalCourts} sân engine bỏ lỡ | tổng delta = ${totalDelta.toFixed(3)}`)
-  if (suboptimalCourts === 0) {
-    console.log('✅ Engine ra trận TỐI ƯU tuyệt đối ở mọi sân (theo per-court). Gợn còn lại = giới hạn toán / greedy-corner toàn cục.')
+  // ── ENGINE AUTO (greedy quality check) ───────────────────────────────────
+  if (engineMatches.length > 0) {
+    console.log('══ ENGINE AUTO — kiểm chất lượng greedy ══')
+    const used = new Set<string>()
+    let totalDelta = 0
+    let suboptimalCourts = 0
+
+    for (const cm of engineMatches) {
+      const avail = pool.filter((id) => !used.has(id))
+      const chosenPlayers = [...cm.team_a, ...cm.team_b]
+      const allInPool = chosenPlayers.every((id) => avail.includes(id))
+      const chosenScore = scoreChosen(cm.team_a, cm.team_b, state, tolerance)
+      const best = bruteForceBest(avail, state, tolerance)
+
+      console.log(`── Sân ${cm.court_idx} (pool ${avail.length} người) ──`)
+      console.log(`  Engine chọn : ${fmtMatch(cm.team_a, cm.team_b, state)}  | score=${chosenScore.toFixed(3)}${allInPool ? '' : '  ⚠️ KHÔNG nằm trong pool!'}`)
+      if (cm.warnings && cm.warnings.length > 0) {
+        console.log(`  warnings: ${cm.warnings.join(', ')}`)
+      }
+      if (best) {
+        const delta = chosenScore - best.score
+        totalDelta += Math.max(0, delta)
+        const isOptimal = delta <= 0.01
+        console.log(`  Tối ưu nhất : ${fmtMatch(best.teamA, best.teamB, state)}  | score=${best.score.toFixed(3)}`)
+        console.log(`  DELTA = ${delta.toFixed(3)}  ${isOptimal ? '✅ engine tối ưu' : '⚠️ engine BỎ LỠ (' + delta.toFixed(3) + ' điểm)'}`)
+        if (!isOptimal) suboptimalCourts++
+      } else {
+        console.log(`  Brute-force không tìm được trận hợp lệ nào (pool quá nhỏ?).`)
+      }
+      console.log('')
+      chosenPlayers.forEach((id) => used.add(id))
+    }
+
+    console.log('═══════════════════════════════════')
+    console.log(`ENGINE: ${engineMatches.length} sân | ${suboptimalCourts} sân bỏ lỡ | tổng delta = ${totalDelta.toFixed(3)}`)
+    if (suboptimalCourts === 0) {
+      console.log('✅ Engine ra trận TỐI ƯU tuyệt đối ở mọi sân (greedy). Gợn còn lại = giới hạn toán / greedy-corner toàn cục.')
+    } else {
+      console.log('⚠️ Engine bỏ lỡ ở vài sân — xem chi tiết. Có thể do beam-3 / rescue / weights.')
+    }
+    console.log('')
+  }
+
+  // ── INVARIANT: không ai nghỉ 2 vòng khi tránh được ──────────────────────
+  console.log('══ INVARIANT: nghỉ 2 vòng liên tiếp ══')
+
+  const chosenPlayerIds = new Set(
+    (dump.chosen_matches ?? []).flatMap(m => [...m.team_a, ...m.team_b])
+  )
+
+  // late-arrival threshold: matches_played===0 → consecutive_rest >= 2, others >= 1
+  const restRiskPlayers = dump.players.filter(p => {
+    if (p.checked_out || p.opted_rest || busy.has(p.id)) return false
+    if (chosenPlayerIds.has(p.id)) return false
+    const threshold = p.matches_played === 0 ? 2 : 1
+    return p.consecutive_rest >= threshold
+  })
+
+  if (restRiskPlayers.length === 0) {
+    console.log('✅ Không có ca nghỉ 2 vòng liên tiếp.\n')
   } else {
-    console.log('⚠️ Engine bỏ lỡ ở vài sân — xem chi tiết trên. Có thể do beam-3 / rescue / weights.')
+    let avoidable = 0
+    let unavoidable = 0
+
+    for (const p of restRiskPlayers) {
+      const placeable = canPlace(p.id, pool, state, tolerance)
+      if (placeable) {
+        avoidable++
+        console.log(`  ⚠️ TRÁNH ĐƯỢC  — ${short(p.id)} (consecutive_rest=${p.consecutive_rest}, pvna=${p.pvna.toFixed(1)}) có thể xếp vào nhưng bị bỏ qua.`)
+      } else {
+        unavoidable++
+        console.log(`  ○ bất khả     — ${short(p.id)} (consecutive_rest=${p.consecutive_rest}, pvna=${p.pvna.toFixed(1)}) không ghép được trận hợp lệ nào.`)
+      }
+    }
+
+    console.log('──────────────')
+    console.log(`Tổng: ${restRiskPlayers.length} ca | ${avoidable} tránh được | ${unavoidable} bất khả`)
+    if (avoidable > 0) {
+      console.log('⚠️ Có ca TRÁNH ĐƯỢC — logic xếp trận cần xem lại.')
+    } else {
+      console.log('✅ Tất cả ca nghỉ-2 đều bất khả (đúng behavior).')
+    }
+    console.log('')
   }
 }
 
