@@ -3277,6 +3277,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                 state={state}
                 suggestedMatches={suggestedLiveMatches}
                 playersById={playersById}
+                courtCount={queueCourtCount}
+                onSetCourtCount={setCourtCount}
+                onOpenSwapForPlayer={openSwapForPlayer}
               />
               <LiveMatchBoardComponent
                 liveMatches={activeLiveMatches}

@@ -3666,12 +3666,19 @@ export function RestRiskBanner({
   state,
   suggestedMatches,
   playersById,
+  courtCount,
+  onSetCourtCount,
+  onOpenSwapForPlayer,
 }: {
   state: SessionState
   suggestedMatches: SuggestedLiveMatchRow[]
   playersById: Map<string, ArrangementPlayer>
+  courtCount: number
+  onSetCourtCount: (n: number) => void
+  onOpenSwapForPlayer: (playerId: string) => void
 }) {
   const theme = useAppTheme()
+  const [dismissed, setDismissed] = useState(false)
   const { riskPlayers, unavoidable } = useMemo(() => {
     const scheduledIds = new Set(suggestedMatches.flatMap(m => [...(m.team_a ?? []), ...(m.team_b ?? [])]))
     const engineUnavoidable = suggestedMatches.some(m =>
@@ -3688,8 +3695,12 @@ export function RestRiskBanner({
     return { riskPlayers, unavoidable: engineUnavoidable }
   }, [state.players, suggestedMatches])
 
-  if (riskPlayers.length === 0) return null
+  useEffect(() => { setDismissed(false) }, [riskPlayers.length])
 
+  if (riskPlayers.length === 0 || dismissed) return null
+
+  const eligibleCount = [...state.players.values()].filter(p => p.checked_out_at === null && !p.opted_rest).length
+  const canAddCourt = eligibleCount >= (courtCount + 1) * 4
   const names = riskPlayers.map(p => playerName(p.player_id, playersById))
   const nameStr = names.join(', ')
   const message = unavoidable
@@ -3700,9 +3711,42 @@ export function RestRiskBanner({
   const tone = warningTone(theme, unavoidable ? 'info' : 'warning')
 
   return (
-    <View style={{ marginTop: 12, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, padding: 12, flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-      <AlertTriangle size={15} color={tone.text} style={{ marginTop: 1 }} />
-      <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: tone.text }}>{message}</Text>
+    <View style={{ marginTop: 12, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, padding: 12, gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+        <AlertTriangle size={15} color={tone.text} style={{ marginTop: 1 }} />
+        <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: tone.text }}>{message}</Text>
+      </View>
+      {!unavoidable ? (
+        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+          {canAddCourt ? (
+            <TouchableOpacity
+              onPress={() => onSetCourtCount(courtCount + 1)}
+              style={{ minHeight: 32, borderRadius: RADIUS.sm, backgroundColor: tone.border, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.surface, fontWeight: '900' }}>
+                Thêm sân ({courtCount + 1})
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+          {riskPlayers.slice(0, 2).map(p => (
+            <TouchableOpacity
+              key={p.player_id}
+              onPress={() => onOpenSwapForPlayer(p.player_id)}
+              style={{ minHeight: 32, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, fontWeight: '900' }}>
+                Xếp {playerName(p.player_id, playersById)} vào
+              </Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity
+            onPress={() => setDismissed(true)}
+            style={{ minHeight: 32, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: tone.text, fontWeight: '700' }}>Bỏ qua</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </View>
   )
 }
