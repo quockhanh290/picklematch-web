@@ -148,6 +148,11 @@ const WARNING_LABELS: Record<string, { severity: 'info' | 'warning'; text: strin
   LIVE_REPLACEMENT_QUOTA_RELAXED:      { severity: 'info',    text: 'Dùng người từ vùng chờ quá định mức — một số chưa được nghỉ đủ.' },
   LIVE_REPLACEMENT_RECYCLE_RELAXED:    { severity: 'warning', text: 'Engine tái sử dụng người vừa chơi xong để lấp đầy sân thay thế.' },
   LIVE_REPLACEMENT_RECYCLE_HARD_RELAXED: { severity: 'warning', text: 'Engine phải dùng người vừa kết thúc trận ngay lập tức — không còn lựa chọn nào khác.' },
+  LIVE_REPLACEMENT_INTRA_RESCUE:       { severity: 'warning', text: 'Lineup thay thế: engine phải dùng đường cứu đặc biệt (nới chênh trình trong đội) để xếp được trận này.' },
+  TARGET_ROUNDS_REACHED:               { severity: 'info',    text: 'Đã đạt số vòng mục tiêu của buổi.' },
+  FLEXIBLE:                            { severity: 'info',    text: 'Đang ở chế độ ghép linh hoạt.' },
+  MANUAL_SWAP:                         { severity: 'info',    text: 'Trận này có đổi người thủ công.' },
+  MANUAL_SWAP_HARD_GUARD:              { severity: 'warning', text: 'Đổi người thủ công vượt một số giới hạn an toàn — kiểm tra lại trận.' },
 }
 
 function toUserSafeActionError(error: unknown): string {
