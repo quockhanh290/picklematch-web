@@ -12,7 +12,7 @@ import {
   Users,
   Zap
 } from 'lucide-react-native'
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Dimensions, Pressable, Text, TouchableOpacity, View } from 'react-native'
 
 import { colors } from '@/constants/colors'
@@ -1959,9 +1959,29 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   const [selectedChoiceId, setSelectedChoiceId] = useState<SuggestionTradeoffChoiceId>(
     match.recommended_tradeoff_choice ?? tradeoffChoices[0]?.id ?? 'balanced',
   )
+  const previousMatchIdRef = useRef(match.id)
+  const hostSelectedRef = useRef(false)
+  const defaultChoiceIdRef = useRef<SuggestionTradeoffChoiceId>(
+    match.recommended_tradeoff_choice ?? tradeoffChoices[0]?.id ?? 'balanced',
+  )
+  defaultChoiceIdRef.current = match.recommended_tradeoff_choice ?? tradeoffChoices[0]?.id ?? 'balanced'
   useEffect(() => {
-    setSelectedChoiceId(match.recommended_tradeoff_choice ?? (hasCapTradeoffChoices ? rawTradeoffChoices[0]?.id : undefined) ?? 'balanced')
-  }, [hasCapTradeoffChoices, match.id, match.recommended_tradeoff_choice, rawTradeoffChoices])
+    if (previousMatchIdRef.current === match.id) return
+    previousMatchIdRef.current = match.id
+    hostSelectedRef.current = false
+    setSelectedChoiceId(defaultChoiceIdRef.current)
+  }, [hasCapTradeoffChoices, match.id])
+  useEffect(() => {
+    if (tradeoffChoices.length === 0) {
+      if (selectedChoiceId === defaultChoiceIdRef.current) return
+      hostSelectedRef.current = false
+      setSelectedChoiceId(defaultChoiceIdRef.current)
+      return
+    }
+    if (tradeoffChoices.some(choice => choice.id === selectedChoiceId)) return
+    hostSelectedRef.current = false
+    setSelectedChoiceId(defaultChoiceIdRef.current)
+  }, [selectedChoiceId, tradeoffChoices])
   const selectedChoice = tradeoffChoices.find(choice => choice.id === selectedChoiceId) ?? tradeoffChoices[0]
   const activeMatch = useMemo<SuggestedLiveMatchRow>(() => {
     if (!selectedChoice) return match
@@ -2224,7 +2244,10 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
               return (
                 <Pressable
                   key={choice.id}
-                  onPress={() => setSelectedChoiceId(choice.id)}
+                  onPress={() => {
+                    hostSelectedRef.current = true
+                    setSelectedChoiceId(choice.id)
+                  }}
                   style={{
                     borderRadius: RADIUS.sm,
                     borderWidth: selected ? 1.5 : BORDER.hairline,
