@@ -143,10 +143,10 @@ const WARNING_LABELS: Record<string, { severity: 'info' | 'warning'; text: strin
   REPEAT_CAP_REACHED:                  { severity: 'info',    text: 'Tất cả phương án đều chạm giới hạn lặp — trận này là tốt nhất có thể.' },
   PARTIAL_COURTS:                      { severity: 'info',    text: 'Không đủ người lấp đầy tất cả sân — một số sân trống vòng này.' },
   EXHAUSTIVE_FALLBACK:                 { severity: 'info',    text: 'Engine dùng tìm kiếm toàn diện vì các phương án thông thường không khả thi.' },
-  REST_REQUIREMENT_RELAXED:            { severity: 'warning', text: 'Engine buộc đưa người cần nghỉ vào sân do không đủ người.' },
+  REST_REQUIREMENT_RELAXED:            { severity: 'warning', text: 'Có người đã nghỉ và cần được chơi nhưng không đủ chỗ — một số sẽ phải nghỉ thêm lượt nữa.' },
   MUST_REST_FORCED_PLAY:               { severity: 'warning', text: 'Có người đang bắt buộc nghỉ nhưng phải thi đấu vì thiếu người thay.' },
   LIVE_REPLACEMENT_QUOTA_RELAXED:      { severity: 'info',    text: 'Dùng người từ vùng chờ quá định mức — một số chưa được nghỉ đủ.' },
-  LIVE_REPLACEMENT_RECYCLE_RELAXED:    { severity: 'info',    text: 'Engine tái sử dụng người vừa chơi xong để lấp đầy sân thay thế.' },
+  LIVE_REPLACEMENT_RECYCLE_RELAXED:    { severity: 'warning', text: 'Engine tái sử dụng người vừa chơi xong để lấp đầy sân thay thế.' },
   LIVE_REPLACEMENT_RECYCLE_HARD_RELAXED: { severity: 'warning', text: 'Engine phải dùng người vừa kết thúc trận ngay lập tức — không còn lựa chọn nào khác.' },
 }
 
