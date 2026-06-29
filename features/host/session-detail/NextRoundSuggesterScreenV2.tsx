@@ -581,6 +581,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
   const previewBlockedIncompleteKeysRef = useRef(new Set<string>())
   const previewUnblockNonceRef = useRef(0)
   const startingPreviewIdsRef = useRef(new Set<string>())
+  // Board-stuck observability (read-only — no recovery logic touched)
+  const STUCK_THRESHOLD_MS = 5000
+  const stuckTrackerRef = useRef<{
+    startedAt: number
+    firedAt: number | null
+    kind: string
+    courtIdxs: number[]
+    resolvedBy: string
+    timer: ReturnType<typeof setTimeout> | null
+  } | null>(null)
+  const lastStuckHintRef = useRef<{ kind: string; courtIdxs: number[] }>({ kind: 'unknown', courtIdxs: [] })
   const endingLiveMatchIdsRef = useRef(new Set<string>())
   const completedLiveMatchCommitIdsRef = useRef(new Set<string>())
   const cancelingLiveMatchIdsRef = useRef(new Set<string>())
@@ -774,6 +785,67 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     setIsSuggestingPreview(false)
     setLiveMatchDisplayKeys({})
   }, [sessionId])
+
+  // ── Board-stuck tracker (observability only) ──────────────────────────────
+  const resolveStuckTracker = useCallback((resolvedBy: string) => {
+    const tracker = stuckTrackerRef.current
+    if (!tracker) return
+    if (tracker.timer) clearTimeout(tracker.timer)
+    stuckTrackerRef.current = null
+    if (tracker.firedAt === null) return
+    try {
+      supabase.from('board_stuck_events').insert({
+        session_id: sessionId,
+        stuck_kind: tracker.kind,
+        court_idxs: tracker.courtIdxs,
+        duration_ms: Math.round(nowMs() - tracker.startedAt),
+        resolved_by: resolvedBy,
+        detail: {},
+      }).then(({ error }) => {
+        if (error && __DEV__) console.warn('[stuck-tracker] insert failed', error.message)
+      })
+    } catch { /* noop */ }
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!isSuggestingPreview) {
+      resolveStuckTracker(stuckTrackerRef.current?.resolvedBy ?? 'auto')
+      return
+    }
+    if (stuckTrackerRef.current) return
+    const timer = setTimeout(() => {
+      const tracker = stuckTrackerRef.current
+      if (!tracker) return
+      const hint = lastStuckHintRef.current
+      tracker.firedAt = nowMs()
+      tracker.kind = hint.kind !== 'unknown'
+        ? hint.kind
+        : previewBlockedIncompleteKeysRef.current.size > 0
+          ? 'incomplete'
+          : !previewRequestInFlightRef.current
+            ? 'latch'
+            : 'unknown'
+      tracker.courtIdxs = hint.courtIdxs
+    }, STUCK_THRESHOLD_MS)
+    stuckTrackerRef.current = {
+      startedAt: nowMs(),
+      firedAt: null,
+      kind: 'unknown',
+      courtIdxs: [],
+      resolvedBy: 'auto',
+      timer,
+    }
+  }, [isSuggestingPreview, resolveStuckTracker])
+
+  useEffect(() => {
+    return () => { resolveStuckTracker('unresolved') }
+  }, [resolveStuckTracker])
+
+  useEffect(() => {
+    if (stuckTrackerRef.current) stuckTrackerRef.current.resolvedBy = 'complete_match'
+  }, [completedLiveMatchCommitNonce])
+  // ── end board-stuck tracker ───────────────────────────────────────────────
+
   React.useEffect(() => {
     if (phase !== 'recap' || matchCountConsistencyRows.length === 0) {
       autoRepairStateAttemptedRef.current = false
@@ -3003,6 +3075,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         })
         .catch(err => {
           if (!isCurrentPreviewRequest()) return
+          // Update stuck hint for kind classification
+          const errMsg = String(err?.message ?? '')
+          const hintKind = errMsg.includes('546') ? '546'
+            : (errMsg.includes('Preview is stale') || errMsg.includes('Preview version')) ? 'stale'
+            : 'unknown'
+          lastStuckHintRef.current = { kind: hintKind, courtIdxs: requestedReplacementCourtIdxs }
           const fallbackMatches = isLocalPreviewFallbackEnabled() ? buildLocalFallbackPreview() : []
           if (fallbackMatches.length > 0) {
             const nextLaneCache = new Map<number, SuggestedLiveMatchRow>()
