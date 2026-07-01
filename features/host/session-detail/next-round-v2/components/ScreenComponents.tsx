@@ -155,6 +155,72 @@ const WARNING_LABELS: Record<string, { severity: 'info' | 'warning'; text: strin
   MANUAL_SWAP_HARD_GUARD:              { severity: 'warning', text: 'Đổi người thủ công vượt một số giới hạn an toàn — kiểm tra lại trận.' },
 }
 
+type WarningDisplayItem = { code: string; severity: 'info' | 'warning'; text: string }
+
+function shouldShowRepeatCapBoardNotice(matches: SuggestedLiveMatchRow[]) {
+  if (matches.length === 0) return false
+  const repeatCapCount = matches.filter(match => match.warnings?.includes('REPEAT_CAP_REACHED')).length
+  return repeatCapCount >= Math.ceil(matches.length / 2)
+}
+
+function CompactWarningStack({ warnings }: { warnings: WarningDisplayItem[] }) {
+  const theme = useAppTheme()
+  const [infoExpanded, setInfoExpanded] = useState(false)
+  const warningItems = warnings.filter(item => item.severity === 'warning')
+  const infoItems = warnings.filter(item => item.severity === 'info')
+  const infoTone = warningTone(theme, 'info')
+
+  if (warnings.length === 0) return null
+
+  return (
+    <View style={{ gap: 4 }}>
+      {warningItems.map(({ code, text }, index) => {
+        const tone = warningTone(theme, 'warning')
+        return (
+          <View key={`${code}-${index}`} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 9, paddingVertical: 6 }}>
+            <AlertTriangle size={12} color={tone.text} style={{ marginTop: 1 }} />
+            <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: tone.text }}>{text}</Text>
+          </View>
+        )
+      })}
+      {infoItems.length > 0 ? (
+        <View style={{ gap: 4 }}>
+          <Pressable
+            onPress={() => setInfoExpanded(value => !value)}
+            accessibilityRole="button"
+            style={{ minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: infoTone.border, backgroundColor: infoTone.bg, paddingHorizontal: 9, paddingVertical: 5 }}
+          >
+            <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 11, lineHeight: 15, color: infoTone.text, fontWeight: '800' }}>
+              ⓘ {infoItems.length} điều chỉnh nhẹ {infoExpanded ? '▴' : '▾'}
+            </Text>
+          </Pressable>
+          {infoExpanded ? (
+            <View style={{ gap: 4 }}>
+              {infoItems.map(({ code, text }, index) => (
+                <View key={`${code}-${index}`} style={{ borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: infoTone.border, backgroundColor: infoTone.bg, paddingHorizontal: 9, paddingVertical: 6 }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: infoTone.text }}>{text}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  )
+}
+
+function RepeatCapBoardNotice() {
+  const theme = useAppTheme()
+  const tone = warningTone(theme, 'info')
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 10, paddingVertical: 8 }}>
+      <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, lineHeight: 16, color: tone.text, fontWeight: '800' }}>
+        ⓘ Cuối buổi: các cặp đã gặp nhau nhiều, trận sẽ có lặp lại
+      </Text>
+    </View>
+  )
+}
+
 function toUserSafeActionError(error: unknown): string {
   const message = error instanceof Error
     ? error.message
@@ -1492,6 +1558,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches], roundSize)
   const liveGroups = groupMatchesByLogicalRound(liveMatches, logicalRoundByMatchId)
   const suggestedGroups = groupMatchesByLogicalRound(suggestedMatches, logicalRoundByMatchId)
+  const showRepeatCapBoardNotice = shouldShowRepeatCapBoardNotice(suggestedMatches)
   return (
     <View style={{ marginTop: 16, gap: 14 }}>
       {liveMatches.length > 0 ? (
@@ -1522,6 +1589,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
       {suggestedMatches.length > 0 ? (
         <View>
           <View style={{ gap: 12 }}>
+            {showRepeatCapBoardNotice ? <RepeatCapBoardNotice /> : null}
             {suggestedGroups.map(group => (
               <View key={`suggested-round-${group.roundNo}`} style={{ gap: 10 }}>
                 <SuggestedRoundHeader roundNo={group.roundNo} targetRounds={targetRounds} />
@@ -1542,6 +1610,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
                     onPlayerPress={onPlayerPress}
                     onOpenSettings={onOpenSettings}
                     onOpenSwap={() => onOpenSwap(match)}
+                    suppressRepeatCapReachedInfo={showRepeatCapBoardNotice}
                   />
                 ))}
               </View>
@@ -1610,6 +1679,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
     suggestedMatches,
     liveYieldsToSuggested: (liveMatch) => creatingNextMatchIds.has(liveMatch.id) || completingMatchIds.has(liveMatch.id),
   })
+  const showRepeatCapBoardNotice = shouldShowRepeatCapBoardNotice(suggestedMatches)
   const firstEmptyCourtIdx = courtLanes.find(({ liveMatch, suggestedMatch }) => !liveMatch && !suggestedMatch)?.courtIdx ?? null
   // Map each empty lane to its shortage type, distributing TẠM slots first
   const emptyLaneStatus = useMemo(() => {
@@ -1636,6 +1706,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
   return (
     <View style={{ marginTop: 16, gap: 12 }}>
       <SectionEyebrow label="Court lanes" />
+      {showRepeatCapBoardNotice ? <RepeatCapBoardNotice /> : null}
       {courtLanes.map(({ courtIdx, liveMatch, suggestedMatch }) => {
         const laneCreatingNext = Boolean(
           liveMatch
@@ -1728,6 +1799,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
                 onOpenSettings={onOpenSettings}
                 onOpenSwap={() => onOpenSwap(suggestedMatch)}
                 livePlayerCourtMap={livePlayerCourtMap}
+                suppressRepeatCapReachedInfo={showRepeatCapBoardNotice}
               />
             ) : (
               <View
@@ -1934,6 +2006,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   onOpenSettings,
   onOpenSwap,
   livePlayerCourtMap,
+  suppressRepeatCapReachedInfo,
 }: {
   match: SuggestedLiveMatchRow
   busy: boolean
@@ -1950,6 +2023,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   onOpenSettings: () => void
   onOpenSwap: (match: SuggestedLiveMatchRow) => void
   livePlayerCourtMap?: Map<string, number>
+  suppressRepeatCapReachedInfo?: boolean
 }) {
   const theme = useAppTheme()
   const cancelBusy = false
@@ -2148,15 +2222,17 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     capacityInfoLines.push(`Tự cập nhật khi có sân khác hoàn thành`)
   }
   const engineWarnings = useMemo(() =>
-    (activeMatch.warnings ?? []).map(code => {
-      const label = WARNING_LABELS[code]
-      if (!label) {
-        console.warn('[SuggestedLiveMatchCard] unknown warning code:', code)
-        return { code, severity: 'warning' as const, text: code }
-      }
-      return { code, ...label }
-    }),
-    [activeMatch.warnings],
+    (activeMatch.warnings ?? [])
+      .filter(code => !(suppressRepeatCapReachedInfo && code === 'REPEAT_CAP_REACHED'))
+      .map(code => {
+        const label = WARNING_LABELS[code]
+        if (!label) {
+          console.warn('[SuggestedLiveMatchCard] unknown warning code:', code)
+          return { code, severity: 'warning' as const, text: code }
+        }
+        return { code, ...label }
+      }),
+    [activeMatch.warnings, suppressRepeatCapReachedInfo],
   )
   const replacementWarnings = useMemo(() => {
     if (!availablePoolPreview || availablePoolPreview === 'loading') return []
@@ -2186,16 +2262,8 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
               onPlayerPress={(playerId) => onPlayerPress(playerId, availablePoolPreview)}
             />
             {replacementWarnings.length > 0 ? (
-              <View style={{ marginTop: 6, gap: 4 }}>
-                {replacementWarnings.map(({ code, severity, text }) => {
-                  const tone = warningTone(theme, severity)
-                  return (
-                    <View key={code} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 9, paddingVertical: 6 }}>
-                      <AlertTriangle size={12} color={tone.text} style={{ marginTop: 1 }} />
-                      <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: tone.text }}>{text}</Text>
-                    </View>
-                  )
-                })}
+              <View style={{ marginTop: 6 }}>
+                <CompactWarningStack warnings={replacementWarnings} />
               </View>
             ) : null}
           </>
@@ -2223,16 +2291,8 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
         </View>
       ) : null}
       {engineWarnings.length > 0 ? (
-        <View style={{ marginHorizontal: 14, marginBottom: 10, gap: 4 }}>
-          {engineWarnings.map(({ code, severity, text }) => {
-            const tone = warningTone(theme, severity)
-            return (
-              <View key={code} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 9, paddingVertical: 6 }}>
-                <AlertTriangle size={12} color={tone.text} style={{ marginTop: 1 }} />
-                <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: tone.text }}>{text}</Text>
-              </View>
-            )
-          })}
+        <View style={{ marginHorizontal: 14, marginBottom: 10 }}>
+          <CompactWarningStack warnings={engineWarnings} />
         </View>
       ) : null}
       {tradeoffChoices.length > 1 ? (
