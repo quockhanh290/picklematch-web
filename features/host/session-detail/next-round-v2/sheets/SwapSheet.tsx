@@ -48,7 +48,7 @@ export function SwapSheet({
     : []
 
   return (
-    <View>
+    <View testID="nrv2-swap-sheet">
       <SheetTitle title="Đổi người" subtitle="Chọn người cần đổi, rồi chọn candidate được sắp theo cải thiện." />
       <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>1. Đổi ra</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
@@ -57,6 +57,8 @@ export function SwapSheet({
           return (
             <TouchableOpacity
               key={playerId}
+              testID={`nrv2-swap-from-${playerId}`}
+              accessibilityState={{ selected: active }}
               onPress={() => setSwapFromPlayerId(playerId)}
               style={{
                 height: 44,
@@ -93,6 +95,7 @@ export function SwapSheet({
               return (
                 <TouchableOpacity
                   key={playerId}
+                  testID={`nrv2-swap-to-${playerId}`}
                   onPress={() => !blocked && onSwap(swapFromPlayerId, playerId)}
                   disabled={blocked}
                   style={{

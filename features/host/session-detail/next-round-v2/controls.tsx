@@ -91,18 +91,20 @@ export function StickyRoundCta({
 
 export function ChoiceRow<T extends string | number>({
   label,
+  testID,
   options,
   value,
   onChange,
 }: {
   label: string
+  testID?: string
   options: Array<{ label: string; value: T }>
   value: T
   onChange: (value: T) => void
 }) {
   const theme = useAppTheme()
   return (
-    <View style={{ marginBottom: 14 }}>
+    <View testID={testID} style={{ marginBottom: 14 }}>
       <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>{label}</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         {options.map(option => {
@@ -110,6 +112,8 @@ export function ChoiceRow<T extends string | number>({
           return (
             <TouchableOpacity
               key={`${label}-${option.value}`}
+              testID={testID ? `${testID}-option-${option.value}` : undefined}
+              accessibilityState={{ selected: active }}
               onPress={() => onChange(option.value)}
               style={{
                 minHeight: 40,

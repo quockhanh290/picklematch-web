@@ -164,7 +164,7 @@ function shouldShowRepeatCapBoardNotice(matches: SuggestedLiveMatchRow[]) {
   return repeatCapCount >= Math.ceil(matches.length / 2)
 }
 
-function CompactWarningStack({ warnings }: { warnings: WarningDisplayItem[] }) {
+function CompactWarningStack({ warnings, testID = 'nrv2-warning-list' }: { warnings: WarningDisplayItem[]; testID?: string }) {
   const theme = useAppTheme()
   const [infoExpanded, setInfoExpanded] = useState(false)
   const warningItems = warnings.filter(item => item.severity === 'warning')
@@ -174,11 +174,11 @@ function CompactWarningStack({ warnings }: { warnings: WarningDisplayItem[] }) {
   if (warnings.length === 0) return null
 
   return (
-    <View style={{ gap: 4 }}>
+    <View testID={testID} style={{ gap: 4 }}>
       {warningItems.map(({ code, text }, index) => {
         const tone = warningTone(theme, 'warning')
         return (
-          <View key={`${code}-${index}`} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 9, paddingVertical: 6 }}>
+          <View key={`${code}-${index}`} testID={`${testID}-severity-warning-${code}`} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 9, paddingVertical: 6 }}>
             <AlertTriangle size={12} color={tone.text} style={{ marginTop: 1 }} />
             <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: tone.text }}>{text}</Text>
           </View>
@@ -187,6 +187,7 @@ function CompactWarningStack({ warnings }: { warnings: WarningDisplayItem[] }) {
       {infoItems.length > 0 ? (
         <View style={{ gap: 4 }}>
           <Pressable
+            testID={`${testID}-info-toggle`}
             onPress={() => setInfoExpanded(value => !value)}
             accessibilityRole="button"
             style={{ minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: infoTone.border, backgroundColor: infoTone.bg, paddingHorizontal: 9, paddingVertical: 5 }}
@@ -198,7 +199,7 @@ function CompactWarningStack({ warnings }: { warnings: WarningDisplayItem[] }) {
           {infoExpanded ? (
             <View style={{ gap: 4 }}>
               {infoItems.map(({ code, text }, index) => (
-                <View key={`${code}-${index}`} style={{ borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: infoTone.border, backgroundColor: infoTone.bg, paddingHorizontal: 9, paddingVertical: 6 }}>
+                <View key={`${code}-${index}`} testID={`${testID}-severity-info-${code}`} style={{ borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: infoTone.border, backgroundColor: infoTone.bg, paddingHorizontal: 9, paddingVertical: 6 }}>
                   <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: infoTone.text }}>{text}</Text>
                 </View>
               ))}
@@ -214,7 +215,7 @@ function RepeatCapBoardNotice() {
   const theme = useAppTheme()
   const tone = warningTone(theme, 'info')
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 10, paddingVertical: 8 }}>
+    <View testID="nrv2-repeat-cap-board-notice" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 10, paddingVertical: 8 }}>
       <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, lineHeight: 16, color: tone.text, fontWeight: '800' }}>
         ⓘ Cuối buổi: các cặp đã gặp nhau nhiều, trận sẽ có lặp lại
       </Text>
@@ -1561,7 +1562,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   const suggestedGroups = groupMatchesByLogicalRound(suggestedMatches, logicalRoundByMatchId)
   const showRepeatCapBoardNotice = shouldShowRepeatCapBoardNotice(suggestedMatches)
   return (
-    <View style={{ marginTop: 16, gap: 14 }}>
+    <View testID="nrv2-live-match-board" style={{ marginTop: 16, gap: 14 }}>
       {liveMatches.length > 0 ? (
         <View>
           <SectionEyebrow label="Trận đang đánh" />
@@ -1705,7 +1706,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
   }, [courtLanes, courtShortageBreakdown, firstEmptyCourtIdx, isSuggestingPreview])
 
   return (
-    <View style={{ marginTop: 16, gap: 12 }}>
+    <View testID="nrv2-court-lane-board" style={{ marginTop: 16, gap: 12 }}>
       <SectionEyebrow label="Court lanes" />
       {showRepeatCapBoardNotice ? <RepeatCapBoardNotice /> : null}
       {courtLanes.map(({ courtIdx, liveMatch, suggestedMatch }) => {
@@ -1738,6 +1739,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
         return (
           <View
             key={`court-lane-${courtIdx}`}
+            testID={`nrv2-court-lane-${courtIdx}`}
             style={{
               gap: 8,
               paddingTop: 10,
@@ -1749,7 +1751,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
               <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: theme.onSurface }}>
                 Court {courtIdx + 1}
               </Text>
-              <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.outline, fontWeight: '800' }}>
+              <Text testID={`nrv2-court-lane-${courtIdx}-round`} style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.outline, fontWeight: '800' }}>
                 {roundNo ? `Round ${roundNo} / ${targetRounds}` : 'Empty'}
               </Text>
             </View>
@@ -2248,8 +2250,9 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       return { code, ...label }
     })
   }, [availablePoolPreview])
+  const cardCourtIdx = Number(activeMatch.court_idx ?? activeMatch.sequence_no ?? 0)
   return (
-    <View style={{ borderRadius: 16, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border, overflow: 'hidden' }}>
+    <View testID={`nrv2-suggested-card-court-${cardCourtIdx}`} style={{ borderRadius: 16, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
         {availablePoolPreview && availablePoolPreview !== 'loading' ? (
           <>
@@ -2266,7 +2269,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
             />
             {replacementWarnings.length > 0 ? (
               <View style={{ marginTop: 6 }}>
-                <CompactWarningStack warnings={replacementWarnings} />
+                <CompactWarningStack testID={`nrv2-warning-list-court-${cardCourtIdx}-replacement`} warnings={replacementWarnings} />
               </View>
             ) : null}
           </>
@@ -2295,7 +2298,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       ) : null}
       {engineWarnings.length > 0 ? (
         <View style={{ marginHorizontal: 14, marginBottom: 10 }}>
-          <CompactWarningStack warnings={engineWarnings} />
+          <CompactWarningStack testID={`nrv2-warning-list-court-${cardCourtIdx}`} warnings={engineWarnings} />
         </View>
       ) : null}
       {tradeoffChoices.length > 1 ? (
@@ -2312,6 +2315,8 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
               return (
                 <Pressable
                   key={choice.id}
+                  testID={`nrv2-tradeoff-choice-${cardCourtIdx}-${choice.id}`}
+                  accessibilityState={{ selected }}
                   onPress={() => {
                     hostSelectedRef.current = true
                     setSelectedChoiceId(choice.id)
@@ -2430,6 +2435,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       ) : null}
       <View style={{ backgroundColor: colors.surface, paddingHorizontal: 14, paddingTop: 0, paddingBottom: 14, flexDirection: 'row', gap: 10 }}>
         <TouchableOpacity
+          testID={`nrv2-swap-open-court-${cardCourtIdx}`}
           onPress={() => onOpenSwap(activeMatch)}
           activeOpacity={0.82}
           style={{ paddingHorizontal: 16, height: 46, borderRadius: RADIUS.lg, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
@@ -2439,12 +2445,14 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
         {availablePoolPreview ? (
           <View style={{ flex: 1, gap: 6 }}>
             <TouchableOpacity
+              testID={`nrv2-available-pool-cancel-court-${cardCourtIdx}`}
               onPress={() => onCancelAvailablePool(Number(activeMatch.court_idx))}
               style={{ height: 38, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
             >
               <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: colors.textSecondary, fontWeight: '700' }}>← Quay lại chờ</Text>
             </TouchableOpacity>
             <TouchableOpacity
+              testID={`nrv2-available-pool-confirm-court-${cardCourtIdx}`}
               onPress={() => availablePoolPreview !== 'loading' && onConfirmStartNow(availablePoolPreview)}
               disabled={busy || availablePoolPreview === 'loading'}
               style={{ height: 46, borderRadius: RADIUS.lg, backgroundColor: availablePoolPreview === 'loading' ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
@@ -2462,6 +2470,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
               <Text numberOfLines={2} style={ctaTextStyle(theme.onSurfaceVariant ?? colors.textSecondary, 12)}>{lockedWaitLabel}</Text>
             </View>
             <TouchableOpacity
+              testID={`nrv2-available-pool-fetch-court-${cardCourtIdx}`}
               onPress={() => onFetchAvailablePool(activeMatch)}
               disabled={busy}
               style={{ height: 38, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
@@ -2475,6 +2484,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
           </View>
         ) : (
           <TouchableOpacity
+            testID={`nrv2-start-match-court-${cardCourtIdx}`}
             onPress={() => onStart(activeMatch)}
             disabled={startDisabled}
             style={{ flex: 1, height: 46, borderRadius: RADIUS.lg, backgroundColor: startDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
@@ -2551,9 +2561,10 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
     return () => clearInterval(id)
   }, [startedAt])
   const elapsedLabel = `${Math.floor(elapsed / 60).toString().padStart(2, '0')}:${(elapsed % 60).toString().padStart(2, '0')}`
+  const cardCourtIdx = Number(match.court_idx ?? match.sequence_no ?? 0)
 
   return (
-    <View style={{ backgroundColor: theme.surface, borderRadius: RADIUS.xl, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, overflow: 'hidden', ...LAYOUT_SHADOW.sm }}>
+    <View testID={`nrv2-live-card-court-${cardCourtIdx}`} style={{ backgroundColor: theme.surface, borderRadius: RADIUS.xl, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, overflow: 'hidden', ...LAYOUT_SHADOW.sm }}>
       <View style={{ backgroundColor: theme.surfaceContainerLow, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: BORDER.hairline, borderBottomColor: theme.outlineVariant }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.primary }} />
@@ -2597,6 +2608,7 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
         </View>
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
           <Pressable
+            testID={`nrv2-cancel-live-court-${cardCourtIdx}`}
             onPress={() => {
               if (__DEV__) console.log('[NextRoundSuggesterV2] cancel button tapped', { matchId: match.id })
               onCancel(match)
@@ -2608,17 +2620,18 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
             {cancelBusy ? <ActivityIndicator color={theme.dangerText} /> : <Text style={ctaTextStyle(theme.dangerText, 12)}>Hủy trận</Text>}
           </Pressable>
           {isPersistingStart ? (
-            <View style={{ flex: 2, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.surfaceVariant, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
+            <View testID={`nrv2-start-persisting-court-${cardCourtIdx}`} style={{ flex: 2, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.surfaceVariant, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
               <ActivityIndicator size="small" color={theme.primary} />
               <Text style={ctaTextStyle(theme.primary, 12)}>Dang bat dau...</Text>
             </View>
           ) : searchingNext ? (
-            <View style={{ flex: 2, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.surfaceVariant, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
+            <View testID={`nrv2-searching-next-court-${cardCourtIdx}`} style={{ flex: 2, minHeight: 44, borderRadius: RADIUS.lg, backgroundColor: theme.surfaceVariant, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
               <ActivityIndicator size="small" color={theme.primary} />
               <Text style={ctaTextStyle(theme.primary, 12)}>Tạo trận tiếp theo...</Text>
             </View>
           ) : (
             <Pressable
+              testID={`nrv2-complete-match-court-${cardCourtIdx}`}
               onPress={() => {
                 if (__DEV__) console.log('[NextRoundSuggesterV2] complete button tapped', { matchId: match.id })
                 onComplete(match, score)
@@ -3802,7 +3815,7 @@ export function RestRiskBanner({
   const tone = warningTone(theme, unavoidable ? 'info' : 'warning')
 
   return (
-    <View style={{ marginTop: 12, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, padding: 12, gap: 10 }}>
+    <View testID="nrv2-rest-risk-banner" style={{ marginTop: 12, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, padding: 12, gap: 10 }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
         <AlertTriangle size={15} color={tone.text} style={{ marginTop: 1 }} />
         <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.body, fontSize: 12, lineHeight: 17, color: tone.text }}>{message}</Text>
@@ -3811,6 +3824,7 @@ export function RestRiskBanner({
         <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
           {canAddCourt ? (
             <TouchableOpacity
+              testID="nrv2-rest-risk-add-court"
               onPress={() => onSetCourtCount(courtCount + 1)}
               style={{ minHeight: 32, borderRadius: RADIUS.sm, backgroundColor: tone.border, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
             >
@@ -3822,6 +3836,7 @@ export function RestRiskBanner({
           {riskPlayers.slice(0, 2).map(p => (
             <TouchableOpacity
               key={p.player_id}
+              testID={`nrv2-rest-risk-swap-${p.player_id}`}
               onPress={() => onOpenSwapForPlayer(p.player_id)}
               style={{ minHeight: 32, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
             >
@@ -3831,6 +3846,7 @@ export function RestRiskBanner({
             </TouchableOpacity>
           ))}
           <TouchableOpacity
+            testID="nrv2-rest-risk-dismiss"
             onPress={() => setDismissed(true)}
             style={{ minHeight: 32, borderRadius: RADIUS.sm, borderWidth: BORDER.hairline, borderColor: tone.border, backgroundColor: tone.bg, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
           >
@@ -3846,7 +3862,9 @@ export function PlanningRoundCard({ syncingRoster }: { syncingRoster: boolean })
   const theme = useAppTheme()
   return (
     <Card style={{ marginTop: 16, padding: 18, alignItems: 'center', borderColor: theme.outlineVariant }}>
-      <ActivityIndicator color={theme.primary} />
+      <View testID="nrv2-suggest-spinner">
+        <ActivityIndicator color={theme.primary} />
+      </View>
       <Text style={{ marginTop: 12, fontFamily: SCREEN_FONTS.headline, fontSize: 18, color: theme.onSurface, textAlign: 'center' }}>
         Đang sắp xếp lịch trận đấu
       </Text>
@@ -3995,7 +4013,7 @@ export function SettingsSheet({
   }
 
   return (
-    <View>
+    <View testID="nrv2-settings-sheet">
       <SheetTitle title="Cài đặt vòng" subtitle="Điều chỉnh setup trước khi start vòng kế." />
       <LinearGradient colors={[theme.heroGradientStart, theme.primaryContainer]} style={{ borderRadius: RADIUS.lg, padding: 14, marginBottom: 14 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
@@ -4046,16 +4064,18 @@ export function SettingsSheet({
         recommendedCourts={recommended.courts}
         onSelect={setCourtCount}
       />
-      <ChoiceRow label="Sân" options={courtChoiceOptions} value={courtCount} onChange={setCourtCount} />
+      <ChoiceRow testID="nrv2-settings-court-count" label="Sân" options={courtChoiceOptions} value={courtCount} onChange={setCourtCount} />
       <ChoiceRow
+        testID="nrv2-settings-court-preset"
         label="Chế độ"
         options={COURT_PRESET_OPTIONS.map(value => ({ label: PRESETS[value].label, value }))}
         value={courtPreset}
         onChange={setCourtPreset}
       />
-      <ChoiceRow label="Dung sai PVNA" options={PVNA_TOLERANCE_OPTIONS.map(value => ({ label: `±${value}`, value }))} value={pvnaTolerance} onChange={setPvnaTolerance} />
-      <ChoiceRow label="Thời lượng" options={COURT_DURATION_OPTIONS.map(value => ({ label: `${value}p`, value }))} value={courtDurationMin} onChange={setCourtDurationMin} />
+      <ChoiceRow testID="nrv2-settings-pvna-tolerance" label="Dung sai PVNA" options={PVNA_TOLERANCE_OPTIONS.map(value => ({ label: `±${value}`, value }))} value={pvnaTolerance} onChange={setPvnaTolerance} />
+      <ChoiceRow testID="nrv2-settings-court-duration" label="Thời lượng" options={COURT_DURATION_OPTIONS.map(value => ({ label: `${value}p`, value }))} value={courtDurationMin} onChange={setCourtDurationMin} />
       <ChoiceRow
+        testID="nrv2-settings-target-rounds"
         label="Mục tiêu vòng"
         options={[6, 8, 10, recommended.total_rounds].filter((v, i, arr) => arr.indexOf(v) === i).map(value => ({ label: `${value}`, value }))}
         value={targetRounds}
@@ -4088,7 +4108,7 @@ export function CourtSuggestionOptions({
   const theme = useAppTheme()
   const visibleOptions = options.filter(option => option.courts >= recommendedCourts - 1 || option.courts === appliedCourts)
   return (
-    <View style={{ marginBottom: 14 }}>
+    <View testID="nrv2-court-count-stepper" style={{ marginBottom: 14 }}>
       <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>Gợi ý số sân</Text>
       <View style={{ gap: 8 }}>
         {visibleOptions.map(option => {
@@ -4103,6 +4123,7 @@ export function CourtSuggestionOptions({
           return (
             <TouchableOpacity
               key={`court-option-${option.courts}`}
+              testID={`nrv2-court-count-option-${option.courts}`}
               disabled={disabled}
               onPress={() => onSelect(option.courts)}
               style={{

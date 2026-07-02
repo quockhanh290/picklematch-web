@@ -3677,7 +3677,7 @@ function SuggestedLiveMatchSwapSheet({
     : []
 
   return (
-    <View>
+    <View testID="nrv2-swap-sheet">
       <SheetTitle title="Đổi người trận gợi ý" subtitle={`Sân ${(match.court_idx ?? 0) + 1}: đổi trực tiếp trong suggested live match đang chọn.`} />
       <Text style={[eyebrowStyle(theme.outline), { marginBottom: 8 }]}>1. Đổi ra</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
@@ -3686,6 +3686,8 @@ function SuggestedLiveMatchSwapSheet({
           return (
             <TouchableOpacity
               key={playerId}
+              testID={`nrv2-swap-from-${playerId}`}
+              accessibilityState={{ selected: active }}
               onPress={() => setSwapFromPlayerId(playerId)}
               style={{
                 height: 44,
@@ -3727,6 +3729,7 @@ function SuggestedLiveMatchSwapSheet({
               return (
                 <TouchableOpacity
                   key={playerId}
+                  testID={`nrv2-swap-to-${playerId}`}
                   onPress={() => onSwap(swapFromPlayerId, playerId)}
                   style={{
                     minHeight: 58,
