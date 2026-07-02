@@ -290,19 +290,20 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     else if ('targetRounds' in settings && settings.targetRounds === null) setTargetRounds(null)
   }, [])
 
-  // Guard: only reset courtCountOverride when the session itself changes.
-  // Re-runs of the load-settings effect within the same session must NOT wipe
-  // a value that was already locked by the auto-lock effect, otherwise court
-  // count would keep tracking presentCount dynamically.
+  // Guard: only initialize courtCountOverride from route/session setup when the
+  // session itself changes. Mid-session setup changes must not re-hydrate
+  // settings or wipe a value already locked by host choice/auto-lock.
   const courtOverrideInitSessionIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (courtOverrideInitSessionIdRef.current === sessionId) return
+    courtOverrideInitSessionIdRef.current = sessionId
+    setCourtCountOverride(sessionCourtSetup)
+  }, [sessionCourtSetup, sessionId])
 
   useEffect(() => {
     let cancelled = false
     setSettingsHydrated(false)
-    if (courtOverrideInitSessionIdRef.current !== sessionId) {
-      courtOverrideInitSessionIdRef.current = sessionId
-      setCourtCountOverride(sessionCourtSetup)
-    }
     setCourtPreset('balanced')
     setCourtDurationMin(120)
     setPvnaTolerance(0.5)
@@ -338,7 +339,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
       setSettingsHydrated(true)
     })()
     return () => { cancelled = true }
-  }, [applyPersistedSettings, sessionCourtSetup, sessionId, settingsStorageKey])
+  }, [applyPersistedSettings, sessionId, settingsStorageKey])
 
   useEffect(() => {
     if (!settingsHydrated) return
