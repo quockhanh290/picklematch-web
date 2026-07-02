@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import WebSocket from 'ws'
 
 type LiveRow = {
   id: string
@@ -72,7 +73,10 @@ async function signInHost() {
   const url = supabaseUrl()
   const key = anonKey()
   if (!url || !key) throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL/ANON_KEY for E2E UI')
-  const host = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
+  const host = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { transport: WebSocket as any },
+  })
   const { data, error } = await host.auth.signInWithPassword({ email: HOST_EMAIL, password: HOST_PASSWORD })
   if (error) throw error
   if (!data.user?.id) throw new Error('Host login returned no user')
@@ -83,7 +87,10 @@ async function createService() {
   const url = supabaseUrl()
   const key = serviceKey()
   if (!url || !key) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY for E2E UI')
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { transport: WebSocket as any },
+  })
 }
 
 async function cloneSessionForTest(title: string): Promise<E2EContext> {
