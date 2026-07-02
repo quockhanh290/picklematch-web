@@ -114,6 +114,20 @@ describe('Detector', () => {
     expect(warning?.affected_players).toEqual(['p1'])
   })
 
+  it('does not flag an opted-rest player as rest_violation', () => {
+    const state = createState({
+      currentRound: 3,
+      players: [
+        createPlayer('p1', { consecutive_rest: 2, opted_rest: true }),
+        createPlayer('p2'),
+        createPlayer('p3'),
+        createPlayer('p4'),
+      ],
+    })
+
+    expect(detectFairnessIssues(state).map((warning) => warning.type)).not.toContain('rest_violation')
+  })
+
   it('does not keep rest warning after a historical rest streak has been corrected', () => {
     const state = createState({
       currentRound: 3,

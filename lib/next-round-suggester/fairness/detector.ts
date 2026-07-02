@@ -134,8 +134,6 @@ function detectMatchCountIssues(state: SessionState): FairnessWarning[] {
 
   const metrics = computeMatchCountMetrics(state)
   const availability = computeAvailabilityMetrics(state)
-  if (availability.rounds_tracked === 0) return []
-
   const warnings: FairnessWarning[] = []
   const allowedRange = availability.rounds_tracked > 0 ? 1 : getAllowedMatchCountRange(metrics)
   const observedRange = availability.rounds_tracked > 0
