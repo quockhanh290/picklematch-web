@@ -134,6 +134,8 @@ function detectMatchCountIssues(state: SessionState): FairnessWarning[] {
 
   const metrics = computeMatchCountMetrics(state)
   const availability = computeAvailabilityMetrics(state)
+  if (availability.rounds_tracked === 0) return []
+
   const warnings: FairnessWarning[] = []
   const allowedRange = availability.rounds_tracked > 0 ? 1 : getAllowedMatchCountRange(metrics)
   const observedRange = availability.rounds_tracked > 0
@@ -241,7 +243,7 @@ function detectRestViolations(state: SessionState): FairnessWarning[] {
   const severity: 'critical' | 'warning' = benchDepth === 0 ? 'critical' : 'warning'
 
   const violations = [...state.players.values()]
-    .filter((player) => player.checked_out_at === null && player.consecutive_rest >= violationThreshold)
+    .filter((player) => player.checked_out_at === null && !player.opted_rest && player.consecutive_rest >= violationThreshold)
     .sort((a, b) => a.player_id.localeCompare(b.player_id))
 
   if (violations.length === 0) return []
