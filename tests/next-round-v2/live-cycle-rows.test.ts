@@ -25,14 +25,14 @@ function playerRow(playerId: string): SessionPlayerStateRow {
   }
 }
 
-function liveMatch(sequenceNo: number, roundNo: number, courtIdx: number, players: [string, string, string, string]): SessionLiveMatchRow {
+function liveMatch(sequenceNo: number, roundNo: number, courtIdx: number, players: [string, string, string, string], status: SessionLiveMatchRow['status'] = 'completed'): SessionLiveMatchRow {
   return {
     id: `live-${sequenceNo}`,
     session_id: 'session-test',
     sequence_no: sequenceNo,
     round_no: roundNo,
     court_idx: courtIdx,
-    status: 'completed',
+    status,
     team_a: [players[0], players[1]],
     team_b: [players[2], players[3]],
     resting: [],
@@ -119,5 +119,31 @@ describe('buildCompletedLiveCycleRows', () => {
       ...matchPlayers[4],
       ...matchPlayers[5],
     ])
+  })
+
+  it('closes a short round when no live or suggested match remains in that round', () => {
+    const playerRows = Array.from({ length: 16 }, (_, index) => playerRow(`p${index}`))
+    const matchPlayers = Array.from({ length: 4 }, (_, matchIndex) => {
+      const start = matchIndex * 4
+      return [`p${start}`, `p${start + 1}`, `p${start + 2}`, `p${start + 3}`] as [string, string, string, string]
+    })
+    const liveRows = [
+      liveMatch(0, 0, 0, matchPlayers[0]),
+      liveMatch(1, 0, 1, matchPlayers[1]),
+      liveMatch(2, 1, 0, matchPlayers[2]),
+      liveMatch(3, 1, 1, matchPlayers[3], 'live'),
+    ]
+
+    const roundRows = buildCompletedLiveCycleRows({
+      liveMatchRows: liveRows,
+      legacyRoundRows: [],
+      playerRows,
+      sessionId: 'session-test',
+      courtCount: 3,
+    })
+
+    expect(roundRows.map(row => row.round_no)).toEqual([0])
+    expect(roundRows[0].matches).toHaveLength(2)
+    expect(roundRows[0].matches.map(match => match.court_idx)).toEqual([0, 1])
   })
 })

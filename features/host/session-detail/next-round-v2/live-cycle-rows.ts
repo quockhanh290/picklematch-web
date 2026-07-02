@@ -82,8 +82,11 @@ export function buildCompletedLiveCycleRows({
   const legacyRoundNos = new Set(legacyRoundRows.map(r => r.round_no))
   // Exclude completed live matches whose round_no is already covered by legacyRoundRows to avoid
   // double-counting when the RPC returns synthetic round_rows derived from the same live matches.
+  const nonCancelledLive = sortLiveMatchesBySequence(
+    liveMatchRows.filter(match => match.status !== 'cancelled' && (match.round_no == null || !legacyRoundNos.has(match.round_no))),
+  )
   const completedLive = sortLiveMatchesBySequence(
-    liveMatchRows.filter(match => match.status === 'completed' && (match.round_no == null || !legacyRoundNos.has(match.round_no))),
+    nonCancelledLive.filter(match => match.status === 'completed'),
   )
   const presentPlayerIds = playerRows
     .filter(row => !row.checked_out_at)
@@ -95,19 +98,19 @@ export function buildCompletedLiveCycleRows({
   )
   const liveRoundRows: LiveRows['roundRows'] = []
 
-  if (hasReliableRoundNoGroups(completedLive, normalizedCourtCount)) {
+  if (hasReliableRoundNoGroups(nonCancelledLive, normalizedCourtCount)) {
     const byRound = new Map<number, SessionLiveMatchRow[]>()
-    for (const match of completedLive) {
+    for (const match of nonCancelledLive) {
       const roundNo = Number(match.round_no)
       const rows = byRound.get(roundNo) ?? []
       rows.push(match)
       byRound.set(roundNo, rows)
     }
 
-    for (const [roundNo, unsortedMatches] of [...byRound.entries()].sort(([a], [b]) => a - b)) {
-      if (unsortedMatches.length < normalizedCourtCount) continue
+    for (const [roundNo, roundMatches] of [...byRound.entries()].sort(([a], [b]) => a - b)) {
+      if (!roundMatches.every(match => match.status === 'completed')) continue
 
-      const matches = sortLiveMatchesBySequence(unsortedMatches)
+      const matches = sortLiveMatchesBySequence(roundMatches)
       const playedIds = new Set(matches.flatMap(match => [...match.team_a, ...match.team_b]))
       const roundStartedAt = matches.map(match => match.started_at).filter(Boolean).sort()[0]
       const roundEndedAt = matches.map(match => match.ended_at).filter(Boolean).sort().reverse()[0]
