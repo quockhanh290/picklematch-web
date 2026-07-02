@@ -151,6 +151,7 @@ import {
 import type { NextRoundSuggesterV2Props, LiveRows } from './next-round-v2/types'
 import { liveSessionQueryKeys } from './next-round-v2/queries'
 import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
+import { pruneOptimisticLiveMatchesByServerId } from './next-round-v2/optimisticLiveMatches'
 import { useCheckInMutation, useCheckOutMutation, useStartMatchMutation, useCompleteMatchMutation } from './next-round-v2/mutations'
 import { getMatchPlayerIds, isSameCourtAndPlayers, shouldInvalidatePreviewAfterStartError } from './liveMatchGuards'
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
@@ -862,10 +863,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
   }, [activeRound, loadLiveState, matchCountConsistencyRows.length, phase, sessionId])
   React.useEffect(() => {
     setOptimisticLiveMatches(current => {
-      if (current.length === 0) return current
-      const serverIds = new Set(rows.liveMatchRows.map(match => match.id))
-      const next = current.filter(match => !serverIds.has(match.id))
-      return next.length === current.length ? current : next
+      return pruneOptimisticLiveMatchesByServerId(current, rows.liveMatchRows)
     })
   }, [rows.liveMatchRows])
   React.useEffect(() => () => {
