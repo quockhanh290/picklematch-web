@@ -1771,8 +1771,10 @@ function repairRoundOnePayloadBatchWithCleanPool(
   payloads: SuggestedMatchPayload[],
   state: SessionState,
   pvnaTolerance: number,
+  isTrueFirstRound: boolean,
 ) {
   if (payloads.length < 2) return payloads
+  if (!isTrueFirstRound) return payloads
   if (!payloads.every(payload => Number(payload.round_no ?? 0) === 0)) return payloads
 
   const currentStats = getPayloadBatchStats(payloads, state, pvnaTolerance)
@@ -1873,8 +1875,9 @@ function repairEarlyPayloadBatchQuality(
   payloads: SuggestedMatchPayload[],
   state: SessionState,
   pvnaTolerance: number,
+  isTrueFirstRound: boolean,
 ) {
-  let current = repairRoundOnePayloadBatchWithCleanPool(payloads, state, pvnaTolerance)
+  let current = repairRoundOnePayloadBatchWithCleanPool(payloads, state, pvnaTolerance, isTrueFirstRound)
   let currentStats = getPayloadBatchStats(current, state, pvnaTolerance)
 
   for (let pass = 0; pass < 4; pass += 1) {
@@ -2143,10 +2146,12 @@ export function repairSuggestedPayloadBatch(
   state: SessionState,
   pvnaTolerance: number,
   onRepairUsed?: (detail: 'swap' | 'early' | 'repeat') => void,
+  options: { isTrueFirstRound?: boolean } = {},
 ) {
   let current = payloads
   let currentStats = getPayloadBatchStats(current, state, pvnaTolerance)
   let changed = false
+  const isTrueFirstRound = options.isTrueFirstRound ?? state.rounds.length === 0
 
   for (let pass = 0; pass < 3; pass += 1) {
     let bestPayloads: SuggestedMatchPayload[] | null = null
@@ -2193,7 +2198,7 @@ export function repairSuggestedPayloadBatch(
     shouldRepairEarlyQualityForPayloadBatch(current)
     || hasSeverePayloadPvnaOutlier(current, state, pvnaTolerance)
   ) {
-    const qualityRepaired = repairEarlyPayloadBatchQuality(current, state, pvnaTolerance)
+    const qualityRepaired = repairEarlyPayloadBatchQuality(current, state, pvnaTolerance, isTrueFirstRound)
     if (qualityRepaired !== current) {
       current = qualityRepaired
       changed = true
@@ -3739,5 +3744,10 @@ export function buildSuggestedMatchPayloads({
         try { options.onInstrumentEvent!({ event: 'repair', detail, court_count: courtCount, available: availableForBatch }) } catch { /* noop */ }
       }
     : undefined
-  return repairSuggestedPayloadBatch(payloads, repairState, pvnaTolerance, onRepairInstrument)
+  const hasStartedOrCompletedLiveMatches = countableMatches.some(match =>
+    match.status === 'live' || match.status === 'completed',
+  )
+  return repairSuggestedPayloadBatch(payloads, repairState, pvnaTolerance, onRepairInstrument, {
+    isTrueFirstRound: state.rounds.length === 0 && !hasStartedOrCompletedLiveMatches,
+  })
 }
