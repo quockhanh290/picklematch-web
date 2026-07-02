@@ -1860,7 +1860,9 @@ export function buildLogicalRoundDisplayMap(matches: SessionLiveMatchRow[], roun
     .sort((left, right) => left.sequence_no - right.sequence_no)
   return new Map(countableMatches.map((match, index) => [
     match.id,
-    Math.floor(index / safeRoundSize) + 1,
+    match.round_no !== null && match.round_no !== undefined
+      ? match.round_no + 1
+      : Math.floor(index / safeRoundSize) + 1,
   ]))
 }
 
