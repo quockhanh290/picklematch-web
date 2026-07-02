@@ -926,6 +926,37 @@ describe('projected live match state', () => {
 
     expect(payloads).toHaveLength(0)
   })
+
+  it('relaxes the absolute consecutive-play guard when no substitute exists', () => {
+    const state = createState({
+      courts: 1,
+      players: [
+        createPlayer('absolute-1', { pvna: 3.00, matches_played: 4, consecutive_play: 4 }),
+        createPlayer('absolute-2', { pvna: 3.10, matches_played: 4, consecutive_play: 4 }),
+        createPlayer('absolute-3', { pvna: 3.20, matches_played: 4, consecutive_play: 4 }),
+        createPlayer('absolute-4', { pvna: 3.30, matches_played: 4, consecutive_play: 4 }),
+      ],
+    })
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 1,
+      state,
+      rows: { liveMatchRows: [], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(
+      new Set(['absolute-1', 'absolute-2', 'absolute-3', 'absolute-4']),
+    )
+    expect(payloads[0].warnings ?? []).toContain('LIVE_RECYCLE_ABSOLUTE_RELAXED')
+  })
 })
 
 describe('conditional live quality rescue', () => {

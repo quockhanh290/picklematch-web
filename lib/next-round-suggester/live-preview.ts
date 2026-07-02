@@ -795,6 +795,43 @@ export function buildLiveSelectionGuard({
       ? ['LIVE_REPLACEMENT_RECYCLE_RELAXED', 'LIVE_REPLACEMENT_RECYCLE_HARD_RELAXED']
       : []),
   ]
+  const hasSubstituteOutsideAbsolute = playablePlayers
+    .some(player => !absoluteRecycleProtectedIds.includes(player.player_id))
+
+  if (absoluteRecycleProtectedIds.length > 0 && !canFillWithout(absoluteRecycleProtectedIds) && !hasSubstituteOutsideAbsolute) {
+    const noSubstituteWarnings = [
+      ...absoluteWarnings,
+      'LIVE_RECYCLE_ABSOLUTE_RELAXED',
+    ]
+    return {
+      protectedIds: new Set<string>(),
+      quotaProtectedIds,
+      intraRescueProtectedIds,
+      warnings: noSubstituteWarnings,
+      relaxationStages: [
+        {
+          protectedIds: new Set(recycleProtectedIds),
+          warnings: quotaProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_QUOTA_RELAXED'] : [],
+        },
+        {
+          protectedIds: new Set(hardRecycleIds),
+          warnings: [
+            ...(quotaProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_QUOTA_RELAXED'] : []),
+            ...(softRecycleProtectedIds.length > 0 ? ['LIVE_REPLACEMENT_RECYCLE_RELAXED'] : []),
+          ],
+        },
+        {
+          protectedIds: new Set(absoluteRecycleProtectedIds),
+          warnings: absoluteWarnings,
+        },
+        {
+          protectedIds: new Set<string>(),
+          warnings: noSubstituteWarnings,
+        },
+      ],
+    }
+  }
+
   return {
     protectedIds: new Set(absoluteRecycleProtectedIds),
     quotaProtectedIds,
@@ -2146,12 +2183,13 @@ export function repairSuggestedPayloadBatch(
   state: SessionState,
   pvnaTolerance: number,
   onRepairUsed?: (detail: 'swap' | 'early' | 'repeat') => void,
-  options: { isTrueFirstRound?: boolean } = {},
+  options: { isTrueFirstRound?: boolean; allowEarlyQualityRepair?: boolean } = {},
 ) {
   let current = payloads
   let currentStats = getPayloadBatchStats(current, state, pvnaTolerance)
   let changed = false
   const isTrueFirstRound = options.isTrueFirstRound ?? state.rounds.length === 0
+  const allowEarlyQualityRepair = options.allowEarlyQualityRepair ?? true
 
   for (let pass = 0; pass < 3; pass += 1) {
     let bestPayloads: SuggestedMatchPayload[] | null = null
@@ -2195,7 +2233,7 @@ export function repairSuggestedPayloadBatch(
   }
 
   if (
-    shouldRepairEarlyQualityForPayloadBatch(current)
+    (allowEarlyQualityRepair && shouldRepairEarlyQualityForPayloadBatch(current))
     || hasSeverePayloadPvnaOutlier(current, state, pvnaTolerance)
   ) {
     const qualityRepaired = repairEarlyPayloadBatchQuality(current, state, pvnaTolerance, isTrueFirstRound)
@@ -3084,10 +3122,7 @@ export function buildSuggestedMatchPayloads({
     const courtBudgetMs = getLivePreviewCourtBudgetMs(remainingBatchMs, remainingCourtsInBatch)
     const getRemainingCourtBudgetMs = (capMs = LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS) => Math.min(
       capMs,
-      Math.max(
-        LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS,
-        courtBudgetMs - (nowMs() - courtStartedAt),
-      ),
+      Math.max(20, courtBudgetMs - (nowMs() - courtStartedAt)),
     )
     if (projectedRoundMatchCount >= courtCapacity) {
       projectedRoundNo += 1
@@ -3474,7 +3509,7 @@ export function buildSuggestedMatchPayloads({
     ) ?? result.alternatives[0]
     let conditionalQualityRescue: SuggestionAlternative | null = null
     let conditionalQualityTradeoff: ReturnType<typeof findConditionalLiveQualityTradeoff> | null = null
-    if (baselineForConditionalSearch && remainingBatchMs > LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS + 100) {
+    if (baselineForConditionalSearch && effectiveCount >= courtCount && remainingBatchMs > LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS + 100) {
       const baselineMetrics = getTradeoffChoiceMetrics(
         baselineForConditionalSearch,
         suggestionStateForCourt,
@@ -3489,6 +3524,7 @@ export function buildSuggestedMatchPayloads({
           ran: false, timedOut: false, eligibleCount: 0,
           combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
         }
+        const conditionalBudgetMs = getRemainingCourtBudgetMs(220)
         const conditionalProtectedIds =
           liveSelectionGuard.relaxationStages[liveSelectionGuard.relaxationStages.length - 1]?.protectedIds
           ?? liveSelectionGuard.protectedIds
@@ -3498,10 +3534,10 @@ export function buildSuggestedMatchPayloads({
           court_idx: courtIdx,
           max_alternatives: LIVE_CONDITIONAL_RESCUE_ALTERNATIVE_LIMIT,
           exhaustive_fallback: true,
-          max_runtime_ms: getRemainingCourtBudgetMs(500),
+          max_runtime_ms: conditionalBudgetMs,
           _exhaustiveDiag: conditionalDiag,
           forced_required_player_ids: requiredForThisCourt,
-          force_budget_deadline: forceBudgetDeadline,
+          force_budget_deadline: Date.now() + conditionalBudgetMs,
         })
         conditionalQualityRescue = findConditionalLiveQualityRescue(
           conditionalResult.alternatives,
@@ -3749,5 +3785,6 @@ export function buildSuggestedMatchPayloads({
   )
   return repairSuggestedPayloadBatch(payloads, repairState, pvnaTolerance, onRepairInstrument, {
     isTrueFirstRound: state.rounds.length === 0 && !hasStartedOrCompletedLiveMatches,
+    allowEarlyQualityRepair: payloads.length >= courtCount,
   })
 }
