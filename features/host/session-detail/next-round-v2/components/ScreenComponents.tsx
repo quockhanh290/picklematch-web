@@ -3768,6 +3768,7 @@ export function EngineConstraintNotice({
 
 export function RestRiskBanner({
   state,
+  activeMatches,
   suggestedMatches,
   playersById,
   courtCount,
@@ -3775,6 +3776,7 @@ export function RestRiskBanner({
   onOpenSwapForPlayer,
 }: {
   state: SessionState
+  activeMatches: SessionLiveMatchRow[]
   suggestedMatches: SuggestedLiveMatchRow[]
   playersById: Map<string, ArrangementPlayer>
   courtCount: number
@@ -3784,7 +3786,10 @@ export function RestRiskBanner({
   const theme = useAppTheme()
   const [dismissed, setDismissed] = useState(false)
   const { riskPlayers, unavoidable } = useMemo(() => {
-    const scheduledIds = new Set(suggestedMatches.flatMap(m => [...(m.team_a ?? []), ...(m.team_b ?? [])]))
+    const scheduledIds = new Set(
+      [...activeMatches, ...suggestedMatches].flatMap(m => [...(m.team_a ?? []), ...(m.team_b ?? [])]),
+    )
+    const maxAllowedConsecutiveRest = 1
     const engineUnavoidable = suggestedMatches.some(m =>
       m.warnings?.includes('REST_REQUIREMENT_RELAXED') ||
       m.warnings?.includes('MUST_PLAY_OVER_CAPACITY'),
@@ -3793,11 +3798,10 @@ export function RestRiskBanner({
       if (p.checked_out_at !== null) return false
       if (p.opted_rest) return false
       if (scheduledIds.has(p.player_id)) return false
-      const threshold = p.matches_played === 0 ? 2 : 1
-      return p.consecutive_rest >= threshold
+      return p.consecutive_rest + 1 > maxAllowedConsecutiveRest
     })
     return { riskPlayers, unavoidable: engineUnavoidable }
-  }, [state.players, suggestedMatches])
+  }, [activeMatches, state.players, suggestedMatches])
 
   useEffect(() => { setDismissed(false) }, [riskPlayers.length])
 

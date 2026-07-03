@@ -664,7 +664,10 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
 
   const suggestedRoundActions: SuggestedRoundAction[] = []
 
-  const activeRound = useMemo(() => state.rounds.find(row => row.status === 'active') ?? null, [state.rounds])
+  const activeRound = useMemo(
+    () => state.rounds.find(row => row.status === 'active' && row.matches.length > 0) ?? null,
+    [state.rounds],
+  )
   const effectiveTargetRounds = targetRounds ?? courtCalculator.recommended.total_rounds
   const completedRounds = useMemo(
     () => stateRoundRows.filter(row => row.status === 'completed').sort((a, b) => b.round_no - a.round_no),

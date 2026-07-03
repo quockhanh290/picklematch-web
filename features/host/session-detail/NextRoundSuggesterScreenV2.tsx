@@ -1753,6 +1753,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
   const startRound = async (alternative: SuggestionAlternative) => {
     await runAction('start', async () => {
       if (activeRound) throw new Error('Đang có vòng active. Hãy kết thúc vòng hiện tại trước.')
+      if (!Array.isArray(alternative.matches) || alternative.matches.length === 0) {
+        throw new Error('Chưa có trận để bắt đầu.')
+      }
       const unavailableIds = alternative.matches
         .flatMap(match => [...match.team_a, ...match.team_b])
         .filter(playerId => {
@@ -3351,6 +3354,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
               ) : null}
               <RestRiskBanner
                 state={state}
+                activeMatches={activeLiveMatches}
                 suggestedMatches={suggestedLiveMatches}
                 playersById={playersById}
                 courtCount={queueCourtCount}
