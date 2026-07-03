@@ -35,7 +35,7 @@ import { DEFAULT_SCORING_WEIGHTS } from '@/lib/next-round-suggester/state.ts'
 import type { PlayerSessionState, SessionState, Team, RoundRecord } from '@/lib/next-round-suggester/types.ts'
 import { readFileSync } from 'node:fs'
 
-type DumpPlayer = {
+export type DumpPlayer = {
   id: string
   pvna: number
   gender: 'M' | 'F'
@@ -53,7 +53,7 @@ type DumpPlayer = {
   last_played_round?: number
 }
 
-type ChosenMatch = {
+export type ChosenMatch = {
   court_idx: number
   team_a: Team
   team_b: Team
@@ -61,27 +61,32 @@ type ChosenMatch = {
   warnings?: string[]
 }
 
-type Dump = {
+export type Dump = {
   decision_source?: string
   players: DumpPlayer[]
   court_count: number
   current_round: number
   busy_player_ids: string[]
+  missing_courts?: number[]
   avoid_pairs?: Array<{ player_a: string; player_b: string }>
   pvna_tolerance?: number
   rounds?: RoundRecord[]
   chosen_matches?: ChosenMatch[]
 }
 
-function loadDump(path: string): Dump {
-  const raw = JSON.parse(readFileSync(path, 'utf8'))
-  // chấp nhận { payload, chosen_matches } hoặc payload phẳng
+export function normalizeDump(raw: any): Dump {
   const payload = raw.payload ?? raw
   const chosen = raw.chosen_matches ?? payload.chosen_matches
   const decision_source = raw.decision_source ?? payload.decision_source
   const rounds = raw.rounds ?? payload.rounds
   const pvna_tolerance = raw.pvna_tolerance ?? payload.pvna_tolerance
   return { ...payload, chosen_matches: chosen, decision_source, rounds, pvna_tolerance }
+}
+
+export function loadDump(path: string): Dump {
+  const raw = JSON.parse(readFileSync(path, 'utf8'))
+  // chấp nhận { payload, chosen_matches } hoặc payload phẳng
+  return normalizeDump(raw)
 }
 
 function toPlayer(p: DumpPlayer): PlayerSessionState {
@@ -105,7 +110,7 @@ function toPlayer(p: DumpPlayer): PlayerSessionState {
   }
 }
 
-function buildState(dump: Dump): SessionState {
+export function buildState(dump: Dump): SessionState {
   const players = new Map<string, PlayerSessionState>()
   for (const p of dump.players) players.set(p.id, toPlayer(p))
   return {
@@ -148,7 +153,7 @@ function splits(four: string[]): [Team, Team][] {
 }
 
 // Kiểm xem player có thể xếp vào 1 trận bất kỳ từ pool available không
-function canPlace(playerId: string, available: string[], state: SessionState, tolerance: number): boolean {
+export function canPlace(playerId: string, available: string[], state: SessionState, tolerance: number): boolean {
   const others = available.filter(id => id !== playerId)
   for (const three of combinations(others, 3)) {
     const four = [playerId, ...three]
@@ -166,7 +171,7 @@ function canPlace(playerId: string, available: string[], state: SessionState, to
 }
 
 // Brute-force: tìm trận điểm thấp nhất (tốt nhất) từ pool available cho 1 sân
-function bruteForceBest(available: string[], state: SessionState, tolerance: number) {
+export function bruteForceBest(available: string[], state: SessionState, tolerance: number) {
   let best: { score: number; teamA: Team; teamB: Team } | null = null
   for (const four of combinations(available, 4)) {
     for (const [teamA, teamB] of splits(four)) {
@@ -200,6 +205,112 @@ function fmtTeam(t: Team, state: SessionState) {
 }
 function fmtMatch(a: Team, b: Team, state: SessionState) {
   return `${fmtTeam(a, state)} vs ${fmtTeam(b, state)}`
+}
+
+export type EngineBoardAnalysis = {
+  match: ChosenMatch
+  poolSize: number
+  chosenScore: number
+  best: { score: number; teamA: Team; teamB: Team } | null
+  delta: number | null
+  allInPool: boolean
+  isSuboptimal: boolean
+}
+
+export type RestRiskAnalysis = {
+  player: DumpPlayer
+  placeable: boolean
+}
+
+export type SuggestQualityAnalysis = {
+  dump: Dump
+  state: SessionState
+  tolerance: number
+  decisionSource: string
+  busy: Set<string>
+  pool: string[]
+  engineMatches: ChosenMatch[]
+  replacementMatches: ChosenMatch[]
+  engineBoards: EngineBoardAnalysis[]
+  restRiskCases: RestRiskAnalysis[]
+  missingCourts: number[]
+}
+
+export function analyzeSuggestQuality(dump: Dump): SuggestQualityAnalysis {
+  const state = buildState(dump)
+  const tolerance = dump.pvna_tolerance ?? 0.5
+  const decisionSource = dump.decision_source ?? 'unknown'
+  const chosenMatches = dump.chosen_matches ?? []
+  const busy = new Set(dump.busy_player_ids ?? [])
+  const pool = dump.players
+    .filter((p) => !p.checked_out && !p.opted_rest && !busy.has(p.id))
+    .map((p) => p.id)
+
+  // Phân loại: engine_auto vs host_replacement
+  const engineMatches = chosenMatches.filter(m => !m.is_replacement && decisionSource !== 'host_replacement')
+  const replacementMatches = chosenMatches.filter(m => m.is_replacement || decisionSource === 'host_replacement')
+
+  const used = new Set<string>()
+  const engineBoards: EngineBoardAnalysis[] = []
+  for (const cm of engineMatches) {
+    const avail = pool.filter((id) => !used.has(id))
+    const chosenPlayers = [...cm.team_a, ...cm.team_b]
+    const allInPool = chosenPlayers.every((id) => avail.includes(id))
+    const chosenScore = scoreChosen(cm.team_a, cm.team_b, state, tolerance)
+    const best = bruteForceBest(avail, state, tolerance)
+    const delta = best ? chosenScore - best.score : null
+    engineBoards.push({
+      match: cm,
+      poolSize: avail.length,
+      chosenScore,
+      best,
+      delta,
+      allInPool,
+      isSuboptimal: delta !== null && delta > 0.01,
+    })
+    chosenPlayers.forEach((id) => used.add(id))
+  }
+
+  const chosenPlayerIds = new Set(
+    chosenMatches.flatMap(m => [...m.team_a, ...m.team_b])
+  )
+
+  // late-arrival threshold: matches_played===0 -> consecutive_rest >= 2, others >= 1
+  const restRiskCases = dump.players
+    .filter(p => {
+      if (p.checked_out || p.opted_rest || busy.has(p.id)) return false
+      if (chosenPlayerIds.has(p.id)) return false
+      const threshold = p.matches_played === 0 ? 2 : 1
+      return p.consecutive_rest >= threshold
+    })
+    .map(player => ({
+      player,
+      placeable: canPlace(player.id, pool, state, tolerance),
+    }))
+
+  const missingCourts: number[] = Array.isArray(dump.missing_courts)
+    ? dump.missing_courts
+    : []
+  if (!Array.isArray(dump.missing_courts)) {
+    const filledCourts = new Set(chosenMatches.map(m => m.court_idx))
+    for (let courtIdx = 0; courtIdx < dump.court_count; courtIdx++) {
+      if (!filledCourts.has(courtIdx)) missingCourts.push(courtIdx)
+    }
+  }
+
+  return {
+    dump,
+    state,
+    tolerance,
+    decisionSource,
+    busy,
+    pool,
+    engineMatches,
+    replacementMatches,
+    engineBoards,
+    restRiskCases,
+    missingCourts,
+  }
 }
 
 function main() {
@@ -335,4 +446,6 @@ function main() {
   }
 }
 
-main()
+if (process.argv[1]?.replace(/\\/g, '/').endsWith('/verify-suggest-quality.ts')) {
+  main()
+}
