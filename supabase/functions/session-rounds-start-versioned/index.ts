@@ -94,8 +94,10 @@ Deno.serve(async (request) => {
       sessionId,
       eventType: 'round_start_versioned',
       edgeFunction: 'session-rounds-start-versioned',
+      request,
       requestId,
       clientRequestId,
+      includeSnapshotAfter: true,
       requestPayload: {
         expected_live_state_version: body.expected_live_state_version,
         round_no: body.round_no,

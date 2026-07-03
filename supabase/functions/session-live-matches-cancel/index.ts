@@ -73,8 +73,10 @@ Deno.serve(async (request) => {
       sessionId,
       eventType: 'live_match_cancel',
       edgeFunction: 'session-live-matches-cancel',
+      request,
       requestId,
       clientRequestId,
+      includeSnapshotAfter: true,
       requestPayload: {
         expected_live_state_version: body.expected_live_state_version,
         match_id: body.match_id,

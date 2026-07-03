@@ -252,8 +252,10 @@ Deno.serve(async (request) => {
       sessionId,
       eventType: 'round_end',
       edgeFunction: 'session-rounds-end',
+      request,
       requestId,
       actorId: auth.userId,
+      includeSnapshotAfter: true,
       requestPayload: {
         round_no: roundNo,
       },

@@ -41,7 +41,9 @@ Deno.serve(async (request) => {
     sessionId,
     eventType: 'roster_checkout',
     edgeFunction: 'session-checkout',
+    request,
     requestId,
+    includeSnapshotAfter: true,
     requestPayload: {
       player_ids: playerIds,
     },

@@ -149,24 +149,41 @@ export async function writeSessionAuditEvent(
     sessionId: string
     eventType: string
     edgeFunction: string
+    request?: Request
     requestId?: string | null
     clientRequestId?: unknown
     actorId?: string | null
     requestPayload?: unknown
     responsePayload?: unknown
     detail?: unknown
+    includeSnapshotAfter?: boolean
   },
 ) {
+  const detail = input.detail && typeof input.detail === 'object' && !Array.isArray(input.detail)
+    ? { ...(input.detail as Record<string, unknown>) }
+    : input.detail === undefined
+      ? {}
+      : { value: input.detail }
+  let actorId = input.actorId ?? null
+
+  if (!actorId && input.request) {
+    actorId = await getRequestUserId(input.request)
+  }
+
+  if (input.includeSnapshotAfter && input.request) {
+    detail.snapshot_after = await loadLiveSessionAuditSnapshot(input.request, input.sessionId)
+  }
+
   const { error } = await supabase.from('session_audit_events').insert({
     session_id: input.sessionId,
     event_type: input.eventType,
     edge_function: input.edgeFunction,
     request_id: input.requestId ?? null,
     client_request_id: typeof input.clientRequestId === 'string' ? input.clientRequestId : null,
-    actor_id: input.actorId ?? null,
+    actor_id: actorId,
     request_payload: input.requestPayload ?? {},
     response_payload: input.responsePayload ?? {},
-    detail: input.detail ?? {},
+    detail,
   })
 
   if (error) {
@@ -177,6 +194,45 @@ export async function writeSessionAuditEvent(
       request_id: input.requestId ?? null,
       error: error.message,
     })
+  }
+}
+
+async function getRequestUserId(request: Request): Promise<string | null> {
+  const authorization = request.headers.get('Authorization')
+  if (!authorization) return null
+
+  try {
+    const token = authorization.replace(/^Bearer\s+/i, '')
+    const supabase = createServiceClient()
+    const { data, error } = await supabase.auth.getUser(token)
+    if (error) return null
+    return data.user?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+async function loadLiveSessionAuditSnapshot(request: Request, sessionId: string) {
+  try {
+    const supabase = createUserClient(request)
+    const { data, error } = await supabase.rpc('get_live_session_snapshot_versioned', {
+      p_session_id: sessionId,
+    })
+    if (error) {
+      return {
+        ok: false,
+        error: error.message,
+      }
+    }
+    return {
+      ok: true,
+      data,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Unknown snapshot error',
+    }
   }
 }
 

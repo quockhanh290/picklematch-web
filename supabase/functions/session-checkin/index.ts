@@ -49,7 +49,9 @@ Deno.serve(async (request) => {
     sessionId,
     eventType: 'roster_checkin',
     edgeFunction: 'session-checkin',
+    request,
     requestId,
+    includeSnapshotAfter: true,
     requestPayload: {
       player_ids: playerIds,
       group_with: groupWith,

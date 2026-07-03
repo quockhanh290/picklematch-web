@@ -41,7 +41,9 @@ Deno.serve(async (request) => {
     sessionId,
     eventType: 'roster_sync',
     edgeFunction: 'session-sync-roster',
+    request,
     requestId,
+    includeSnapshotAfter: true,
     requestPayload: {
       player_ids: playerIds,
       revive_checked_out: reviveCheckedOut,

@@ -65,7 +65,9 @@ Deno.serve(async (request) => {
     sessionId,
     eventType: optedRest ? 'roster_opt_rest' : 'roster_clear_rest',
     edgeFunction: 'session-request-rest',
+    request,
     requestId,
+    includeSnapshotAfter: true,
     requestPayload: {
       player_id: playerId,
       opted_rest: optedRest,

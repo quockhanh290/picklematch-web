@@ -68,8 +68,10 @@ Deno.serve(async (request) => {
       sessionId,
       eventType: 'live_match_create',
       edgeFunction: 'session-live-matches-create',
+      request,
       requestId,
       clientRequestId,
+      includeSnapshotAfter: true,
       requestPayload: {
         expected_live_state_version: body.expected_live_state_version,
         matches: Array.isArray(body.matches) ? body.matches : [],

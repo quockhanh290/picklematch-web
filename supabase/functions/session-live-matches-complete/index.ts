@@ -79,8 +79,10 @@ Deno.serve(async (request) => {
       sessionId,
       eventType: 'live_match_complete',
       edgeFunction: 'session-live-matches-complete',
+      request,
       requestId,
       clientRequestId,
+      includeSnapshotAfter: true,
       requestPayload: {
         expected_live_state_version: body.expected_live_state_version,
         match_id: body.match_id,

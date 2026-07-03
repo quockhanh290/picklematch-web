@@ -35,7 +35,9 @@ Deno.serve(async (request) => {
       sessionId,
       eventType: 'roster_group_clear',
       edgeFunction: 'session-set-group',
+      request,
       requestId,
+      includeSnapshotAfter: true,
       requestPayload: {
         clear_group_id: clearGroupId,
       },
@@ -59,7 +61,9 @@ Deno.serve(async (request) => {
       sessionId,
       eventType: 'roster_group_clear_player',
       edgeFunction: 'session-set-group',
+      request,
       requestId,
+      includeSnapshotAfter: true,
       requestPayload: {
         clear_player_id: clearPlayerId,
       },
@@ -90,7 +94,9 @@ Deno.serve(async (request) => {
     sessionId,
     eventType: 'roster_group_set',
     edgeFunction: 'session-set-group',
+    request,
     requestId,
+    includeSnapshotAfter: true,
     requestPayload: {
       player_ids: playerIds,
     },

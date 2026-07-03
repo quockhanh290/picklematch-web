@@ -72,7 +72,9 @@ Deno.serve(async (request) => {
         sessionId,
         eventType: 'avoid_pair_upsert',
         edgeFunction: EDGE_FUNCTION_NAME,
+        request,
         requestId: edgeRequestId,
+        includeSnapshotAfter: true,
         requestPayload: {
           player_a: a,
           player_b: b,
@@ -97,7 +99,9 @@ Deno.serve(async (request) => {
         sessionId,
         eventType: 'avoid_pair_delete',
         edgeFunction: EDGE_FUNCTION_NAME,
+        request,
         requestId: edgeRequestId,
+        includeSnapshotAfter: true,
         requestPayload: {
           player_a: a,
           player_b: b,
@@ -142,7 +146,9 @@ Deno.serve(async (request) => {
       sessionId,
       eventType: 'roster_pvna_override',
       edgeFunction: EDGE_FUNCTION_NAME,
+      request,
       requestId: edgeRequestId,
+      includeSnapshotAfter: true,
       requestPayload: {
         player_id: playerId,
         effective_pvna: effective_pvna ?? null,
@@ -524,6 +530,7 @@ Deno.serve(async (request) => {
       sessionId,
       eventType: 'live_match_suggest',
       edgeFunction: EDGE_FUNCTION_NAME,
+      request,
       requestId: suggestionRequestId,
       clientRequestId,
       requestPayload: {

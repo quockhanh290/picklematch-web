@@ -245,8 +245,10 @@ Deno.serve(async (request) => {
       sessionId,
       eventType: 'round_start',
       edgeFunction: 'session-rounds-start',
+      request,
       requestId,
       actorId: auth.userId,
+      includeSnapshotAfter: true,
       requestPayload: {
         courts: body.courts,
         pvna_tolerance: body.pvna_tolerance,

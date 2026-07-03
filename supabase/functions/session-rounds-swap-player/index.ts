@@ -43,7 +43,9 @@ Deno.serve(async (request) => {
     sessionId,
     eventType: 'round_swap_player',
     edgeFunction: 'session-rounds-swap-player',
+    request,
     requestId,
+    includeSnapshotAfter: true,
     requestPayload: {
       out_player_id: outPlayerId,
       in_player_id: inPlayerId,
