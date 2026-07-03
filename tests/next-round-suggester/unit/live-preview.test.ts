@@ -451,6 +451,49 @@ describe('projected live match state', () => {
     })
   })
 
+  it('does not report occupied live lanes as missing courts in debug dumps', () => {
+    const state = createState({
+      courts: 6,
+      players: Array.from({ length: 24 }, (_, index) =>
+        createPlayer(`p${index + 1}`, {
+          pvna: 3 + (index % 8) * 0.05,
+          matches_played: 1,
+        }),
+      ),
+    })
+    const liveRows = [
+      liveRow('live-court-0', 0, 'live', ['p1', 'p2'], ['p3', 'p4']),
+      liveRow('live-court-2', 2, 'live', ['p5', 'p6'], ['p7', 'p8']),
+      liveRow('live-court-4', 4, 'live', ['p9', 'p10'], ['p11', 'p12']),
+      liveRow('live-court-5', 5, 'live', ['p13', 'p14'], ['p15', 'p16']),
+    ]
+    const dumps: any[] = []
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 6,
+      sessionId: state.session_id,
+      courtCount: 6,
+      state,
+      rows: { liveMatchRows: liveRows, liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+      options: {
+        ignoreCapacityLock: false,
+        onIncompleteDump: dump => dumps.push(dump),
+      },
+    })
+
+    expect(payloads).toHaveLength(2)
+    expect(payloads.map(payload => payload.court_idx).sort()).toEqual([1, 3])
+    expect(dumps).toHaveLength(1)
+    expect(dumps[0].missing_courts).toEqual([])
+    expect(dumps[0].payload.missing_courts).toEqual([])
+    expect(dumps[0].payload.busy_player_ids).toHaveLength(16)
+  })
+
   it('ignores stale suggested rows so old previews do not block players forever', () => {
     const state = createState({
       courts: 1,

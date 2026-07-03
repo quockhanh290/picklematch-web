@@ -3729,7 +3729,9 @@ export function buildSuggestedMatchPayloads({
     }
   }
   const filledCourtIdxs = new Set(payloads.map(p => p.court_idx))
-  const missingCourts = Array.from({ length: courtCount }, (_, i) => i).filter(idx => !filledCourtIdxs.has(idx))
+  const openCourtIdxsForBatch = Array.from({ length: courtCount }, (_, i) => i)
+    .filter(idx => !liveCourtIdxs.has(idx))
+  const missingCourts = openCourtIdxsForBatch.filter(idx => !filledCourtIdxs.has(idx))
   if (options.onIncompleteDump) {
     options.onIncompleteDump({
       session_id: sessionId,
@@ -3785,6 +3787,6 @@ export function buildSuggestedMatchPayloads({
   )
   return repairSuggestedPayloadBatch(payloads, repairState, pvnaTolerance, onRepairInstrument, {
     isTrueFirstRound: state.rounds.length === 0 && !hasStartedOrCompletedLiveMatches,
-    allowEarlyQualityRepair: payloads.length >= courtCount,
+    allowEarlyQualityRepair: payloads.length >= openCourtIdxsForBatch.length,
   })
 }
