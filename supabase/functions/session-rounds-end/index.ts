@@ -1,5 +1,5 @@
 /* eslint-disable import/no-unresolved */
-import { getSessionId, handleCorsPreflight, jsonResponse, requireHost } from '../_shared/live-session.ts'
+import { getSessionId, handleCorsPreflight, jsonResponse, requireHost, writeSessionAuditEvent } from '../_shared/live-session.ts'
 import { commitCompletedRound, pairHistoryRowsFromState } from '../../../lib/next-round-suggester/commit.ts'
 import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
 import { computeSessionFairness } from '../../../lib/next-round-suggester/fairness/metrics.ts'
@@ -36,6 +36,7 @@ function changedPairHistoryRows(
 
 Deno.serve(async (request) => {
   const t0 = Date.now()
+  const requestId = crypto.randomUUID()
   const corsResponse = handleCorsPreflight(request)
   if (corsResponse) return corsResponse
 
@@ -245,6 +246,36 @@ Deno.serve(async (request) => {
       pairUpdates: changedPairHistory.length,
       pairHistoryRows: committed.pairHistory.length,
       round: roundNo,
+    })
+
+    await writeSessionAuditEvent(auth.supabase, {
+      sessionId,
+      eventType: 'round_end',
+      edgeFunction: 'session-rounds-end',
+      requestId,
+      actorId: auth.userId,
+      requestPayload: {
+        round_no: roundNo,
+      },
+      responsePayload: {
+        round: completedRound,
+        commit_audit: {
+          played_ids: [...playedIds].sort(),
+          deltas: commitAudit,
+        },
+      },
+      detail: {
+        audit_payload: auditPayload,
+        pair_history_updates: pairHistoryPayload,
+        timing_ms: {
+          auth: t1 - t0,
+          load_session_state: t2 - t1,
+          validate_and_score_before: t3 - t2,
+          commit_local: commitLocalMs,
+          db_writes: commitWriteMs,
+          total: t4 - t0,
+        },
+      },
     })
 
     return jsonResponse({

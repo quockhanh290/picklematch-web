@@ -44,7 +44,7 @@ function allowedOriginFor(request?: Request): string | null {
 
 function corsHeadersFor(request?: Request): HeadersInit {
   const headers: Record<string, string> = {
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id, x-client-request-id',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Vary': 'Origin',
   }
@@ -141,6 +141,43 @@ export function createUserClient(request: Request) {
       },
     },
   })
+}
+
+export async function writeSessionAuditEvent(
+  supabase: { from: (table: string) => any },
+  input: {
+    sessionId: string
+    eventType: string
+    edgeFunction: string
+    requestId?: string | null
+    clientRequestId?: unknown
+    actorId?: string | null
+    requestPayload?: unknown
+    responsePayload?: unknown
+    detail?: unknown
+  },
+) {
+  const { error } = await supabase.from('session_audit_events').insert({
+    session_id: input.sessionId,
+    event_type: input.eventType,
+    edge_function: input.edgeFunction,
+    request_id: input.requestId ?? null,
+    client_request_id: typeof input.clientRequestId === 'string' ? input.clientRequestId : null,
+    actor_id: input.actorId ?? null,
+    request_payload: input.requestPayload ?? {},
+    response_payload: input.responsePayload ?? {},
+    detail: input.detail ?? {},
+  })
+
+  if (error) {
+    console.warn('[session-audit] insert failed', {
+      session_id: input.sessionId,
+      event_type: input.eventType,
+      edge_function: input.edgeFunction,
+      request_id: input.requestId ?? null,
+      error: error.message,
+    })
+  }
 }
 
 export async function requireHost(request: Request, sessionId: string, traceLabel?: string) {

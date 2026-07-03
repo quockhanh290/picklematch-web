@@ -1,5 +1,5 @@
 /* eslint-disable import/no-unresolved */
-import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
+import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost, writeSessionAuditEvent } from '../_shared/live-session.ts'
 import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
 import { suggestNextRound } from '../../../lib/next-round-suggester/suggest.ts'
 import {
@@ -103,6 +103,7 @@ Deno.serve(async (request) => {
 
   try {
     const t0 = Date.now()
+    const requestId = crypto.randomUUID()
     const body = await readJson(request)
     const t1 = Date.now()
     const state = await loadSessionState(auth.supabase, sessionId, {
@@ -238,6 +239,37 @@ Deno.serve(async (request) => {
       total: t5 - t0,
       players: state.players.size,
       rounds: state.rounds.length,
+    })
+
+    await writeSessionAuditEvent(auth.supabase, {
+      sessionId,
+      eventType: 'round_start',
+      edgeFunction: 'session-rounds-start',
+      requestId,
+      actorId: auth.userId,
+      requestPayload: {
+        courts: body.courts,
+        pvna_tolerance: body.pvna_tolerance,
+        manual: manual ?? null,
+        suggestion_idx: suggestionIdx,
+        decision_mode: decisionMode,
+        expected_state_fingerprint: body.expected_state_fingerprint ?? null,
+      },
+      responsePayload: {
+        round: data,
+        adjustment,
+      },
+      detail: {
+        audit_payload: auditPayload,
+        timing_ms: {
+          read_body: t1 - t0,
+          load_session_state: t2 - t1,
+          correct_for_fairness: t3 - t2,
+          match_resolution: t4 - t3,
+          db_writes: t5 - t4,
+          total: t5 - t0,
+        },
+      },
     })
 
     return jsonResponse({ ok: true, round: data, adjustment, audit_error: null }, 200, request)

@@ -1,5 +1,5 @@
 /* eslint-disable import/no-unresolved */
-import { createUserClient, getSessionId, handleCorsPreflight, jsonResponse, readJson } from '../_shared/live-session.ts'
+import { createUserClient, getSessionId, handleCorsPreflight, jsonResponse, readJson, writeSessionAuditEvent } from '../_shared/live-session.ts'
 
 Deno.serve(async (request) => {
   const corsResponse = handleCorsPreflight(request)
@@ -15,6 +15,7 @@ Deno.serve(async (request) => {
   }
 
   const supabase = createUserClient(request)
+  const requestId = crypto.randomUUID()
 
   const body = await readJson(request)
   const playerIds = Array.isArray(body.player_ids)
@@ -43,6 +44,18 @@ Deno.serve(async (request) => {
   if (error) {
     return jsonResponse({ ok: false, error: error.message }, 500)
   }
+
+  await writeSessionAuditEvent(supabase, {
+    sessionId,
+    eventType: 'roster_checkin',
+    edgeFunction: 'session-checkin',
+    requestId,
+    requestPayload: {
+      player_ids: playerIds,
+      group_with: groupWith,
+    },
+    responsePayload: payload && typeof payload === 'object' ? payload : {},
+  })
 
   return jsonResponse({ ok: true, ...payload })
 })

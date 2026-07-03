@@ -1,5 +1,5 @@
 /* eslint-disable import/no-unresolved */
-import { createUserClient, getSessionId, handleCorsPreflight, jsonResponse, readJson } from '../_shared/live-session.ts'
+import { createUserClient, getSessionId, handleCorsPreflight, jsonResponse, readJson, writeSessionAuditEvent } from '../_shared/live-session.ts'
 
 Deno.serve(async (request) => {
   const corsResponse = handleCorsPreflight(request)
@@ -15,6 +15,7 @@ Deno.serve(async (request) => {
   }
 
   const supabase = createUserClient(request)
+  const requestId = crypto.randomUUID()
 
   const body = await readJson(request)
   const clearPlayerId = typeof body.clear_player_id === 'string' ? body.clear_player_id : null
@@ -30,6 +31,17 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: error.message }, 500)
     }
 
+    await writeSessionAuditEvent(supabase, {
+      sessionId,
+      eventType: 'roster_group_clear',
+      edgeFunction: 'session-set-group',
+      requestId,
+      requestPayload: {
+        clear_group_id: clearGroupId,
+      },
+      responsePayload: payload && typeof payload === 'object' ? payload : {},
+    })
+
     return jsonResponse({ ok: true, ...payload })
   }
 
@@ -42,6 +54,17 @@ Deno.serve(async (request) => {
     if (error) {
       return jsonResponse({ ok: false, error: error.message }, 500)
     }
+
+    await writeSessionAuditEvent(supabase, {
+      sessionId,
+      eventType: 'roster_group_clear_player',
+      edgeFunction: 'session-set-group',
+      requestId,
+      requestPayload: {
+        clear_player_id: clearPlayerId,
+      },
+      responsePayload: payload && typeof payload === 'object' ? payload : {},
+    })
 
     return jsonResponse({ ok: true, ...payload })
   }
@@ -62,6 +85,17 @@ Deno.serve(async (request) => {
   if (error) {
     return jsonResponse({ ok: false, error: error.message }, 500)
   }
+
+  await writeSessionAuditEvent(supabase, {
+    sessionId,
+    eventType: 'roster_group_set',
+    edgeFunction: 'session-set-group',
+    requestId,
+    requestPayload: {
+      player_ids: playerIds,
+    },
+    responsePayload: payload && typeof payload === 'object' ? payload : {},
+  })
 
   return jsonResponse({ ok: true, ...payload })
 })

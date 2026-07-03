@@ -1,5 +1,5 @@
 /* eslint-disable import/no-unresolved */
-import { createUserClient, getSessionId, handleCorsPreflight, jsonResponse, readJson } from '../_shared/live-session.ts'
+import { createUserClient, getSessionId, handleCorsPreflight, jsonResponse, readJson, writeSessionAuditEvent } from '../_shared/live-session.ts'
 
 Deno.serve(async (request) => {
   const t0 = Date.now()
@@ -17,6 +17,7 @@ Deno.serve(async (request) => {
 
   const createClientStartedAt = Date.now()
   const supabase = createUserClient(request)
+  const requestId = crypto.randomUUID()
   const createClientMs = Date.now() - createClientStartedAt
 
   const readBodyStartedAt = Date.now()
@@ -51,12 +52,33 @@ Deno.serve(async (request) => {
   }
 
   console.log('[session-request-rest] timing', {
+    requestId,
     playerId,
     optedRest,
     createClient: createClientMs,
     readBody: readBodyMs,
     rpc: rpcMs,
     total: Date.now() - t0,
+  })
+
+  await writeSessionAuditEvent(supabase, {
+    sessionId,
+    eventType: optedRest ? 'roster_opt_rest' : 'roster_clear_rest',
+    edgeFunction: 'session-request-rest',
+    requestId,
+    requestPayload: {
+      player_id: playerId,
+      opted_rest: optedRest,
+    },
+    responsePayload: payload && typeof payload === 'object' ? payload : {},
+    detail: {
+      timing_ms: {
+        create_client: createClientMs,
+        read_body: readBodyMs,
+        rpc: rpcMs,
+        total: Date.now() - t0,
+      },
+    },
   })
 
   return jsonResponse({ ok: true, ...payload })

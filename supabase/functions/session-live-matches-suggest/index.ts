@@ -1,6 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { createServiceClient, getSessionId, handleCorsPreflight, jsonResponse, readJson } from '../_shared/live-session.ts'
+import { createServiceClient, getSessionId, handleCorsPreflight, jsonResponse, readJson, writeSessionAuditEvent } from '../_shared/live-session.ts'
 import { correctForFairness } from '../../../lib/next-round-suggester/fairness/corrector.ts'
 import { detectFairnessIssues } from '../../../lib/next-round-suggester/fairness/detector.ts'
 import {
@@ -47,6 +47,7 @@ Deno.serve(async (request) => {
   if (!authorization?.startsWith('Bearer ')) {
     return jsonResponse({ ok: false, error: 'Unauthorized' }, 401)
   }
+  const edgeRequestId = crypto.randomUUID()
 
   // Avoid pairs CRUD routes
   if (url.pathname.endsWith('/avoid-pairs')) {
@@ -67,6 +68,18 @@ Deno.serve(async (request) => {
           { onConflict: 'session_id,player_a,player_b' },
         )
       if (error) return jsonResponse({ ok: false, error: error.message }, 500)
+      await writeSessionAuditEvent(userClient, {
+        sessionId,
+        eventType: 'avoid_pair_upsert',
+        edgeFunction: EDGE_FUNCTION_NAME,
+        requestId: edgeRequestId,
+        requestPayload: {
+          player_a: a,
+          player_b: b,
+          reason: reason ?? null,
+        },
+        responsePayload: { ok: true },
+      })
       return jsonResponse({ ok: true }, 200)
     }
 
@@ -80,6 +93,17 @@ Deno.serve(async (request) => {
         .eq('player_a', a)
         .eq('player_b', b)
       if (error) return jsonResponse({ ok: false, error: error.message }, 500)
+      await writeSessionAuditEvent(userClient, {
+        sessionId,
+        eventType: 'avoid_pair_delete',
+        edgeFunction: EDGE_FUNCTION_NAME,
+        requestId: edgeRequestId,
+        requestPayload: {
+          player_a: a,
+          player_b: b,
+        },
+        responsePayload: { ok: true },
+      })
       return jsonResponse({ ok: true }, 200)
     }
 
@@ -114,6 +138,17 @@ Deno.serve(async (request) => {
       .eq('session_id', sessionId)
       .eq('player_id', playerId)
     if (error) return jsonResponse({ ok: false, error: error.message }, 500)
+    await writeSessionAuditEvent(userClient, {
+      sessionId,
+      eventType: 'roster_pvna_override',
+      edgeFunction: EDGE_FUNCTION_NAME,
+      requestId: edgeRequestId,
+      requestPayload: {
+        player_id: playerId,
+        effective_pvna: effective_pvna ?? null,
+      },
+      responsePayload: { ok: true },
+    })
     return jsonResponse({ ok: true }, 200)
   }
 
@@ -122,7 +157,7 @@ Deno.serve(async (request) => {
   }
 
   const requestReceivedAt = new Date().toISOString()
-  const suggestionRequestId = crypto.randomUUID()
+  const suggestionRequestId = edgeRequestId
   const clientRequestId = request.headers.get('x-request-id')
     ?? request.headers.get('x-client-request-id')
     ?? null
@@ -483,6 +518,45 @@ Deno.serve(async (request) => {
       player_limited_courts: playerLimitedCourts,
       temp_limited_courts: tempLimitedCourts,
       real_limited_courts: realLimitedCourts,
+    })
+
+    await writeSessionAuditEvent(serviceClient, {
+      sessionId,
+      eventType: 'live_match_suggest',
+      edgeFunction: EDGE_FUNCTION_NAME,
+      requestId: suggestionRequestId,
+      clientRequestId,
+      requestPayload: {
+        requested_count: requestedCount,
+        count,
+        mode,
+        court_count: courtCount,
+        court_idxs: courtIdxs ?? null,
+        prefer_available_pool: preferAvailablePool,
+        live_state_version: liveStateVersion,
+        completing_live_match_ids: [...completingLiveMatchIds],
+        allow_full_board_rescue: allowReplacementFullBoardRescue,
+        pvna_tolerance: pvnaTolerance,
+        planned_total_rounds: plannedTotalRounds ?? null,
+        court_preset: courtPreset ?? null,
+        current_courts: currentCourts ?? null,
+        avoid_pairs: avoidPairs ?? [],
+      },
+      responsePayload: {
+        payload_count: payloads.length,
+        final_preview_board_count: finalPreviewBoard.length,
+        replaced_court_idxs: board.replaced_court_idxs,
+        locked_court_idxs: board.locked_court_idxs,
+        missing_open_courts: finalMissingOpenCourts,
+        quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
+        player_limited_courts: playerLimitedCourts,
+        temp_limited_courts: tempLimitedCourts,
+        real_limited_courts: realLimitedCourts,
+      },
+      detail: {
+        decision_source: decisionSource,
+        selection_debug: selectionDebug,
+      },
     })
 
     return jsonResponse({

@@ -1,6 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { getSessionId, handleCorsPreflight, jsonResponse, readJson } from '../_shared/live-session.ts'
+import { getSessionId, handleCorsPreflight, jsonResponse, readJson, writeSessionAuditEvent } from '../_shared/live-session.ts'
 
 function createUserClient(request: Request) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -33,6 +33,7 @@ Deno.serve(async (request) => {
   if (!sessionId) return jsonResponse({ ok: false, error: 'Missing session id' }, 400, request)
 
   const t0 = Date.now()
+  const requestId = crypto.randomUUID()
   let clientRequestId: unknown = null
   try {
     const body = await readJson(request)
@@ -53,6 +54,7 @@ Deno.serve(async (request) => {
     const t3 = Date.now()
     if (error) {
       console.error('[session-live-matches-cancel] rpc failed', {
+        requestId,
         clientRequestId,
         error: error.message,
         total: Date.now() - t0,
@@ -60,15 +62,38 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: error.message }, 409, request)
     }
     console.log('[session-live-matches-cancel] timing', {
+      requestId,
       clientRequestId,
       readBody: t1 - t0,
       createClient: t2 - t1,
       rpc: t3 - t2,
       total: t3 - t0,
     })
+    await writeSessionAuditEvent(supabase, {
+      sessionId,
+      eventType: 'live_match_cancel',
+      edgeFunction: 'session-live-matches-cancel',
+      requestId,
+      clientRequestId,
+      requestPayload: {
+        expected_live_state_version: body.expected_live_state_version,
+        match_id: body.match_id,
+        audit_payload: auditPayload,
+      },
+      responsePayload: data && typeof data === 'object' ? data : {},
+      detail: {
+        timing_ms: {
+          read_body: t1 - t0,
+          create_client: t2 - t1,
+          rpc: t3 - t2,
+          total: t3 - t0,
+        },
+      },
+    })
     return jsonResponse({ ok: true, ...data }, 200, request)
   } catch (error) {
     console.error('[session-live-matches-cancel] failed', {
+      requestId,
       clientRequestId,
       error: error instanceof Error ? error.message : 'Unknown error',
       total: Date.now() - t0,
