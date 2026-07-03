@@ -16,6 +16,22 @@ function optionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+const REPLAY_SCHEMA_VERSION = 2
+const EDGE_FUNCTION_NAME = 'session-live-matches-suggest'
+
+function getEngineBuildInfo() {
+  return {
+    function_name: EDGE_FUNCTION_NAME,
+    replay_schema_version: REPLAY_SCHEMA_VERSION,
+    build_label: 'live-suggest-session-audit-v2',
+    git_sha: Deno.env.get('ENGINE_GIT_SHA')
+      ?? Deno.env.get('GIT_COMMIT_SHA')
+      ?? Deno.env.get('VERCEL_GIT_COMMIT_SHA')
+      ?? null,
+    deployment_id: Deno.env.get('DENO_DEPLOYMENT_ID') ?? null,
+  }
+}
+
 Deno.serve(async (request) => {
   console.log('[suggest] engine-build AB-FIX3', new Date().toISOString())
   const corsResponse = handleCorsPreflight(request)
@@ -106,6 +122,11 @@ Deno.serve(async (request) => {
   }
 
   try {
+    const requestReceivedAt = new Date().toISOString()
+    const suggestionRequestId = crypto.randomUUID()
+    const clientRequestId = request.headers.get('x-request-id')
+      ?? request.headers.get('x-client-request-id')
+      ?? null
     const body = await readJson(request)
 
     if (!Array.isArray(body.player_rows)) {
@@ -271,6 +292,27 @@ Deno.serve(async (request) => {
       preview_countable_match_count: currentCountableMatchCount,
       preview_max_sequence_no: currentMaxSequenceNo,
     }))
+    const liveBusyIds = new Set<string>(
+      liveMatchRows
+        .filter((m: any) => m.status === 'live' && !completingLiveMatchIds.has(m.id))
+        .flatMap((m: any) => [...(m.team_a ?? []), ...(m.team_b ?? [])])
+    )
+    const suggestedBusyIds = new Set<string>(
+      liveMatchRows
+        .filter((m: any) => m.status === 'suggested')
+        .flatMap((m: any) => [...(m.team_a ?? []), ...(m.team_b ?? [])])
+    )
+    const allOccupiedIds = new Set<string>([
+      ...liveBusyIds,
+      ...suggestedBusyIds,
+    ])
+    const freeCount = [...state.players.values()].filter(
+      (p: any) => p.checked_out_at === null && !p.opted_rest && !allOccupiedIds.has(p.player_id)
+    ).length
+    const playerLimitedCourts = Math.max(0, count - payloads.length)
+    const maxCourtsWithEveryone = Math.floor((freeCount + liveBusyIds.size) / 4)
+    const tempLimitedCourts = Math.min(playerLimitedCourts, Math.max(0, maxCourtsWithEveryone - payloads.length))
+    const realLimitedCourts = playerLimitedCourts - tempLimitedCourts
 
     if (verifyDumpEnabled) {
       const latestDump = verifyDumps.at(-1)
@@ -302,8 +344,16 @@ Deno.serve(async (request) => {
       }))
       const replayPayload = {
         ...(latestDump && typeof latestDump.payload === 'object' && latestDump.payload !== null ? latestDump.payload : {}),
-        replay_schema_version: 1,
-        engine_build: 'session-live-matches-suggest',
+        replay_schema_version: REPLAY_SCHEMA_VERSION,
+        event_type: 'live_match_suggested',
+        event_created_at: new Date().toISOString(),
+        request_received_at: requestReceivedAt,
+        suggestion_request_id: suggestionRequestId,
+        client_request_id: clientRequestId,
+        session_id: sessionId,
+        decision_source: decisionSource,
+        edge_function: EDGE_FUNCTION_NAME,
+        engine_build: getEngineBuildInfo(),
         request: {
           requested_count: requestedCount,
           count,
@@ -320,6 +370,47 @@ Deno.serve(async (request) => {
           court_preset: courtPreset ?? null,
           current_courts: currentCourts ?? null,
           avoid_pairs: avoidPairs ?? [],
+        },
+        raw_request_body: body,
+        session_history_snapshot: {
+          captured_at: requestReceivedAt,
+          player_rows: body.player_rows ?? [],
+          pair_rows: body.pair_rows ?? [],
+          round_rows: body.round_rows ?? [],
+          live_match_rows: liveMatchRows,
+          current_preview_board: currentPreviewBoard,
+          avoid_pairs: avoidPairs ?? [],
+        },
+        derived_state_summary: {
+          session_status: state.status,
+          current_round: state.current_round,
+          config: state.config,
+          players: state.players.size,
+          active_players: [...state.players.values()].filter(p => p.checked_out_at === null).length,
+          opted_rest_players: [...state.players.values()].filter(p => p.checked_out_at === null && p.opted_rest).length,
+          checked_out_players: [...state.players.values()].filter(p => p.checked_out_at !== null).length,
+          live_busy_players: liveBusyIds.size,
+          suggested_busy_players: suggestedBusyIds.size,
+          free_playable_players: freeCount,
+          completed_rounds: state.rounds.filter(round => round.status === 'completed').length,
+          active_rounds: state.rounds.filter(round => round.status === 'active').length,
+        },
+        fairness: {
+          adjustment,
+          warnings,
+        },
+        engine_decision: {
+          input_count: count,
+          output_payload_count: payloads.length,
+          final_preview_board_count: finalPreviewBoard.length,
+          replacement_board_incomplete: replacementBoardIncomplete,
+          needs_quality_rescue: needsQualityRescue,
+          quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
+          player_limited_courts: playerLimitedCourts,
+          temp_limited_courts: tempLimitedCourts,
+          real_limited_courts: realLimitedCourts,
+          max_courts_with_free_players: Math.floor(freeCount / 4),
+          max_courts_with_free_plus_live_busy_players: maxCourtsWithEveryone,
         },
         live_match_rows: liveMatchRows,
         selection_debug: selectionDebug,
@@ -347,25 +438,6 @@ Deno.serve(async (request) => {
       })
     }
 
-    // Compute player shortage breakdown: TẠM (busy players will free up) vs THẬT (genuinely not enough)
-    const liveBusyIds = new Set<string>(
-      liveMatchRows
-        .filter((m: any) => m.status === 'live' && !completingLiveMatchIds.has(m.id))
-        .flatMap((m: any) => [...(m.team_a ?? []), ...(m.team_b ?? [])])
-    )
-    const allOccupiedIds = new Set<string>([
-      ...liveBusyIds,
-      ...liveMatchRows
-        .filter((m: any) => m.status === 'suggested')
-        .flatMap((m: any) => [...(m.team_a ?? []), ...(m.team_b ?? [])]),
-    ])
-    const freeCount = [...state.players.values()].filter(
-      (p: any) => p.checked_out_at === null && !p.opted_rest && !allOccupiedIds.has(p.player_id)
-    ).length
-    const playerLimitedCourts = Math.max(0, count - payloads.length)
-    const maxCourtsWithEveryone = Math.floor((freeCount + liveBusyIds.size) / 4)
-    const tempLimitedCourts = Math.min(playerLimitedCourts, Math.max(0, maxCourtsWithEveryone - payloads.length))
-    const realLimitedCourts = playerLimitedCourts - tempLimitedCourts
     return jsonResponse({
       ok: true,
       payloads,
