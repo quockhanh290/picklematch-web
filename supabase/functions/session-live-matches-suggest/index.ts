@@ -121,12 +121,13 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, error: 'Method not allowed' }, 405)
   }
 
+  const requestReceivedAt = new Date().toISOString()
+  const suggestionRequestId = crypto.randomUUID()
+  const clientRequestId = request.headers.get('x-request-id')
+    ?? request.headers.get('x-client-request-id')
+    ?? null
+
   try {
-    const requestReceivedAt = new Date().toISOString()
-    const suggestionRequestId = crypto.randomUUID()
-    const clientRequestId = request.headers.get('x-request-id')
-      ?? request.headers.get('x-client-request-id')
-      ?? null
     const body = await readJson(request)
 
     if (!Array.isArray(body.player_rows)) {
@@ -179,6 +180,19 @@ Deno.serve(async (request) => {
     const completingLiveMatchIds = new Set<string>(
       Array.isArray(body.completing_live_match_ids) ? body.completing_live_match_ids : []
     )
+    console.log('[suggest] request_start', {
+      suggestion_request_id: suggestionRequestId,
+      client_request_id: clientRequestId,
+      session_id: sessionId,
+      request_received_at: requestReceivedAt,
+      mode,
+      requested_count: requestedCount,
+      count,
+      court_count: courtCount,
+      live_state_version: liveStateVersion,
+      prefer_available_pool: preferAvailablePool,
+      completing_live_match_ids: [...completingLiveMatchIds],
+    })
 
     const playersById = new Map<string, { name: string }>()
     if (Array.isArray(body.players)) {
@@ -207,7 +221,13 @@ Deno.serve(async (request) => {
         court_count: event.court_count ?? courtCount,
         available: event.available ?? null,
       }).then(({ error }) => {
-        if (error) console.warn('[suggest] engine_instrumentation insert failed', error.message)
+        if (error) {
+          console.warn('[suggest] engine_instrumentation insert failed', {
+            suggestion_request_id: suggestionRequestId,
+            session_id: sessionId,
+            error: error.message,
+          })
+        }
       })
     }
     const selectionDebug: any[] = []
@@ -313,27 +333,27 @@ Deno.serve(async (request) => {
     const maxCourtsWithEveryone = Math.floor((freeCount + liveBusyIds.size) / 4)
     const tempLimitedCourts = Math.min(playerLimitedCourts, Math.max(0, maxCourtsWithEveryone - payloads.length))
     const realLimitedCourts = playerLimitedCourts - tempLimitedCourts
+    const occupiedCourtIdxs = new Set(
+      liveMatchRows
+        .filter((match: any) =>
+          match?.status === 'live'
+          && !completingLiveMatchIds.has(match.id)
+          && match?.court_idx !== null
+          && match?.court_idx !== undefined
+        )
+        .map((match: any) => Number(match.court_idx))
+        .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
+    )
+    const finalFilledCourtIdxs = new Set(
+      finalPreviewBoard
+        .map((payload: any) => Number(payload.court_idx))
+        .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
+    )
+    const finalMissingOpenCourts = Array.from({ length: courtCount }, (_, idx) => idx)
+      .filter(idx => !occupiedCourtIdxs.has(idx) && !finalFilledCourtIdxs.has(idx))
 
     if (verifyDumpEnabled) {
       const latestDump = verifyDumps.at(-1)
-      const occupiedCourtIdxs = new Set(
-        liveMatchRows
-          .filter((match: any) =>
-            match?.status === 'live'
-            && !completingLiveMatchIds.has(match.id)
-            && match?.court_idx !== null
-            && match?.court_idx !== undefined
-          )
-          .map((match: any) => Number(match.court_idx))
-          .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
-      )
-      const finalFilledCourtIdxs = new Set(
-        finalPreviewBoard
-          .map((payload: any) => Number(payload.court_idx))
-          .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
-      )
-      const finalMissingOpenCourts = Array.from({ length: courtCount }, (_, idx) => idx)
-        .filter(idx => !occupiedCourtIdxs.has(idx) && !finalFilledCourtIdxs.has(idx))
       const finalChosenMatches = finalPreviewBoard.map((payload: any) => ({
         court_idx: payload.court_idx ?? -1,
         team_a: [...(payload.team_a ?? [])],
@@ -434,9 +454,36 @@ Deno.serve(async (request) => {
         rounds: latestDump?.rounds ?? [],
         decision_source: decisionSource,
       }).then(({ error }) => {
-        if (error) console.warn('[suggest] debug_dumps insert failed', error.message)
+        if (error) {
+          console.warn('[suggest] debug_dumps insert failed', {
+            suggestion_request_id: suggestionRequestId,
+            session_id: sessionId,
+            error: error.message,
+          })
+        }
       })
     }
+
+    console.log('[suggest] request_done', {
+      suggestion_request_id: suggestionRequestId,
+      client_request_id: clientRequestId,
+      session_id: sessionId,
+      request_received_at: requestReceivedAt,
+      decision_source: decisionSource,
+      mode,
+      requested_count: requestedCount,
+      count,
+      court_count: courtCount,
+      live_state_version: liveStateVersion,
+      output_payload_count: payloads.length,
+      final_preview_board_count: finalPreviewBoard.length,
+      occupied_live_court_idxs: [...occupiedCourtIdxs].sort((left, right) => left - right),
+      missing_open_courts: finalMissingOpenCourts,
+      quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
+      player_limited_courts: playerLimitedCourts,
+      temp_limited_courts: tempLimitedCourts,
+      real_limited_courts: realLimitedCourts,
+    })
 
     return jsonResponse({
       ok: true,
@@ -459,7 +506,13 @@ Deno.serve(async (request) => {
       },
     })
   } catch (error) {
-    console.error('[session-live-matches-suggest] error:', error)
+    console.error('[session-live-matches-suggest] error:', {
+      suggestion_request_id: suggestionRequestId,
+      client_request_id: clientRequestId,
+      session_id: sessionId,
+      request_received_at: requestReceivedAt,
+      error,
+    })
     return jsonResponse(
       { ok: false, error: error instanceof Error ? error.message : 'Unknown error' },
       500,
