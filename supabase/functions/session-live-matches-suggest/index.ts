@@ -172,19 +172,10 @@ Deno.serve(async (request) => {
     const serviceClient = createServiceClient()
     const verifyDumpEnabled = Deno.env.get('VERIFY_DUMP') === '1'
     const decisionSource = preferAvailablePool ? 'host_replacement' : 'engine_auto'
+    const verifyDumps: import('../../../lib/next-round-suggester/live-preview.ts').IncompleteDump[] = []
     const onIncompleteDump = verifyDumpEnabled
       ? (dump: import('../../../lib/next-round-suggester/live-preview.ts').IncompleteDump) => {
-          serviceClient.from('debug_dumps').insert({
-            session_id: dump.session_id,
-            missing_courts: dump.missing_courts,
-            payload: dump.payload,
-            chosen_matches: dump.chosen_matches.map(m => ({ ...m, is_replacement: preferAvailablePool })),
-            pvna_tolerance: dump.pvna_tolerance,
-            rounds: dump.rounds,
-            decision_source: decisionSource,
-          }).then(({ error }) => {
-            if (error) console.warn('[suggest] debug_dumps insert failed', error.message)
-          })
+          verifyDumps.push(dump)
         }
       : undefined
     const onInstrumentEvent = (event: { event: string; detail: string; court_count?: number; available?: number }) => {
@@ -280,6 +271,81 @@ Deno.serve(async (request) => {
       preview_countable_match_count: currentCountableMatchCount,
       preview_max_sequence_no: currentMaxSequenceNo,
     }))
+
+    if (verifyDumpEnabled) {
+      const latestDump = verifyDumps.at(-1)
+      const occupiedCourtIdxs = new Set(
+        liveMatchRows
+          .filter((match: any) =>
+            match?.status === 'live'
+            && !completingLiveMatchIds.has(match.id)
+            && match?.court_idx !== null
+            && match?.court_idx !== undefined
+          )
+          .map((match: any) => Number(match.court_idx))
+          .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
+      )
+      const finalFilledCourtIdxs = new Set(
+        finalPreviewBoard
+          .map((payload: any) => Number(payload.court_idx))
+          .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
+      )
+      const finalMissingOpenCourts = Array.from({ length: courtCount }, (_, idx) => idx)
+        .filter(idx => !occupiedCourtIdxs.has(idx) && !finalFilledCourtIdxs.has(idx))
+      const finalChosenMatches = finalPreviewBoard.map((payload: any) => ({
+        court_idx: payload.court_idx ?? -1,
+        team_a: [...(payload.team_a ?? [])],
+        team_b: [...(payload.team_b ?? [])],
+        is_replacement: preferAvailablePool,
+        warnings: payload.warnings ?? [],
+        tradeoffs: payload.tradeoffs ?? [],
+      }))
+      const replayPayload = {
+        ...(latestDump && typeof latestDump.payload === 'object' && latestDump.payload !== null ? latestDump.payload : {}),
+        replay_schema_version: 1,
+        engine_build: 'session-live-matches-suggest',
+        request: {
+          requested_count: requestedCount,
+          count,
+          mode,
+          court_count: courtCount,
+          court_idxs: courtIdxs ?? null,
+          prefer_available_pool: preferAvailablePool,
+          live_state_version: liveStateVersion,
+          completing_live_match_ids: [...completingLiveMatchIds],
+          current_preview_board: currentPreviewBoard,
+          allow_full_board_rescue: allowReplacementFullBoardRescue,
+          pvna_tolerance: pvnaTolerance,
+          planned_total_rounds: plannedTotalRounds ?? null,
+          court_preset: courtPreset ?? null,
+          current_courts: currentCourts ?? null,
+          avoid_pairs: avoidPairs ?? [],
+        },
+        live_match_rows: liveMatchRows,
+        selection_debug: selectionDebug,
+        intermediate_dumps: verifyDumps,
+        raw_payloads_before_final_board: payloads,
+        final_preview_board: finalPreviewBoard,
+        replaced_court_idxs: board.replaced_court_idxs,
+        locked_court_idxs: board.locked_court_idxs,
+        quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
+        occupied_live_court_idxs: [...occupiedCourtIdxs].sort((left, right) => left - right),
+        missing_open_courts: finalMissingOpenCourts,
+        missing_courts: finalMissingOpenCourts,
+      }
+
+      serviceClient.from('debug_dumps').insert({
+        session_id: sessionId,
+        missing_courts: finalMissingOpenCourts,
+        payload: replayPayload,
+        chosen_matches: finalChosenMatches,
+        pvna_tolerance: pvnaTolerance,
+        rounds: latestDump?.rounds ?? [],
+        decision_source: decisionSource,
+      }).then(({ error }) => {
+        if (error) console.warn('[suggest] debug_dumps insert failed', error.message)
+      })
+    }
 
     // Compute player shortage breakdown: TẠM (busy players will free up) vs THẬT (genuinely not enough)
     const liveBusyIds = new Set<string>(
