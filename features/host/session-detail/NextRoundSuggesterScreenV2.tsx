@@ -50,7 +50,7 @@ import {
 } from './next-round-v2/components/ScreenComponents'
 
 import { buildPreviewBatchKey } from './next-round-v2/preview'
-import { fetchLiveMatchesPreview } from './next-round-v2/api'
+import { createClientTraceId, fetchLiveMatchesPreview, recordClientSessionAuditEvent } from './next-round-v2/api'
 import { getMissingPreviewCourtIdxs, getRequestedReplacementCourtIdxs, isPreviewBoardComplete } from './next-round-v2/court-lanes'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
@@ -593,6 +593,30 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     timer: ReturnType<typeof setTimeout> | null
   } | null>(null)
   const lastStuckHintRef = useRef<{ kind: string; courtIdxs: number[] }>({ kind: 'unknown', courtIdxs: [] })
+  const traceClientPreviewEvent = useCallback((
+    eventType: string,
+    input: {
+      requestId?: string | null
+      requestPayload?: unknown
+      responsePayload?: unknown
+      detail?: unknown
+    } = {},
+  ) => {
+    void recordClientSessionAuditEvent(sessionId, eventType, {
+      requestId: input.requestId ?? null,
+      clientRequestId: input.requestId ?? null,
+      requestPayload: input.requestPayload,
+      responsePayload: input.responsePayload,
+      detail: {
+        screen: 'NextRoundSuggesterScreenV2',
+        ...(input.detail && typeof input.detail === 'object' && !Array.isArray(input.detail)
+          ? input.detail as Record<string, unknown>
+          : input.detail === undefined
+            ? {}
+            : { value: input.detail }),
+      },
+    })
+  }, [sessionId])
   const endingLiveMatchIdsRef = useRef(new Set<string>())
   const completedLiveMatchCommitIdsRef = useRef(new Set<string>())
   const cancelingLiveMatchIdsRef = useRef(new Set<string>())
@@ -1380,6 +1404,14 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       .filter(match => match.status === 'completed')
       .reduce((max, match) => Math.max(max, (match.sequence_no ?? -1) + 1), 0)
     previewRequestSerialRef.current += 1
+    const availablePoolRequestId = createClientTraceId('preview-available-pool')
+    traceClientPreviewEvent('client_available_pool_preview_start', {
+      requestId: availablePoolRequestId,
+      detail: {
+        court_idx: courtIdx,
+        live_state_version: snap.liveStateVersion,
+      },
+    })
     try {
       const res = await fetchLiveMatchesPreview(snap.sessionId, {
         mode: 'replace_courts',
@@ -1402,12 +1434,24 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         current_courts: snap.queueCourtCount,
         avoid_pairs: snap.avoidPairs.length > 0 ? snap.avoidPairs : undefined,
         prefer_available_pool: true,
+      }, {
+        requestId: availablePoolRequestId,
       })
       const responsePayloads = Array.isArray(res.final_preview_board) && res.final_preview_board.length > 0
         ? res.final_preview_board
         : (res.payloads ?? [])
       const rawMatch = responsePayloads.find((m: any) => Number(m.court_idx ?? 0) === courtIdx)
       if (!rawMatch) {
+        traceClientPreviewEvent('client_available_pool_preview_empty', {
+          requestId: availablePoolRequestId,
+          responsePayload: {
+            payload_count: responsePayloads.length,
+          },
+          detail: {
+            court_idx: courtIdx,
+            live_state_version: snap.liveStateVersion,
+          },
+        })
         setAvailablePoolPreviews(prev => { const next = new Map(prev); next.delete(courtIdx); return next })
         return
       }
@@ -1433,8 +1477,27 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         locked_player_ids: undefined,
       }
       setAvailablePoolPreviews(prev => new Map(prev).set(courtIdx, constrainedMatch))
-    } catch {
+      traceClientPreviewEvent('client_available_pool_preview_ready', {
+        requestId: availablePoolRequestId,
+        responsePayload: {
+          payload_count: responsePayloads.length,
+          selected_court_idx: constrainedMatch.court_idx,
+        },
+        detail: {
+          court_idx: courtIdx,
+          live_state_version: snap.liveStateVersion,
+        },
+      })
+    } catch (err) {
       setAvailablePoolPreviews(prev => { const next = new Map(prev); next.delete(courtIdx); return next })
+      traceClientPreviewEvent('client_available_pool_preview_error', {
+        requestId: availablePoolRequestId,
+        detail: {
+          court_idx: courtIdx,
+          live_state_version: snap.liveStateVersion,
+          error: err instanceof Error ? err.message : String(err ?? 'Unknown error'),
+        },
+      })
     }
   }
 
@@ -2418,6 +2481,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       effectiveLiveMatchRows.map(match => `${match.id}:${match.status}:${match.court_idx ?? ''}`).join(','),
     ].join('||')
     if (previewBlockedIncompleteKeysRef.current.has(incompleteRequestKey)) {
+      const blockedRequestId = createClientTraceId('preview-blocked')
+      traceClientPreviewEvent('client_preview_blocked_before_request', {
+        requestId: blockedRequestId,
+        detail: {
+          incomplete_request_key: incompleteRequestKey,
+          missing_courts: missingPreviewCourtIdxsForRecovery,
+          effective_preview_courts: effectivePreviewBoard.map(m => getSuggestedLaneCourtIdx(m)),
+          suggested_queue_count: suggestedQueueCount,
+          live_state_version: rows.liveStateVersion,
+        },
+      })
       if (__DEV__) console.log('[NextRoundSuggesterV2] preview blocked — edge could not fill courts after retries', {
         missingCourts: missingPreviewCourtIdxsForRecovery,
         effectivePreviewCourts: effectivePreviewBoard.map(m => getSuggestedLaneCourtIdx(m)),
@@ -2425,10 +2499,22 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       })
       return
     }
-    if (previewPendingRequestKeysRef.current.has(incompleteRequestKey)) return
+    if (previewPendingRequestKeysRef.current.has(incompleteRequestKey)) {
+      const pendingRequestId = createClientTraceId('preview-pending')
+      traceClientPreviewEvent('client_preview_pending_skip', {
+        requestId: pendingRequestId,
+        detail: {
+          incomplete_request_key: incompleteRequestKey,
+          live_state_version: rows.liveStateVersion,
+          suggested_queue_count: suggestedQueueCount,
+        },
+      })
+      return
+    }
     previewPendingRequestKeysRef.current.add(incompleteRequestKey)
     let cancelledBeforeStart = false
     let requestStarted = false
+    const previewClientRequestId = createClientTraceId('preview')
     const requestSerial = previewRequestSerialRef.current + 1
     previewRequestSerialRef.current = requestSerial
     const requestSessionGeneration = sessionGenerationRef.current
@@ -2442,6 +2528,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       suggested_queue_count: fetchSuggestedCount,
       live_state_version: rows.liveStateVersion,
     })
+    traceClientPreviewEvent('client_preview_request_scheduled', {
+      requestId: previewClientRequestId,
+      detail: {
+        incomplete_request_key: incompleteRequestKey,
+        preview_request_key: previewRequestKey,
+        request_serial: requestSerial,
+        suggested_queue_count: fetchSuggestedCount,
+        target_suggested_queue_count: suggestedQueueCount,
+        live_state_version: rows.liveStateVersion,
+      },
+    })
 
     const previewT0 = nowMs()
     const timer = setTimeout(() => {
@@ -2450,6 +2547,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       markNextRoundStage(sessionId, 'preview_request_start', {
         suggested_queue_count: fetchSuggestedCount,
         live_state_version: rows.liveStateVersion,
+      })
+      traceClientPreviewEvent('client_preview_request_start', {
+        requestId: previewClientRequestId,
+        detail: {
+          incomplete_request_key: incompleteRequestKey,
+          request_serial: requestSerial,
+          suggested_queue_count: fetchSuggestedCount,
+          target_suggested_queue_count: suggestedQueueCount,
+          live_state_version: rows.liveStateVersion,
+        },
       })
       if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch start', {
         suggestedQueueCount: fetchSuggestedCount,
@@ -2591,9 +2698,34 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         suggestedQueueCount: snap.queueCourtCount,
       })
 
-      withPreviewSoftTimeout(fetchLiveMatchesPreview(snap.sessionId, body))
+      withPreviewSoftTimeout(fetchLiveMatchesPreview(snap.sessionId, body, {
+        requestId: previewClientRequestId,
+      }))
         .then(res => {
           if (!isCurrentPreviewRequest()) return
+          traceClientPreviewEvent('client_preview_edge_response', {
+            requestId: previewClientRequestId,
+            requestPayload: {
+              mode: previewMode,
+              count: fetchSuggestedCount,
+              court_count: snap.queueCourtCount,
+              court_idxs: requestedReplacementCourtIdxs,
+              live_state_version: snapshotLiveStateVersion,
+            },
+            responsePayload: {
+              payload_count: Array.isArray(res.payloads) ? res.payloads.length : null,
+              final_preview_board_count: Array.isArray(res.final_preview_board) ? res.final_preview_board.length : null,
+              quality_rescue_used: res.quality_rescue_used ?? null,
+              player_limited_courts: res.player_limited_courts ?? null,
+              temp_limited_courts: res.temp_limited_courts ?? null,
+              real_limited_courts: res.real_limited_courts ?? null,
+            },
+            detail: {
+              total_ms: Math.round(nowMs() - previewT0),
+              incomplete_request_key: incompleteRequestKey,
+              request_serial: requestSerial,
+            },
+          })
           setEdgeDebug(res.debug)
           if (__DEV__ && Array.isArray(res.debug?.selection_debug)) {
             res.debug.selection_debug.forEach((court: any) => {
@@ -2772,6 +2904,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             if (fullBoardIncompleteNoop) {
               previewBlockedIncompleteKeysRef.current.add(incompleteRequestKey)
               previewIncompleteRetryRef.current = { key: '', count: 0 }
+              traceClientPreviewEvent('client_preview_blocked_incomplete_noop', {
+                requestId: previewClientRequestId,
+                responsePayload: {
+                  fetched_match_count: fetchedMatches.length,
+                  stamped_match_count: stampedMatches.length,
+                },
+                detail: {
+                  incomplete_request_key: incompleteRequestKey,
+                  mode: previewMode,
+                  edge_final_board: true,
+                  effective_current_board_complete: effectiveCurrentBoardComplete,
+                  suggested_queue_count: suggestedQueueCount,
+                },
+              })
             } else if (!previewBatchComplete) {
               const retryKey = [
                 incompleteRequestKey,
@@ -2783,6 +2929,26 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                 ? previewIncompleteRetryRef.current.count + 1
                 : 1
               previewIncompleteRetryRef.current = { key: retryKey, count: currentRetry }
+              traceClientPreviewEvent(currentRetry < 2 ? 'client_preview_incomplete_retry_scheduled' : 'client_preview_blocked_after_retries', {
+                requestId: previewClientRequestId,
+                responsePayload: {
+                  fetched_match_count: fetchedMatches.length,
+                  stamped_match_count: stampedMatches.length,
+                  result_courts: stampedMatches.map(match => getSuggestedLaneCourtIdx(match)),
+                },
+                detail: {
+                  incomplete_request_key: incompleteRequestKey,
+                  retry_key: retryKey,
+                  retry_count: currentRetry,
+                  mode: previewMode,
+                  edge_final_board: true,
+                  replacement_courts: [...replacementCourtIdxs],
+                  fulfilled_replacement_courts: fulfilledPendingReplacementCourts,
+                  fetched_courts: fetchedMatches.map(match => getSuggestedLaneCourtIdx(match)),
+                  requested_replacement_courts: requestedReplacementCourtIdxs,
+                  suggested_queue_count: suggestedQueueCount,
+                },
+              })
               if (currentRetry < 2) {
                 const retryTimeout = setTimeout(() => {
                   previewRetryTimeoutsRef.current.delete(retryTimeout)
@@ -3022,6 +3188,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           if (fullBoardIncompleteNoop) {
             previewBlockedIncompleteKeysRef.current.add(incompleteRequestKey)
             previewIncompleteRetryRef.current = { key: '', count: 0 }
+            traceClientPreviewEvent('client_preview_blocked_incomplete_noop', {
+              requestId: previewClientRequestId,
+              responsePayload: {
+                fetched_match_count: fetchedMatches.length,
+                match_count: matches.length,
+              },
+              detail: {
+                incomplete_request_key: incompleteRequestKey,
+                mode: previewMode,
+                edge_final_board: false,
+                effective_current_board_complete: effectiveCurrentBoardComplete,
+                suggested_queue_count: suggestedQueueCount,
+              },
+            })
           } else if (!previewBatchComplete) {
             const retryKey = [
               incompleteRequestKey,
@@ -3033,6 +3213,27 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
               ? previewIncompleteRetryRef.current.count + 1
               : 1
             previewIncompleteRetryRef.current = { key: retryKey, count: currentRetry }
+            traceClientPreviewEvent(currentRetry < 2 ? 'client_preview_incomplete_retry_scheduled' : 'client_preview_blocked_after_retries', {
+              requestId: previewClientRequestId,
+              responsePayload: {
+                fetched_match_count: fetchedMatches.length,
+                match_count: matches.length,
+                result_courts: matches.map(match => getSuggestedLaneCourtIdx(match)),
+              },
+              detail: {
+                incomplete_request_key: incompleteRequestKey,
+                retry_key: retryKey,
+                retry_count: currentRetry,
+                mode: previewMode,
+                edge_final_board: false,
+                replacement_courts: [...replacementCourtIdxs],
+                fulfilled_replacement_courts: [...replacementCourtIdxs].every(courtIdx => nextLaneCache.has(courtIdx)),
+                fetched_courts: fetchedMatches.map(match => getSuggestedLaneCourtIdx(match)),
+                retained_courts: retainedMatches.map(match => getSuggestedLaneCourtIdx(match)),
+                requested_replacement_courts: requestedReplacementCourtIdxs,
+                suggested_queue_count: suggestedQueueCount,
+              },
+            })
             if (__DEV__) console.warn('[NextRoundSuggesterV2] preview batch incomplete, retrying', {
               suggestedQueueCount,
               matchCount: matches.length,
@@ -3084,6 +3285,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           lastStuckHintRef.current = { kind: hintKind, courtIdxs: requestedReplacementCourtIdxs }
           const fallbackMatches = isLocalPreviewFallbackEnabled() ? buildLocalFallbackPreview() : []
           if (fallbackMatches.length > 0) {
+            traceClientPreviewEvent('client_preview_edge_error_local_fallback', {
+              requestId: previewClientRequestId,
+              responsePayload: {
+                fallback_match_count: fallbackMatches.length,
+                fallback_courts: fallbackMatches.map(match => getSuggestedLaneCourtIdx(match)),
+              },
+              detail: {
+                incomplete_request_key: incompleteRequestKey,
+                error_kind: hintKind,
+                error: errMsg,
+                requested_replacement_courts: requestedReplacementCourtIdxs,
+                total_ms: Math.round(nowMs() - previewT0),
+              },
+            })
             const nextLaneCache = new Map<number, SuggestedLiveMatchRow>()
             fallbackMatches.forEach(match => {
               const courtIdx = getSuggestedLaneCourtIdx(match)
@@ -3106,6 +3321,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             setPreviewRefreshNonce(value => value + 1)
           }, 1000)
           previewRetryTimeoutsRef.current.add(retryTimeout)
+          traceClientPreviewEvent('client_preview_edge_error_retry_scheduled', {
+            requestId: previewClientRequestId,
+            detail: {
+              incomplete_request_key: incompleteRequestKey,
+              error_kind: hintKind,
+              error: errMsg,
+              requested_replacement_courts: requestedReplacementCourtIdxs,
+              retry_delay_ms: 1000,
+              total_ms: Math.round(nowMs() - previewT0),
+            },
+          })
           setEdgeDebug(`ERROR: ${err.message || 'Unknown error'}`)
           console.warn('[NextRoundSuggesterV2] Live preview fetch failed', err)
           Alert.alert('Lỗi gợi ý trận đấu', err.message || 'Không thể lấy gợi ý trận đấu từ server')
@@ -3129,6 +3355,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             ownsSlot,
             generationChanged: sessionGenerationRef.current !== requestSessionGeneration,
           })
+          if (!isStillCurrent) {
+            traceClientPreviewEvent('client_preview_request_stale_finally', {
+              requestId: previewClientRequestId,
+              detail: {
+                incomplete_request_key: incompleteRequestKey,
+                owns_slot: ownsSlot,
+                request_serial: requestSerial,
+                current_serial: previewRequestSerialRef.current,
+                request_generation: requestSessionGeneration,
+                current_generation: sessionGenerationRef.current,
+                total_ms: Math.round(nowMs() - previewT0),
+              },
+            })
+          }
           // Re-trigger for ANY reason this request is no longer current (serial OR
           // generation changed), not only the generation-same (stale) case.
           if (!isStillCurrent) setPreviewRefreshNonce(value => value + 1)
@@ -3140,6 +3380,15 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         cancelledBeforeStart = true
         clearTimeout(timer)
         previewPendingRequestKeysRef.current.delete(incompleteRequestKey)
+        traceClientPreviewEvent('client_preview_cancelled_before_start', {
+          requestId: previewClientRequestId,
+          detail: {
+            incomplete_request_key: incompleteRequestKey,
+            request_serial: requestSerial,
+            request_generation: requestSessionGeneration,
+            current_generation: sessionGenerationRef.current,
+          },
+        })
       }
       if (!requestStarted && isCurrentPreviewRequest()) {
         previewRequestInFlightRef.current = false
@@ -3147,7 +3396,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         setIsSuggestingPreview(false)
       }
     }
-  }, [activeLiveMatches, completedLiveMatchCommitNonce, effectiveLiveMatchRows, getCurrentPreviewBoardForEdge, getReusableSuggestedLaneMatches, isPreviewInvalidatedByCompletedMatch, phase, previewRequestKey, pvnaTolerance, queueCourtCount, rows.playerRows.length, settingsHydrated, state, suggestedQueueCount, startedPreviewIds, startingPreviewIds])
+  }, [activeLiveMatches, completedLiveMatchCommitNonce, effectiveLiveMatchRows, getCurrentPreviewBoardForEdge, getReusableSuggestedLaneMatches, isPreviewInvalidatedByCompletedMatch, phase, previewRequestKey, pvnaTolerance, queueCourtCount, rows.playerRows.length, settingsHydrated, state, suggestedQueueCount, startedPreviewIds, startingPreviewIds, traceClientPreviewEvent])
   const liveLogicalRoundByMatchId = useMemo(
     () => buildLogicalRoundDisplayMap([...completedLiveMatches, ...activeLiveMatches], queueCourtCount),
     [activeLiveMatches, completedLiveMatches, queueCourtCount],

@@ -105,6 +105,9 @@ export async function invokeLiveSessionFunction(
   sessionId: string,
   body: Record<string, unknown> = {},
   extraQuery: Record<string, string | number> = {},
+  options: {
+    requestId?: string
+  } = {},
 ) {
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error('Missing Supabase function configuration')
@@ -130,6 +133,7 @@ export async function invokeLiveSessionFunction(
       Authorization: `Bearer ${accessToken}`,
       apikey: supabaseAnonKey,
       'Content-Type': 'application/json',
+      ...(options.requestId ? { 'x-request-id': options.requestId, 'x-client-request-id': options.requestId } : {}),
     },
     body: JSON.stringify(body),
   }
@@ -416,6 +420,43 @@ export async function setEffectivePvna(
 
 const liveMatchesPreviewInFlight = new Map<string, Promise<any>>()
 
+export function createClientTraceId(prefix = 'client') {
+  const randomId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  return `${prefix}-${randomId}`
+}
+
+export async function recordClientSessionAuditEvent(
+  sessionId: string,
+  eventType: string,
+  input: {
+    requestId?: string | null
+    clientRequestId?: string | null
+    requestPayload?: unknown
+    responsePayload?: unknown
+    detail?: unknown
+  } = {},
+) {
+  try {
+    const { data } = await supabase.auth.getSession()
+    const actorId = data.session?.user.id ?? null
+    await supabase.from('session_audit_events').insert({
+      session_id: sessionId,
+      event_type: eventType,
+      edge_function: 'client-next-round-v2',
+      request_id: input.requestId ?? null,
+      client_request_id: input.clientRequestId ?? input.requestId ?? null,
+      actor_id: actorId,
+      request_payload: input.requestPayload ?? {},
+      response_payload: input.responsePayload ?? {},
+      detail: input.detail ?? {},
+    })
+  } catch (error) {
+    if (__DEV__) console.warn('[NextRoundSuggesterV2] client audit insert failed', error)
+  }
+}
+
 export async function fetchLiveMatchesPreview(
   sessionId: string,
   body: {
@@ -438,13 +479,18 @@ export async function fetchLiveMatchesPreview(
     current_courts?: number
     avoid_pairs?: AvoidPairEntry[]
     prefer_available_pool?: boolean
-  }
+  },
+  options: {
+    requestId?: string
+  } = {},
 ) {
   const requestKey = `${sessionId}:${JSON.stringify(body)}`
   const existingRequest = liveMatchesPreviewInFlight.get(requestKey)
   if (existingRequest) return existingRequest
 
-  const request = invokeLiveSessionFunction('session-live-matches-suggest', sessionId, body)
+  const request = invokeLiveSessionFunction('session-live-matches-suggest', sessionId, body, {}, {
+    requestId: options.requestId,
+  })
     .finally(() => {
       if (liveMatchesPreviewInFlight.get(requestKey) === request) {
         liveMatchesPreviewInFlight.delete(requestKey)
