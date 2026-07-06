@@ -21,10 +21,11 @@ Status: IN PROGRESS
 - [x] Commit stabilization/runtime group: `8bf912e fix(live-lane): stabilize previews and retire legacy round flow`.
 - [x] Commit migration filename normalization group: `ae16e47 chore(db): normalize historical migration filenames`.
 - [x] Commit replay docs/tooling group: `695feec chore(diagnostics): document live-lane replay workflow`.
+- [x] Commit task memory update: `d03630b chore(task): record stabilization commit plan`.
+- [x] Run `supabase db push` against project `mzqsxgfvtgmsscbqugni`: remote database reported up to date.
+- [x] Deploy Supabase edge functions touched by live-lane stabilization: `session-live-matches-suggest`, `session-rounds-start`, `session-rounds-start-versioned`, `session-rounds-end`, `session-rounds-end-versioned`, `session-rounds-swap-player`.
 
 ### Next steps
-- [ ] Apply DB migrations if production has not already applied `20260703000005`, `20260703000006`, and `20260704000001`.
-- [ ] Deploy Supabase edge functions touched by `8bf912e`: `session-live-matches-suggest`, `session-rounds-start`, `session-rounds-start-versioned`, `session-rounds-end`, `session-rounds-end-versioned`, `session-rounds-swap-player`.
 - [ ] Deploy client bundle when Kevin wants production client to pick up lifecycle audit flush + idempotent client audit writes. Do not deploy Vercel without explicit approval.
 
 ### Key decisions
