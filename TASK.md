@@ -1,3 +1,43 @@
+## Task: Stabilization pass - live lane audit/replay
+Status: IN PROGRESS
+
+### Completed
+- [x] Audit stabilization hot path after live-lane fixes.
+- [x] Identify P1 trace gap: `debug_dumps` insert in `session-live-matches-suggest` was fire-and-forget and not registered with `EdgeRuntime.waitUntil`.
+- [x] Fix P1 trace gap: register replay dump and instrumentation writes with Edge Runtime background work so `VERIFY_DUMP=1` captures are much less likely to be lost after the response returns.
+- [x] Deploy `session-live-matches-suggest` edge function after replay dump `waitUntil` fix.
+- [x] Add client audit lifecycle flush on page hide / visibility hidden / before unload to reduce tail-event loss.
+- [x] Set Supabase secret `VERIFY_DUMP=1` for project `mzqsxgfvtgmsscbqugni`.
+- [x] Add `client_event_id` idempotency path for client-side `session_audit_events` retry duplicates.
+- [x] Apply `20260704000001_add_client_event_id_to_session_audit_events.sql` via linked DB query because `db push` is blocked by historical migration drift.
+- [x] Smoke cloned session `1ac2c0c1-119d-4e62-b110-3e86a929e1ad`: 7 edge suggests, no 546/timeout, debug dumps wrote required replay keys, edge audit timeline wrote 7 events.
+- [x] Add abortable preview edge requests so soft timeout/cleanup cancels the underlying fetch instead of leaving stale `session-live-matches-suggest` requests pending.
+- [x] Clean Supabase migration-history drift: normalize date-only/duplicate migration filenames to 14-digit versions, repair remote migration history, and verify `supabase db push` reports remote DB up to date.
+- [x] Stabilization slice 1: tag preview provenance in `NextRoundSuggesterScreenV2`, stop local fallback from committing to the startable board, and block start from untrusted/stale preview rows.
+- [x] Stabilization slice 2: throttle preview retry storms with keyed retry timers, slower incomplete/error backoff, and no auto-refresh from stale preview finally.
+- [x] Stabilization slice 3: surface untrusted/partial/fallback preview state in the suggested-match card, disable unsafe start CTA with clear labels, and fix the card's `visibleMatch` undefined type gap.
+- [x] Browser smoke local V2 board on session `967e6682-207d-4d92-aec9-dbe56b54ca2b`: board rendered without mutating the real session; observed 2 `session-live-matches-suggest` calls under 1s and 2 audit batch calls, with no 25s request storm.
+- [x] Review current open diff by deploy-risk group. Runtime `features/` and `supabase/functions/` no longer call legacy round start/end/swap paths; only diagnostics scripts still reference them. `npm run build:web` passed. `npx jest tests/next-round-suggester/unit/live-preview.test.ts --runInBand --no-cache` passed 50/50.
+
+### Next steps
+- [ ] Commit/deploy group A: live-lane stabilization client (`NextRoundSuggesterScreenV2`, `ScreenComponents`, `api`) after one final scoped diff review.
+- [ ] Commit/deploy group B: legacy round retirement (`RosterScreen`, V2 legacy removal, edge stubs, SQL retirement migrations) with explicit note that old round-flow diagnostics will fail by design.
+- [ ] Commit group C separately: migration filename normalization/history cleanup. Keep out of feature commits because the diff is large and mostly mechanical.
+- [ ] Commit group D separately: audit/replay docs and diagnostics tooling.
+- [ ] Deploy client bundle when Kevin wants production client to pick up lifecycle audit flush + idempotent client audit writes. Do not deploy Vercel without explicit approval.
+
+### Key decisions
+- Replay source of truth is `debug_dumps.payload`; `session_audit_events` is the timeline/index layer.
+- Do not deploy Vercel unless Kevin explicitly asks. Edge-only changes can be deployed to Supabase functions.
+- Stabilization pass should avoid engine-ranking changes unless a real dump proves engine behavior is wrong.
+
+### Files touched in this stabilization slice
+supabase/functions/session-live-matches-suggest/index.ts
+docs/CODEBASE_MAP.md
+TASK.md
+
+---
+
 ## Task: Watch script alignment + UX improvements
 Status: IN PROGRESS
 
