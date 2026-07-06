@@ -19,12 +19,7 @@ export type PersistedNextRoundSettings = {
 }
 
 function timeoutForFunction(functionName: string) {
-  return functionName === 'session-rounds-start'
-    || functionName === 'session-rounds-end'
-    || functionName === 'session-rounds-start-versioned'
-    || functionName === 'session-rounds-end-versioned'
-    || functionName === 'session-rounds-swap-player'
-    || functionName === 'session-live-matches-create'
+  return functionName === 'session-live-matches-create'
     || functionName === 'session-live-matches-start'
     || functionName === 'session-live-matches-complete'
     || functionName === 'session-live-matches-cancel'
@@ -70,7 +65,14 @@ async function fetchJsonWithTimeout(
   url: string,
   init: RequestInit,
   timeoutMs: number,
+  options: {
+    signal?: AbortSignal
+  } = {},
 ): Promise<{ response: Response; payload: any; parseFailed: boolean; responseText: string }> {
+  if (options.signal?.aborted) {
+    throw new Error('Request cancelled.')
+  }
+
   if (typeof AbortController === 'undefined') {
     const response = await Promise.race([
       fetch(url, init),
@@ -82,6 +84,8 @@ async function fetchJsonWithTimeout(
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const abortFromCaller = () => controller.abort()
+  options.signal?.addEventListener('abort', abortFromCaller, { once: true })
 
   try {
     const response = await fetch(url, { ...init, signal: controller.signal })
@@ -89,6 +93,9 @@ async function fetchJsonWithTimeout(
     return { response, payload, parseFailed, responseText: text }
   } catch (error) {
     if (isAbortError(error)) {
+      if (options.signal?.aborted) {
+        throw new Error('Request cancelled.')
+      }
       throw new Error('Request timed out. Check your connection and try again.')
     }
     if (error instanceof TypeError) {
@@ -97,6 +104,7 @@ async function fetchJsonWithTimeout(
     throw error
   } finally {
     clearTimeout(timer)
+    options.signal?.removeEventListener('abort', abortFromCaller)
   }
 }
 
@@ -107,6 +115,7 @@ export async function invokeLiveSessionFunction(
   extraQuery: Record<string, string | number> = {},
   options: {
     requestId?: string
+    signal?: AbortSignal
   } = {},
 ) {
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -144,12 +153,15 @@ export async function invokeLiveSessionFunction(
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const result = await fetchJsonWithTimeout(url, init, timeoutForFunction(functionName))
+      const result = await fetchJsonWithTimeout(url, init, timeoutForFunction(functionName), {
+        signal: options.signal,
+      })
       response = result.response
       payload = result.payload
       parseFailed = result.parseFailed
       break
     } catch (error) {
+      if (options.signal?.aborted) throw error
       if (attempt === 0 && isRetryableError(error)) {
         await sleep(600)
         continue
@@ -427,21 +439,85 @@ export function createClientTraceId(prefix = 'client') {
   return `${prefix}-${randomId}`
 }
 
-export async function recordClientSessionAuditEvent(
-  sessionId: string,
-  eventType: string,
-  input: {
-    requestId?: string | null
-    clientRequestId?: string | null
-    requestPayload?: unknown
-    responsePayload?: unknown
-    detail?: unknown
-  } = {},
-) {
+type ClientSessionAuditEventInput = {
+  requestId?: string | null
+  clientRequestId?: string | null
+  requestPayload?: unknown
+  responsePayload?: unknown
+  detail?: unknown
+}
+
+type ClientSessionAuditQueueItem = {
+  sessionId: string
+  eventType: string
+  clientEventId: string
+  input: ClientSessionAuditEventInput
+}
+
+const CLIENT_AUDIT_BATCH_SIZE = 25
+const CLIENT_AUDIT_FLUSH_MS = 1000
+const CLIENT_AUDIT_RETRY_MS = 2500
+const clientAuditQueue: ClientSessionAuditQueueItem[] = []
+let clientAuditFlushTimer: ReturnType<typeof setTimeout> | null = null
+let clientAuditFlushInFlight = false
+let clientAuditActorIdPromise: Promise<string | null> | null = null
+let clientAuditLifecycleFlushInstalled = false
+let clientAuditMissingAuthWarned = false
+
+function getClientAuditActorId() {
+  if (!clientAuditActorIdPromise) {
+    clientAuditActorIdPromise = supabase.auth.getSession()
+      .then(async ({ data }) => {
+        if (data.session?.user.id) return data.session.user.id
+        const { data: refreshed } = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } }))
+        return refreshed.session?.user.id ?? null
+      })
+      .catch(() => null)
+      .finally(() => {
+        clientAuditActorIdPromise = null
+      })
+  }
+  return clientAuditActorIdPromise
+}
+
+function createClientAuditEventId(sessionId: string, eventType: string) {
+  const randomPart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+  return `client_audit_${sessionId}_${eventType}_${randomPart}`
+}
+
+function scheduleClientAuditFlush(delayMs = CLIENT_AUDIT_FLUSH_MS) {
+  if (delayMs <= 0 && clientAuditFlushTimer) {
+    clearTimeout(clientAuditFlushTimer)
+    clientAuditFlushTimer = null
+  }
+  if (clientAuditFlushTimer) return
+  clientAuditFlushTimer = setTimeout(() => {
+    clientAuditFlushTimer = null
+    void flushClientAuditQueue()
+  }, delayMs)
+}
+
+async function flushClientAuditQueue(): Promise<void> {
+  if (clientAuditFlushInFlight || clientAuditQueue.length === 0) return
+  clientAuditFlushInFlight = true
+  const batch = clientAuditQueue.splice(0, CLIENT_AUDIT_BATCH_SIZE)
+  let failed = false
   try {
-    const { data } = await supabase.auth.getSession()
-    const actorId = data.session?.user.id ?? null
-    await supabase.from('session_audit_events').insert({
+    const actorId = await getClientAuditActorId()
+    if (!actorId) {
+      failed = true
+      clientAuditQueue.unshift(...batch)
+      if (__DEV__ && !clientAuditMissingAuthWarned) {
+        clientAuditMissingAuthWarned = true
+        console.warn('[NextRoundSuggesterV2] client audit skipped until auth session is available')
+      }
+      scheduleClientAuditFlush(CLIENT_AUDIT_RETRY_MS)
+      return
+    }
+    const rows = batch.map(({ sessionId, eventType, clientEventId, input }) => ({
+      client_event_id: clientEventId,
       session_id: sessionId,
       event_type: eventType,
       edge_function: 'client-next-round-v2',
@@ -451,10 +527,66 @@ export async function recordClientSessionAuditEvent(
       request_payload: input.requestPayload ?? {},
       response_payload: input.responsePayload ?? {},
       detail: input.detail ?? {},
-    })
+    }))
+    const { error } = await supabase.from('session_audit_events').insert(rows)
+    if (error) {
+      if (error.code === '23505') return
+      throw error
+    }
   } catch (error) {
-    if (__DEV__) console.warn('[NextRoundSuggesterV2] client audit insert failed', error)
+    failed = true
+    clientAuditQueue.unshift(...batch)
+    if (__DEV__) console.warn('[NextRoundSuggesterV2] client audit batch insert failed', error)
+    scheduleClientAuditFlush(CLIENT_AUDIT_RETRY_MS)
+  } finally {
+    clientAuditFlushInFlight = false
+    if (!failed && clientAuditQueue.length > 0) {
+      scheduleClientAuditFlush(0)
+    }
   }
+}
+
+function flushClientAuditQueueSoon() {
+  if (clientAuditFlushTimer) {
+    clearTimeout(clientAuditFlushTimer)
+    clientAuditFlushTimer = null
+  }
+  void flushClientAuditQueue()
+}
+
+function installClientAuditLifecycleFlush() {
+  if (
+    clientAuditLifecycleFlushInstalled
+    || typeof window === 'undefined'
+    || typeof window.addEventListener !== 'function'
+  ) return
+  clientAuditLifecycleFlushInstalled = true
+
+  window.addEventListener('pagehide', flushClientAuditQueueSoon)
+  window.addEventListener('beforeunload', flushClientAuditQueueSoon)
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        flushClientAuditQueueSoon()
+      }
+    })
+  }
+}
+
+export async function recordClientSessionAuditEvent(
+  sessionId: string,
+  eventType: string,
+  input: ClientSessionAuditEventInput = {},
+) {
+  installClientAuditLifecycleFlush()
+  clientAuditQueue.push({
+    sessionId,
+    eventType,
+    clientEventId: createClientAuditEventId(sessionId, eventType),
+    input,
+  })
+  scheduleClientAuditFlush(clientAuditQueue.length >= CLIENT_AUDIT_BATCH_SIZE ? 0 : CLIENT_AUDIT_FLUSH_MS)
 }
 
 export async function fetchLiveMatchesPreview(
@@ -482,6 +614,7 @@ export async function fetchLiveMatchesPreview(
   },
   options: {
     requestId?: string
+    signal?: AbortSignal
   } = {},
 ) {
   const requestKey = `${sessionId}:${JSON.stringify(body)}`
@@ -490,6 +623,7 @@ export async function fetchLiveMatchesPreview(
 
   const request = invokeLiveSessionFunction('session-live-matches-suggest', sessionId, body, {}, {
     requestId: options.requestId,
+    signal: options.signal,
   })
     .finally(() => {
       if (liveMatchesPreviewInFlight.get(requestKey) === request) {

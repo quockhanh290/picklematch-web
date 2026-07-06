@@ -549,13 +549,17 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     return [...legacyRows, ...liveRoundRows]
   }, [deferredRows.liveMatchRows, deferredRows.roundRows, enginePlayerRows, sessionId, engineCourtCount])
   */
-  const stateRoundRows = useMemo(() => buildCompletedLiveCycleRowsBySequence({
-    liveMatchRows: deferredRows.liveMatchRows,
-    legacyRoundRows: deferredRows.roundRows,
-    playerRows: enginePlayerRows,
-    sessionId,
-    courtCount: engineCourtCount,
-  }), [deferredRows.liveMatchRows, deferredRows.roundRows, enginePlayerRows, sessionId, engineCourtCount])
+  const stateRoundRows = useMemo(() => {
+    const legacyRoundRows = deferredRows.roundRows.filter(row => row.status !== 'active')
+
+    return buildCompletedLiveCycleRowsBySequence({
+      liveMatchRows: deferredRows.liveMatchRows,
+      legacyRoundRows,
+      playerRows: enginePlayerRows,
+      sessionId,
+      courtCount: engineCourtCount,
+    })
+  }, [deferredRows.liveMatchRows, deferredRows.roundRows, enginePlayerRows, sessionId, engineCourtCount])
 
   // Fingerprint: chuỗi tóm tắt data thực sự, chỉ thay đổi khi DB trả về data mới.
   // Nếu loadLiveState() trả về data giống hệt (foreground refresh không có gì mới),
@@ -838,43 +842,6 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
         return {
           ...current,
           liveStateVersion: Math.max(Number(current.liveStateVersion ?? 0), Number(version)),
-        }
-      })
-    }, [queryClient, sessionId]),
-    applyStartedRound: useCallback((round?: any, version?: number | null) => {
-      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), (current: LiveRows | undefined) => {
-        if (!current) return current
-        const updated = round
-          ? current.roundRows.some(r => r.id === round.id)
-            ? current.roundRows.map(r => r.id === round.id ? { ...r, ...round } : r)
-            : [...current.roundRows, round]
-          : current.roundRows
-        return {
-          ...current,
-          roundRows: updated,
-          liveStateVersion: version != null
-            ? Math.max(Number(current.liveStateVersion ?? 0), Number(version))
-            : current.liveStateVersion,
-        }
-      })
-    }, [queryClient, sessionId]),
-    applyEndedRound: useCallback((roundNo: number, round?: any, playerState?: SessionPlayerStateRow[], pairHistory?: SessionPairHistoryRow[], version?: number | null) => {
-      queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), (current: LiveRows | undefined) => {
-        if (!current) return current
-        const roundRows = round
-          ? current.roundRows.map(r => r.round_no === roundNo ? { ...r, ...round } : r)
-          : current.roundRows
-        const playerRows = mergePlayerStateRows(current.playerRows, playerState ?? [])
-        const pairById = new Map(current.pairRows.map(p => [`${p.player_a}:${p.player_b}`, p]))
-        for (const p of pairHistory ?? []) pairById.set(`${p.player_a}:${p.player_b}`, p)
-        return {
-          ...current,
-          roundRows,
-          playerRows,
-          pairRows: [...pairById.values()],
-          liveStateVersion: version != null
-            ? Math.max(Number(current.liveStateVersion ?? 0), Number(version))
-            : current.liveStateVersion,
         }
       })
     }, [queryClient, sessionId]),

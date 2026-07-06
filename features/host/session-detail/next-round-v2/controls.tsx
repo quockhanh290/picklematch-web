@@ -1,8 +1,6 @@
 import React from 'react'
 import { ActivityIndicator, Pressable, Text, TouchableOpacity, View } from 'react-native'
-import { LinearGradient } from 'expo-linear-gradient'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { MoreHorizontal, RefreshCcw } from 'lucide-react-native'
+import { RefreshCcw } from 'lucide-react-native'
 
 import { BORDER, RADIUS } from '@/constants/screenLayout'
 import { useAppTheme } from '@/lib/theme-context'
@@ -29,63 +27,6 @@ export function NavbarRightActions({ onRefresh, refreshing }: { onRefresh: () =>
         {refreshing ? <ActivityIndicator color={theme.primary} /> : <RefreshCcw size={16} color={theme.onSurface} />}
       </Pressable>
     </View>
-  )
-}
-
-export function StickyRoundCta({
-  busy,
-  primaryLabel,
-  onPrimary,
-  disabled,
-  computing,
-  onMore,
-}: {
-  busy: string | null
-  primaryLabel: string
-  onPrimary: () => void
-  disabled?: boolean
-  computing?: boolean
-  onMore: () => void
-}) {
-  const theme = useAppTheme()
-  const insets = useSafeAreaInsets()
-  const isActionBusy = busy === 'start'
-    || busy === 'end'
-    || busy === 'suggest-match'
-    || Boolean(busy?.startsWith('start-match-'))
-    || Boolean(busy?.startsWith('complete-match-'))
-    || Boolean(busy?.startsWith('cancel-match-'))
-  return (
-    <LinearGradient
-      pointerEvents="box-none"
-      colors={['rgba(255,251,245,0)', theme.background]}
-      style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 26, paddingHorizontal: 16, paddingBottom: 16 + insets.bottom }}
-    >
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        <TouchableOpacity
-          testID="nrv2-cta-more"
-          onPress={onMore}
-          style={{ width: 48, height: 52, borderRadius: RADIUS.md, backgroundColor: theme.surface, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <MoreHorizontal size={22} color={theme.onSurface} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          testID="nrv2-cta-primary"
-          onPress={onPrimary}
-          disabled={disabled || isActionBusy}
-          style={{ flex: 1, height: 52, borderRadius: RADIUS.md, backgroundColor: disabled ? theme.outlineVariant : theme.primary, alignItems: 'center', justifyContent: 'center' }}
-        >
-          {isActionBusy
-            ? <ActivityIndicator color={theme.onPrimary} />
-            : computing
-              ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <ActivityIndicator size="small" color={theme.onPrimary} />
-                  <Text style={ctaTextStyle(theme.onPrimary)}>Đang tính...</Text>
-                </View>
-              : <Text style={ctaTextStyle(theme.onPrimary)}>{primaryLabel}</Text>}
-        </TouchableOpacity>
-      </View>
-    </LinearGradient>
   )
 }
 

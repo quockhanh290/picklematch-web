@@ -51,7 +51,6 @@ import type {
   Match,
   PlayerSessionState,
   SessionLiveMatchRow,
-  SessionPairHistoryRow,
   SessionState,
   SuggestionAlternative,
   SuggestionResult,
@@ -268,14 +267,6 @@ function toUserSafeActionError(error: unknown): string {
   return `Thao tác thất bại${code ? ` [${code}]` : ''}: ${message}`
 }
 
-function changedPairHistoryRows(beforeRows: SessionPairHistoryRow[], afterRows: SessionPairHistoryRow[]) {
-  const beforeByKey = new Map(beforeRows.map((row) => [`${row.player_a}:${row.player_b}`, row]))
-  return afterRows.filter((row) => {
-    const before = beforeByKey.get(`${row.player_a}:${row.player_b}`)
-    return !before || before.partner_count !== row.partner_count || before.opponent_count !== row.opponent_count
-  })
-}
-
 function buildProjectedStateAfterLiveMatch(
   state: SessionState,
   match: SessionLiveMatchRow,
@@ -389,6 +380,9 @@ type BuildSuggestedMatchOptions = {
 }
 
 type SuggestedLiveMatchRow = SessionLiveMatchRow & {
+  preview_source?: 'edge_committed' | 'edge_partial' | 'local_fallback' | 'manual_available_pool'
+  preview_request_key?: string
+  preview_request_serial?: number
   preview_live_state_version?: number | null
   preview_countable_match_count?: number | null
   warnings?: string[]
@@ -2032,6 +2026,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
 }) {
   const theme = useAppTheme()
   const cancelBusy = false
+  const showingAvailablePoolPreview = Boolean(availablePoolPreview && availablePoolPreview !== 'loading')
   const rawTradeoffChoices = match.tradeoff_choices ?? []
   const hasCapTradeoffChoices = rawTradeoffChoices.some(choice =>
     choice.metrics.pvna_over_by > 0 ||
@@ -2039,7 +2034,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     (choice.metrics.match_count_over_by ?? 0) > 0 ||
     choice.alternative.warnings.includes('INTRA_TEAM_GAP_RELAXED')
   )
-  const tradeoffChoices = hasCapTradeoffChoices ? rawTradeoffChoices : []
+  const tradeoffChoices = showingAvailablePoolPreview ? [] : hasCapTradeoffChoices ? rawTradeoffChoices : []
   const [selectedChoiceId, setSelectedChoiceId] = useState<SuggestionTradeoffChoiceId>(
     match.recommended_tradeoff_choice ?? tradeoffChoices[0]?.id ?? 'balanced',
   )
@@ -2082,28 +2077,31 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       approval_required: selected.approval_required,
     }
   }, [match, selectedChoice])
-  const liveAvailabilityContext = activeMatch.live_availability_context
+  const visibleMatch: SuggestedLiveMatchRow = showingAvailablePoolPreview && availablePoolPreview !== 'loading'
+    ? availablePoolPreview as SuggestedLiveMatchRow
+    : activeMatch
+  const liveAvailabilityContext = visibleMatch.live_availability_context
   const pvnaDiff = useMemo(
-    () => Math.abs(getTeamPvna(activeMatch.team_a, state) - getTeamPvna(activeMatch.team_b, state)),
-    [activeMatch.team_a, activeMatch.team_b, state],
+    () => Math.abs(getTeamPvna(visibleMatch.team_a, state) - getTeamPvna(visibleMatch.team_b, state)),
+    [visibleMatch.team_a, visibleMatch.team_b, state],
   )
   const pvnaOverBy = Math.max(0, pvnaDiff - pvnaTolerance)
   const pvnaCapExceeded = pvnaOverBy > 0
-  const hasPvnaOpenWarning = activeMatch.warnings?.includes('PVNA_TOLERANCE_OPEN') ?? false
-  const requiresRepeatApproval = activeMatch.approval_required || pvnaCapExceeded || activeMatch.warnings?.includes('REPEAT_CAP_RELAXED') || activeMatch.warnings?.includes('PVNA_TOLERANCE_RELAXED') || hasPvnaOpenWarning || false
-  const repeatTradeoff = activeMatch.tradeoffs?.find(tradeoff => tradeoff.type === 'repeat_cap_relaxed')
-  const pvnaTradeoff = activeMatch.tradeoffs?.find(tradeoff => tradeoff.type === 'pvna_tolerance_relaxed')
+  const hasPvnaOpenWarning = visibleMatch.warnings?.includes('PVNA_TOLERANCE_OPEN') ?? false
+  const requiresRepeatApproval = visibleMatch.approval_required || pvnaCapExceeded || visibleMatch.warnings?.includes('REPEAT_CAP_RELAXED') || visibleMatch.warnings?.includes('PVNA_TOLERANCE_RELAXED') || hasPvnaOpenWarning || false
+  const repeatTradeoff = visibleMatch.tradeoffs?.find(tradeoff => tradeoff.type === 'repeat_cap_relaxed')
+  const pvnaTradeoff = visibleMatch.tradeoffs?.find(tradeoff => tradeoff.type === 'pvna_tolerance_relaxed')
   const pvnaOpenRelaxed = hasPvnaOpenWarning || pvnaTradeoff?.relaxation_level === 'open'
-  const effectivePvnaTolerance = activeMatch.effective_pvna_tolerance ?? state.config.pvna_tolerance
-  const configuredPvnaTolerance = activeMatch.configured_pvna_tolerance ?? pvnaTolerance
+  const effectivePvnaTolerance = visibleMatch.effective_pvna_tolerance ?? state.config.pvna_tolerance
+  const configuredPvnaTolerance = visibleMatch.configured_pvna_tolerance ?? pvnaTolerance
   const autoPvnaRelaxed = effectivePvnaTolerance > configuredPvnaTolerance && Boolean(pvnaTradeoff)
-  const intraTeamRelaxed = activeMatch.warnings?.includes('INTRA_TEAM_GAP_RELAXED') ?? false
+  const intraTeamRelaxed = visibleMatch.warnings?.includes('INTRA_TEAM_GAP_RELAXED') ?? false
   const maxIntraTeamGap = useMemo(() => Math.max(
-    Math.abs((state.players.get(activeMatch.team_a[0])?.pvna ?? 0) - (state.players.get(activeMatch.team_a[1])?.pvna ?? 0)),
-    Math.abs((state.players.get(activeMatch.team_b[0])?.pvna ?? 0) - (state.players.get(activeMatch.team_b[1])?.pvna ?? 0)),
-  ), [activeMatch.team_a, activeMatch.team_b, state])
-  const fairnessReasonText = activeMatch.fairness_reasons?.length ? activeMatch.fairness_reasons.join(', ') : null
-  const fairnessReasonDetails = activeMatch.fairness_reason_details ?? []
+    Math.abs((state.players.get(visibleMatch.team_a[0])?.pvna ?? 0) - (state.players.get(visibleMatch.team_a[1])?.pvna ?? 0)),
+    Math.abs((state.players.get(visibleMatch.team_b[0])?.pvna ?? 0) - (state.players.get(visibleMatch.team_b[1])?.pvna ?? 0)),
+  ), [visibleMatch.team_a, visibleMatch.team_b, state])
+  const fairnessReasonText = visibleMatch.fairness_reasons?.length ? visibleMatch.fairness_reasons.join(', ') : null
+  const fairnessReasonDetails = visibleMatch.fairness_reason_details ?? []
   const hasPvnaTradeoff = pvnaCapExceeded || Boolean(pvnaTradeoff)
   const hasRepeatTradeoff = Boolean(repeatTradeoff)
   const approvalSummary = hasPvnaTradeoff && hasRepeatTradeoff
@@ -2120,22 +2118,53 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   useEffect(() => {
     setRepeatTradeoffApproved(false)
   }, [selectedChoiceId])
-  const lockedPlayerIds = useMemo(() => {
-    const teamPlayerIds = [...(activeMatch.team_a ?? []), ...(activeMatch.team_b ?? [])]
-    return livePlayerCourtMap ? teamPlayerIds.filter(id => livePlayerCourtMap.has(id)) : (activeMatch.locked_player_ids ?? [])
-  }, [activeMatch.team_a, activeMatch.team_b, activeMatch.locked_player_ids, livePlayerCourtMap])
+  const cardCourtIdx = Number(visibleMatch.court_idx ?? visibleMatch.sequence_no ?? 0)
+  const liveLockedPlayerIds = useMemo(() => {
+    const teamPlayerIds = [...(visibleMatch.team_a ?? []), ...(visibleMatch.team_b ?? [])]
+    return livePlayerCourtMap
+      ? teamPlayerIds.filter(id => livePlayerCourtMap.has(id))
+      : (visibleMatch.locked_player_ids ?? [])
+  }, [visibleMatch.team_a, visibleMatch.team_b, visibleMatch.locked_player_ids, livePlayerCourtMap])
+  const sameCourtLockedPlayerIds = useMemo(() =>
+    livePlayerCourtMap
+      ? liveLockedPlayerIds.filter(id => livePlayerCourtMap.get(id) === cardCourtIdx)
+      : [],
+    [cardCourtIdx, liveLockedPlayerIds, livePlayerCourtMap],
+  )
+  const lockedPlayerIds = useMemo(() =>
+    livePlayerCourtMap
+      ? liveLockedPlayerIds.filter(id => livePlayerCourtMap.get(id) !== cardCourtIdx)
+      : liveLockedPlayerIds,
+    [cardCourtIdx, liveLockedPlayerIds, livePlayerCourtMap],
+  )
+  const hasSameCourtLock = sameCourtLockedPlayerIds.length > 0
   const hasLockedPlayers = lockedPlayerIds.length > 0
-  const lockedBeamQuality = activeMatch.live_availability_context?.locked_beam_quality
-  const availablePoolQuality = activeMatch.live_availability_context?.available_pool_quality
+  const hasBlockingLivePlayers = hasSameCourtLock || hasLockedPlayers
+  const lockedBeamQuality = visibleMatch.live_availability_context?.locked_beam_quality
+  const availablePoolQuality = visibleMatch.live_availability_context?.available_pool_quality
   const qualityGap = lockedBeamQuality != null && availablePoolQuality != null
     ? availablePoolQuality - lockedBeamQuality
     : null
-  const showWaitUI = hasLockedPlayers && (
+  const showWaitUI = hasBlockingLivePlayers && (
     availablePoolQuality === undefined ||
     qualityGap === null ||
     qualityGap >= 0.2
   )
-  const startDisabled = busy || hasLockedPlayers
+  const previewTrustIssue = visibleMatch.preview_source === 'local_fallback'
+    ? 'fallback'
+    : visibleMatch.preview_source === 'edge_partial'
+      ? 'partial'
+      : visibleMatch.preview_source == null
+        ? 'unknown'
+        : null
+  const startDisabled = busy || hasBlockingLivePlayers || previewTrustIssue !== null
+  const startDisabledLabel = previewTrustIssue === 'fallback'
+    ? 'Đang tạo lại gợi ý'
+    : previewTrustIssue === 'partial'
+      ? 'Đang đồng bộ board'
+      : previewTrustIssue === 'unknown'
+        ? 'Cần tạo lại gợi ý'
+        : 'Bắt đầu trận'
   const lockedPlayerCourtMap = useMemo(() => {
     if (!livePlayerCourtMap || lockedPlayerIds.length === 0) return undefined
     const map = new Map<string, number>()
@@ -2146,6 +2175,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     return map.size > 0 ? map : undefined
   }, [lockedPlayerIds, livePlayerCourtMap])
   const lockedWaitLabel = useMemo(() => {
+    if (hasSameCourtLock && lockedPlayerIds.length === 0) return `⏳ Chờ sân ${cardCourtIdx + 1} xong`
     if (lockedPlayerIds.length === 0) return '⏳ Chờ sân khác xong'
     const parts = lockedPlayerIds.slice(0, 2).map(id => {
       const name = playerName(id, playersById)
@@ -2153,8 +2183,11 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       return courtIdx != null ? `${name} (Sân ${courtIdx + 1})` : name
     })
     const extra = lockedPlayerIds.length > 2 ? ` +${lockedPlayerIds.length - 2}` : ''
-    return `⏳ Chờ ${parts.join(', ')}${extra} xong`
-  }, [lockedPlayerIds, livePlayerCourtMap, playersById])
+    const playerWait = `Chờ ${parts.join(', ')}${extra} xong`
+    return hasSameCourtLock
+      ? `⏳ Chờ sân ${cardCourtIdx + 1} và ${parts.join(', ')}${extra} xong`
+      : `⏳ ${playerWait}`
+  }, [cardCourtIdx, hasSameCourtLock, lockedPlayerIds, livePlayerCourtMap, playersById])
   const recommendedChoice = tradeoffChoices.find(choice => choice.id === match.recommended_tradeoff_choice) ?? tradeoffChoices[0]
   const describeChoice = (choice: SuggestionTradeoffChoice) => {
     const reference = recommendedChoice?.metrics
@@ -2224,10 +2257,12 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     if (repeatTradeoff && (repeatTradeoff.over_by ?? 0) > 0) {
       capacityInfoLines.push(`Đã từng đấu với nhau gần đây`)
     }
-    capacityInfoLines.push(`Tự cập nhật khi có sân khác hoàn thành`)
+    capacityInfoLines.push(hasSameCourtLock && !hasLockedPlayers
+      ? `Tự cập nhật khi sân ${cardCourtIdx + 1} hoàn thành`
+      : `Tự cập nhật khi có sân khác hoàn thành`)
   }
   const engineWarnings = useMemo(() =>
-    (activeMatch.warnings ?? [])
+    (showingAvailablePoolPreview ? [] : activeMatch.warnings ?? [])
       .filter(code => !(suppressRepeatCapReachedInfo && code === 'REPEAT_CAP_REACHED'))
       .map(code => {
         const label = WARNING_LABELS[code]
@@ -2237,7 +2272,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
         }
         return { code, ...label }
       }),
-    [activeMatch.warnings, suppressRepeatCapReachedInfo],
+    [activeMatch.warnings, showingAvailablePoolPreview, suppressRepeatCapReachedInfo],
   )
   const replacementWarnings = useMemo(() => {
     if (!availablePoolPreview || availablePoolPreview === 'loading') return []
@@ -2250,7 +2285,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       return { code, ...label }
     })
   }, [availablePoolPreview])
-  const cardCourtIdx = Number(activeMatch.court_idx ?? activeMatch.sequence_no ?? 0)
+  const availablePoolConfirmDisabled = busy || availablePoolPreview === 'loading' || hasSameCourtLock
   return (
     <View testID={`nrv2-suggested-card-court-${cardCourtIdx}`} style={{ borderRadius: 16, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
@@ -2433,10 +2468,24 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
           ) : null}
         </View>
       ) : null}
+      {previewTrustIssue !== null ? (
+        <View style={{ backgroundColor: colors.surface, paddingHorizontal: 14, paddingBottom: 10 }}>
+          <View style={{ minHeight: 34, borderRadius: RADIUS.sm, backgroundColor: theme.infoBg ?? theme.surfaceContainerLow, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <AlertTriangle size={14} color={theme.infoText ?? colors.textSecondary} />
+            <Text numberOfLines={2} style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.infoText ?? colors.textSecondary, fontWeight: '800' }}>
+              {previewTrustIssue === 'fallback'
+                ? 'Edge vừa chậm, lineup này không dùng để bắt đầu. Đang tạo lại gợi ý từ server.'
+                : previewTrustIssue === 'partial'
+                  ? 'Board chưa đồng bộ đủ từ server. Đợi gợi ý mới trước khi bắt đầu.'
+                  : 'Gợi ý chưa có dấu xác nhận từ server. Đang tạo lại.'}
+            </Text>
+          </View>
+        </View>
+      ) : null}
       <View style={{ backgroundColor: colors.surface, paddingHorizontal: 14, paddingTop: 0, paddingBottom: 14, flexDirection: 'row', gap: 10 }}>
         <TouchableOpacity
           testID={`nrv2-swap-open-court-${cardCourtIdx}`}
-          onPress={() => onOpenSwap(activeMatch)}
+          onPress={() => onOpenSwap(visibleMatch)}
           activeOpacity={0.82}
           style={{ paddingHorizontal: 16, height: 46, borderRadius: RADIUS.lg, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
         >
@@ -2446,7 +2495,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
           <View style={{ flex: 1, gap: 6 }}>
             <TouchableOpacity
               testID={`nrv2-available-pool-cancel-court-${cardCourtIdx}`}
-              onPress={() => onCancelAvailablePool(Number(activeMatch.court_idx))}
+              onPress={() => onCancelAvailablePool(cardCourtIdx)}
               style={{ height: 38, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
             >
               <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: colors.textSecondary, fontWeight: '700' }}>← Quay lại chờ</Text>
@@ -2454,33 +2503,37 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
             <TouchableOpacity
               testID={`nrv2-available-pool-confirm-court-${cardCourtIdx}`}
               onPress={() => availablePoolPreview !== 'loading' && onConfirmStartNow(availablePoolPreview)}
-              disabled={busy || availablePoolPreview === 'loading'}
-              style={{ height: 46, borderRadius: RADIUS.lg, backgroundColor: availablePoolPreview === 'loading' ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
+              disabled={availablePoolConfirmDisabled}
+              style={{ height: 46, borderRadius: RADIUS.lg, backgroundColor: availablePoolConfirmDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
             >
               {busy || availablePoolPreview === 'loading' ? (
                 <ActivityIndicator size="small" color={availablePoolPreview === 'loading' ? colors.textSecondary : theme.onPrimary} />
               ) : (
-                <Text style={ctaTextStyle(theme.onPrimary, 13)}>Xác nhận bắt đầu</Text>
+                <Text style={ctaTextStyle(availablePoolConfirmDisabled ? (theme.onSurfaceVariant ?? colors.textSecondary) : theme.onPrimary, 13)}>
+                  {hasSameCourtLock ? `Chờ sân ${cardCourtIdx + 1} xong` : 'Xác nhận bắt đầu'}
+                </Text>
               )}
             </TouchableOpacity>
           </View>
-        ) : hasLockedPlayers ? (
+        ) : hasBlockingLivePlayers ? (
           <View style={{ flex: 1, gap: 6 }}>
             <View style={{ minHeight: 46, borderRadius: RADIUS.lg, backgroundColor: theme.outlineVariant, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8 }}>
               <Text numberOfLines={2} style={ctaTextStyle(theme.onSurfaceVariant ?? colors.textSecondary, 12)}>{lockedWaitLabel}</Text>
             </View>
-            <TouchableOpacity
-              testID={`nrv2-available-pool-fetch-court-${cardCourtIdx}`}
-              onPress={() => onFetchAvailablePool(activeMatch)}
-              disabled={busy}
-              style={{ height: 38, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
-            >
-              {busy ? (
-                <ActivityIndicator size="small" color={colors.textSecondary} />
-              ) : (
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: colors.textSecondary, fontWeight: '700' }}>Xem lineup thay thế</Text>
-              )}
-            </TouchableOpacity>
+            {hasLockedPlayers ? (
+              <TouchableOpacity
+                testID={`nrv2-available-pool-fetch-court-${cardCourtIdx}`}
+                onPress={() => onFetchAvailablePool(activeMatch)}
+                disabled={busy}
+                style={{ height: 38, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
+              >
+                {busy ? (
+                  <ActivityIndicator size="small" color={colors.textSecondary} />
+                ) : (
+                  <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12, color: colors.textSecondary, fontWeight: '700' }}>Xem lineup thay thế</Text>
+                )}
+              </TouchableOpacity>
+            ) : null}
           </View>
         ) : (
           <TouchableOpacity
@@ -2494,7 +2547,11 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
                 <ActivityIndicator size="small" color={theme.onPrimary} />
                 <Text style={ctaTextStyle(theme.onPrimary, 13)}>Đang bắt đầu trận</Text>
               </View>
-            ) : <Text style={ctaTextStyle(theme.onPrimary, 13)}>Bắt đầu trận</Text>}
+            ) : (
+              <Text style={ctaTextStyle(startDisabled ? (theme.onSurfaceVariant ?? colors.textSecondary) : theme.onPrimary, 13)}>
+                {startDisabledLabel}
+              </Text>
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -2514,6 +2571,8 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   prev.match.team_b === next.match.team_b &&
   prev.match.court_idx === next.match.court_idx &&
   prev.match.round_no === next.match.round_no &&
+  prev.match.preview_source === next.match.preview_source &&
+  prev.match.preview_request_key === next.match.preview_request_key &&
   prev.match.locked_player_ids === next.match.locked_player_ids &&
   prev.pvnaTolerance === next.pvnaTolerance &&
   prev.roundPace === next.roundPace &&
@@ -2952,38 +3011,6 @@ export function ScoreStepper({ value, onMinus, onPlus }: { value: number; onMinu
       <TouchableOpacity onPress={onPlus} style={{ width: 32, height: 32, borderRadius: RADIUS.full, backgroundColor: theme.secondaryContainer, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={ctaTextStyle(theme.primary, 16)}>+</Text>
       </TouchableOpacity>
-    </View>
-  )
-}
-
-export function MatchList({
-  title,
-  matches,
-  state,
-  playersById,
-  onPlayerPress,
-}: {
-  title: string
-  matches: Match[]
-  state: SessionState
-  playersById: Map<string, ArrangementPlayer>
-  onPlayerPress: (playerId: string) => void
-}) {
-  const theme = useAppTheme()
-  return (
-    <View style={{ marginTop: 16 }}>
-      <Text style={[eyebrowStyle(theme.outline), { marginBottom: 10 }]}>{title}</Text>
-      <View style={{ gap: 10 }}>
-        {matches.map(match => (
-          <MatchTile
-            key={`match-${match.court_idx}-${match.team_a.join('-')}-${match.team_b.join('-')}`}
-            match={match}
-            state={state}
-            playersById={playersById}
-            onPlayerPress={onPlayerPress}
-          />
-        ))}
-      </View>
     </View>
   )
 }
@@ -3625,23 +3652,6 @@ export function TeamBlock({
       <Text style={{ display: 'none', marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
         Tổng PVNA {getTeamPvna(team, state).toFixed(2)}
       </Text>
-    </View>
-  )
-}
-
-export function RestingRow({ resting, playersById }: { resting: string[]; playersById: Map<string, ArrangementPlayer> }) {
-  const theme = useAppTheme()
-  const hasRest = resting.length > 0
-  return (
-    <View style={{ marginTop: 12, borderRadius: RADIUS.md, backgroundColor: hasRest ? theme.rescueSoft : theme.successBg, padding: 12, borderWidth: BORDER.hairline, borderColor: hasRest ? theme.rescueAccent : theme.secondaryContainer }}>
-      <Text style={eyebrowStyle(hasRest ? theme.rescueAccent : theme.successText)}>
-        {hasRest ? 'Nghỉ vòng này' : 'Không có người nghỉ'}
-      </Text>
-      {hasRest ? (
-        <Text style={{ marginTop: 5, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.onSurface }}>
-          {resting.map(id => playerName(id, playersById)).join(', ')}
-        </Text>
-      ) : null}
     </View>
   )
 }

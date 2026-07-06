@@ -246,6 +246,7 @@ Deno.serve(async (request) => {
 
     // 4. Run suggestion algorithm
     const serviceClient = createServiceClient()
+    const backgroundWrites: Promise<unknown>[] = []
     const verifyDumpEnabled = Deno.env.get('VERIFY_DUMP') === '1'
     const decisionSource = preferAvailablePool ? 'host_replacement' : 'engine_auto'
     const verifyDumps: import('../../../lib/next-round-suggester/live-preview.ts').IncompleteDump[] = []
@@ -255,7 +256,7 @@ Deno.serve(async (request) => {
         }
       : undefined
     const onInstrumentEvent = (event: { event: string; detail: string; court_count?: number; available?: number }) => {
-      serviceClient.from('engine_instrumentation').insert({
+      const instrumentationWrite = serviceClient.from('engine_instrumentation').insert({
         session_id: sessionId,
         event: event.event,
         detail: event.detail,
@@ -270,6 +271,7 @@ Deno.serve(async (request) => {
           })
         }
       })
+      backgroundWrites.push(instrumentationWrite)
     }
     const selectionDebug: any[] = []
     let payloads = buildSuggestedMatchPayloads({
@@ -486,7 +488,7 @@ Deno.serve(async (request) => {
         missing_courts: finalMissingOpenCourts,
       }
 
-      serviceClient.from('debug_dumps').insert({
+      const debugDumpWrite = serviceClient.from('debug_dumps').insert({
         session_id: sessionId,
         missing_courts: finalMissingOpenCourts,
         payload: replayPayload,
@@ -503,6 +505,7 @@ Deno.serve(async (request) => {
           })
         }
       })
+      backgroundWrites.push(debugDumpWrite)
     }
 
     console.log('[suggest] request_done', {
@@ -526,7 +529,7 @@ Deno.serve(async (request) => {
       real_limited_courts: realLimitedCourts,
     })
 
-    await writeSessionAuditEvent(serviceClient, {
+    const auditWrite = writeSessionAuditEvent(serviceClient, {
       sessionId,
       eventType: 'live_match_suggest',
       edgeFunction: EDGE_FUNCTION_NAME,
@@ -564,7 +567,26 @@ Deno.serve(async (request) => {
         decision_source: decisionSource,
         selection_debug: selectionDebug,
       },
+    }).catch((error) => {
+      console.warn('[suggest] session audit insert failed after response', {
+        suggestion_request_id: suggestionRequestId,
+        client_request_id: clientRequestId,
+        session_id: sessionId,
+        error: error instanceof Error ? error.message : String(error ?? 'Unknown audit error'),
+      })
     })
+    const edgeRuntime = (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime
+    if (edgeRuntime?.waitUntil) {
+      for (const backgroundWrite of backgroundWrites) {
+        edgeRuntime.waitUntil(backgroundWrite)
+      }
+      edgeRuntime.waitUntil(auditWrite)
+    } else {
+      for (const backgroundWrite of backgroundWrites) {
+        void backgroundWrite
+      }
+      void auditWrite
+    }
 
     return jsonResponse({
       ok: true,

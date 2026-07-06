@@ -56,3 +56,5 @@ tmp_*.tsx
 *.tmp
 *.raw
 *_utf8.tsx
+
+.vercel

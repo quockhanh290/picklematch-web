@@ -451,6 +451,38 @@ describe('projected live match state', () => {
     })
   })
 
+  it('does not mark same-court live players as cross-court locked', () => {
+    const state = createState({
+      courts: 1,
+      players: [
+        createPlayer('p1', { pvna: 3.0 }),
+        createPlayer('p2', { pvna: 3.1 }),
+        createPlayer('p3', { pvna: 3.2 }),
+        createPlayer('p4', { pvna: 3.3 }),
+      ],
+    })
+    const liveCourt0 = liveRow('live-court-0', 0, 'live', ['p1', 'p2'], ['p3', 'p4'])
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 1,
+      state,
+      rows: { liveMatchRows: [liveCourt0], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+      options: { courtIdxs: [0] },
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].court_idx).toBe(0)
+    expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(new Set(['p1', 'p2', 'p3', 'p4']))
+    expect(payloads[0].locked_player_ids).toBeUndefined()
+  })
+
   it('does not report occupied live lanes as missing courts in debug dumps', () => {
     const state = createState({
       courts: 6,

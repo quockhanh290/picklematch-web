@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -49,8 +49,6 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [groupSelection, setGroupSelection] = useState<string[]>([])
-  const [activeRoundConfirm, setActiveRoundConfirm] = useState<{ playerId: string; checkedOut: boolean } | null>(null)
-  const [swapTarget, setSwapTarget] = useState<string | null>(null)
 
   const checkoutBatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const liveStateRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -83,20 +81,15 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
   const groupSummaries = useMemo(() => buildGroupSummaries(rows.playerRows), [rows.playerRows])
   const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
 
-  const activeRoundMatchIds = useMemo<Set<string>>(() => {
-    const activeRound = rows.roundRows.find(r => r.status === 'active')
-    if (!activeRound?.matches?.length) return new Set<string>()
-    return new Set(activeRound.matches.flatMap((match: { team_a?: string[]; team_b?: string[] }) => [...(match.team_a ?? []), ...(match.team_b ?? [])].map(String)))
-  }, [rows.roundRows])
+  const activeLiveMatchIds = useMemo<Set<string>>(() => (
+    new Set(
+      rows.liveMatchRows
+        .filter(match => match.status === 'live')
+        .flatMap(match => [...(match.team_a ?? []), ...(match.team_b ?? [])].map(String)),
+    )
+  ), [rows.liveMatchRows])
 
-  const swapCandidates = useMemo<SessionPlayerStateRow[]>(() => {
-    if (!swapTarget) return []
-    const outRow = rows.playerRows.find((row: SessionPlayerStateRow) => row.player_id === swapTarget)
-    const outPvna = outRow?.players?.pvna ?? 3.0
-    return rows.playerRows
-      .filter((row: SessionPlayerStateRow) => row.player_id !== swapTarget && row.checked_out_at === null && !activeRoundMatchIds.has(row.player_id))
-      .sort((a, b) => Math.abs((a.players?.pvna ?? 3.0) - outPvna) - Math.abs((b.players?.pvna ?? 3.0) - outPvna))
-  }, [swapTarget, rows.playerRows, activeRoundMatchIds])
+  const activeRoundMatchIds = activeLiveMatchIds
 
   const applyMutationVersion = useCallback((payload: any) => {
     applyLiveStateVersion(payload?.live_state_version)
@@ -206,37 +199,21 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
 
   const toggleCheckout = useCallback((playerId: string, checkedOut: boolean) => {
     const targetCheckedOut = !checkedOut
-    if (targetCheckedOut && activeRoundMatchIds.has(String(playerId))) {
-      setActiveRoundConfirm({ playerId, checkedOut })
+    if (targetCheckedOut && activeLiveMatchIds.has(String(playerId))) {
+      const msg = 'Người này đang trong trận live. Hãy hủy hoặc kết thúc trận đó trước khi check-out.'
+      setError(msg)
+      Alert.alert('Không thể check-out', msg)
       return
     }
     doCheckout(playerId, checkedOut)
-  }, [activeRoundMatchIds, doCheckout])
+  }, [activeLiveMatchIds, doCheckout])
 
   const openSwap = useCallback((playerId: string) => {
     if (!activeRoundMatchIds.has(String(playerId))) return
-    setActiveRoundConfirm(null)
-    setSwapTarget(playerId)
+    const msg = 'Người này đang trong trận live. Hãy hủy hoặc kết thúc trận đó trước; roster không còn dùng luồng đổi người legacy.'
+    setError(msg)
+    Alert.alert('Không thể đổi từ roster', msg)
   }, [activeRoundMatchIds])
-
-  const doSwap = useCallback(async (inPlayerId: string) => {
-    const outPlayerId = swapTarget
-    if (!outPlayerId) return
-    setSwapTarget(null)
-    setBusy(`swap-${outPlayerId}`)
-    setError(null)
-    try {
-      const payload = await invokeLiveSessionFunction('session-rounds-swap-player', sessionId, { out_player_id: outPlayerId, in_player_id: inPlayerId })
-      applyMutationVersion(payload)
-    } catch (err) {
-      if (!isTimeoutError(err)) {
-        setError(toUserSafeError(err))
-      }
-    } finally {
-      await loadLiveState()
-      setBusy(null)
-    }
-  }, [swapTarget, sessionId, applyMutationVersion, loadLiveState])
 
   const toggleRest = useCallback(async (playerId: string, optedRest: boolean) => {
     if (activeRoundMatchIds.has(String(playerId))) {
@@ -387,77 +364,6 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
           <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.primary }}>+ Thêm người chơi mới</Text>
         </TouchableOpacity>
       </ScrollView>
-      <Modal transparent visible={activeRoundConfirm !== null} animationType="fade" onRequestClose={() => setActiveRoundConfirm(null)}>
-        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 32 }} onPress={() => setActiveRoundConfirm(null)}>
-          <Pressable style={{ backgroundColor: theme.surface, borderRadius: RADIUS.lg, padding: 24, width: '100%' }} onPress={() => {}}>
-            <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 16, color: theme.onSurface, marginBottom: 8 }}>Người đang trong vòng đấu</Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 14, color: theme.onSurfaceVariant, marginBottom: 24 }}>
-              Người này cần rời sớm. Bạn muốn đổi người thay thế hay để họ check-out?
-            </Text>
-            <View style={{ gap: 10 }}>
-              <TouchableOpacity
-                onPress={() => activeRoundConfirm && openSwap(activeRoundConfirm.playerId)}
-                style={{ paddingVertical: 12, paddingHorizontal: 16, backgroundColor: theme.primary, borderRadius: RADIUS.md, alignItems: 'center' }}
-              >
-                <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 14, color: theme.onPrimary }}>Đổi người thay thế</Text>
-              </TouchableOpacity>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity onPress={() => setActiveRoundConfirm(null)} style={{ flex: 1, paddingVertical: 10, alignItems: 'center' }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 14, color: theme.onSurfaceVariant }}>Hủy</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    const confirm = activeRoundConfirm
-                    setActiveRoundConfirm(null)
-                    if (confirm) doCheckout(confirm.playerId, confirm.checkedOut)
-                  }}
-                  style={{ flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: theme.errorContainer, borderRadius: RADIUS.md }}
-                >
-                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 14, color: theme.onErrorContainer }}>Check-out thôi</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-      <Modal transparent visible={swapTarget !== null} animationType="slide" onRequestClose={() => setSwapTarget(null)}>
-        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }} onPress={() => setSwapTarget(null)}>
-          <Pressable style={{ backgroundColor: theme.surface, borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl, padding: 24, maxHeight: '70%' }} onPress={() => {}}>
-            <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 16, color: theme.onSurface, marginBottom: 4 }}>Chọn người vào thay</Text>
-            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 13, color: theme.onSurfaceVariant, marginBottom: 16 }}>
-              Sắp xếp theo PVNA gần nhất với người rời trận.
-            </Text>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {swapCandidates.length === 0 ? (
-                <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 14, color: theme.onSurfaceVariant, textAlign: 'center', paddingVertical: 24 }}>
-                  Không có người nào đang nghỉ để thay thế.
-                </Text>
-              ) : swapCandidates.map((candidate: SessionPlayerStateRow) => {
-                const name = playersById.get(candidate.player_id)?.name ?? 'Người chơi'
-                const pvna = candidate.players?.pvna ?? 3.0
-                const outRow = rows.playerRows.find((row: SessionPlayerStateRow) => row.player_id === swapTarget)
-                const outPvna = outRow?.players?.pvna ?? 3.0
-                const diff = Math.abs(pvna - outPvna)
-                return (
-                  <TouchableOpacity
-                    key={candidate.player_id}
-                    onPress={() => void doSwap(candidate.player_id)}
-                    style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.outlineVariant, gap: 12 }}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 14, color: theme.onSurface }}>{name}</Text>
-                      <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline, marginTop: 2 }}>
-                        PVNA {pvna.toFixed(2)} · chênh {diff.toFixed(2)}
-                      </Text>
-                    </View>
-                    <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 13, color: theme.primary }}>Chọn</Text>
-                  </TouchableOpacity>
-                )
-              })}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   )
 }

@@ -532,6 +532,20 @@ export function buildSuggestedMatchPayloads({
       .filter(match => match.status === 'live' && !completingLiveMatchIds.has(match.id))
       .flatMap(match => [...match.team_a, ...match.team_b]),
   )
+  const liveLockedPlayerCourtIdxs = new Map<string, number>()
+  liveMatchRows
+    .filter(match =>
+      match.status === 'live'
+      && !completingLiveMatchIds.has(match.id)
+      && match.court_idx !== null
+      && match.court_idx !== undefined,
+    )
+    .forEach(match => {
+      const lockedCourtIdx = Number(match.court_idx)
+      if (!Number.isFinite(lockedCourtIdx)) return
+      match.team_a.forEach(playerId => liveLockedPlayerCourtIdxs.set(playerId, lockedCourtIdx))
+      match.team_b.forEach(playerId => liveLockedPlayerCourtIdxs.set(playerId, lockedCourtIdx))
+    })
   const liveAvailabilityContext = liveLockedPlayerIds.size > 0
     ? {
         locked_player_count: liveLockedPlayerIds.size,
@@ -861,7 +875,10 @@ export function buildSuggestedMatchPayloads({
       recommended_tradeoff_choice: tradeoffChoices?.recommended,
       live_availability_context: liveAvailabilityContext,
       locked_player_ids: liveLockedPlayerIds.size > 0
-        ? [...match.team_a, ...match.team_b].filter(id => liveLockedPlayerIds.has(id))
+        ? [...match.team_a, ...match.team_b].filter(id =>
+            liveLockedPlayerIds.has(id)
+            && liveLockedPlayerCourtIdxs.get(id) !== courtIdx,
+          )
         : undefined,
     })
 
