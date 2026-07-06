@@ -18,12 +18,13 @@ Status: IN PROGRESS
 - [x] Stabilization slice 3: surface untrusted/partial/fallback preview state in the suggested-match card, disable unsafe start CTA with clear labels, and fix the card's `visibleMatch` undefined type gap.
 - [x] Browser smoke local V2 board on session `967e6682-207d-4d92-aec9-dbe56b54ca2b`: board rendered without mutating the real session; observed 2 `session-live-matches-suggest` calls under 1s and 2 audit batch calls, with no 25s request storm.
 - [x] Review current open diff by deploy-risk group. Runtime `features/` and `supabase/functions/` no longer call legacy round start/end/swap paths; only diagnostics scripts still reference them. `npm run build:web` passed. `npx jest tests/next-round-suggester/unit/live-preview.test.ts --runInBand --no-cache` passed 50/50.
+- [x] Commit stabilization/runtime group: `8bf912e fix(live-lane): stabilize previews and retire legacy round flow`.
+- [x] Commit migration filename normalization group: `ae16e47 chore(db): normalize historical migration filenames`.
+- [x] Commit replay docs/tooling group: `695feec chore(diagnostics): document live-lane replay workflow`.
 
 ### Next steps
-- [ ] Commit/deploy group A: live-lane stabilization client (`NextRoundSuggesterScreenV2`, `ScreenComponents`, `api`) after one final scoped diff review.
-- [ ] Commit/deploy group B: legacy round retirement (`RosterScreen`, V2 legacy removal, edge stubs, SQL retirement migrations) with explicit note that old round-flow diagnostics will fail by design.
-- [ ] Commit group C separately: migration filename normalization/history cleanup. Keep out of feature commits because the diff is large and mostly mechanical.
-- [ ] Commit group D separately: audit/replay docs and diagnostics tooling.
+- [ ] Apply DB migrations if production has not already applied `20260703000005`, `20260703000006`, and `20260704000001`.
+- [ ] Deploy Supabase edge functions touched by `8bf912e`: `session-live-matches-suggest`, `session-rounds-start`, `session-rounds-start-versioned`, `session-rounds-end`, `session-rounds-end-versioned`, `session-rounds-swap-player`.
 - [ ] Deploy client bundle when Kevin wants production client to pick up lifecycle audit flush + idempotent client audit writes. Do not deploy Vercel without explicit approval.
 
 ### Key decisions
