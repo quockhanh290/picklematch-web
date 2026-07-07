@@ -15,11 +15,15 @@ type BatchTotals = {
   engineDeltaSum: number
   worstDelta: number
   missedBetter: number
+  engineQualitySkippedPartialPreview: number
   fullBoards: number
   incompleteBoards: number
   restRiskCases: number
   restRiskAvoidable: number
   restRiskUnavoidable: number
+  restRiskPriorityMisses: number
+  restRiskCapacityDeferred: number
+  restRiskSkippedPartialPreview: number
 }
 
 function pct(count: number, total: number) {
@@ -52,11 +56,15 @@ function main() {
     engineDeltaSum: 0,
     worstDelta: Number.NEGATIVE_INFINITY,
     missedBetter: 0,
+    engineQualitySkippedPartialPreview: 0,
     fullBoards: 0,
     incompleteBoards: 0,
     restRiskCases: 0,
     restRiskAvoidable: 0,
     restRiskUnavoidable: 0,
+    restRiskPriorityMisses: 0,
+    restRiskCapacityDeferred: 0,
+    restRiskSkippedPartialPreview: 0,
   }
 
   for (const [index, line] of loadJsonl(path).entries()) {
@@ -86,6 +94,7 @@ function main() {
     }
 
     const analysis = analyzeSuggestQuality(dump)
+    if (analysis.engineQualitySkippedReason) totals.engineQualitySkippedPartialPreview++
 
     for (const board of analysis.engineBoards) {
       if (board.delta === null) continue
@@ -102,8 +111,11 @@ function main() {
     }
 
     totals.restRiskCases += analysis.restRiskCases.length
-    totals.restRiskAvoidable += analysis.restRiskCases.filter(risk => risk.placeable).length
+    if (analysis.restRiskSkippedReason) totals.restRiskSkippedPartialPreview++
+    totals.restRiskAvoidable += analysis.restRiskCases.filter(risk => risk.placeable && risk.priorityMiss).length
     totals.restRiskUnavoidable += analysis.restRiskCases.filter(risk => !risk.placeable).length
+    totals.restRiskPriorityMisses += analysis.restRiskCases.filter(risk => risk.placeable && risk.priorityMiss).length
+    totals.restRiskCapacityDeferred += analysis.restRiskCases.filter(risk => risk.placeable && risk.capacityDeferred).length
   }
 
   const analyzedBoards = totals.fullBoards + totals.incompleteBoards
@@ -120,6 +132,7 @@ function main() {
   console.log(`Avg engine_auto delta: ${fmt(avgDelta)}`)
   console.log(`Worst delta: ${fmt(worstDelta)}`)
   console.log(`Missed strictly-better placement: ${totals.missedBetter} (${pct(totals.missedBetter, totals.engineBoards)})`)
+  console.log(`Skipped partial-preview dumps: ${totals.engineQualitySkippedPartialPreview}`)
   console.log('')
 
   console.log('BOARD FILL')
@@ -127,10 +140,12 @@ function main() {
   console.log(`Incomplete boards: ${totals.incompleteBoards} (${pct(totals.incompleteBoards, analyzedBoards)})`)
   console.log('')
 
-  console.log('REST-FAIRNESS (PRE-F2 DATA if dumps predate 4816522)')
+  console.log('REST-FAIRNESS (slot-aware; PRE-F2 DATA if dumps predate 4816522)')
   console.log(`Total rest-risk cases: ${totals.restRiskCases}`)
-  console.log(`Avoidable: ${totals.restRiskAvoidable}`)
+  console.log(`Priority misses: ${totals.restRiskPriorityMisses}`)
+  console.log(`Capacity-deferred: ${totals.restRiskCapacityDeferred}`)
   console.log(`Unavoidable: ${totals.restRiskUnavoidable}`)
+  console.log(`Skipped partial-preview dumps: ${totals.restRiskSkippedPartialPreview}`)
 }
 
 main()

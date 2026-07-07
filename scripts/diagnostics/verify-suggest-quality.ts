@@ -68,6 +68,9 @@ export type Dump = {
   current_round: number
   busy_player_ids: string[]
   missing_courts?: number[]
+  missing_target_courts?: number[]
+  target_count_shortfall?: number
+  target_expected_count?: number
   avoid_pairs?: Array<{ player_a: string; player_b: string }>
   pvna_tolerance?: number
   rounds?: RoundRecord[]
@@ -220,6 +223,8 @@ export type EngineBoardAnalysis = {
 export type RestRiskAnalysis = {
   player: DumpPlayer
   placeable: boolean
+  priorityMiss: boolean
+  capacityDeferred: boolean
 }
 
 export type SuggestQualityAnalysis = {
@@ -232,7 +237,9 @@ export type SuggestQualityAnalysis = {
   engineMatches: ChosenMatch[]
   replacementMatches: ChosenMatch[]
   engineBoards: EngineBoardAnalysis[]
+  engineQualitySkippedReason: string | null
   restRiskCases: RestRiskAnalysis[]
+  restRiskSkippedReason: string | null
   missingCourts: number[]
 }
 
@@ -250,48 +257,95 @@ export function analyzeSuggestQuality(dump: Dump): SuggestQualityAnalysis {
   const engineMatches = chosenMatches.filter(m => !m.is_replacement && decisionSource !== 'host_replacement')
   const replacementMatches = chosenMatches.filter(m => m.is_replacement || decisionSource === 'host_replacement')
 
-  const used = new Set<string>()
-  const engineBoards: EngineBoardAnalysis[] = []
-  for (const cm of engineMatches) {
-    const avail = pool.filter((id) => !used.has(id))
-    const chosenPlayers = [...cm.team_a, ...cm.team_b]
-    const allInPool = chosenPlayers.every((id) => avail.includes(id))
-    const chosenScore = scoreChosen(cm.team_a, cm.team_b, state, tolerance)
-    const best = bruteForceBest(avail, state, tolerance)
-    const delta = best ? chosenScore - best.score : null
-    engineBoards.push({
-      match: cm,
-      poolSize: avail.length,
-      chosenScore,
-      best,
-      delta,
-      allInPool,
-      isSuboptimal: delta !== null && delta > 0.01,
-    })
-    chosenPlayers.forEach((id) => used.add(id))
-  }
-
   const chosenPlayerIds = new Set(
     chosenMatches.flatMap(m => [...m.team_a, ...m.team_b])
   )
+  const engineDecision = (dump as any).engine_decision ?? {}
+  const requestedCourts = Number(
+    dump.target_expected_count
+      ?? engineDecision.input_count
+      ?? chosenMatches.length
+  )
+  const maxCourtsWithFree = Number(
+    engineDecision.max_courts_with_free_players
+      ?? Math.floor(pool.length / 4)
+  )
+  const expectedCoverageCourts = Math.min(
+    Math.max(0, dump.court_count),
+    Number.isFinite(maxCourtsWithFree) ? Math.max(0, maxCourtsWithFree) : Math.floor(pool.length / 4),
+  )
+  const hasExplicitTargetMetadata = Array.isArray(dump.missing_target_courts)
+    || dump.target_count_shortfall !== undefined
+  const isLegacyPartialPreview = !hasExplicitTargetMetadata
+    && Number.isFinite(requestedCourts)
+    && requestedCourts > 0
+    && requestedCourts < expectedCoverageCourts
+  const chosenSlotBudget = isLegacyPartialPreview
+    ? 0
+    : chosenPlayerIds.size
+  const partialPreviewSkipReason = isLegacyPartialPreview
+    ? `legacy_partial_preview: requested=${requestedCourts}, expected=${expectedCoverageCourts}`
+    : null
 
-  // late-arrival threshold: matches_played===0 -> consecutive_rest >= 2, others >= 1
-  const restRiskCases = dump.players
+  const used = new Set<string>()
+  const engineBoards: EngineBoardAnalysis[] = []
+  if (!partialPreviewSkipReason) {
+    for (const cm of engineMatches) {
+      const avail = pool.filter((id) => !used.has(id))
+      const chosenPlayers = [...cm.team_a, ...cm.team_b]
+      const allInPool = chosenPlayers.every((id) => avail.includes(id))
+      const chosenScore = scoreChosen(cm.team_a, cm.team_b, state, tolerance)
+      const best = bruteForceBest(avail, state, tolerance)
+      const delta = best ? chosenScore - best.score : null
+      engineBoards.push({
+        match: cm,
+        poolSize: avail.length,
+        chosenScore,
+        best,
+        delta,
+        allInPool,
+        isSuboptimal: delta !== null && delta > 0.01,
+      })
+      chosenPlayers.forEach((id) => used.add(id))
+    }
+  }
+  const allRestRiskPlayers = dump.players
     .filter(p => {
       if (p.checked_out || p.opted_rest || busy.has(p.id)) return false
-      if (chosenPlayerIds.has(p.id)) return false
       const threshold = p.matches_played === 0 ? 2 : 1
       return p.consecutive_rest >= threshold
     })
-    .map(player => ({
-      player,
-      placeable: canPlace(player.id, pool, state, tolerance),
-    }))
+    .sort((left, right) => {
+      if (right.consecutive_rest !== left.consecutive_rest) return right.consecutive_rest - left.consecutive_rest
+      if (left.matches_played !== right.matches_played) return left.matches_played - right.matches_played
+      return left.id.localeCompare(right.id)
+    })
+  const requiredRestRiskIds = new Set(allRestRiskPlayers.slice(0, chosenSlotBudget).map(player => player.id))
 
-  const missingCourts: number[] = Array.isArray(dump.missing_courts)
-    ? dump.missing_courts
+  // late-arrival threshold: matches_played===0 -> consecutive_rest >= 2, others >= 1.
+  // Count true misses only inside the rest-priority cohort that fits the chosen slot budget.
+  const restRiskCases = isLegacyPartialPreview
+    ? []
+    : allRestRiskPlayers
+        .filter(p => !chosenPlayerIds.has(p.id))
+        .map(player => ({
+          player,
+          placeable: canPlace(player.id, pool, state, tolerance),
+          priorityMiss: requiredRestRiskIds.has(player.id),
+          capacityDeferred: !requiredRestRiskIds.has(player.id),
+        }))
+  const restRiskSkippedReason = partialPreviewSkipReason
+
+  const missingCourts: number[] = Array.isArray(dump.missing_target_courts)
+    ? [...dump.missing_target_courts]
+    : Array.isArray(dump.missing_courts)
+      ? [...dump.missing_courts]
     : []
-  if (!Array.isArray(dump.missing_courts)) {
+  const targetCountShortfall = Number(dump.target_count_shortfall ?? 0)
+  if (Number.isFinite(targetCountShortfall) && targetCountShortfall > 0) {
+    for (let index = 0; index < targetCountShortfall; index += 1) missingCourts.push(-1)
+  }
+  if (!Array.isArray(dump.missing_target_courts) && !Array.isArray(dump.missing_courts)) {
     const filledCourts = new Set(chosenMatches.map(m => m.court_idx))
     for (let courtIdx = 0; courtIdx < dump.court_count; courtIdx++) {
       if (!filledCourts.has(courtIdx)) missingCourts.push(courtIdx)
@@ -308,7 +362,9 @@ export function analyzeSuggestQuality(dump: Dump): SuggestQualityAnalysis {
     engineMatches,
     replacementMatches,
     engineBoards,
+    engineQualitySkippedReason: partialPreviewSkipReason,
     restRiskCases,
+    restRiskSkippedReason,
     missingCourts,
   }
 }
