@@ -65,6 +65,10 @@ function bytesSummary(rows: Row[], field: string) {
   }
 }
 
+function arr(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
 function repeated(rows: Row[], field: string, limit = 20) {
   return Object.entries(countBy(rows, row => row[field] || null))
     .filter(([key, count]) => key !== 'unknown' && count > 1)
@@ -111,6 +115,10 @@ async function main() {
       payload_bytes: row.payload_bytes,
       chosen_matches_count: row.chosen_matches_count,
       missing_courts: row.missing_courts,
+      missing_open_courts: row.missing_open_courts,
+      missing_target_courts: row.missing_target_courts,
+      partial_full_board_request: row.partial_full_board_request,
+      target_count_shortfall: row.target_count_shortfall,
       client_request_id: row.client_request_id,
       suggestion_request_id: row.suggestion_request_id,
       selection_debug_count: row.selection_debug_count,
@@ -163,6 +171,9 @@ async function main() {
       dumps_by_decision_source: countBy(dumps, row => row.decision_source),
       dumps_by_chosen_match_count: countBy(dumps, row => String(row.chosen_matches_count)),
       dumps_by_missing_court_count: countBy(dumps, row => String(Array.isArray(row.missing_courts) ? row.missing_courts.length : 0)),
+      dumps_by_missing_open_court_count: countBy(dumps, row => String(arr(row.missing_open_courts ?? row.missing_courts).length)),
+      dumps_by_missing_target_count: countBy(dumps, row => String(arr(row.missing_target_courts).length + num(row.target_count_shortfall))),
+      dumps_by_partial_full_board_request: countBy(dumps, row => String(row.partial_full_board_request === true)),
       audit_by_event_top: Object.fromEntries(Object.entries(countBy(audits, row => `${row.edge_function}:${row.event_type}`)).slice(0, 50)),
       instrumentation_by_event_top: Object.fromEntries(Object.entries(countBy(instrumentation, row => row.event)).slice(0, 50)),
     },

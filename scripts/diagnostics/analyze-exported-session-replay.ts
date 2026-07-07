@@ -52,6 +52,25 @@ function num(value: any): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+function missingOpenCourts(row: AnyRow): any[] {
+  return arr(row.payload?.missing_open_courts ?? row.missing_courts)
+}
+
+function missingTargetCourts(row: AnyRow): any[] {
+  const payload = row.payload ?? {}
+  if (Array.isArray(payload.missing_target_courts)) return payload.missing_target_courts
+  if (payload.partial_full_board_request === true) return []
+  return missingOpenCourts(row)
+}
+
+function targetCountShortfall(row: AnyRow): number {
+  return Math.max(0, num(row.payload?.target_count_shortfall) ?? 0)
+}
+
+function hasTargetIssue(row: AnyRow): boolean {
+  return missingTargetCourts(row).length > 0 || targetCountShortfall(row) > 0
+}
+
 function summarizeWarnings(dumps: AnyRow[]) {
   const warnings: Record<string, number> = {}
   const tradeoffs: Record<string, number> = {}
@@ -99,6 +118,13 @@ function compactDump(row: AnyRow) {
     court_count: payload.court_count ?? null,
     chosen: arr(row.chosen_matches).length,
     missing: arr(row.missing_courts),
+    missing_open: missingOpenCourts(row),
+    missing_target: missingTargetCourts(row),
+    target_count_shortfall: targetCountShortfall(row),
+    partial_full_board_request: payload.partial_full_board_request ?? false,
+    target_court_idxs: arr(payload.target_court_idxs),
+    open_court_idxs: arr(payload.open_court_idxs),
+    filled_court_idxs: arr(payload.filled_court_idxs),
     rounds_returned: arr(row.rounds).length,
     final_board: arr(payload.final_preview_board).length,
     raw_payloads: arr(payload.raw_payloads_before_final_board).length,
@@ -125,10 +151,14 @@ async function main() {
     readJsonl<AnyRow>(file('session_pair_history.jsonl')),
   ])
 
-  const missing = dumps.filter((row) => arr(row.missing_courts).length > 0)
-  const complete = dumps.filter((row) => arr(row.missing_courts).length === 0)
+  const missing = dumps.filter((row) => missingOpenCourts(row).length > 0)
+  const complete = dumps.filter((row) => missingOpenCourts(row).length === 0)
+  const targetMissing = dumps.filter(hasTargetIssue)
+  const targetComplete = dumps.filter((row) => !hasTargetIssue(row))
   const engineMissing = missing.filter((row) => row.decision_source === 'engine_auto')
   const hostMissing = missing.filter((row) => row.decision_source === 'host_replacement')
+  const engineTargetMissing = targetMissing.filter((row) => row.decision_source === 'engine_auto')
+  const hostTargetMissing = targetMissing.filter((row) => row.decision_source === 'host_replacement')
 
   const repeatedClientRequests = Object.entries(countBy(dumps, (row) => row.payload?.client_request_id ?? 'none'))
     .filter(([key, count]) => key !== 'none' && count > 1)
@@ -141,10 +171,12 @@ async function main() {
     .slice(0, 20)
 
   const missingByMinute = countBy(missing, (row) => minute(row.created_at))
+  const targetMissingByMinute = countBy(targetMissing, (row) => minute(row.created_at))
   const allByMinute = countBy(dumps, (row) => minute(row.created_at))
 
   const chosenDist = countBy(dumps, (row) => String(arr(row.chosen_matches).length))
-  const missingDist = countBy(dumps, (row) => String(arr(row.missing_courts).length))
+  const missingDist = countBy(dumps, (row) => String(missingOpenCourts(row).length))
+  const targetMissingDist = countBy(dumps, (row) => String(missingTargetCourts(row).length + targetCountShortfall(row)))
   const currentRoundDist = countBy(dumps, (row) => String(row.payload?.current_round ?? row.payload?.derived_state_summary?.current_round ?? 'unknown'))
   const courtCountDist = countBy(dumps, (row) => String(row.payload?.court_count ?? 'unknown'))
 
@@ -162,11 +194,25 @@ async function main() {
   const optedRest = playerState.filter((row) => row.opted_rest)
 
   const worstMissing = [...missing]
-    .sort((a, b) => arr(b.missing_courts).length - arr(a.missing_courts).length || String(b.created_at).localeCompare(String(a.created_at)))
+    .sort((a, b) => missingOpenCourts(b).length - missingOpenCourts(a).length || String(b.created_at).localeCompare(String(a.created_at)))
     .slice(0, 12)
     .map(compactDump)
 
   const recentMissing = [...missing]
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, 12)
+    .map(compactDump)
+
+  const worstTargetMissing = [...targetMissing]
+    .sort((a, b) => {
+      const left = missingTargetCourts(a).length + targetCountShortfall(a)
+      const right = missingTargetCourts(b).length + targetCountShortfall(b)
+      return right - left || String(b.created_at).localeCompare(String(a.created_at))
+    })
+    .slice(0, 12)
+    .map(compactDump)
+
+  const recentTargetMissing = [...targetMissing]
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
     .slice(0, 12)
     .map(compactDump)
@@ -203,12 +249,18 @@ async function main() {
       missing: missing.length,
       engine_missing: engineMissing.length,
       host_replacement_missing: hostMissing.length,
+      target_complete: targetComplete.length,
+      target_missing: targetMissing.length,
+      engine_target_missing: engineTargetMissing.length,
+      host_replacement_target_missing: hostTargetMissing.length,
       by_decision_source: countBy(dumps, (row) => row.decision_source ?? 'unknown'),
       chosen_match_count_distribution: chosenDist,
       missing_court_count_distribution: missingDist,
+      target_missing_court_count_distribution: targetMissingDist,
       current_round_distribution: currentRoundDist,
       court_count_distribution: courtCountDist,
       missing_by_minute_top: Object.fromEntries(Object.entries(missingByMinute).slice(0, 20)),
+      target_missing_by_minute_top: Object.fromEntries(Object.entries(targetMissingByMinute).slice(0, 20)),
       all_dumps_by_minute_top: Object.fromEntries(Object.entries(allByMinute).slice(0, 20)),
       repeated_client_request_ids: repeatedClientRequests,
       repeated_suggestion_request_ids: requestIds,
@@ -238,6 +290,8 @@ async function main() {
     warnings,
     worst_missing: worstMissing,
     recent_missing: recentMissing,
+    worst_target_missing: worstTargetMissing,
+    recent_target_missing: recentTargetMissing,
     sample_recent_complete: sampleCompleteRecent,
   }
 

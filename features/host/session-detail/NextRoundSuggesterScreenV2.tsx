@@ -2591,6 +2591,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
               player_limited_courts: res.player_limited_courts ?? null,
               temp_limited_courts: res.temp_limited_courts ?? null,
               real_limited_courts: res.real_limited_courts ?? null,
+              missing_open_courts: Array.isArray(res.missing_open_courts) ? res.missing_open_courts : null,
+              missing_target_courts: Array.isArray(res.missing_target_courts) ? res.missing_target_courts : null,
+              partial_full_board_request: res.partial_full_board_request ?? null,
+              target_count_shortfall: res.target_count_shortfall ?? null,
             },
             detail: {
               total_ms: Math.round(nowMs() - previewT0),
@@ -2711,11 +2715,23 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             const fulfilledPendingReplacementCourts = requestedReplacementCourtIdxs.every(courtIdx =>
               nextLaneCache.has(courtIdx) && (edgeReplacedCourtIdxs.size === 0 || edgeReplacedCourtIdxs.has(courtIdx)),
             )
-            const previewBatchComplete = isPreviewBoardComplete({
+            const localPreviewBatchComplete = isPreviewBoardComplete({
               matches: stampedMatches,
               expectedCount: suggestedQueueCount,
               replacementCourtIdxs,
             })
+            const edgeMissingTargetCourts = Array.isArray(res.missing_target_courts)
+              ? res.missing_target_courts
+                  .map((courtIdx: unknown) => Number(courtIdx))
+                  .filter((courtIdx: number) => Number.isFinite(courtIdx))
+              : null
+            const edgeTargetCountShortfall = typeof res.target_count_shortfall === 'number'
+              ? Math.max(0, Math.floor(res.target_count_shortfall))
+              : null
+            const hasEdgeTargetCompleteness = edgeMissingTargetCourts !== null || edgeTargetCountShortfall !== null
+            const previewBatchComplete = hasEdgeTargetCompleteness
+              ? (edgeMissingTargetCourts?.length ?? 0) === 0 && (edgeTargetCountShortfall ?? 0) === 0
+              : localPreviewBatchComplete
             const currentPreviewBatchComplete = isPreviewBoardComplete({
               matches: currentPreviewBoardForEdge,
               expectedCount: suggestedQueueCount,
@@ -2784,6 +2800,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                 responsePayload: {
                   fetched_match_count: fetchedMatches.length,
                   stamped_match_count: stampedMatches.length,
+                  missing_target_courts: edgeMissingTargetCourts,
+                  target_count_shortfall: edgeTargetCountShortfall,
                 },
                 detail: {
                   incomplete_request_key: incompleteRequestKey,
@@ -2810,6 +2828,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                   fetched_match_count: fetchedMatches.length,
                   stamped_match_count: stampedMatches.length,
                   result_courts: stampedMatches.map(match => getSuggestedLaneCourtIdx(match)),
+                  missing_target_courts: edgeMissingTargetCourts,
+                  target_count_shortfall: edgeTargetCountShortfall,
                 },
                 detail: {
                   incomplete_request_key: incompleteRequestKey,
@@ -2822,6 +2842,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                   fetched_courts: fetchedMatches.map(match => getSuggestedLaneCourtIdx(match)),
                   requested_replacement_courts: requestedReplacementCourtIdxs,
                   suggested_queue_count: suggestedQueueCount,
+                  edge_target_completeness: hasEdgeTargetCompleteness,
                 },
               })
               if (currentRetry < 2) {

@@ -394,6 +394,26 @@ Deno.serve(async (request) => {
     )
     const finalMissingOpenCourts = Array.from({ length: courtCount }, (_, idx) => idx)
       .filter(idx => !occupiedCourtIdxs.has(idx) && !finalFilledCourtIdxs.has(idx))
+    const openCourtIdxs = Array.from({ length: courtCount }, (_, idx) => idx)
+      .filter(idx => !occupiedCourtIdxs.has(idx))
+    const explicitTargetCourtIdxs = (courtIdxs ?? [])
+      .filter(idx => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
+    const partialFullBoardRequest = mode === 'full_board'
+      && explicitTargetCourtIdxs.length === 0
+      && count < openCourtIdxs.length
+    const targetCourtIdxs = mode === 'replace_courts'
+      ? explicitTargetCourtIdxs
+      : partialFullBoardRequest
+        ? []
+        : openCourtIdxs
+    const missingTargetCourts = targetCourtIdxs.filter(idx => !finalFilledCourtIdxs.has(idx))
+    const filledTargetCount = targetCourtIdxs.length > 0
+      ? targetCourtIdxs.filter(idx => finalFilledCourtIdxs.has(idx)).length
+      : Math.min(count, finalPreviewBoard.length)
+    const targetExpectedCount = targetCourtIdxs.length > 0
+      ? targetCourtIdxs.length
+      : count
+    const targetCountShortfall = Math.max(0, targetExpectedCount - filledTargetCount)
 
     if (verifyDumpEnabled) {
       const latestDump = verifyDumps.at(-1)
@@ -484,7 +504,16 @@ Deno.serve(async (request) => {
         locked_court_idxs: board.locked_court_idxs,
         quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
         occupied_live_court_idxs: [...occupiedCourtIdxs].sort((left, right) => left - right),
+        open_court_idxs: openCourtIdxs,
+        target_court_idxs: targetCourtIdxs,
+        requested_court_idxs: explicitTargetCourtIdxs,
+        filled_court_idxs: [...finalFilledCourtIdxs].sort((left, right) => left - right),
         missing_open_courts: finalMissingOpenCourts,
+        missing_target_courts: missingTargetCourts,
+        partial_full_board_request: partialFullBoardRequest,
+        target_expected_count: targetExpectedCount,
+        filled_target_count: filledTargetCount,
+        target_count_shortfall: targetCountShortfall,
         missing_courts: finalMissingOpenCourts,
       }
 
@@ -523,6 +552,9 @@ Deno.serve(async (request) => {
       final_preview_board_count: finalPreviewBoard.length,
       occupied_live_court_idxs: [...occupiedCourtIdxs].sort((left, right) => left - right),
       missing_open_courts: finalMissingOpenCourts,
+      missing_target_courts: missingTargetCourts,
+      partial_full_board_request: partialFullBoardRequest,
+      target_count_shortfall: targetCountShortfall,
       quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
       player_limited_courts: playerLimitedCourts,
       temp_limited_courts: tempLimitedCourts,
@@ -557,7 +589,16 @@ Deno.serve(async (request) => {
         final_preview_board_count: finalPreviewBoard.length,
         replaced_court_idxs: board.replaced_court_idxs,
         locked_court_idxs: board.locked_court_idxs,
+        open_court_idxs: openCourtIdxs,
+        target_court_idxs: targetCourtIdxs,
+        requested_court_idxs: explicitTargetCourtIdxs,
+        filled_court_idxs: [...finalFilledCourtIdxs].sort((left, right) => left - right),
         missing_open_courts: finalMissingOpenCourts,
+        missing_target_courts: missingTargetCourts,
+        partial_full_board_request: partialFullBoardRequest,
+        target_expected_count: targetExpectedCount,
+        filled_target_count: filledTargetCount,
+        target_count_shortfall: targetCountShortfall,
         quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
         player_limited_courts: playerLimitedCourts,
         temp_limited_courts: tempLimitedCourts,
@@ -594,6 +635,16 @@ Deno.serve(async (request) => {
       final_preview_board: finalPreviewBoard,
       replaced_court_idxs: board.replaced_court_idxs,
       locked_court_idxs: board.locked_court_idxs,
+      open_court_idxs: openCourtIdxs,
+      target_court_idxs: targetCourtIdxs,
+      requested_court_idxs: explicitTargetCourtIdxs,
+      filled_court_idxs: [...finalFilledCourtIdxs].sort((left, right) => left - right),
+      missing_open_courts: finalMissingOpenCourts,
+      missing_target_courts: missingTargetCourts,
+      partial_full_board_request: partialFullBoardRequest,
+      target_expected_count: targetExpectedCount,
+      filled_target_count: filledTargetCount,
+      target_count_shortfall: targetCountShortfall,
       quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
       player_limited_courts: playerLimitedCourts,
       temp_limited_courts: tempLimitedCourts,
