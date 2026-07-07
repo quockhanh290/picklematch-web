@@ -154,7 +154,8 @@ const LIVE_SCORE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 90 : SCREEN_WIDTH > 360 ? 80 
 const LIVE_SCORE_CARD_HEIGHT = LIVE_SCORE_CARD_WIDTH * 1.25
 const LIVE_SCORE_FONT_SIZE = SCREEN_WIDTH > 400 ? 56 : SCREEN_WIDTH > 360 ? 48 : 42
 const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
-const LIVE_PREVIEW_EDGE_MAX_COUNT = 2
+const LIVE_PREVIEW_REPLACEMENT_MAX_COUNT = 2
+const LIVE_PREVIEW_FULL_BOARD_MAX_COUNT = 6
 const LIVE_PREVIEW_SOFT_TIMEOUT_MS = 12000
 const LIVE_PREVIEW_INCOMPLETE_RETRY_MS = 900
 const LIVE_PREVIEW_BLOCKED_RETRY_MS = 6000
@@ -2308,14 +2309,22 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       suggestedPreviewBatchRef.current = null
       return
     }
+    const shouldRequestFullBoardPreview = hasHardReusableQualityViolation
+      || reusableMatches.length === 0
+      || (shouldRecoverMissingPreviewCourts && missingPreviewCourtIdxsForRecovery.length > LIVE_PREVIEW_REPLACEMENT_MAX_COUNT)
+    const previewEdgeMaxCount = shouldRequestFullBoardPreview
+      ? LIVE_PREVIEW_FULL_BOARD_MAX_COUNT
+      : LIVE_PREVIEW_REPLACEMENT_MAX_COUNT
     const fetchSuggestedCount = Math.max(
       1,
       Math.min(
         suggestedQueueCount,
-        LIVE_PREVIEW_EDGE_MAX_COUNT,
-        queuedPreviewCourtIdxs.length > 0
-          ? queuedPreviewCourtIdxs.length
-          : 1,
+        previewEdgeMaxCount,
+        shouldRequestFullBoardPreview
+          ? suggestedQueueCount
+          : queuedPreviewCourtIdxs.length > 0
+            ? queuedPreviewCourtIdxs.length
+            : 1,
       ),
     )
     const incompleteRequestKey = [
@@ -2326,7 +2335,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       [...pendingReplacementCourts].sort((left, right) => left - right).join(','),
       missingPreviewCourtIdxsForRecovery.join(','),
       hardPreviewQualityCourtIdxs.join(','),
-      shouldRecoverMissingPreviewCourts ? 'mini-recover' : 'batch',
+      shouldRequestFullBoardPreview ? 'full-board' : shouldRecoverMissingPreviewCourts ? 'mini-recover' : 'batch',
       reusableMatches.map(match => getSuggestedLaneCourtIdx(match)).join(','),
       effectiveLiveMatchRows.map(match => `${match.id}:${match.status}:${match.court_idx ?? ''}`).join(','),
     ].join('||')
@@ -2388,6 +2397,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         request_serial: requestSerial,
         suggested_queue_count: fetchSuggestedCount,
         target_suggested_queue_count: suggestedQueueCount,
+        full_board_request: shouldRequestFullBoardPreview,
         live_state_version: rows.liveStateVersion,
       },
     })
@@ -2419,12 +2429,14 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           request_serial: requestSerial,
           suggested_queue_count: fetchSuggestedCount,
           target_suggested_queue_count: suggestedQueueCount,
+          full_board_request: shouldRequestFullBoardPreview,
           live_state_version: rows.liveStateVersion,
         },
       })
       if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch start', {
         suggestedQueueCount: fetchSuggestedCount,
         targetSuggestedQueueCount: suggestedQueueCount,
+        fullBoardRequest: shouldRequestFullBoardPreview,
         liveStateVersion: rows.liveStateVersion,
       })
 
@@ -2446,7 +2458,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         .filter(match => hasHardPreviewQualityViolation(match, state, pvnaTolerance))
         .map(match => getSuggestedLaneCourtIdx(match))
         .filter((courtIdx): courtIdx is number => courtIdx !== null)
-      const requestedReplacementCourtIdxs = [
+      const rawRequestedReplacementCourtIdxs = [
         ...getRequestedReplacementCourtIdxs({
           pendingReplacementCourtIdxs: pendingReplacementCourts,
           missingPreviewCourtIdxs,
@@ -2458,6 +2470,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         && courtIdx < snap.queueCourtCount
         && courtIdxs.indexOf(courtIdx) === index
       ).slice(0, fetchSuggestedCount)
+      const requestedReplacementCourtIdxs = shouldRequestFullBoardPreview
+        ? []
+        : rawRequestedReplacementCourtIdxs
       const requestedReplacementCourtSet = new Set(requestedReplacementCourtIdxs)
       const retainedPreviewBusyRows = effectivePreviewBoard
         .filter(match => {
@@ -2470,8 +2485,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           sequence_no: snapshotCountableMatchCount + index,
           status: 'suggested',
         }))
-      const previewMode: 'full_board' | 'replace_courts' = requestedReplacementCourtIdxs.length > 0 && !hasHardReusableQualityViolation
-        ? 'replace_courts'
+      const previewMode: 'full_board' | 'replace_courts' = shouldRequestFullBoardPreview
+        ? 'full_board'
         : requestedReplacementCourtIdxs.length > 0
           ? 'replace_courts'
           : 'full_board'
@@ -2562,6 +2577,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         missingPreviewCourtIdxs,
         snapHardPreviewQualityCourtIdxs,
         hasHardReusableQualityViolation,
+        fullBoardRequest: shouldRequestFullBoardPreview,
         suggestedQueueCount: snap.queueCourtCount,
       })
 
