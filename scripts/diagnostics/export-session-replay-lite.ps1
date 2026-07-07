@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $false)]
-  [string]$SessionId = "967e6682-207d-4d92-aec9-dbe56b54ca2b",
+  [string]$SessionId = "",
 
   [Parameter(Mandatory = $false)]
   [switch]$Latest,
@@ -12,13 +12,7 @@ param(
   [string]$OutDir = "",
 
   [Parameter(Mandatory = $false)]
-  [int]$DebugBatchSize = 10,
-
-  [Parameter(Mandatory = $false)]
-  [int]$RowBatchSize = 100,
-
-  [Parameter(Mandatory = $false)]
-  [switch]$MetadataOnly
+  [int]$BatchSize = 500
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,7 +40,6 @@ function Invoke-SupabaseJson {
   )
 
   $Sql = ($Sql -replace "\s+", " ").Trim()
-
   $oldErrorActionPreference = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
   try {
@@ -55,6 +48,7 @@ function Invoke-SupabaseJson {
   } finally {
     $ErrorActionPreference = $oldErrorActionPreference
   }
+
   if ($exitCode -ne 0) {
     $message = ($output | Out-String).Trim()
     throw "supabase db query failed for [$Label] with exit code $exitCode`nSQL:`n$Sql`n$message"
@@ -101,21 +95,11 @@ function Write-JsonFile {
     [Parameter(Mandatory = $true)][string]$Path
   )
 
-  if (
-    $null -ne $Value -and
-    $Value.PSObject.Properties.Name -contains "value" -and
-    $Value.PSObject.Properties.Name -contains "Count"
-  ) {
-    $Value = $Value.value
-  }
-
   ConvertTo-Json -InputObject $Value -Depth 100 | Set-Content -Encoding UTF8 -LiteralPath $Path
 }
 
 function Resolve-LatestSessionId {
-  param(
-    [Parameter(Mandatory = $true)][int]$Hours
-  )
+  param([Parameter(Mandatory = $true)][int]$Hours)
 
   $hoursValue = [Math]::Max(1, $Hours)
   $latestSql = @"
@@ -158,7 +142,7 @@ function Export-JsonlQuery {
   $written = 0
   while ($true) {
     $sql = "select $RowExpression as row_json $FromWhere $OrderBy limit $BatchSize offset $offset;"
-    $rows = Invoke-SupabaseJson $sql
+    $rows = Invoke-SupabaseJson $sql $Name
     if ($rows.Count -eq 0) {
       break
     }
@@ -188,8 +172,12 @@ if ($Latest) {
   $SessionId = Resolve-LatestSessionId $SinceHours
 }
 
+if (-not $SessionId) {
+  throw "Pass -SessionId <uuid> or use -Latest."
+}
+
 if (-not $OutDir) {
-  $OutDir = Join-Path "diagnostics/session-replay" $SessionId
+  $OutDir = Join-Path "diagnostics/session-replay-lite" $SessionId
 }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -198,6 +186,7 @@ $sessionSql = Sql-Literal $SessionId
 $manifest = [ordered]@{
   session_id = $SessionId
   exported_at = (Get-Date).ToUniversalTime().ToString("o")
+  mode = "lite"
   files = [ordered]@{}
 }
 
@@ -210,123 +199,33 @@ union all select 'session_player_state', count(*)::int from public.session_playe
 union all select 'session_rounds', count(*)::int from public.session_rounds where session_id::text = $sessionSql
 union all select 'session_pair_history', count(*)::int from public.session_pair_history where session_id::text = $sessionSql;
 "@
-$summary = Invoke-SupabaseJson $summarySql
+$summary = Invoke-SupabaseJson $summarySql "summary"
 Write-JsonFile $summary (Join-Path $OutDir "summary.json")
 $manifest.files["summary.json"] = $summary.Count
 
-$debugMetaSql = @"
-select
-  id,
-  created_at,
-  decision_source,
-  coalesce(jsonb_array_length(chosen_matches), 0) as chosen_matches_count,
-  coalesce(jsonb_array_length(rounds), 0) as rounds_count,
-  missing_courts,
-  payload ? 'selection_debug' as has_selection_debug,
-  payload ? 'session_history_snapshot' as has_session_history_snapshot,
-  payload ? 'raw_request_body' as has_raw_request_body,
-  payload ? 'engine_build' as has_engine_build
-from public.debug_dumps
-where session_id = $sessionSql
-order by created_at, id;
-"@
-$debugMeta = Invoke-SupabaseJson $debugMetaSql
-Write-JsonFile $debugMeta (Join-Path $OutDir "debug_dumps.metadata.json")
-$manifest.files["debug_dumps.metadata.json"] = $debugMeta.Count
-
-$auditMetaSql = @"
-select
-  id,
-  created_at,
-  event_type,
-  edge_function,
-  request_id,
-  client_request_id,
-  client_event_id,
-  detail
-from public.session_audit_events
-where session_id = $sessionSql
-order by created_at, id;
-"@
-$auditMeta = Invoke-SupabaseJson $auditMetaSql
-Write-JsonFile $auditMeta (Join-Path $OutDir "session_audit_events.metadata.json")
-$manifest.files["session_audit_events.metadata.json"] = $auditMeta.Count
-
-if ($MetadataOnly) {
-  foreach ($fileName in @(
-    "debug_dumps.jsonl",
-    "session_audit_events.jsonl",
-    "engine_instrumentation.jsonl",
-    "session_live_matches.jsonl",
-    "session_player_state.jsonl",
-    "session_rounds.jsonl",
-    "session_pair_history.jsonl"
-  )) {
-    $path = Join-Path $OutDir $fileName
-    if (Test-Path $path) {
-      $manifest.files[$fileName] = (Get-Content -LiteralPath $path | Measure-Object -Line).Lines
-    }
-  }
-  Write-JsonFile $manifest (Join-Path $OutDir "manifest.json")
-  Write-Host "Metadata refresh complete: $OutDir"
-  exit 0
-}
-
-$manifest.files["debug_dumps.jsonl"] = Export-JsonlQuery `
-  -Name "debug_dumps" `
-  -RowExpression "to_jsonb((select x from (select dd.*) x))" `
+$manifest.files["debug_dumps.lite.jsonl"] = Export-JsonlQuery `
+  -Name "debug_dumps_lite" `
+  -RowExpression "jsonb_build_object('id', dd.id, 'created_at', dd.created_at, 'session_id', dd.session_id, 'decision_source', dd.decision_source, 'missing_courts', dd.missing_courts, 'chosen_matches_count', coalesce(jsonb_array_length(dd.chosen_matches), 0), 'rounds_count', coalesce(jsonb_array_length(dd.rounds), 0), 'payload_bytes', pg_column_size(dd.payload), 'chosen_matches_bytes', pg_column_size(dd.chosen_matches), 'rounds_bytes', pg_column_size(dd.rounds), 'payload_keys', (select coalesce(jsonb_agg(key order by key), '[]'::jsonb) from jsonb_object_keys(dd.payload) as key), 'client_request_id', dd.payload->>'client_request_id', 'suggestion_request_id', dd.payload->>'suggestion_request_id', 'current_round', coalesce(dd.payload->>'current_round', dd.payload#>>'{derived_state_summary,current_round}'), 'court_count', dd.payload->>'court_count', 'selection_debug_count', coalesce(jsonb_array_length(dd.payload->'selection_debug'), 0), 'raw_payloads_before_final_board_count', coalesce(jsonb_array_length(dd.payload->'raw_payloads_before_final_board'), 0), 'final_preview_board_count', coalesce(jsonb_array_length(dd.payload->'final_preview_board'), 0), 'live_match_rows_count', coalesce(jsonb_array_length(dd.payload->'live_match_rows'), 0), 'busy_player_ids_count', coalesce(jsonb_array_length(dd.payload->'busy_player_ids'), 0))" `
   -FromWhere "from public.debug_dumps dd where dd.session_id = $sessionSql" `
-  -OrderBy "order by created_at, id" `
-  -BatchSize $DebugBatchSize `
-  -Path (Join-Path $OutDir "debug_dumps.jsonl")
+  -OrderBy "order by dd.created_at, dd.id" `
+  -BatchSize $BatchSize `
+  -Path (Join-Path $OutDir "debug_dumps.lite.jsonl")
 
-$manifest.files["session_audit_events.jsonl"] = Export-JsonlQuery `
-  -Name "session_audit_events" `
-  -RowExpression "to_jsonb((select x from (select sae.*) x))" `
+$manifest.files["session_audit_events.lite.jsonl"] = Export-JsonlQuery `
+  -Name "session_audit_events_lite" `
+  -RowExpression "jsonb_build_object('id', sae.id, 'created_at', sae.created_at, 'session_id', sae.session_id, 'event_type', sae.event_type, 'edge_function', sae.edge_function, 'request_id', sae.request_id, 'client_request_id', sae.client_request_id, 'client_event_id', sae.client_event_id, 'request_payload_bytes', pg_column_size(sae.request_payload), 'response_payload_bytes', pg_column_size(sae.response_payload), 'detail_bytes', pg_column_size(sae.detail), 'request_payload_keys', (select coalesce(jsonb_agg(key order by key), '[]'::jsonb) from jsonb_object_keys(sae.request_payload) as key), 'response_payload_keys', (select coalesce(jsonb_agg(key order by key), '[]'::jsonb) from jsonb_object_keys(sae.response_payload) as key), 'detail_keys', (select coalesce(jsonb_agg(key order by key), '[]'::jsonb) from jsonb_object_keys(sae.detail) as key), 'timing_ms', sae.detail->'timing_ms', 'error', coalesce(sae.detail->>'error', sae.response_payload->>'error'))" `
   -FromWhere "from public.session_audit_events sae where sae.session_id = $sessionSql" `
-  -OrderBy "order by created_at, id" `
-  -BatchSize $RowBatchSize `
-  -Path (Join-Path $OutDir "session_audit_events.jsonl")
+  -OrderBy "order by sae.created_at, sae.id" `
+  -BatchSize $BatchSize `
+  -Path (Join-Path $OutDir "session_audit_events.lite.jsonl")
 
-$manifest.files["engine_instrumentation.jsonl"] = Export-JsonlQuery `
-  -Name "engine_instrumentation" `
-  -RowExpression "to_jsonb((select x from (select ei.*) x))" `
+$manifest.files["engine_instrumentation.lite.jsonl"] = Export-JsonlQuery `
+  -Name "engine_instrumentation_lite" `
+  -RowExpression "jsonb_build_object('id', ei.id, 'created_at', ei.created_at, 'session_id', ei.session_id, 'event', ei.event, 'detail', ei.detail, 'court_count', ei.court_count, 'available', ei.available)" `
   -FromWhere "from public.engine_instrumentation ei where ei.session_id = $sessionSql" `
-  -OrderBy "order by created_at, id" `
-  -BatchSize $RowBatchSize `
-  -Path (Join-Path $OutDir "engine_instrumentation.jsonl")
-
-$manifest.files["session_live_matches.jsonl"] = Export-JsonlQuery `
-  -Name "session_live_matches" `
-  -RowExpression "to_jsonb((select x from (select slm.*) x))" `
-  -FromWhere "from public.session_live_matches slm where slm.session_id::text = $sessionSql" `
-  -OrderBy "order by created_at, id" `
-  -BatchSize $RowBatchSize `
-  -Path (Join-Path $OutDir "session_live_matches.jsonl")
-
-$manifest.files["session_player_state.jsonl"] = Export-JsonlQuery `
-  -Name "session_player_state" `
-  -RowExpression "to_jsonb((select x from (select sps.*) x))" `
-  -FromWhere "from public.session_player_state sps where sps.session_id::text = $sessionSql" `
-  -OrderBy "order by checked_in_at, player_id" `
-  -BatchSize $RowBatchSize `
-  -Path (Join-Path $OutDir "session_player_state.jsonl")
-
-$manifest.files["session_rounds.jsonl"] = Export-JsonlQuery `
-  -Name "session_rounds" `
-  -RowExpression "to_jsonb((select x from (select sr.*) x))" `
-  -FromWhere "from public.session_rounds sr where sr.session_id::text = $sessionSql" `
-  -OrderBy "order by round_no, created_at, id" `
-  -BatchSize $RowBatchSize `
-  -Path (Join-Path $OutDir "session_rounds.jsonl")
-
-$manifest.files["session_pair_history.jsonl"] = Export-JsonlQuery `
-  -Name "session_pair_history" `
-  -RowExpression "to_jsonb((select x from (select sph.*) x))" `
-  -FromWhere "from public.session_pair_history sph where sph.session_id::text = $sessionSql" `
-  -OrderBy "order by player_a, player_b" `
-  -BatchSize $RowBatchSize `
-  -Path (Join-Path $OutDir "session_pair_history.jsonl")
+  -OrderBy "order by ei.created_at, ei.id" `
+  -BatchSize $BatchSize `
+  -Path (Join-Path $OutDir "engine_instrumentation.lite.jsonl")
 
 Write-JsonFile $manifest (Join-Path $OutDir "manifest.json")
-Write-Host "Export complete: $OutDir"
+Write-Host "Lite export complete: $OutDir"
