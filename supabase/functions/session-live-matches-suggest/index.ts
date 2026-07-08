@@ -425,9 +425,42 @@ Deno.serve(async (request) => {
         warnings: payload.warnings ?? [],
         tradeoffs: payload.tradeoffs ?? [],
       }))
-      const replayPayload = {
-        ...(latestDump && typeof latestDump.payload === 'object' && latestDump.payload !== null ? latestDump.payload : {}),
+      const dumpAnomaly = missingTargetCourts.length > 0
+        || targetCountShortfall > 0
+        || realLimitedCourts > 0
+        || replacementBoardIncomplete
+      const fullDumpEnabled = Deno.env.get('VERIFY_DUMP_FULL') === '1' || dumpAnomaly
+      const compactPlayers = [...state.players.values()].map((player: any) => ({
+        id: player.player_id,
+        pvna: player.pvna,
+        gender: player.gender,
+        partner_gender_pref: player.partner_gender_pref,
+        opponent_gender_pref: player.opponent_gender_pref,
+        matches_played: player.matches_played,
+        last_played_round: player.last_played_round ?? 0,
+        consecutive_rest: player.consecutive_rest,
+        consecutive_play: player.consecutive_play,
+        rounds_available: player.rounds_available,
+        opted_rest: player.opted_rest,
+        checked_out: player.checked_out_at !== null,
+        group_id: player.group_id ?? null,
+        partner_counts: Object.fromEntries(player.partner_counts ?? []),
+        opponent_counts: Object.fromEntries(player.opponent_counts ?? []),
+      }))
+      const compactRounds = state.rounds.map(round => ({
+        round_no: round.round_no,
+        status: round.status,
+        match_count: round.matches.length,
+        resting_count: round.resting.length,
+      }))
+      const baseReplayPayload = {
         replay_schema_version: REPLAY_SCHEMA_VERSION,
+        dump_level: fullDumpEnabled ? 'full' : 'lite',
+        full_dump_reason: fullDumpEnabled
+          ? Deno.env.get('VERIFY_DUMP_FULL') === '1'
+            ? 'env'
+            : 'anomaly'
+          : null,
         event_type: 'live_match_suggested',
         event_created_at: new Date().toISOString(),
         request_received_at: requestReceivedAt,
@@ -452,16 +485,6 @@ Deno.serve(async (request) => {
           planned_total_rounds: plannedTotalRounds ?? null,
           court_preset: courtPreset ?? null,
           current_courts: currentCourts ?? null,
-          avoid_pairs: avoidPairs ?? [],
-        },
-        raw_request_body: body,
-        session_history_snapshot: {
-          captured_at: requestReceivedAt,
-          player_rows: body.player_rows ?? [],
-          pair_rows: body.pair_rows ?? [],
-          round_rows: body.round_rows ?? [],
-          live_match_rows: liveMatchRows,
-          current_preview_board: currentPreviewBoard,
           avoid_pairs: avoidPairs ?? [],
         },
         derived_state_summary: {
@@ -495,11 +518,20 @@ Deno.serve(async (request) => {
           max_courts_with_free_players: Math.floor(freeCount / 4),
           max_courts_with_free_plus_live_busy_players: maxCourtsWithEveryone,
         },
-        live_match_rows: liveMatchRows,
-        selection_debug: selectionDebug,
-        intermediate_dumps: verifyDumps,
-        raw_payloads_before_final_board: payloads,
-        final_preview_board: finalPreviewBoard,
+        player_snapshot_lite: compactPlayers,
+        round_snapshot_lite: compactRounds,
+        busy_player_ids: [...allOccupiedIds].sort(),
+        live_match_summary: {
+          total: liveMatchRows.length,
+          live: liveMatchRows.filter((match: any) => match?.status === 'live').length,
+          suggested: liveMatchRows.filter((match: any) => match?.status === 'suggested').length,
+          completed: liveMatchRows.filter((match: any) => match?.status === 'completed').length,
+          cancelled: liveMatchRows.filter((match: any) => match?.status === 'cancelled').length,
+        },
+        raw_payloads_before_final_board_count: payloads.length,
+        final_preview_board_count: finalPreviewBoard.length,
+        selection_debug_count: selectionDebug.length,
+        chosen_courts: finalChosenMatches.map(match => match.court_idx),
         replaced_court_idxs: board.replaced_court_idxs,
         locked_court_idxs: board.locked_court_idxs,
         quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
@@ -516,6 +548,27 @@ Deno.serve(async (request) => {
         target_count_shortfall: targetCountShortfall,
         missing_courts: finalMissingOpenCourts,
       }
+      const replayPayload = fullDumpEnabled
+        ? {
+            ...(latestDump && typeof latestDump.payload === 'object' && latestDump.payload !== null ? latestDump.payload : {}),
+            ...baseReplayPayload,
+            raw_request_body: body,
+            session_history_snapshot: {
+              captured_at: requestReceivedAt,
+              player_rows: body.player_rows ?? [],
+              pair_rows: body.pair_rows ?? [],
+              round_rows: body.round_rows ?? [],
+              live_match_rows: liveMatchRows,
+              current_preview_board: currentPreviewBoard,
+              avoid_pairs: avoidPairs ?? [],
+            },
+            live_match_rows: liveMatchRows,
+            selection_debug: selectionDebug,
+            intermediate_dumps: verifyDumps,
+            raw_payloads_before_final_board: payloads,
+            final_preview_board: finalPreviewBoard,
+          }
+        : baseReplayPayload
 
       const debugDumpWrite = serviceClient.from('debug_dumps').insert({
         session_id: sessionId,

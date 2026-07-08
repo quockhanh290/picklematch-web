@@ -102,6 +102,11 @@ function compactDump(row: AnyRow) {
   const derived = payload.derived_state_summary ?? {}
   const engine = payload.engine_decision ?? {}
   const selection = arr(payload.selection_debug)
+  const selectionCount = selection.length || num(payload.selection_debug_count) || 0
+  const finalBoardCount = arr(payload.final_preview_board).length || num(payload.final_preview_board_count) || 0
+  const rawPayloadCount = arr(payload.raw_payloads_before_final_board).length || num(payload.raw_payloads_before_final_board_count) || 0
+  const liveMatchRowsCount = arr(payload.live_match_rows).length || num(payload.live_match_summary?.total) || 0
+  const busyIdsCount = arr(payload.busy_player_ids).length || (num(payload.derived_state_summary?.live_busy_players) ?? 0) + (num(payload.derived_state_summary?.suggested_busy_players) ?? 0)
   const eligibleCounts = selection.map((entry) => arr(entry.eligible_players).length)
   const busyCounts = selection.map((entry) => num(entry.busy_count) ?? 0)
   const selectedCourts = selection.map((entry) => ({
@@ -114,6 +119,8 @@ function compactDump(row: AnyRow) {
     id: row.id,
     created_at: row.created_at,
     source: row.decision_source,
+    dump_level: payload.dump_level ?? 'legacy_full',
+    full_dump_reason: payload.full_dump_reason ?? null,
     current_round: payload.current_round ?? derived.current_round ?? null,
     court_count: payload.court_count ?? null,
     chosen: arr(row.chosen_matches).length,
@@ -126,13 +133,13 @@ function compactDump(row: AnyRow) {
     open_court_idxs: arr(payload.open_court_idxs),
     filled_court_idxs: arr(payload.filled_court_idxs),
     rounds_returned: arr(row.rounds).length,
-    final_board: arr(payload.final_preview_board).length,
-    raw_payloads: arr(payload.raw_payloads_before_final_board).length,
-    live_match_rows: arr(payload.live_match_rows).length,
-    busy_ids: arr(payload.busy_player_ids).length,
+    final_board: finalBoardCount,
+    raw_payloads: rawPayloadCount,
+    live_match_rows: liveMatchRowsCount,
+    busy_ids: busyIdsCount,
     derived,
     engine,
-    selection_debug_count: selection.length,
+    selection_debug_count: selectionCount,
     max_busy_count: busyCounts.length ? Math.max(...busyCounts) : 0,
     min_eligible_count: eligibleCounts.length ? Math.min(...eligibleCounts) : null,
     max_eligible_count: eligibleCounts.length ? Math.max(...eligibleCounts) : null,

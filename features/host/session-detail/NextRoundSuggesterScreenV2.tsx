@@ -166,6 +166,15 @@ const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_REPEAT_COST_WEIGHT = 3
 const BALANCED_AFFECTED_PLAYER_COST_WEIGHT = 1
 
+function compactTraceKey(value: string): string {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `${(hash >>> 0).toString(36)}:${value.length}`
+}
+
 function getWebVisualViewportHeight() {
   if (Platform.OS !== 'web') return null
   if (typeof window === 'undefined') return null
@@ -2339,12 +2348,15 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       reusableMatches.map(match => getSuggestedLaneCourtIdx(match)).join(','),
       effectiveLiveMatchRows.map(match => `${match.id}:${match.status}:${match.court_idx ?? ''}`).join(','),
     ].join('||')
+    const incompleteTraceKey = compactTraceKey(incompleteRequestKey)
+    const previewTraceKey = compactTraceKey(previewRequestKey)
     if (previewBlockedIncompleteKeysRef.current.has(incompleteRequestKey)) {
       const blockedRequestId = createClientTraceId('preview-blocked')
       traceClientPreviewEvent('client_preview_blocked_before_request', {
         requestId: blockedRequestId,
         detail: {
-          incomplete_request_key: incompleteRequestKey,
+          incomplete_request_key: incompleteTraceKey,
+          incomplete_request_key_bytes: incompleteRequestKey.length,
           missing_courts: missingPreviewCourtIdxsForRecovery,
           effective_preview_courts: effectivePreviewBoard.map(m => getSuggestedLaneCourtIdx(m)),
           suggested_queue_count: suggestedQueueCount,
@@ -2363,7 +2375,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       traceClientPreviewEvent('client_preview_pending_skip', {
         requestId: pendingRequestId,
         detail: {
-          incomplete_request_key: incompleteRequestKey,
+          incomplete_request_key: incompleteTraceKey,
+          incomplete_request_key_bytes: incompleteRequestKey.length,
           live_state_version: rows.liveStateVersion,
           suggested_queue_count: suggestedQueueCount,
         },
@@ -2392,8 +2405,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     traceClientPreviewEvent('client_preview_request_scheduled', {
       requestId: previewClientRequestId,
       detail: {
-        incomplete_request_key: incompleteRequestKey,
-        preview_request_key: previewRequestKey,
+        incomplete_request_key: incompleteTraceKey,
+        incomplete_request_key_bytes: incompleteRequestKey.length,
+        preview_request_key: previewTraceKey,
+        preview_request_key_bytes: previewRequestKey.length,
         request_serial: requestSerial,
         suggested_queue_count: fetchSuggestedCount,
         target_suggested_queue_count: suggestedQueueCount,
@@ -2425,7 +2440,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       traceClientPreviewEvent('client_preview_request_start', {
         requestId: previewClientRequestId,
         detail: {
-          incomplete_request_key: incompleteRequestKey,
+          incomplete_request_key: incompleteTraceKey,
+          incomplete_request_key_bytes: incompleteRequestKey.length,
           request_serial: requestSerial,
           suggested_queue_count: fetchSuggestedCount,
           target_suggested_queue_count: suggestedQueueCount,
@@ -2614,7 +2630,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             },
             detail: {
               total_ms: Math.round(nowMs() - previewT0),
-              incomplete_request_key: incompleteRequestKey,
+              incomplete_request_key: incompleteTraceKey,
+              incomplete_request_key_bytes: incompleteRequestKey.length,
               request_serial: requestSerial,
             },
           })
@@ -2820,7 +2837,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                   target_count_shortfall: edgeTargetCountShortfall,
                 },
                 detail: {
-                  incomplete_request_key: incompleteRequestKey,
+                  incomplete_request_key: incompleteTraceKey,
+                  incomplete_request_key_bytes: incompleteRequestKey.length,
                   mode: previewMode,
                   edge_final_board: true,
                   effective_current_board_complete: effectiveCurrentBoardComplete,
@@ -2848,8 +2866,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                   target_count_shortfall: edgeTargetCountShortfall,
                 },
                 detail: {
-                  incomplete_request_key: incompleteRequestKey,
-                  retry_key: retryKey,
+                  incomplete_request_key: incompleteTraceKey,
+                  incomplete_request_key_bytes: incompleteRequestKey.length,
+                  retry_key: compactTraceKey(retryKey),
+                  retry_key_bytes: retryKey.length,
                   retry_count: currentRetry,
                   mode: previewMode,
                   edge_final_board: true,
@@ -3113,7 +3133,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                 match_count: matches.length,
               },
               detail: {
-                incomplete_request_key: incompleteRequestKey,
+                incomplete_request_key: incompleteTraceKey,
+                incomplete_request_key_bytes: incompleteRequestKey.length,
                 mode: previewMode,
                 edge_final_board: false,
                 effective_current_board_complete: effectiveCurrentBoardComplete,
@@ -3139,8 +3160,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                 result_courts: matches.map(match => getSuggestedLaneCourtIdx(match)),
               },
               detail: {
-                incomplete_request_key: incompleteRequestKey,
-                retry_key: retryKey,
+                incomplete_request_key: incompleteTraceKey,
+                incomplete_request_key_bytes: incompleteRequestKey.length,
+                retry_key: compactTraceKey(retryKey),
+                retry_key_bytes: retryKey.length,
                 retry_count: currentRetry,
                 mode: previewMode,
                 edge_final_board: false,
@@ -3196,7 +3219,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             traceClientPreviewEvent('client_preview_request_cancelled', {
               requestId: previewClientRequestId,
               detail: {
-                incomplete_request_key: incompleteRequestKey,
+                incomplete_request_key: incompleteTraceKey,
+                incomplete_request_key_bytes: incompleteRequestKey.length,
                 request_serial: requestSerial,
                 total_ms: Math.round(nowMs() - previewT0),
               },
@@ -3216,7 +3240,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                 fallback_courts: fallbackMatches.map(match => getSuggestedLaneCourtIdx(match)),
               },
               detail: {
-                incomplete_request_key: incompleteRequestKey,
+                incomplete_request_key: incompleteTraceKey,
+                incomplete_request_key_bytes: incompleteRequestKey.length,
                 error_kind: hintKind,
                 error: errMsg,
                 requested_replacement_courts: requestedReplacementCourtIdxs,
@@ -3238,7 +3263,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           traceClientPreviewEvent('client_preview_edge_error_retry_scheduled', {
             requestId: previewClientRequestId,
             detail: {
-              incomplete_request_key: incompleteRequestKey,
+              incomplete_request_key: incompleteTraceKey,
+              incomplete_request_key_bytes: incompleteRequestKey.length,
               error_kind: hintKind,
               error: errMsg,
               requested_replacement_courts: requestedReplacementCourtIdxs,
@@ -3276,7 +3302,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             traceClientPreviewEvent('client_preview_request_stale_finally', {
               requestId: previewClientRequestId,
               detail: {
-                incomplete_request_key: incompleteRequestKey,
+                incomplete_request_key: incompleteTraceKey,
+                incomplete_request_key_bytes: incompleteRequestKey.length,
                 owns_slot: ownsSlot,
                 request_serial: requestSerial,
                 current_serial: previewRequestSerialRef.current,
@@ -3299,7 +3326,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         traceClientPreviewEvent('client_preview_cancelled_before_start', {
           requestId: previewClientRequestId,
           detail: {
-            incomplete_request_key: incompleteRequestKey,
+            incomplete_request_key: incompleteTraceKey,
+            incomplete_request_key_bytes: incompleteRequestKey.length,
             request_serial: requestSerial,
             request_generation: requestSessionGeneration,
             current_generation: sessionGenerationRef.current,

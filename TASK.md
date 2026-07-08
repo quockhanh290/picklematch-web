@@ -24,12 +24,16 @@ Status: IN PROGRESS
 - [x] Commit task memory update: `d03630b chore(task): record stabilization commit plan`.
 - [x] Run `supabase db push` against project `mzqsxgfvtgmsscbqugni`: remote database reported up to date.
 - [x] Deploy Supabase edge functions touched by live-lane stabilization: `session-live-matches-suggest`, `session-rounds-start`, `session-rounds-start-versioned`, `session-rounds-end`, `session-rounds-end-versioned`, `session-rounds-swap-player`.
+- [x] Reduce `debug_dumps` write weight: `session-live-matches-suggest` now writes lite replay payloads by default and full replay payloads only for anomalies or `VERIFY_DUMP_FULL=1`; diagnostics scripts understand lite/full dump metadata.
+- [x] Reduce browser audit payload weight: client preview telemetry now sends compact `hash:length` trace keys instead of full preview/incomplete/retry keys in `session_audit_events` details.
 
 ### Next steps
 - [ ] Deploy client bundle when Kevin wants production client to pick up lifecycle audit flush + idempotent client audit writes. Do not deploy Vercel without explicit approval.
 
 ### Key decisions
 - Replay source of truth is `debug_dumps.payload`; `session_audit_events` is the timeline/index layer.
+- `VERIFY_DUMP=1` does not mean every row is full-heavy anymore. Normal rows are `dump_level='lite'`; anomaly rows are `dump_level='full'` with `full_dump_reason='anomaly'`.
+- Client `session_audit_events` should keep counts, court IDs, request IDs, and compact trace keys. Do not store full preview keys or board snapshots in routine client audit events.
 - Do not deploy Vercel unless Kevin explicitly asks. Edge-only changes can be deployed to Supabase functions.
 - Stabilization pass should avoid engine-ranking changes unless a real dump proves engine behavior is wrong.
 

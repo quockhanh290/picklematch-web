@@ -79,11 +79,12 @@ export type Dump = {
 
 export function normalizeDump(raw: any): Dump {
   const payload = raw.payload ?? raw
+  const players = payload.players ?? payload.player_snapshot_lite
   const chosen = raw.chosen_matches ?? payload.chosen_matches
   const decision_source = raw.decision_source ?? payload.decision_source
   const rounds = raw.rounds ?? payload.rounds
   const pvna_tolerance = raw.pvna_tolerance ?? payload.pvna_tolerance
-  return { ...payload, chosen_matches: chosen, decision_source, rounds, pvna_tolerance }
+  return { ...payload, players, chosen_matches: chosen, decision_source, rounds, pvna_tolerance }
 }
 
 export function loadDump(path: string): Dump {

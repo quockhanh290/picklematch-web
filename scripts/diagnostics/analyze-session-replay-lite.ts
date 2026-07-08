@@ -112,6 +112,8 @@ async function main() {
       id: row.id,
       created_at: row.created_at,
       decision_source: row.decision_source,
+      dump_level: row.dump_level,
+      full_dump_reason: row.full_dump_reason,
       payload_bytes: row.payload_bytes,
       chosen_matches_count: row.chosen_matches_count,
       missing_courts: row.missing_courts,
@@ -169,6 +171,8 @@ async function main() {
     },
     counts: {
       dumps_by_decision_source: countBy(dumps, row => row.decision_source),
+      dumps_by_dump_level: countBy(dumps, row => row.dump_level),
+      dumps_by_full_dump_reason: countBy(dumps, row => row.full_dump_reason),
       dumps_by_chosen_match_count: countBy(dumps, row => String(row.chosen_matches_count)),
       dumps_by_missing_court_count: countBy(dumps, row => String(Array.isArray(row.missing_courts) ? row.missing_courts.length : 0)),
       dumps_by_missing_open_court_count: countBy(dumps, row => String(arr(row.missing_open_courts ?? row.missing_courts).length)),

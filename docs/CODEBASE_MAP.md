@@ -109,7 +109,11 @@ Recent active migration work includes debug/instrumentation support:
 Replay/audit model for live-lane stabilization:
 
 - `debug_dumps.payload` is the replay source of truth for reconstructing a live suggestion request.
+- With `VERIFY_DUMP=1`, normal successful suggestions write a lightweight payload by default: request metadata, derived state summary, compact player/round snapshots, busy player IDs, chosen courts, and count fields for omitted heavy arrays.
+- Full replay payloads are still written when an anomaly is detected, such as missing target courts, target count shortfall, real player-limited courts, or incomplete replacement boards.
+- Set `VERIFY_DUMP_FULL=1` only during focused audits when every suggestion must persist the full raw request, session history snapshot, selection debug, intermediate dumps, and final preview board.
 - `session_audit_events` is the timeline/index layer that links client preview attempts, edge requests, and outcomes by request IDs.
+- Client audit details should stay compact: counts, court IDs, request IDs, and `hash:length` trace keys are preferred over full preview/retry keys or board snapshots.
 - `engine_instrumentation` stores lightweight engine-side events for search pressure and fallback diagnostics.
 - When `VERIFY_DUMP=1`, `session-live-matches-suggest` should register debug dump writes with `EdgeRuntime.waitUntil` so a returned response does not race the replay capture.
 
