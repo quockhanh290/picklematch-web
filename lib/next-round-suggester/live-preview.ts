@@ -2956,10 +2956,18 @@ export function buildSuggestedMatchPayloads({
   )
   const payloads: SuggestedMatchPayload[] = []
   const ignoreCapacityLock = options.ignoreCapacityLock ?? true
+  const requestedCourtIdxs = new Set([
+    ...(options.courtIdxs ?? []),
+    ...(options.courtIdx === undefined ? [] : [options.courtIdx]),
+  ].map(Number).filter(Number.isFinite))
   const baseBusyIds = new Set(
     liveMatchRows
       .filter(match =>
-        (!ignoreCapacityLock && match.status === 'live' && !completingLiveMatchIds.has(match.id))
+        (
+          match.status === 'live'
+          && !completingLiveMatchIds.has(match.id)
+          && (match.court_idx == null || !requestedCourtIdxs.has(Number(match.court_idx)))
+        )
         || match.status === 'suggested',
       )
       .flatMap(match => [...match.team_a, ...match.team_b]),

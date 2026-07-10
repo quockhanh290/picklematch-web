@@ -159,7 +159,7 @@ Scope: all production modules under `lib/next-round-suggester`, the live Edge ca
 
 ### ENG-P1-01 - Live corrector drops config changes
 
-Status: FIXED IN WORKTREE
+Status: FIXED
 
 `correctForFairness` returns both `tier_overrides` and `config_changes`. The live Edge passes the adjustment to `buildSuggestedMatchPayloads`, but that builder consumes only tier overrides. Repeat-weight, gender-weight and PVNA-tolerance corrections therefore do not affect live suggestions. The synchronous simulator and retired round Edge call `applyFairnessAdjustment`, so their green results do not represent production live behavior.
 
@@ -203,11 +203,11 @@ Fix: each round now classifies preference feasibility from that round's roster b
 
 ### ENG-P2-03 - Engine gates are not production-equivalent
 
-Status: OPEN test gap
+Status: FIXED IN WORKTREE
 
 Simulation applies `applyFairnessAdjustment`, models synchronous completed rounds, and has no effective-PVNA scenarios. Production live lanes do none of those in the same way. Existing drift monitoring logs warnings without failing. Green aggregate gates therefore prove many local invariants, but do not prove the deployed live chain.
 
-Required fix: add an authoritative-snapshot -> corrector -> live builder -> persisted preview replay harness covering asynchronous lane completion, stale/noncanonical round groups, effective PVNA, opted rest, roster churn and runtime limits.
+Fix: `runProductionLiveChain` now executes authoritative DB rows through state mapping, corrector/warnings and the real live payload builder without pre-applying adjustments. Its rolling-lane scenario covers asynchronous completion, noncanonical persisted groups, effective PVNA ingestion, opted rest, checkout/late check-in churn, persisted preview replay, double-book protection and a 2-second runtime gate. The first run completes in about 309 ms. The harness exposed and locked a production bug: cross-court live players are now protected independently of logical-round reconstruction, while same-court future previews remain allowed.
 
 ## Gate results
 

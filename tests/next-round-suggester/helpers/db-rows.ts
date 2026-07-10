@@ -44,6 +44,7 @@ export function serializeStateToDbRows(state: SessionState): DbRows {
     consecutive_rest: player.consecutive_rest,
     consecutive_play: player.consecutive_play,
     opted_rest: player.opted_rest,
+    effective_pvna: player.effective_pvna ?? null,
     players: {
       pvna: player.pvna,
       elo: null,
@@ -149,7 +150,7 @@ export function computeRowsFingerprint(
 ): string {
   const players = rows.playerRows
     .map(r =>
-      `${r.player_id}|${r.matches_played}|${r.last_played_round}|${r.consecutive_play}|${r.consecutive_rest}|${r.opted_rest ? 1 : 0}|${r.checked_out_at ?? ''}|${r.group_id ?? ''}|${r.players?.pvna ?? 0}|${r.players?.gender ?? ''}|${r.players?.partner_gender_pref ?? ''}|${r.players?.opponent_gender_pref ?? ''}`,
+      `${r.player_id}|${r.matches_played}|${r.last_played_round}|${r.consecutive_play}|${r.consecutive_rest}|${r.opted_rest ? 1 : 0}|${r.checked_out_at ?? ''}|${r.group_id ?? ''}|${r.players?.pvna ?? 0}|${r.effective_pvna ?? ''}|${r.players?.gender ?? ''}|${r.players?.partner_gender_pref ?? ''}|${r.players?.opponent_gender_pref ?? ''}`,
     )
     .sort()
     .join(';')
