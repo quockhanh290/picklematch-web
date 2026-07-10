@@ -351,6 +351,43 @@ describe('deferLowViabilityRequiredIdsForCourt', () => {
 })
 
 describe('projected live match state', () => {
+  it('applies fairness config changes before building live suggestions', () => {
+    const state = createState({
+      courts: 1,
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('p1', { pvna: 3.0 }),
+        createPlayer('p2', { pvna: 3.1 }),
+        createPlayer('p3', { pvna: 3.2 }),
+        createPlayer('p4', { pvna: 3.3 }),
+      ],
+    })
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 1,
+      state,
+      rows: { liveMatchRows: [], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: {
+        config_changes: {
+          pvna_tolerance: 0.8,
+          weights: { ...state.config.weights, partner_repeat: 99 },
+        },
+        tier_overrides: {},
+        applied_for_warnings: ['partner_repeat'],
+      },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].configured_pvna_tolerance).toBe(0.5)
+    expect(payloads[0].effective_pvna_tolerance).toBe(0.8)
+  })
+
   it('counts rest only when the projected logical round is finalized', () => {
     const state = createState({
       players: [

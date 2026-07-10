@@ -3,6 +3,10 @@ import { Tier } from './classify.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import type { FairnessWarning } from './fairness/detector.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import { applyFairnessAdjustment } from './fairness/corrector.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import type { AdjustmentResult } from './fairness/corrector.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { computeAvailabilityMetrics } from './fairness/metrics.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import type { AvailabilityMetrics } from './fairness/metrics.ts'
@@ -2723,7 +2727,9 @@ export type BuildSuggestedMatchPayloadsParams = {
   state: SessionState
   rows: { liveMatchRows: SessionLiveMatchRow[]; liveStateVersion?: number | null }
   completingLiveMatchIds: Set<string>
-  fairnessAdjustment: { tier_overrides: Record<string, Tier>; applied_for_warnings: string[] }
+  fairnessAdjustment: Pick<AdjustmentResult, 'tier_overrides' | 'applied_for_warnings'> & {
+    config_changes?: AdjustmentResult['config_changes']
+  }
   fairnessWarnings: FairnessWarning[]
   playersById: Map<string, PreviewPlayerInfo>
   pvnaTolerance: number
@@ -2906,13 +2912,21 @@ export function buildSuggestedMatchPayloads({
 }: BuildSuggestedMatchPayloadsParams): SuggestedMatchPayload[] {
   const batchStartedAt = nowMs()
   const forceBudgetDeadline = nowMs() + FORCE_RESCUE_TOTAL_MS
-  let suggestionState = options.stateOverride ?? state
+  const baseSuggestionState = options.stateOverride ?? state
+  let suggestionState = applyFairnessAdjustment(baseSuggestionState, {
+    type: fairnessAdjustment.config_changes && Object.keys(fairnessAdjustment.config_changes).length > 0
+      ? 'fairness_correction'
+      : 'none',
+    config_changes: fairnessAdjustment.config_changes ?? {},
+    tier_overrides: fairnessAdjustment.tier_overrides,
+    applied_for_warnings: fairnessAdjustment.applied_for_warnings,
+  })
   const previewNowMs = Date.now()
   const liveMatchRows = (options.liveMatchRowsOverride ?? rows.liveMatchRows)
     .filter(match => match.status !== 'suggested' || isRecentSuggestedLiveMatch(match, previewNowMs))
   const previewSeedBase = buildPreviewBatchKey(
     sessionId,
-    state,
+    suggestionState,
     courtCount,
     pvnaTolerance,
     fairnessAdjustment,

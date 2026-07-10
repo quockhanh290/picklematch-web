@@ -130,8 +130,9 @@ async function benchmarkLiveMatchSuggestion(params: {
       rows: { liveMatchRows: allRows },
       completingLiveMatchIds: completingIds,
       fairnessAdjustment: {
+        config_changes: adjustment.config_changes,
         tier_overrides: adjustment.tier_overrides,
-        applied_for_warnings: adjustment.applied_for_warnings.map(String),
+        applied_for_warnings: adjustment.applied_for_warnings,
       },
       fairnessWarnings: warnings,
       playersById,

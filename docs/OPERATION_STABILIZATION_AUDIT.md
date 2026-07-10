@@ -159,11 +159,11 @@ Scope: all production modules under `lib/next-round-suggester`, the live Edge ca
 
 ### ENG-P1-01 - Live corrector drops config changes
 
-Status: OPEN
+Status: FIXED IN WORKTREE
 
 `correctForFairness` returns both `tier_overrides` and `config_changes`. The live Edge passes the adjustment to `buildSuggestedMatchPayloads`, but that builder consumes only tier overrides. Repeat-weight, gender-weight and PVNA-tolerance corrections therefore do not affect live suggestions. The synchronous simulator and retired round Edge call `applyFairnessAdjustment`, so their green results do not represent production live behavior.
 
-Required fix: apply the adjustment to the state once at the live Edge boundary, pass the adjusted state into every initial/rescue branch, and add a production-chain test that proves each config correction changes the live search input.
+Fix: `buildSuggestedMatchPayloads` now applies the full fairness adjustment before generating its cache key or entering any initial/rescue branch. The live timing harness passes the production adjustment shape, and a regression test locks the configured/effective PVNA tolerance boundary.
 
 ### ENG-P1-02 - Engine and client use different logical-round reconstruction
 
@@ -214,6 +214,7 @@ Required fix: add an authoritative-snapshot -> corrector -> live builder -> pers
 - Fairness gate: 6 suites, 62 tests PASS.
 - Scenario gate: 5 suites, 12 tests PASS.
 - Property gate: 100/100 generated seeds PASS for invariants, but several seeds took 8-30 seconds in the combined run.
+- ENG-P1-01 focused gate: 60/60 tests PASS. Small live timing A/B was unchanged by the fix (`1178-1179ms` average, `1218ms` max), below the 2s operational ceiling but above the benchmark's stale 50ms assertion.
 - Full simulation gate was stopped after more than 15 minutes without completing or emitting a suite result; it is NOT counted as PASS.
 - The gate emits three round-projection drift warnings; these are tracked by OPS-P1-01 and are not considered clean.
 - Full TypeScript check remains red only in pre-existing scratch/diagnostic scripts; no new error was reported in the changed runtime/test files.

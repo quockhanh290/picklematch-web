@@ -11,7 +11,7 @@ Audit ledger: `docs/OPERATION_STABILIZATION_AUDIT.md`
 - [x] Add regression test proving aborting an older identical preview request does not cancel the newer request.
 
 ### Open findings
-- [ ] ENG-P1-01: apply fairness `config_changes` in the production live suggestion chain.
+- [x] ENG-P1-01: apply fairness `config_changes` in the production live suggestion chain.
 - [ ] ENG-P1-02: make engine round reconstruction use the canonical rolling cycle model.
 - [ ] ENG-P1-03: honor `effective_pvna` throughout selection/search/rescue and direct state loading.
 - [ ] ENG-P2-01: give `suggestNextRound` a bounded default runtime and timing gate.
