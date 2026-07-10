@@ -774,42 +774,67 @@ describe('projected live match state', () => {
     expect(result.final_preview_board[2]).toMatchObject(currentPreviewBoard[2])
   })
 
-  it('does not add a replacement that overlaps locked preview players', () => {
+  it('does not add a replacement that overlaps an earlier replacement', () => {
     const currentPreviewBoard = [
       previewPayload(0, ['p1', 'p2'], ['p3', 'p4']),
       previewPayload(1, ['p5', 'p6'], ['p7', 'p8']),
     ]
-    const overlappingReplacement = previewPayload(1, ['p1', 'p9'], ['p10', 'p11'])
+    const replacement = previewPayload(1, ['p9', 'p10'], ['p11', 'p12'])
+    const overlappingReplacement = previewPayload(2, ['p9', 'p13'], ['p14', 'p15'])
 
     const result = buildFinalPreviewBoard({
       mode: 'replace_courts',
-      payloads: [overlappingReplacement],
+      payloads: [replacement, overlappingReplacement],
       currentPreviewBoard,
-      replacementCourtIdxs: [1],
-      courtCount: 2,
+      replacementCourtIdxs: [1, 2],
+      courtCount: 3,
     })
 
-    expect(result.final_preview_board.map(payload => payload.court_idx)).toEqual([0])
+    expect(result.final_preview_board.map(payload => payload.court_idx)).toEqual([0, 1])
     expect(result.locked_court_idxs).toEqual([0])
-    expect(result.replaced_court_idxs).toEqual([])
+    expect(result.replaced_court_idxs).toEqual([1])
   })
 
-  it('detects when locked previews prevent a requested replacement court from being filled', () => {
+  it('prioritizes requested replacement courts over stale locked preview rows', () => {
     const currentPreviewBoard = [
       previewPayload(0, ['p1', 'p2'], ['p3', 'p4']),
       previewPayload(1, ['p5', 'p6'], ['p7', 'p8']),
     ]
-    const overlappingReplacement = previewPayload(1, ['p1', 'p9'], ['p10', 'p11'])
+    const replacements = [
+      previewPayload(2, ['p9', 'p10'], ['p11', 'p12']),
+      previewPayload(3, ['p1', 'p13'], ['p14', 'p15']),
+    ]
 
     const result = buildFinalPreviewBoard({
       mode: 'replace_courts',
-      payloads: [overlappingReplacement],
+      payloads: replacements,
       currentPreviewBoard,
-      replacementCourtIdxs: [1],
-      courtCount: 2,
+      replacementCourtIdxs: [2, 3],
+      courtCount: 4,
     })
 
-    expect(hasFulfilledPreviewBoardReplacements(result, [1])).toBe(false)
+    expect(result.replaced_court_idxs).toEqual([2, 3])
+    expect(result.locked_court_idxs).toEqual([1])
+    expect(result.final_preview_board.map(payload => payload.court_idx)).toEqual([1, 2, 3])
+  })
+
+  it('detects when overlapping replacements leave a requested court unfilled', () => {
+    const currentPreviewBoard = [
+      previewPayload(0, ['p1', 'p2'], ['p3', 'p4']),
+      previewPayload(1, ['p5', 'p6'], ['p7', 'p8']),
+    ]
+    const replacement = previewPayload(1, ['p9', 'p10'], ['p11', 'p12'])
+    const overlappingReplacement = previewPayload(2, ['p9', 'p13'], ['p14', 'p15'])
+
+    const result = buildFinalPreviewBoard({
+      mode: 'replace_courts',
+      payloads: [replacement, overlappingReplacement],
+      currentPreviewBoard,
+      replacementCourtIdxs: [1, 2],
+      courtCount: 3,
+    })
+
+    expect(hasFulfilledPreviewBoardReplacements(result, [1, 2])).toBe(false)
     expect(hasFulfilledPreviewBoardReplacements(result, [])).toBe(true)
   })
 

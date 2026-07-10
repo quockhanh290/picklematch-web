@@ -1,6 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { createServiceClient, getSessionId, handleCorsPreflight, jsonResponse, readJson, writeSessionAuditEvent } from '../_shared/live-session.ts'
+import { createServiceClient, getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost, writeSessionAuditEvent } from '../_shared/live-session.ts'
 import { correctForFairness } from '../../../lib/next-round-suggester/fairness/corrector.ts'
 import { detectFairnessIssues } from '../../../lib/next-round-suggester/fairness/detector.ts'
 import {
@@ -11,6 +11,12 @@ import {
   needsEarlyFullBoardPvnaRescue,
 } from '../../../lib/next-round-suggester/live-preview.ts'
 import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state.ts'
+import type {
+  SessionLiveMatchRow,
+  SessionPairHistoryRow,
+  SessionPlayerStateRow,
+  SessionRoundRow,
+} from '../../../lib/next-round-suggester/types.ts'
 
 function optionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
@@ -30,6 +36,49 @@ function getEngineBuildInfo() {
       ?? null,
     deployment_id: Deno.env.get('DENO_DEPLOYMENT_ID') ?? null,
   }
+}
+
+function previewMatchId(match: any) {
+  const courtIdx = Number(match?.court_idx ?? match?.sequence_no ?? 0)
+  const teamA = Array.isArray(match?.team_a) ? match.team_a.map(String) : []
+  const teamB = Array.isArray(match?.team_b) ? match.team_b.map(String) : []
+  return `preview-${Number.isFinite(courtIdx) ? courtIdx : 0}-${teamA.join('-')}-${teamB.join('-')}`
+}
+
+function normalizeStartablePreviewMatch(match: any, {
+  liveStateVersion,
+  countableMatchCount,
+  maxSequenceNo,
+}: {
+  liveStateVersion: number
+  countableMatchCount: number
+  maxSequenceNo: number
+}) {
+  const teamA = Array.isArray(match?.team_a) ? match.team_a.map(String) : []
+  const teamB = Array.isArray(match?.team_b) ? match.team_b.map(String) : []
+  const courtIdx = Number(match?.court_idx ?? match?.sequence_no)
+  if (teamA.length !== 2 || teamB.length !== 2 || !Number.isFinite(courtIdx)) return null
+  return {
+    ...match,
+    id: typeof match?.id === 'string' && match.id.length > 0 ? match.id : previewMatchId({ ...match, team_a: teamA, team_b: teamB, court_idx: courtIdx }),
+    status: 'suggested',
+    team_a: teamA,
+    team_b: teamB,
+    resting: Array.isArray(match?.resting) ? match.resting.map(String) : [],
+    court_idx: courtIdx,
+    sequence_no: Number.isFinite(Number(match?.sequence_no)) ? Number(match.sequence_no) : courtIdx,
+    preview_source: match?.preview_source ?? 'edge_committed',
+    preview_live_state_version: liveStateVersion,
+    preview_countable_match_count: countableMatchCount,
+    preview_max_sequence_no: maxSequenceNo,
+    suggested_at: match?.suggested_at ?? new Date().toISOString(),
+    started_at: null,
+    ended_at: null,
+  }
+}
+
+function isNonNullPreviewMatch<T>(match: T | null): match is T {
+  return match !== null
 }
 
 Deno.serve(async (request) => {
@@ -169,13 +218,54 @@ Deno.serve(async (request) => {
     ?? null
 
   try {
+    const auth = await requireHost(request, sessionId, 'session-live-matches-suggest')
+    if (auth.error) return auth.error
+    if (!auth.supabase) return jsonResponse({ ok: false, error: 'Unable to verify host access' }, 500)
+
     const body = await readJson(request)
 
     if (!Array.isArray(body.player_rows)) {
       return jsonResponse({ ok: false, error: 'Missing player_rows' }, 400)
     }
+    const requestLiveStateVersion = optionalNumber(body.live_state_version)
+    if (requestLiveStateVersion === undefined) {
+      return jsonResponse({ ok: false, error: 'Missing live_state_version' }, 400)
+    }
+    const loadLiveStateVersion = async () => {
+      const { data, error } = await auth.supabase
+        .from('sessions')
+        .select('live_state_version')
+        .eq('id', sessionId)
+        .single()
+      if (error) throw new Error(`Could not verify live state version: ${error.message}`)
+      return Number(data.live_state_version)
+    }
+    const { data: authoritativeSnapshotData, error: authoritativeSnapshotError } = await auth.supabase.rpc(
+      'get_live_session_snapshot_versioned',
+      { p_session_id: sessionId },
+    )
+    if (authoritativeSnapshotError) {
+      throw new Error(`Could not load authoritative live snapshot: ${authoritativeSnapshotError.message}`)
+    }
+    const authoritativeSnapshot = (authoritativeSnapshotData ?? {}) as {
+      live_state_version?: unknown
+      player_rows?: unknown[]
+      pair_rows?: unknown[]
+      round_rows?: unknown[]
+      live_match_rows?: unknown[]
+    }
+    const versionBeforeSuggest = Number(authoritativeSnapshot.live_state_version)
+    if (versionBeforeSuggest !== requestLiveStateVersion) {
+      return jsonResponse({
+        ok: false,
+        error: 'PREVIEW_STATE_CHANGED',
+        state_changed: true,
+        request_live_state_version: requestLiveStateVersion,
+        current_live_state_version: versionBeforeSuggest,
+      }, 409)
+    }
 
-    // 1. Reconstruct state from client rows — no DB queries needed
+    // 1. Reconstruct engine state from the authoritative DB snapshot.
     const courtCount = optionalNumber(body.court_count) ?? 1
     const pvnaTolerance = optionalNumber(body.pvna_tolerance) ?? 0.5
     const plannedTotalRounds = optionalNumber(body.planned_total_rounds)
@@ -186,9 +276,9 @@ Deno.serve(async (request) => {
     const avoidPairs = Array.isArray(body.avoid_pairs) ? body.avoid_pairs : undefined
     const state = mapRowsToSessionState({
       sessionId,
-      playerRows: body.player_rows ?? [],
-      pairRows: body.pair_rows ?? [],
-      roundRows: body.round_rows ?? [],
+      playerRows: (Array.isArray(authoritativeSnapshot.player_rows) ? authoritativeSnapshot.player_rows : []) as SessionPlayerStateRow[],
+      pairRows: (Array.isArray(authoritativeSnapshot.pair_rows) ? authoritativeSnapshot.pair_rows : []) as SessionPairHistoryRow[],
+      roundRows: (Array.isArray(authoritativeSnapshot.round_rows) ? authoritativeSnapshot.round_rows : []) as SessionRoundRow[],
       courts: courtCount,
       pvnaTolerance,
       extraConfig: {
@@ -198,6 +288,30 @@ Deno.serve(async (request) => {
         avoid_pairs: avoidPairs,
       },
     })
+    const completedRoundsCount = state.rounds.filter(round => round.status === 'completed').length
+    if (plannedTotalRounds != null && completedRoundsCount >= plannedTotalRounds) {
+      console.log('[suggest] target_rounds_reached', {
+        suggestion_request_id: suggestionRequestId,
+        client_request_id: clientRequestId,
+        session_id: sessionId,
+        request_received_at: requestReceivedAt,
+        planned_total_rounds: plannedTotalRounds,
+        completed_rounds: completedRoundsCount,
+      })
+      return jsonResponse({
+        ok: true,
+        payloads: [],
+        final_preview_board: [],
+        warnings: ['TARGET_ROUNDS_REACHED'],
+        should_end: true,
+        live_state_version_used: requestLiveStateVersion,
+        debug: {
+          reason: 'TARGET_ROUNDS_REACHED',
+          planned_total_rounds: plannedTotalRounds,
+          completed_rounds: completedRoundsCount,
+        },
+      }, 200)
+    }
 
     // 2. Compute fairness (pure functions, no DB)
     const adjustment = correctForFairness(state)
@@ -205,8 +319,10 @@ Deno.serve(async (request) => {
 
     // 3. Reconstruct request params
     const requestedCount = typeof body.count === 'number' ? body.count : 1
-    const liveMatchRows = Array.isArray(body.live_match_rows) ? body.live_match_rows : []
-    const liveStateVersion = optionalNumber(body.live_state_version) ?? null
+    const authoritativeLiveMatchRows = (Array.isArray(authoritativeSnapshot.live_match_rows)
+      ? authoritativeSnapshot.live_match_rows
+      : []) as SessionLiveMatchRow[]
+    const liveStateVersion = requestLiveStateVersion
     const maxEdgePreviewCount = Math.min(courtCount, requestedCount)
     const preferAvailablePool = body.prefer_available_pool === true
     const count = Math.max(1, Math.min(requestedCount, maxEdgePreviewCount))
@@ -217,7 +333,12 @@ Deno.serve(async (request) => {
           .slice(0, count)
       : undefined
     const mode = body.mode === 'replace_courts' ? 'replace_courts' : 'full_board'
-    const currentPreviewBoard = Array.isArray(body.current_preview_board) ? body.current_preview_board : []
+    const currentPreviewBoard = mode === 'full_board'
+      ? []
+      : Array.isArray(body.current_preview_board) ? body.current_preview_board : []
+    const liveMatchRows = mode === 'full_board'
+      ? authoritativeLiveMatchRows.filter(match => match.status !== 'suggested')
+      : authoritativeLiveMatchRows
     const completingLiveMatchIds = new Set<string>(
       Array.isArray(body.completing_live_match_ids) ? body.completing_live_match_ids : []
     )
@@ -271,7 +392,7 @@ Deno.serve(async (request) => {
           })
         }
       })
-      backgroundWrites.push(instrumentationWrite)
+      backgroundWrites.push(Promise.resolve(instrumentationWrite))
     }
     const selectionDebug: any[] = []
     let payloads = buildSuggestedMatchPayloads({
@@ -349,12 +470,23 @@ Deno.serve(async (request) => {
     ).length
     const currentMaxSequenceNo = liveMatchRows.reduce((max: number, m: any) =>
       Math.max(max, typeof m?.sequence_no === 'number' ? m.sequence_no : -1), -1)
-    const finalPreviewBoard = board.final_preview_board.map(payload => ({
-      ...payload,
-      preview_live_state_version: liveStateVersion,
-      preview_countable_match_count: currentCountableMatchCount,
-      preview_max_sequence_no: currentMaxSequenceNo,
-    }))
+    let finalPreviewBoard = board.final_preview_board
+      .map(payload => normalizeStartablePreviewMatch(payload, {
+        liveStateVersion,
+        countableMatchCount: currentCountableMatchCount,
+        maxSequenceNo: currentMaxSequenceNo,
+      }))
+      .filter(isNonNullPreviewMatch)
+    const versionAfterSuggest = await loadLiveStateVersion()
+    if (versionAfterSuggest !== requestLiveStateVersion) {
+      return jsonResponse({
+        ok: false,
+        error: 'PREVIEW_STATE_CHANGED',
+        state_changed: true,
+        request_live_state_version: requestLiveStateVersion,
+        current_live_state_version: versionAfterSuggest,
+      }, 409)
+    }
     const liveBusyIds = new Set<string>(
       liveMatchRows
         .filter((m: any) => m.status === 'live' && !completingLiveMatchIds.has(m.id))
@@ -414,6 +546,61 @@ Deno.serve(async (request) => {
       ? targetCourtIdxs.length
       : count
     const targetCountShortfall = Math.max(0, targetExpectedCount - filledTargetCount)
+    let persistedPreviewVersion = liveStateVersion
+    let persistedPreviewNoop = false
+    if (finalPreviewBoard.length > 0 || targetCourtIdxs.length > 0) {
+      const replaceCourtIdxs = targetCourtIdxs.length > 0
+        ? targetCourtIdxs
+        : finalPreviewBoard
+            .map((payload: any) => Number(payload.court_idx))
+            .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
+      const replaceAllSuggestions = mode === 'full_board' && explicitTargetCourtIdxs.length === 0
+      const { data: persistedPreviewData, error: persistedPreviewError } = await auth.supabase.rpc(
+        'replace_live_session_suggestions_versioned',
+        {
+          p_session_id: sessionId,
+          p_expected_live_state_version: requestLiveStateVersion,
+          p_matches: finalPreviewBoard,
+          p_replace_court_idxs: replaceCourtIdxs,
+          p_replace_all: replaceAllSuggestions,
+          p_audit_payload: {
+            source: EDGE_FUNCTION_NAME,
+            suggestion_request_id: suggestionRequestId,
+            client_request_id: clientRequestId,
+            mode,
+            requested_count: requestedCount,
+            count,
+            court_count: courtCount,
+            target_court_idxs: targetCourtIdxs,
+            missing_target_courts: missingTargetCourts,
+            target_count_shortfall: targetCountShortfall,
+          },
+        },
+      )
+      if (persistedPreviewError) {
+        if (persistedPreviewError.message?.includes('Session changed')) {
+          return jsonResponse({
+            ok: false,
+            error: 'PREVIEW_STATE_CHANGED',
+            state_changed: true,
+            request_live_state_version: requestLiveStateVersion,
+          }, 409)
+        }
+        throw new Error(`Could not persist live match suggestions: ${persistedPreviewError.message}`)
+      }
+      persistedPreviewVersion = Number((persistedPreviewData as any)?.live_state_version ?? liveStateVersion)
+      persistedPreviewNoop = (persistedPreviewData as any)?.persisted_preview_noop === true
+      const persistedMatches = Array.isArray((persistedPreviewData as any)?.matches)
+        ? (persistedPreviewData as any).matches
+        : []
+      finalPreviewBoard = persistedMatches
+        .map((payload: any) => normalizeStartablePreviewMatch(payload, {
+          liveStateVersion: persistedPreviewVersion,
+          countableMatchCount: currentCountableMatchCount,
+          maxSequenceNo: currentMaxSequenceNo,
+        }))
+        .filter(isNonNullPreviewMatch)
+    }
 
     if (verifyDumpEnabled) {
       const latestDump = verifyDumps.at(-1)
@@ -452,6 +639,51 @@ Deno.serve(async (request) => {
         status: round.status,
         match_count: round.matches.length,
         resting_count: round.resting.length,
+      }))
+      const compactMatch = (match: any) => ({
+        id: match?.id ?? null,
+        status: match?.status ?? null,
+        round_no: match?.round_no ?? null,
+        sequence_no: match?.sequence_no ?? null,
+        court_idx: match?.court_idx ?? null,
+        team_a: [...(match?.team_a ?? [])],
+        team_b: [...(match?.team_b ?? [])],
+        resting: [...(match?.resting ?? [])],
+        warnings: match?.warnings ?? undefined,
+        tradeoffs: match?.tradeoffs ?? undefined,
+        preview_source: match?.preview_source ?? undefined,
+        preview_live_state_version: match?.preview_live_state_version ?? undefined,
+        preview_countable_match_count: match?.preview_countable_match_count ?? undefined,
+      })
+      const compactRoundRecords = state.rounds.map(round => ({
+        id: round.id ?? null,
+        session_id: round.session_id,
+        round_no: round.round_no,
+        status: round.status,
+        started_at: round.started_at instanceof Date ? round.started_at.toISOString() : round.started_at,
+        ended_at: round.ended_at instanceof Date ? round.ended_at.toISOString() : round.ended_at,
+        resting: [...(round.resting ?? [])],
+        matches: (round.matches ?? []).map((match: any) => ({
+          team_a: [...(match.team_a ?? [])],
+          team_b: [...(match.team_b ?? [])],
+        })),
+      }))
+      const compactSelectionDebug = selectionDebug.map((court: any) => ({
+        court_idx: court.court_idx,
+        busy_count: court.busy_count,
+        required_for_court: [...(court.required_for_court ?? [])],
+        eligible_players: (court.eligible_players ?? []).map((player: any) => ({
+          id: player.id,
+          pvna: player.pvna,
+          consecutive_rest: player.consecutive_rest,
+          matches_played: player.matches_played,
+          tier: player.tier,
+        })),
+        selected: (court.selected ?? []).map((player: any) => ({
+          id: player.id,
+          pvna: player.pvna,
+          team: player.team,
+        })),
       }))
       const baseReplayPayload = {
         replay_schema_version: REPLAY_SCHEMA_VERSION,
@@ -531,10 +763,19 @@ Deno.serve(async (request) => {
         raw_payloads_before_final_board_count: payloads.length,
         final_preview_board_count: finalPreviewBoard.length,
         selection_debug_count: selectionDebug.length,
+        current_preview_board_lite: currentPreviewBoard.map(compactMatch),
+        live_match_rows_lite: liveMatchRows.map(compactMatch),
+        final_preview_board_lite: finalPreviewBoard.map(compactMatch),
+        raw_payloads_before_final_board_lite: payloads.map(compactMatch),
+        selection_debug_lite: compactSelectionDebug,
+        round_records_lite: compactRoundRecords,
         chosen_courts: finalChosenMatches.map(match => match.court_idx),
         replaced_court_idxs: board.replaced_court_idxs,
         locked_court_idxs: board.locked_court_idxs,
         quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
+        persisted_preview: true,
+        persisted_preview_noop: persistedPreviewNoop,
+        persisted_preview_live_state_version: persistedPreviewVersion,
         occupied_live_court_idxs: [...occupiedCourtIdxs].sort((left, right) => left - right),
         open_court_idxs: openCourtIdxs,
         target_court_idxs: targetCourtIdxs,
@@ -587,7 +828,7 @@ Deno.serve(async (request) => {
           })
         }
       })
-      backgroundWrites.push(debugDumpWrite)
+      backgroundWrites.push(Promise.resolve(debugDumpWrite))
     }
 
     console.log('[suggest] request_done', {
@@ -601,6 +842,9 @@ Deno.serve(async (request) => {
       count,
       court_count: courtCount,
       live_state_version: liveStateVersion,
+      persisted_preview: true,
+      persisted_preview_noop: persistedPreviewNoop,
+      persisted_preview_live_state_version: persistedPreviewVersion,
       output_payload_count: payloads.length,
       final_preview_board_count: finalPreviewBoard.length,
       occupied_live_court_idxs: [...occupiedCourtIdxs].sort((left, right) => left - right),
@@ -656,6 +900,9 @@ Deno.serve(async (request) => {
         player_limited_courts: playerLimitedCourts,
         temp_limited_courts: tempLimitedCourts,
         real_limited_courts: realLimitedCourts,
+        persisted_preview: true,
+        persisted_preview_noop: persistedPreviewNoop,
+        persisted_preview_live_state_version: persistedPreviewVersion,
       },
       detail: {
         decision_source: decisionSource,
@@ -686,6 +933,10 @@ Deno.serve(async (request) => {
       ok: true,
       payloads,
       final_preview_board: finalPreviewBoard,
+      request_live_state_version_used: requestLiveStateVersion,
+      live_state_version_used: persistedPreviewVersion,
+      persisted_preview: true,
+      persisted_preview_noop: persistedPreviewNoop,
       replaced_court_idxs: board.replaced_court_idxs,
       locked_court_idxs: board.locked_court_idxs,
       open_court_idxs: openCourtIdxs,
@@ -703,6 +954,7 @@ Deno.serve(async (request) => {
       temp_limited_courts: tempLimitedCourts,
       real_limited_courts: realLimitedCourts,
       debug: {
+        authoritative_snapshot: true,
         playerCount: state.players.size,
         activePlayers: [...state.players.values()].filter(p => p.checked_out_at === null).map(p => p.player_id),
         count,

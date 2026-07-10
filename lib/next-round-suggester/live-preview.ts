@@ -348,6 +348,15 @@ export function buildFinalPreviewBoard({
   const usedCourts = new Set<number>()
   const usedPlayers = new Set<string>()
   const finalBoard: SuggestedMatchPayload[] = []
+  const replacedCourtIdxs: number[] = []
+  normalizedPayloads
+    .filter(payload => inferredReplacementSet.has(Number(payload.court_idx)))
+    .sort((left, right) => Number(left.court_idx) - Number(right.court_idx))
+    .forEach(payload => {
+      if (!addPreviewPayloadIfValid(payload, finalBoard, usedCourts, usedPlayers)) return
+      replacedCourtIdxs.push(Number(payload.court_idx))
+    })
+
   const lockedCourtIdxs: number[] = []
   normalizedCurrentBoard
     .sort((left, right) => Number(left.court_idx) - Number(right.court_idx))
@@ -356,15 +365,6 @@ export function buildFinalPreviewBoard({
       if (inferredReplacementSet.has(courtIdx)) return
       if (!addPreviewPayloadIfValid(payload, finalBoard, usedCourts, usedPlayers)) return
       lockedCourtIdxs.push(courtIdx)
-    })
-
-  const replacedCourtIdxs: number[] = []
-  normalizedPayloads
-    .filter(payload => inferredReplacementSet.has(Number(payload.court_idx)))
-    .sort((left, right) => Number(left.court_idx) - Number(right.court_idx))
-    .forEach(payload => {
-      if (!addPreviewPayloadIfValid(payload, finalBoard, usedCourts, usedPlayers)) return
-      replacedCourtIdxs.push(Number(payload.court_idx))
     })
 
   return {

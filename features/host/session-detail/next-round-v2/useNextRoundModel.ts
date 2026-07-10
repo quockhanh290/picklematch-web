@@ -682,6 +682,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     && presentRows.length > 0
     && presentRows.every(row => row.matches_played >= effectiveTargetRounds)
   const reportReady = effectiveTargetRounds > 0 && completedRoundCount >= effectiveTargetRounds
+  const targetRoundsComplete = reportReady && !activeRound
   const reportState = useMemo(
     () => (completedRoundCount > 0 ? rebuildStateThroughRound(state, completedRounds[0].round_no) : state),
     [completedRoundCount, completedRounds, state],
@@ -704,7 +705,11 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   )
   const groupSummaries = useMemo(() => buildGroupSummaries(deferredRows.playerRows), [deferredRows.playerRows])
   const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
-  const phase: 'plan' | 'active' | 'recap' = showSessionReport && (reportReady || initialShowReport) && !activeRound ? 'recap' : activeRound ? 'active' : 'plan'
+  const phase: 'plan' | 'active' | 'recap' = (targetRoundsComplete || (showSessionReport && (reportReady || initialShowReport) && !activeRound))
+    ? 'recap'
+    : activeRound
+      ? 'active'
+      : 'plan'
 
   const rememberRoundSelection = (reason: string) => {
     setSelectionUndo({

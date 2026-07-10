@@ -611,6 +611,7 @@ export async function fetchLiveMatchesPreview(
     current_courts?: number
     avoid_pairs?: AvoidPairEntry[]
     prefer_available_pool?: boolean
+    allow_full_board_rescue?: boolean
   },
   options: {
     requestId?: string
@@ -618,7 +619,10 @@ export async function fetchLiveMatchesPreview(
   } = {},
 ) {
   const requestKey = `${sessionId}:${JSON.stringify(body)}`
-  const existingRequest = liveMatchesPreviewInFlight.get(requestKey)
+  // An abortable request has a single owner. Sharing it across effect generations
+  // lets cleanup from the older effect cancel the newer caller's preview as well.
+  const canShareRequest = options.signal === undefined
+  const existingRequest = canShareRequest ? liveMatchesPreviewInFlight.get(requestKey) : undefined
   if (existingRequest) return existingRequest
 
   const request = invokeLiveSessionFunction('session-live-matches-suggest', sessionId, body, {}, {
@@ -626,10 +630,21 @@ export async function fetchLiveMatchesPreview(
     signal: options.signal,
   })
     .finally(() => {
-      if (liveMatchesPreviewInFlight.get(requestKey) === request) {
+      if (canShareRequest && liveMatchesPreviewInFlight.get(requestKey) === request) {
         liveMatchesPreviewInFlight.delete(requestKey)
       }
     })
-  liveMatchesPreviewInFlight.set(requestKey, request)
+  if (canShareRequest) liveMatchesPreviewInFlight.set(requestKey, request)
   return request
+}
+
+export async function startPersistedLiveMatch(
+  sessionId: string,
+  body: {
+    expected_live_state_version: number
+    match_id: string
+    audit_payload?: Record<string, unknown>
+  },
+) {
+  return invokeLiveSessionFunction('session-live-matches-start', sessionId, body)
 }

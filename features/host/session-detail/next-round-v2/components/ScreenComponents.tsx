@@ -1551,7 +1551,7 @@ export const LiveMatchBoard = React.memo(function LiveMatchBoard({
   onOpenSwap,
 }: LiveMatchBoardProps) {
   if (liveMatches.length === 0 && suggestedMatches.length === 0) return null
-  const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches], roundSize)
+  const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches, ...suggestedMatches], roundSize)
   const liveGroups = groupMatchesByLogicalRound(liveMatches, logicalRoundByMatchId)
   const suggestedGroups = groupMatchesByLogicalRound(suggestedMatches, logicalRoundByMatchId)
   const showRepeatCapBoardNotice = shouldShowRepeatCapBoardNotice(suggestedMatches)
@@ -1649,7 +1649,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
   const theme = useAppTheme()
 
   const courtCount = Math.max(1, Math.floor(roundSize))
-  const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches], courtCount)
+  const logicalRoundByMatchId = buildLogicalRoundDisplayMap([...completedMatches, ...liveMatches, ...suggestedMatches], courtCount)
   const countableMatchIdsByCourt = new Map<number, Set<string>>()
   for (const match of [...completedMatches, ...liveMatches]) {
     if (match.status === 'cancelled') continue
@@ -1714,7 +1714,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
           ? (logicalRoundByMatchId.get(liveMatch.id) ?? ((liveMatch.round_no ?? 0) + 1))
           : null
         const suggestedRoundNo = suggestedMatch
-          ? ((suggestedMatch.round_no ?? courtMatchCount) + 1)
+          ? (logicalRoundByMatchId.get(suggestedMatch.id) ?? ((suggestedMatch.round_no ?? courtMatchCount) + 1))
           : null
         const roundNo = laneCreatingNext
           ? liveRoundNo
@@ -1817,8 +1817,10 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
                   {emptyLaneIsRecovering
                     ? 'Đang tạo trận tiếp theo...'
                     : emptyLaneStatus_ === 'real'
-                      ? 'Chưa đủ người'
-                      : 'Chờ sân khác xong'}
+                      ? 'Chưa có đội hình thỏa điều kiện'
+                      : emptyLaneStatus_ === 'temp'
+                        ? 'Đang chờ trạng thái trận cập nhật'
+                        : 'Đang cập nhật gợi ý'}
                 </Text>
               </View>
             )}
@@ -1855,12 +1857,30 @@ export function buildLogicalRoundDisplayMap(matches: SessionLiveMatchRow[], roun
   }
   const countableMatches = [...uniqueMatchesById.values()]
     .sort((left, right) => left.sequence_no - right.sequence_no)
+  const roundNoLooksReliable = doesPersistedRoundNoLookReliable(countableMatches, safeRoundSize)
   return new Map(countableMatches.map((match, index) => [
     match.id,
-    match.round_no !== null && match.round_no !== undefined
+    roundNoLooksReliable && match.round_no !== null && match.round_no !== undefined
       ? match.round_no + 1
       : Math.floor(index / safeRoundSize) + 1,
   ]))
+}
+
+function doesPersistedRoundNoLookReliable(matches: SessionLiveMatchRow[], roundSize: number) {
+  const rounds = new Map<number, { count: number; courts: Set<number> }>()
+  for (const match of matches) {
+    if (match.round_no === null || match.round_no === undefined) return false
+    const roundNo = Number(match.round_no)
+    if (!Number.isFinite(roundNo) || roundNo < 0) return false
+    const courtIdx = displayCourtIdxFor(match)
+    const group = rounds.get(roundNo) ?? { count: 0, courts: new Set<number>() }
+    group.count += 1
+    if (group.courts.has(courtIdx)) return false
+    group.courts.add(courtIdx)
+    if (group.count > roundSize) return false
+    rounds.set(roundNo, group)
+  }
+  return true
 }
 
 export function RoundDivider({ roundNo }: { roundNo: number }) {
