@@ -577,7 +577,7 @@ export function suggestNextRound(
     options.force_budget_deadline ?? Number.POSITIVE_INFINITY,
   )
   const regularBudgetMs = maxRuntimeMs > DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS
-    ? Math.max(100, Math.floor(maxRuntimeMs * 0.1))
+    ? 100
     : maxRuntimeMs
   const regularSearchDeadline = Math.min(runtimeDeadline, startedAt + regularBudgetMs)
   const timedOut = () => Date.now() >= regularSearchDeadline
