@@ -1,3 +1,38 @@
+## Task: Operation stabilization audit - full live-lane state machine
+Status: IN PROGRESS
+
+Audit ledger: `docs/OPERATION_STABILIZATION_AUDIT.md`
+
+### Completed
+- [x] Map the client -> Edge -> versioned RPC -> snapshot operation path.
+- [x] Inventory load, preview, persist, start, complete, cancel, roster, refresh and end-session transitions.
+- [x] Run focused gate: 6 suites / 74 tests pass; record the remaining round-projection drift warnings.
+- [x] Fix OPS-P1-02: abortable preview requests no longer share cancellation ownership across React effect generations.
+- [x] Add regression test proving aborting an older identical preview request does not cancel the newer request.
+
+### Open findings
+- [ ] ENG-P1-01: apply fairness `config_changes` in the production live suggestion chain.
+- [ ] ENG-P1-02: make engine round reconstruction use the canonical rolling cycle model.
+- [ ] ENG-P1-03: honor `effective_pvna` throughout selection/search/rescue and direct state loading.
+- [ ] ENG-P2-01: give `suggestNextRound` a bounded default runtime and timing gate.
+- [ ] ENG-P2-02: fix gender fairness satisfiable numerator/denominator accounting.
+- [ ] ENG-P2-03: add a production-equivalent rolling-lane engine harness.
+- [ ] OPS-P1-01: replace ambiguous rolling `round_no` semantics with one canonical logical cycle model.
+- [ ] OPS-P1-03: replace legacy/dirty E2E reset and CTA assertions with disposable live-lane lifecycle tests.
+- [ ] OPS-P1-04: replace permanent assignment-conflict blocking with refetch + bounded recovery.
+- [ ] OPS-P2-01: unify manual and automatic starts on persisted match identity.
+- [ ] OPS-P2-02: include all preview policies in one request/cache fingerprint.
+- [ ] OPS-P2-03: detect version changes from another tab/device while focused.
+- [ ] OPS-P3-01: remove duplicate dead live-cycle implementation after canonical tests are in place.
+
+### Discipline
+- Do not tune engine ranking during this pass without a replay proving a ranking defect.
+- Every state-machine fix needs a regression test before deploy.
+- SQL changes use migrations; Edge bundle changes require the affected function deploys.
+- Do not deploy Vercel without Kevin's explicit approval.
+
+---
+
 ## Task: Stabilization pass - live lane audit/replay
 Status: IN PROGRESS
 
