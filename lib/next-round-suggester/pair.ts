@@ -14,6 +14,8 @@ import {
   withRecentGroupRematchKeys,
   // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 } from './score.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import { getEffectivePvna } from './state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import type { Match, MatchScore, PlayerSessionState, SessionState, Team } from './types.ts'
 
@@ -411,7 +413,7 @@ function getSameGroupTeamGapOverflowCount(team: Team, state: SessionState): numb
       if (
         player?.group_id &&
         player.group_id === other?.group_id &&
-        Math.abs(player.pvna - other.pvna) > INTRA_TEAM_PVNA_GAP_LIMIT
+        Math.abs(getEffectivePvna(player) - getEffectivePvna(other)) > INTRA_TEAM_PVNA_GAP_LIMIT
       ) {
         count += 1
       }
@@ -603,13 +605,13 @@ function separateConflictPairs(
         if (((j / 4) | 0) !== gi) continue
         if (!iConflicts.has(result[j].player_id)) continue
         // i và j là conflict pair trong cùng nhóm — di chuyển j sang nhóm khác.
-        const pvnaJ = result[j].pvna
+        const pvnaJ = getEffectivePvna(result[j])
         let bestK = -1
         let bestDist = Infinity
         for (let k = 0; k < n; k++) {
           if (((k / 4) | 0) === gi) continue
           if (iConflicts.has(result[k].player_id)) continue
-          const dist = Math.abs(result[k].pvna - pvnaJ)
+          const dist = Math.abs(getEffectivePvna(result[k]) - pvnaJ)
           if (dist < bestDist) { bestDist = dist; bestK = k }
         }
         if (bestK >= 0) {
@@ -661,7 +663,7 @@ export function bestPartitioning(
   // so later (more relaxed) stages also benefit from the level-based starting point.
   const pvnaSortedPlayers = normalizedPlayers.length >= 20
     ? ((): PlayerSessionState[] => {
-        const sorted = [...normalizedPlayers].sort((a, b) => a.pvna - b.pvna)
+        const sorted = [...normalizedPlayers].sort((a, b) => getEffectivePvna(a) - getEffectivePvna(b))
         return conflictMap.size > 0 ? separateConflictPairs(sorted, conflictMap) : sorted
       })()
     : null

@@ -375,7 +375,7 @@ export async function loadSessionState(
     timedQuery<SessionPlayerStateRow[]>(
       supabase
         .from<SessionPlayerStateRow[]>('session_player_state')
-        .select('session_id, player_id, group_id, checked_in_at, checked_out_at, matches_played, last_played_round, consecutive_rest, consecutive_play, opted_rest, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
+        .select('session_id, player_id, group_id, checked_in_at, checked_out_at, matches_played, last_played_round, consecutive_rest, consecutive_play, opted_rest, effective_pvna, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
         .eq('session_id', sessionId)
         .order('checked_in_at', { ascending: true }),
     ),

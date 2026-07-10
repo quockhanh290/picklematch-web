@@ -3,6 +3,29 @@ import { suggestNextMatch, suggestNextRound } from '../../../lib/next-round-sugg
 import { createPlayer, createPlayers, createState, setOpponentRepeats, setPartnerRepeats } from '../helpers/factories'
 
 describe('suggestNextRound', () => {
+  it('uses effective PVNA when choosing which equally due player rests', () => {
+    const state = createState({
+      courts: 1,
+      players: [
+        createPlayer('p1', { pvna: 3, effective_pvna: 4 }),
+        createPlayer('p2', { pvna: 3.1 }),
+        createPlayer('p3', { pvna: 3.2 }),
+        createPlayer('p4', { pvna: 3.3 }),
+        createPlayer('p5', { pvna: 3.4, effective_pvna: 3.3 }),
+      ],
+      pvnaTolerance: 10,
+    })
+
+    const result = suggestNextMatch(state, { exhaustive_fallback: true })
+    const selected = new Set([
+      ...result.alternatives[0].matches[0].team_a,
+      ...result.alternatives[0].matches[0].team_b,
+    ])
+
+    expect(selected.has('p5')).toBe(true)
+    expect(selected.has('p1')).toBe(false)
+  })
+
   it('still suggests matches when MUST_PLAY overrides exceed court capacity', () => {
     const state = createState({
       courts: 1,

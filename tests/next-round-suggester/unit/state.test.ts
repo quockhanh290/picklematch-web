@@ -1,4 +1,4 @@
-import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state'
+import { loadSessionState, mapRowsToSessionState } from '../../../lib/next-round-suggester/state'
 import type {
   SessionPairHistoryRow,
   SessionPlayerPreferenceRow,
@@ -173,5 +173,42 @@ describe('mapRowsToSessionState PVNA fallback', () => {
         profile_value: 'M',
       })],
     }))
+  })
+})
+
+describe('loadSessionState effective PVNA', () => {
+  it('selects and maps the session-level PVNA override', async () => {
+    const selects: Record<string, string> = {}
+    const rowsByTable: Record<string, unknown[]> = {
+      session_player_state: [{
+        ...playerRow('p1', { pvna: 3.2, current_elo: null, elo: null }),
+        effective_pvna: 4.4,
+      }],
+      session_pair_history: [],
+      session_rounds: [],
+      session_players: [],
+    }
+    const supabase = {
+      from(table: string) {
+        const query = {
+          select(columns: string) {
+            selects[table] = columns
+            return query
+          },
+          eq() {
+            return query
+          },
+          order() {
+            return Promise.resolve({ data: rowsByTable[table], error: null })
+          },
+        }
+        return query
+      },
+    }
+
+    const state = await loadSessionState(supabase as never, 'session-test')
+
+    expect(selects.session_player_state).toContain('effective_pvna')
+    expect(state.players.get('p1')?.effective_pvna).toBe(4.4)
   })
 })

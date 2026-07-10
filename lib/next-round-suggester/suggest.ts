@@ -20,7 +20,7 @@ import type {
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { computeDynamicThresholds, getAverageMatches, Tier } from './classify.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { getBenchDepth, getSessionPhase } from './state.ts'
+import { getBenchDepth, getEffectivePvna, getSessionPhase } from './state.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { computeAvailabilityMetrics, computeProjectedOpponentRepeatBurden, computeProjectedPartnerRepeatBurden, type AvailabilityMetrics } from './fairness/metrics.ts'
 import {
@@ -352,7 +352,7 @@ function getTeamPvnaGap(team: [string, string], state: SessionState): number {
   const first = state.players.get(team[0])
   const second = state.players.get(team[1])
   if (!first || !second) return Number.POSITIVE_INFINITY
-  return Math.abs(first.pvna - second.pvna)
+  return Math.abs(getEffectivePvna(first) - getEffectivePvna(second))
 }
 
 function getIntraTeamGapTradeoff(matches: Match[], state: SessionState): SuggestionTradeoff | null {
@@ -1051,7 +1051,7 @@ function suggestNextMatchExhaustiveFallback(
   // Pre-sort once by pvna so each generated combo is already in pvna order —
   // the comparator can then use index 0/3 directly, avoiding O(n log n) inner
   // array allocations that made sorting 35 k+ combos exceed the timeout budget.
-  const eligibleByPvna = [...eligiblePlayers].sort((a, b) => a.pvna - b.pvna)
+  const eligibleByPvna = [...eligiblePlayers].sort((a, b) => getEffectivePvna(a) - getEffectivePvna(b))
 
   const evaluateStage = (
     allowRelaxedTolerance: boolean,
@@ -1063,8 +1063,8 @@ function suggestNextMatchExhaustiveFallback(
     // are evaluated first — timeout no longer causes quality regression.
     const combinations = getAllCombinations(eligibleByPvna, 4).sort((a, b) => {
       // Combos from a pvna-sorted list are already ordered per element (index 0 = min, 3 = max)
-      const diffA = Math.abs(a[0].pvna + a[3].pvna - a[1].pvna - a[2].pvna) / 2
-      const diffB = Math.abs(b[0].pvna + b[3].pvna - b[1].pvna - b[2].pvna) / 2
+      const diffA = Math.abs(getEffectivePvna(a[0]) + getEffectivePvna(a[3]) - getEffectivePvna(a[1]) - getEffectivePvna(a[2])) / 2
+      const diffB = Math.abs(getEffectivePvna(b[0]) + getEffectivePvna(b[3]) - getEffectivePvna(b[1]) - getEffectivePvna(b[2])) / 2
       return diffA - diffB
     })
 
@@ -1168,7 +1168,7 @@ function suggestNextMatchExhaustiveFallback(
       tradeoffs: a.tradeoffs?.map(t => t.type),
       warnings: a.warnings,
     }))
-    options._exhaustiveDiag._eligiblePvnas = eligibleByPvna.map(p => `${p.player_id.slice(0,8)}:${p.pvna.toFixed(2)}`)
+    options._exhaustiveDiag._eligiblePvnas = eligibleByPvna.map(p => `${p.player_id.slice(0,8)}:${getEffectivePvna(p).toFixed(2)}`)
   }
 
   if (alternatives.length === 0) {

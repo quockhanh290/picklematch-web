@@ -5,7 +5,7 @@ import { computeAvailabilityMetrics, computeGenderPrefSatisfaction, computeMatch
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { computeRepeatPressure } from './pressure.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { getBenchDepth } from '../state.ts'
+import { getBenchDepth, getEffectivePvna } from '../state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { isAvoidPair } from '../avoid.ts'
 
@@ -363,9 +363,9 @@ export function detectPvnaOutliers(state: SessionState): FairnessWarning[] {
   const activePlayers = [...state.players.values()].filter((p) => p.checked_out_at === null)
   if (activePlayers.length < 4) return []
 
-  const avgPvna = activePlayers.reduce((sum, p) => sum + p.pvna, 0) / activePlayers.length
+  const avgPvna = activePlayers.reduce((sum, p) => sum + getEffectivePvna(p), 0) / activePlayers.length
   const tolerance = state.config.pvna_tolerance * 2
-  const outliers = activePlayers.filter((p) => Math.abs(p.pvna - avgPvna) > tolerance)
+  const outliers = activePlayers.filter((p) => Math.abs(getEffectivePvna(p) - avgPvna) > tolerance)
   if (outliers.length === 0) return []
 
   return [

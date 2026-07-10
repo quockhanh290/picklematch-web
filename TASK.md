@@ -13,7 +13,7 @@ Audit ledger: `docs/OPERATION_STABILIZATION_AUDIT.md`
 ### Open findings
 - [x] ENG-P1-01: apply fairness `config_changes` in the production live suggestion chain.
 - [x] ENG-P1-02: make engine and client share canonical rolling-cycle reconstruction.
-- [ ] ENG-P1-03: honor `effective_pvna` throughout selection/search/rescue and direct state loading.
+- [x] ENG-P1-03: honor `effective_pvna` throughout selection/search/rescue and direct state loading.
 - [ ] ENG-P2-01: give `suggestNextRound` a bounded default runtime and timing gate.
 - [ ] ENG-P2-02: fix gender fairness satisfiable numerator/denominator accounting.
 - [ ] ENG-P2-03: add a production-equivalent rolling-lane engine harness.

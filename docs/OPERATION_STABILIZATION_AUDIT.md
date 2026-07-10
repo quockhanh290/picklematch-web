@@ -177,13 +177,13 @@ Remaining boundary: persistence/snapshot still need one schema-level cycle ident
 
 ### ENG-P1-03 - Effective PVNA is only partially honored
 
-Status: OPEN; targeted repro confirmed
+Status: FIXED IN WORKTREE
 
 Core match scoring uses `effective_pvna`, but player priority, exhaustive-combination ordering, live rescue/repair quality metrics and diagnostics still use raw `pvna`. A five-player repro returned a lineup with score `4.75` and rested `p5`, while brute force using effective PVNA found score `2.60` by resting `p1`. No engine test currently covers `effective_pvna`.
 
 The direct `loadSessionState` query also omits the `effective_pvna` column, so `session-fairness`, `session-summary`, the retired round suggester and diagnostics silently lose overrides. The live snapshot path uses `sps.*` and does receive the field.
 
-Required fix: use `getEffectivePvna` consistently in selection, candidate ordering, rescue/repair, outlier detection and debug output; select the column in the direct loader; add brute-force optimality and loader tests.
+Fix: selection priority, exhaustive ordering, partition seeds, live rescue/repair, outlier detection and diagnostics now use `getEffectivePvna`. The preview cache fingerprint includes the override, dumps preserve both raw and effective values, and the direct loader selects `effective_pvna`. Regression tests lock the five-player bench decision, loader query/mapping and cache invalidation. The focused gate passes 119/119.
 
 ### ENG-P2-01 - Full-round search has no default runtime budget
 

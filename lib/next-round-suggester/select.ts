@@ -5,7 +5,7 @@ import { computeAvailabilityMetrics } from './fairness/metrics.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import type { AvailabilityMetrics } from './fairness/metrics.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { isPresent } from './state.ts'
+import { getEffectivePvna, isPresent } from './state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import type { PlayerSessionState, SessionState } from './types.ts'
 
@@ -50,7 +50,8 @@ function comparePlayersByPriority(
     return a.last_played_round - b.last_played_round
   }
 
-  if (a.pvna !== b.pvna) return a.pvna - b.pvna
+  const pvnaDiff = getEffectivePvna(a) - getEffectivePvna(b)
+  if (pvnaDiff !== 0) return pvnaDiff
 
   return a.player_id.localeCompare(b.player_id)
 }

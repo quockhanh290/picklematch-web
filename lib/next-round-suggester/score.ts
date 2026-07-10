@@ -87,7 +87,7 @@ function getConsecutivePlayPenalty(allPlayers: string[], state: SessionState, we
 function getPvna(team: Team, state: SessionState): number | null {
   const players = team.map((playerId) => state.players.get(playerId))
   if (players.some((player) => !player)) return null
-  return players.reduce((sum, player) => sum + (player?.pvna ?? 3.0), 0)
+  return players.reduce((sum, player) => sum + (player ? getEffectivePvna(player) : 3.0), 0)
 }
 
 export function getMatchGroupKey(teamA: Team, teamB: Team) {

@@ -23,7 +23,7 @@ import {
 import type { SessionLiveMatchRow, SuggestionAlternative } from '../../../lib/next-round-suggester/types'
 import { Tier } from '../../../lib/next-round-suggester/classify'
 import { getRecentRepeatCost } from '../../../lib/next-round-suggester/score'
-import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
+import { createPlayer, createPlayers, createState, setPartnerRepeats } from '../helpers/factories'
 
 function alternative(teamA: [string, string], teamB: [string, string], pvnaDiff: number): SuggestionAlternative {
   return {
@@ -156,6 +156,16 @@ describe('getLivePreviewCourtBudgetMs', () => {
 })
 
 describe('buildPreviewBatchKey', () => {
+  it('changes when a session-level effective PVNA override changes', () => {
+    const state = createState({ players: createPlayers(4) })
+    const fairnessAdjustment = { tier_overrides: {}, applied_for_warnings: [] }
+    const original = buildPreviewBatchKey(state.session_id, state, 1, 0.5, fairnessAdjustment)
+
+    state.players.get('p01')!.effective_pvna = 4.2
+
+    expect(buildPreviewBatchKey(state.session_id, state, 1, 0.5, fairnessAdjustment)).not.toBe(original)
+  })
+
   it('includes live quality policy so policy-specific preview caches cannot collide', () => {
     const state = createState({
       players: [

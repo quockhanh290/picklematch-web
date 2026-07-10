@@ -27,6 +27,8 @@ import { bestPartitioning } from './pair.ts'
 import { suggestNextMatch, type ExhaustiveFallbackDiagnostic } from './suggest.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { reconstructLiveRounds } from './live-rounds.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import { getEffectivePvna } from './state.ts'
 import type {
   PlayerSessionState,
   SessionLiveMatchRow,
@@ -560,6 +562,7 @@ export function buildPreviewBatchKey(
       return [
         player.player_id,
         player.pvna,
+        player.effective_pvna ?? '',
         player.group_id ?? '',
         player.checked_out_at ? 'out' : 'in',
         player.opted_rest ? 'rest' : 'play',
@@ -631,7 +634,7 @@ export function getAlternativeIntraTeamGap(alternative: SuggestionAlternative, s
         const first = state.players.get(team[0])
         const second = state.players.get(team[1])
         if (!first || !second) return Number.POSITIVE_INFINITY
-        return Math.abs(first.pvna - second.pvna)
+        return Math.abs(getEffectivePvna(first) - getEffectivePvna(second))
       }),
     ),
   )
@@ -1373,7 +1376,8 @@ function selectRequiredIdsForCourt(
     return availableRequiredIds.slice(0, count)
   }
   const sortedByPvna = [...availableRequiredIds].sort((left, right) =>
-    (state.players.get(right)?.pvna ?? 0) - (state.players.get(left)?.pvna ?? 0) ||
+    (state.players.get(right) ? getEffectivePvna(state.players.get(right)!) : 0)
+      - (state.players.get(left) ? getEffectivePvna(state.players.get(left)!) : 0) ||
     left.localeCompare(right)
   )
   const buckets = Array.from({ length: remainingCourtsInRound }, () => [] as string[])
@@ -1414,7 +1418,10 @@ export function deferLowViabilityRequiredIdsForCourt({
 
   const tolerance = state.config.pvna_tolerance
   const requiredPvnas = requiredForThisCourt
-    .map(playerId => state.players.get(playerId)?.pvna)
+    .map(playerId => {
+      const player = state.players.get(playerId)
+      return player ? getEffectivePvna(player) : undefined
+    })
     .filter((pvna): pvna is number => typeof pvna === 'number' && Number.isFinite(pvna))
   const spread = requiredPvnas.length === 0 ? 0 : Math.max(...requiredPvnas) - Math.min(...requiredPvnas)
   if (spread <= tolerance) return requiredForThisCourt
@@ -1426,7 +1433,7 @@ export function deferLowViabilityRequiredIdsForCourt({
   const hasNearLevelCandidate = (playerId: string) => {
     const required = state.players.get(playerId)
     if (!required) return false
-    return activePool.some(player => Math.abs(player.pvna - required.pvna) <= tolerance)
+    return activePool.some(player => Math.abs(getEffectivePvna(player) - getEffectivePvna(required)) <= tolerance)
   }
   const viable = requiredForThisCourt.filter(hasNearLevelCandidate)
   if (viable.length === 0) return requiredForThisCourt.slice(0, 1)
@@ -1447,7 +1454,10 @@ function setPayloadPlayer(payload: SuggestedMatchPayload, position: number, play
 
 function getPayloadPvnaGap(payload: SuggestedMatchPayload, state: SessionState) {
   const teamSum = (team: [string, string]) => team.reduce(
-    (sum, playerId) => sum + (state.players.get(playerId)?.pvna ?? 0),
+    (sum, playerId) => {
+      const player = state.players.get(playerId)
+      return sum + (player ? getEffectivePvna(player) : 0)
+    },
     0,
   )
   return Math.abs(teamSum(payload.team_a) - teamSum(payload.team_b))
@@ -1494,7 +1504,8 @@ export function improvesPreviewBoardPvna(
 
 function getPayloadIntraTeamGap(payload: SuggestedMatchPayload, state: SessionState) {
   const gap = (team: [string, string]) => Math.abs(
-    (state.players.get(team[0])?.pvna ?? 0) - (state.players.get(team[1])?.pvna ?? 0),
+    (state.players.get(team[0]) ? getEffectivePvna(state.players.get(team[0])!) : 0)
+      - (state.players.get(team[1]) ? getEffectivePvna(state.players.get(team[1])!) : 0),
   )
   return Math.max(gap(payload.team_a), gap(payload.team_b))
 }
@@ -2746,7 +2757,10 @@ function beamMatchScore(
   interW: number,
   intraW: number,
 ): number {
-  const pvna = (id: string) => state.players.get(id)?.pvna ?? 0
+  const pvna = (id: string) => {
+    const player = state.players.get(id)
+    return player ? getEffectivePvna(player) : 0
+  }
   const inter = Math.abs((pvna(teamA[0]) + pvna(teamA[1])) - (pvna(teamB[0]) + pvna(teamB[1])))
   const intra = Math.max(
     Math.abs(pvna(teamA[0]) - pvna(teamA[1])),
@@ -2769,7 +2783,7 @@ function beamHybridWeights(busyIds: Set<string>, state: SessionState): { interW:
   if (activeCount < 25) {
     const pvnas = [...state.players.values()]
       .filter(p => p.checked_out_at === null && !p.opted_rest && !busyIds.has(p.player_id))
-      .map(p => p.pvna)
+      .map(getEffectivePvna)
     const spread = pvnas.length < 2 ? 0 : Math.max(...pvnas) - Math.min(...pvnas)
     return { interW: 7 + spread * 3, intraW: Math.max(5, 7 - spread) }
   }
@@ -2853,7 +2867,10 @@ function computeBeamQuality(
   teamB: [string, string],
   state: SessionState,
 ): number {
-  const pvna = (id: string) => state.players.get(id)?.pvna ?? 0
+  const pvna = (id: string) => {
+    const player = state.players.get(id)
+    return player ? getEffectivePvna(player) : 0
+  }
   const inter = Math.abs((pvna(teamA[0]) + pvna(teamA[1])) - (pvna(teamB[0]) + pvna(teamB[1])))
   const intra = Math.max(
     Math.abs(pvna(teamA[0]) - pvna(teamA[1])),
@@ -2867,7 +2884,10 @@ function findBestAvailablePoolQuality(
   state: SessionState,
   pvnaTolerance: number,
 ): number | undefined {
-  const pvna = (id: string) => state.players.get(id)?.pvna ?? 0
+  const pvna = (id: string) => {
+    const player = state.players.get(id)
+    return player ? getEffectivePvna(player) : 0
+  }
   const n = availableIds.length
   let best: number | undefined
   for (let a = 0; a < n - 3; a++) {
@@ -3293,7 +3313,7 @@ export function buildSuggestedMatchPayloads({
       .filter(p => p.checked_out_at === null && !p.opted_rest && !busyIds.has(p.player_id))
       .map(p => ({
         id: p.player_id,
-        pvna: p.pvna,
+        pvna: getEffectivePvna(p),
         consecutive_rest: p.consecutive_rest,
         matches_played: p.matches_played,
         tier: String(tierOverrides[p.player_id] ?? 'FLEXIBLE'),
@@ -3715,8 +3735,14 @@ export function buildSuggestedMatchPayloads({
         required_for_court: requiredForThisCourt,
         eligible_players: debugEligible,
         selected: [
-          ...match.team_a.map(id => ({ id, pvna: suggestionStateForCourt.players.get(id)?.pvna ?? 0, team: 'A' as const })),
-          ...match.team_b.map(id => ({ id, pvna: suggestionStateForCourt.players.get(id)?.pvna ?? 0, team: 'B' as const })),
+          ...match.team_a.map(id => {
+            const player = suggestionStateForCourt.players.get(id)
+            return { id, pvna: player ? getEffectivePvna(player) : 0, team: 'A' as const }
+          }),
+          ...match.team_b.map(id => {
+            const player = suggestionStateForCourt.players.get(id)
+            return { id, pvna: player ? getEffectivePvna(player) : 0, team: 'B' as const }
+          }),
         ],
       })
     }
@@ -3785,6 +3811,7 @@ export function buildSuggestedMatchPayloads({
         players: [...state.players.values()].map(p => ({
           id: p.player_id,
           pvna: p.pvna,
+          effective_pvna: p.effective_pvna ?? null,
           gender: p.gender,
           partner_gender_pref: p.partner_gender_pref,
           opponent_gender_pref: p.opponent_gender_pref,
