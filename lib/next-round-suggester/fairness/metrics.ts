@@ -505,6 +505,7 @@ export function computeRestFairness(state: SessionState): RestFairnessMetrics {
 export function computeGenderPrefSatisfaction(state: SessionState): GenderPrefMetrics {
   let totalPrefOpportunities = 0
   let satisfiedCount = 0
+  let unsatisfiableOpportunityCount = 0
   const perPlayerCounts = new Map<
     string,
     { partnerTotal: number; partnerSatisfied: number; opponentTotal: number; opponentSatisfied: number }
@@ -521,6 +522,15 @@ export function computeGenderPrefSatisfaction(state: SessionState): GenderPrefMe
 
   for (const round of state.rounds) {
     if (round.status !== 'completed' && round.status !== 'active') continue
+    const roundRoster = getRoundRoster(round)
+    const roundPlayers = [...roundRoster]
+      .map(playerId => state.players.get(playerId))
+      .filter((player): player is PlayerSessionState => player !== undefined)
+    // Availability is historical per round; preference and gender use the current profile because
+    // those fields are not snapshotted in RoundRecord.
+    const unsatisfiableInRound = new Set(
+      detectUnsatisfiableGenderPrefs(roundPlayers, false).map(item => item.player_id),
+    )
 
     for (const match of round.matches) {
       const checks = getPreferenceChecks(match, state)
@@ -529,6 +539,10 @@ export function computeGenderPrefSatisfaction(state: SessionState): GenderPrefMe
         if (player.partner_gender_pref === 'any' || !target?.gender) continue
         const counts = perPlayerCounts.get(player.player_id)
         if (!counts) continue
+        if (unsatisfiableInRound.has(player.player_id)) {
+          unsatisfiableOpportunityCount += 1
+          continue
+        }
 
         totalPrefOpportunities += 1
         counts.partnerTotal += 1
@@ -542,6 +556,10 @@ export function computeGenderPrefSatisfaction(state: SessionState): GenderPrefMe
         if (player.opponent_gender_pref === 'any' || !target?.gender) continue
         const counts = perPlayerCounts.get(player.player_id)
         if (!counts) continue
+        if (unsatisfiableInRound.has(player.player_id)) {
+          unsatisfiableOpportunityCount += 1
+          continue
+        }
 
         totalPrefOpportunities += 1
         counts.opponentTotal += 1
@@ -554,10 +572,6 @@ export function computeGenderPrefSatisfaction(state: SessionState): GenderPrefMe
   }
 
   const unsatisfiable = detectUnsatisfiableGenderPrefs([...state.players.values()])
-  const unsatisfiableIds = new Set(unsatisfiable.map((u) => u.player_id))
-  const unsatisfiableOpportunityCount = [...perPlayerCounts.entries()]
-    .filter(([id]) => unsatisfiableIds.has(id))
-    .reduce((sum, [, counts]) => sum + counts.partnerTotal + counts.opponentTotal, 0)
 
   return {
     total_pref_opportunities: totalPrefOpportunities,
@@ -777,10 +791,8 @@ function computeRestScore(metrics: RestFairnessMetrics, benchDepth: number): num
 }
 
 function computeGenderScore(metrics: GenderPrefMetrics): number {
-  const satisfiableOpportunities = metrics.total_pref_opportunities - metrics.unsatisfiable_opportunity_count
-  if (satisfiableOpportunities <= 0) return 20
-  const satisfiableRate = metrics.satisfied_count / satisfiableOpportunities
-  return Math.max(0, Math.min(20, Math.round(20 * satisfiableRate)))
+  if (metrics.total_pref_opportunities <= 0) return 20
+  return Math.max(0, Math.min(20, Math.round(20 * metrics.satisfaction_rate)))
 }
 
 function gradeFromScore(score: number): SessionFairnessScore['grade'] {
@@ -792,8 +804,11 @@ function gradeFromScore(score: number): SessionFairnessScore['grade'] {
 
 function detectUnsatisfiableGenderPrefs(
   players: PlayerSessionState[],
+  activeOnly = true,
 ): { player_id: string; reason: string }[] {
-  const activePlayers = players.filter((player) => player.checked_out_at === null)
+  const activePlayers = activeOnly
+    ? players.filter((player) => player.checked_out_at === null)
+    : players
   const counts = {
     M: activePlayers.filter((player) => player.gender === 'M').length,
     F: activePlayers.filter((player) => player.gender === 'F').length,

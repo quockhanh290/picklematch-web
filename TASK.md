@@ -15,7 +15,7 @@ Audit ledger: `docs/OPERATION_STABILIZATION_AUDIT.md`
 - [x] ENG-P1-02: make engine and client share canonical rolling-cycle reconstruction.
 - [x] ENG-P1-03: honor `effective_pvna` throughout selection/search/rescue and direct state loading.
 - [x] ENG-P2-01: give `suggestNextRound` a bounded default runtime and timing gate.
-- [ ] ENG-P2-02: fix gender fairness satisfiable numerator/denominator accounting.
+- [x] ENG-P2-02: fix gender fairness satisfiable numerator/denominator accounting.
 - [ ] ENG-P2-03: add a production-equivalent rolling-lane engine harness.
 - [ ] OPS-P1-01: replace ambiguous rolling `round_no` semantics with one canonical logical cycle model.
 - [ ] OPS-P1-03: replace legacy/dirty E2E reset and CTA assertions with disposable live-lane lifecycle tests.

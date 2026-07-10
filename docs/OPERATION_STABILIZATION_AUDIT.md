@@ -195,11 +195,11 @@ Fix: `suggestNextRound` now defaults to a 1000 ms public budget with a 50 ms ret
 
 ### ENG-P2-02 - Gender fairness score mixes incompatible numerator/denominator
 
-Status: OPEN; targeted repro confirmed
+Status: FIXED IN WORKTREE
 
-The metric subtracts all historical opportunities of players who are unsatisfiable under the current roster from the denominator, but leaves their satisfied opportunities in the numerator. A repro with two opportunities, one currently-unsatisfiable satisfied case and one satisfiable failed case produced a gender score of `20/20` instead of `0/20` for the satisfiable subset.
+The metric subtracts all historical opportunities of players who are unsatisfiable under the current roster from the denominator, but leaves their satisfied opportunities in the numerator. A repro with one historically satisfiable success whose supporting player later checked out and one satisfiable failure produced `20/20`; round-time accounting correctly preserves both historical opportunities and scores `10/20`.
 
-Required fix: track satisfiable satisfied-count and opportunity-count together at opportunity time, with explicit temporal semantics for roster mutations.
+Fix: each round now classifies preference feasibility from that round's roster before incrementing either the satisfiable numerator or denominator. Impossible opportunities are tracked separately, and current-roster impossibility is retained only for present-time warnings. A regression with one historically satisfied player who later loses all eligible partners and one satisfiable failure now scores 10/20 instead of 20/20. Round availability is historical; preference and gender values remain current-profile semantics because `RoundRecord` does not snapshot those fields. The fairness and gender scenario gate passes 67/67.
 
 ### ENG-P2-03 - Engine gates are not production-equivalent
 
