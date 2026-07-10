@@ -54,9 +54,8 @@ export type SuggestNextRoundOptions = {
   active_courts?: number      // override court count for this suggestion
   fixed_courts?: Match[]      // courts already assigned; suggest remaining courts only
   // Absolute-timestamp deadline shared across all courts in one buildSuggestedMatchPayloads call.
-  // Prevents the per-court forceStartedAt from resetting on each court, which lets force passes
-  // stack (e.g. 3 courts × 1500 ms = 4500 ms) and hit the Supabase WORKER_LIMIT (546).
-  // When absent the per-call FORCE_RESCUE_BUDGET_MS fallback applies.
+  // Prevents each court from resetting rescue time and stacking work until the worker limit.
+  // The public runtime deadline still caps the individual call.
   force_budget_deadline?: number
   onInstrumentEvent?: (event: EngineInstrumentEvent) => void
 }
@@ -98,6 +97,9 @@ export type SuggestionDiagnostic = {
   partition_count: number
   max_iterations: number
   exhaustive: boolean
+  timed_out?: boolean
+  elapsed_ms?: number
+  budget_ms?: number
 }
 
 function combinationKey(players: PlayerSessionState[]): string {
@@ -264,9 +266,8 @@ function emptyStats(): MatchStats {
 
 const MAX_CANDIDATES_PER_STRATEGY = 60
 const MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY = 8
-// Forced rescue pass gets its own hard deadline independent of the main budget.
-// Keeps total edge-function wall-clock well under Supabase WORKER_LIMIT (546).
-const FORCE_RESCUE_BUDGET_MS = 1500
+export const DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS = 1000
+const RUNTIME_DEADLINE_GUARD_MS = 50
 const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
 const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
 const PVNA_TRADEOFF_WEIGHT = 10
@@ -570,8 +571,27 @@ export function suggestNextRound(
   const startedAt = Date.now()
   const maxRuntimeMs = options.max_runtime_ms && options.max_runtime_ms > 0
     ? Math.max(50, Math.floor(options.max_runtime_ms))
-    : null
-  const timedOut = () => maxRuntimeMs !== null && Date.now() - startedAt >= maxRuntimeMs
+    : DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS
+  const runtimeDeadline = Math.min(
+    startedAt + Math.max(1, maxRuntimeMs - RUNTIME_DEADLINE_GUARD_MS),
+    options.force_budget_deadline ?? Number.POSITIVE_INFINITY,
+  )
+  const regularBudgetMs = maxRuntimeMs > DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS
+    ? Math.max(100, Math.floor(maxRuntimeMs * 0.1))
+    : maxRuntimeMs
+  const regularSearchDeadline = Math.min(runtimeDeadline, startedAt + regularBudgetMs)
+  const timedOut = () => Date.now() >= regularSearchDeadline
+  const overallTimedOut = () => Date.now() >= runtimeDeadline
+  const remainingRuntimeMs = (includeRescueReserve = false) => Math.max(
+    0,
+    (includeRescueReserve ? runtimeDeadline : regularSearchDeadline) - Date.now(),
+  )
+  const finalizeDiagnostics = () => {
+    if (!diagnostics) return
+    diagnostics.elapsed_ms = Date.now() - startedAt
+    diagnostics.budget_ms = maxRuntimeMs
+    diagnostics.timed_out = timedOut()
+  }
   const partitioningCache = options.partition_cache === false
     ? undefined
     : createPartitioningRuntimeCache()
@@ -583,12 +603,9 @@ export function suggestNextRound(
   ]
 
   const collectAlternatives = (allowRelaxedTolerance: boolean, allowRepeatOverflow: boolean, force = false) => {
-    // Use the shared batch deadline when provided; fall back to a fresh per-call budget.
-    const forceStartedAt = (force && options.force_budget_deadline === undefined) ? Date.now() : null
     const forceTimedOut = () => {
       if (!force) return false
-      if (options.force_budget_deadline !== undefined) return Date.now() > options.force_budget_deadline
-      return forceStartedAt !== null && (Date.now() - forceStartedAt) > FORCE_RESCUE_BUDGET_MS
+      return overallTimedOut()
     }
 
     for (const strategy of strategies) {
@@ -653,7 +670,7 @@ export function suggestNextRound(
           false,
           options.preview_seed,
           thresholds,
-          maxRuntimeMs !== null ? Math.max(0, maxRuntimeMs - (Date.now() - startedAt)) : undefined,
+          remainingRuntimeMs(force),
         )
         if (!alternative) continue
 
@@ -668,7 +685,7 @@ export function suggestNextRound(
   let stageDetail: 'strict' | 'relaxed' | 'none' = 'none'
   collectAlternatives(false, false)
   if (alternatives.length > 0) stageDetail = 'strict'
-  if (alternatives.length === 0 && !timedOut()) {
+  if (alternatives.length === 0 && !overallTimedOut()) {
     // Try overflow-ok (strict tolerance) before relaxed tolerance (no overflow).
     // In sessions with many repeat pairs, Pass B (relaxed + no overflow) runs all 8 stages
     // and still finds nothing — wasted iterations. Pass C (overflow ok) finds the result in
@@ -684,9 +701,8 @@ export function suggestNextRound(
       if (alternatives.length > 0 && stageDetail === 'none') stageDetail = 'relaxed'
     }
   }
-  // Forced pass: if all regular passes produced nothing (e.g. board-stuck large pool with tight
-  // gender prefs), run once more with full relaxation and no timeout guard.
-  if (alternatives.length === 0) {
+  // Forced rescue shares the public deadline, so it cannot extend total wall-clock indefinitely.
+  if (alternatives.length === 0 && !overallTimedOut()) {
     try { options.onInstrumentEvent?.({ event: 'forced_pass', detail: 'forced_pass' }) } catch { /* noop */ }
     collectAlternatives(true, true, true)
   }
@@ -786,7 +802,7 @@ export function suggestNextRound(
         const sorted = sortPlayersForStrategy(eligiblePlayers, strategy, tierOverrides, classificationContext)
         const candidates = getPriorityCandidates(sorted, slots, MAX_CANDIDATES_PER_STRATEGY)
         for (const candidate of candidates) {
-          if (timedOut()) break
+          if (overallTimedOut()) break
           if (alternatives.length > 0) break
           const key = combinationKey(candidate.players)
           if (seen.has(key)) continue
@@ -803,6 +819,7 @@ export function suggestNextRound(
             false,
             options.preview_seed,
             thresholds,
+            remainingRuntimeMs(true),
           )
           if (!alternative) continue
           alternatives.push(alternative)
@@ -813,6 +830,7 @@ export function suggestNextRound(
   }
 
   if (alternatives.length === 0) {
+    finalizeDiagnostics()
     return {
       alternatives: [],
       warnings: [...warnings, 'NO_VALID_MATCH'],
@@ -820,6 +838,7 @@ export function suggestNextRound(
     }
   }
 
+  finalizeDiagnostics()
   return {
     alternatives: alternatives.slice(0, maxAlternatives),
     warnings,

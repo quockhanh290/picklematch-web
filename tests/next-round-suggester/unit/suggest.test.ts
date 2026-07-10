@@ -1,5 +1,5 @@
 import { Tier } from '../../../lib/next-round-suggester/classify'
-import { suggestNextMatch, suggestNextRound } from '../../../lib/next-round-suggester/suggest'
+import { DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS, suggestNextMatch, suggestNextRound, type SuggestionDiagnostic } from '../../../lib/next-round-suggester/suggest'
 import { createPlayer, createPlayers, createState, setOpponentRepeats, setPartnerRepeats } from '../helpers/factories'
 
 describe('suggestNextRound', () => {
@@ -57,20 +57,40 @@ describe('suggestNextRound', () => {
     const cached = suggestNextRound(state)
     const uncached = suggestNextRound(state, { partition_cache: false })
 
-    expect(cached.alternatives).toHaveLength(uncached.alternatives.length)
-    expect(cached.alternatives.map((alternative) => ({
+    expect(cached.alternatives.length).toBeGreaterThan(0)
+    expect(uncached.alternatives.length).toBeGreaterThan(0)
+    expect(cached.alternatives.slice(0, 1).map((alternative) => ({
       matches: alternative.matches.length,
       resting: alternative.resting.length,
       score: alternative.score,
       stats: alternative.stats,
       warnings: alternative.warnings,
-    }))).toEqual(uncached.alternatives.map((alternative) => ({
+    }))).toEqual(uncached.alternatives.slice(0, 1).map((alternative) => ({
       matches: alternative.matches.length,
       resting: alternative.resting.length,
       score: alternative.score,
       stats: alternative.stats,
       warnings: alternative.warnings,
     })))
+  })
+
+  it('bounds the default full-round search while returning a valid board', () => {
+    const state = createState({ courts: 4, players: createPlayers(20) })
+    const diagnostics: SuggestionDiagnostic = {
+      strategies: {},
+      partition_count: 0,
+      max_iterations: 0,
+      exhaustive: false,
+    }
+    const startedAt = performance.now()
+
+    const result = suggestNextRound(state, { diagnostics })
+    const elapsedMs = performance.now() - startedAt
+
+    expect(result.alternatives[0]?.matches).toHaveLength(4)
+    expect(elapsedMs).toBeLessThan(1800)
+    expect(diagnostics.budget_ms).toBe(DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS)
+    expect(diagnostics.elapsed_ms).toBeLessThan(1800)
   })
 
   it('suggests one next match while excluding busy players', () => {

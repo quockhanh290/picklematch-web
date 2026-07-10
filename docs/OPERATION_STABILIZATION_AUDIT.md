@@ -187,11 +187,11 @@ Fix: selection priority, exhaustive ordering, partition seeds, live rescue/repai
 
 ### ENG-P2-01 - Full-round search has no default runtime budget
 
-Status: OPEN
+Status: FIXED IN WORKTREE
 
 `suggestNextRound` is unbounded unless the caller supplies `max_runtime_ms`. Property tests passed 100/100 invariants, but several seeds took 8-30 seconds in the full suite. The worst seed reproduced at 2.66 seconds in isolation; a 1000 ms budget constrained it to about 1.08 seconds. The live single-match path remained fast for the same state.
 
-Required fix: make a runtime budget mandatory/defaulted at the public API boundary and add per-seed wall-clock assertions. Keep quality diagnostics when timeout truncates the search.
+Fix: `suggestNextRound` now defaults to a 1000 ms public budget with a 50 ms return guard, propagates the remaining deadline into every partition pass, and records budget/elapsed/timeout diagnostics. Larger explicit budgets fail fast through regular search and reserve the remaining shared deadline for forced rescue. The 100-seed property gate now asserts each call stays below 1800 ms; all seeds remain deterministic and pass invariants. The 40-player/6-court cap-2 fixture still fills the full board in 1953 ms under its explicit 2000 ms budget.
 
 ### ENG-P2-02 - Gender fairness score mixes incompatible numerator/denominator
 

@@ -5,10 +5,16 @@ import { generateRandomScenarios } from '../helpers/scenarios'
 
 describe('Suggester invariants', () => {
   it.each(generateRandomScenarios(100))('holds for random scenario $name', ({ state }) => {
+    const firstStartedAt = performance.now()
     const first = suggestNextRound(state)
+    const firstElapsedMs = performance.now() - firstStartedAt
+    const secondStartedAt = performance.now()
     const second = suggestNextRound(state)
+    const secondElapsedMs = performance.now() - secondStartedAt
 
     expect(first).toEqual(second)
+    expect(firstElapsedMs).toBeLessThan(1800)
+    expect(secondElapsedMs).toBeLessThan(1800)
 
     const suggestion = first.alternatives[0]
     if (!suggestion) return

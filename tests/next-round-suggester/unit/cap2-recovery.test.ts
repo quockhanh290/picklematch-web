@@ -161,16 +161,17 @@ describe('A: board fill — 40-player / 6-court pool', () => {
   }, 30_000)
 
   it('A1: suggestNextRound fills full 6-court board when given 2000ms budget (no NO_VALID_MATCH)', () => {
-    // Before fix (a)/(b)/(c) this call needed ~16s; now it completes within the 2000ms
-    // budget and returns a valid board. We assert quality, not wall-clock — the engine
-    // exhausts the budget itself, so elapsed ≈ 2000ms + test-runner overhead.
+    // Lock both board quality and the operational wall-clock gate.
+    const startedAt = performance.now()
     const result = suggestNextRound(stressedState, { max_runtime_ms: 2000 })
+    const elapsedMs = performance.now() - startedAt
 
     expect(result.alternatives.length).toBeGreaterThan(0)
 
     const top = result.alternatives[0]
     expect(top.matches.length).toBe(COURTS)
     expect(top.warnings ?? []).not.toContain('NO_VALID_MATCH')
+    expect(elapsedMs).toBeLessThan(2000)
   })
 
   it('A2: cap-2 recovery (count=2 repeated) fills all 6 courts with zero double-booking', () => {
