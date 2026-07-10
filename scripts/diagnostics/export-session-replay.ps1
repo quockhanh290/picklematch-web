@@ -18,6 +18,15 @@ param(
   [int]$RowBatchSize = 100,
 
   [Parameter(Mandatory = $false)]
+  [switch]$SkipDebugDumps,
+
+  [Parameter(Mandatory = $false)]
+  [switch]$SkipAuditEvents,
+
+  [Parameter(Mandatory = $false)]
+  [switch]$SkipInstrumentation,
+
+  [Parameter(Mandatory = $false)]
   [switch]$MetadataOnly
 )
 
@@ -272,29 +281,56 @@ if ($MetadataOnly) {
   exit 0
 }
 
-$manifest.files["debug_dumps.jsonl"] = Export-JsonlQuery `
-  -Name "debug_dumps" `
-  -RowExpression "to_jsonb((select x from (select dd.*) x))" `
-  -FromWhere "from public.debug_dumps dd where dd.session_id = $sessionSql" `
-  -OrderBy "order by created_at, id" `
-  -BatchSize $DebugBatchSize `
-  -Path (Join-Path $OutDir "debug_dumps.jsonl")
+if ($SkipDebugDumps) {
+  $debugDumpPath = Join-Path $OutDir "debug_dumps.jsonl"
+  $manifest.files["debug_dumps.jsonl"] = if (Test-Path $debugDumpPath) {
+    (Get-Content -LiteralPath $debugDumpPath | Measure-Object -Line).Lines
+  } else {
+    0
+  }
+} else {
+  $manifest.files["debug_dumps.jsonl"] = Export-JsonlQuery `
+    -Name "debug_dumps" `
+    -RowExpression "to_jsonb((select x from (select dd.*) x))" `
+    -FromWhere "from public.debug_dumps dd where dd.session_id = $sessionSql" `
+    -OrderBy "order by created_at, id" `
+    -BatchSize $DebugBatchSize `
+    -Path (Join-Path $OutDir "debug_dumps.jsonl")
+}
 
-$manifest.files["session_audit_events.jsonl"] = Export-JsonlQuery `
-  -Name "session_audit_events" `
-  -RowExpression "to_jsonb((select x from (select sae.*) x))" `
-  -FromWhere "from public.session_audit_events sae where sae.session_id = $sessionSql" `
-  -OrderBy "order by created_at, id" `
-  -BatchSize $RowBatchSize `
-  -Path (Join-Path $OutDir "session_audit_events.jsonl")
+if ($SkipAuditEvents) {
+  $auditPath = Join-Path $OutDir "session_audit_events.jsonl"
+  $manifest.files["session_audit_events.jsonl"] = if (Test-Path $auditPath) {
+    (Get-Content -LiteralPath $auditPath | Measure-Object -Line).Lines
+  } else {
+    0
+  }
+} else {
+  $manifest.files["session_audit_events.jsonl"] = Export-JsonlQuery `
+    -Name "session_audit_events" `
+    -RowExpression "to_jsonb((select x from (select sae.*) x))" `
+    -FromWhere "from public.session_audit_events sae where sae.session_id = $sessionSql" `
+    -OrderBy "order by created_at, id" `
+    -BatchSize $RowBatchSize `
+    -Path (Join-Path $OutDir "session_audit_events.jsonl")
+}
 
-$manifest.files["engine_instrumentation.jsonl"] = Export-JsonlQuery `
-  -Name "engine_instrumentation" `
-  -RowExpression "to_jsonb((select x from (select ei.*) x))" `
-  -FromWhere "from public.engine_instrumentation ei where ei.session_id = $sessionSql" `
-  -OrderBy "order by created_at, id" `
-  -BatchSize $RowBatchSize `
-  -Path (Join-Path $OutDir "engine_instrumentation.jsonl")
+if ($SkipInstrumentation) {
+  $instrumentationPath = Join-Path $OutDir "engine_instrumentation.jsonl"
+  $manifest.files["engine_instrumentation.jsonl"] = if (Test-Path $instrumentationPath) {
+    (Get-Content -LiteralPath $instrumentationPath | Measure-Object -Line).Lines
+  } else {
+    0
+  }
+} else {
+  $manifest.files["engine_instrumentation.jsonl"] = Export-JsonlQuery `
+    -Name "engine_instrumentation" `
+    -RowExpression "to_jsonb((select x from (select ei.*) x))" `
+    -FromWhere "from public.engine_instrumentation ei where ei.session_id = $sessionSql" `
+    -OrderBy "order by created_at, id" `
+    -BatchSize $RowBatchSize `
+    -Path (Join-Path $OutDir "engine_instrumentation.jsonl")
+}
 
 $manifest.files["session_live_matches.jsonl"] = Export-JsonlQuery `
   -Name "session_live_matches" `
