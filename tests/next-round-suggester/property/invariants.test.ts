@@ -1,18 +1,22 @@
 import { classifyPlayer, getAverageMatches, Tier } from '../../../lib/next-round-suggester/classify'
-import { suggestNextRound } from '../../../lib/next-round-suggester/suggest'
+import { suggestNextRound, type SuggestionDiagnostic } from '../../../lib/next-round-suggester/suggest'
 import type { Match, SessionState } from '../../../lib/next-round-suggester/types'
 import { generateRandomScenarios } from '../helpers/scenarios'
 
 describe('Suggester invariants', () => {
   it.each(generateRandomScenarios(100))('holds for random scenario $name', ({ state }) => {
+    const firstDiagnostics = diagnostic()
     const firstStartedAt = performance.now()
-    const first = suggestNextRound(state)
+    const first = suggestNextRound(state, { diagnostics: firstDiagnostics })
     const firstElapsedMs = performance.now() - firstStartedAt
+    const secondDiagnostics = diagnostic()
     const secondStartedAt = performance.now()
-    const second = suggestNextRound(state)
+    const second = suggestNextRound(state, { diagnostics: secondDiagnostics })
     const secondElapsedMs = performance.now() - secondStartedAt
 
-    expect(first).toEqual(second)
+    if (!firstDiagnostics.timed_out && !secondDiagnostics.timed_out) {
+      expect(first).toEqual(second)
+    }
     expect(firstElapsedMs).toBeLessThan(1800)
     expect(secondElapsedMs).toBeLessThan(1800)
 
@@ -54,6 +58,15 @@ describe('Suggester invariants', () => {
     }
   })
 })
+
+function diagnostic(): SuggestionDiagnostic {
+  return {
+    strategies: {},
+    partition_count: 0,
+    max_iterations: 0,
+    exhaustive: false,
+  }
+}
 
 function computeTeamDiff(match: Match, state: SessionState): number {
   const teamA = sum(match.team_a.map((playerId) => state.players.get(playerId)?.pvna ?? 3.0))

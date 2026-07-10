@@ -191,7 +191,7 @@ Status: FIXED IN WORKTREE
 
 `suggestNextRound` is unbounded unless the caller supplies `max_runtime_ms`. Property tests passed 100/100 invariants, but several seeds took 8-30 seconds in the full suite. The worst seed reproduced at 2.66 seconds in isolation; a 1000 ms budget constrained it to about 1.08 seconds. The live single-match path remained fast for the same state.
 
-Fix: `suggestNextRound` now defaults to a 1000 ms public budget with a 50 ms return guard, propagates the remaining deadline into every partition pass, and records budget/elapsed/timeout diagnostics. Larger explicit budgets fail fast through regular search and reserve the remaining shared deadline for forced rescue. The 100-seed property gate now asserts each call stays below 1800 ms; all seeds remain deterministic and pass invariants. The 40-player/6-court cap-2 fixture still fills the full board in 1953 ms under its explicit 2000 ms budget.
+Fix: `suggestNextRound` now defaults to a 1000 ms public budget with a 50 ms return guard, propagates the remaining deadline into every partition pass, and records budget/elapsed/timeout diagnostics. Larger explicit budgets fail fast through regular search and reserve the remaining shared deadline for forced rescue. The 100-seed property gate asserts each call stays below 1800 ms and requires deterministic equality whenever neither call reports timeout; truncated calls remain subject to all invariants. The 40-player/6-court cap-2 fixture still fills the full board under its explicit 2000 ms budget. Long-horizon quality simulations can opt into an explicit budget; the 12-player/3-court benchmark retains its five-partner diversity floor at 1500 ms.
 
 ### ENG-P2-02 - Gender fairness score mixes incompatible numerator/denominator
 

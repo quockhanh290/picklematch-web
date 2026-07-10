@@ -35,6 +35,7 @@ export type SimulationOptions = {
   rounds: number
   pvnaRange?: [number, number]
   genderMode?: 'none' | 'balanced' | 'mixedPrefs'
+  maxRuntimeMs?: number
 }
 
 export type SimulationResult = {
@@ -181,6 +182,7 @@ export function simulateSession(options: SimulationOptions): SimulationResult {
     const adjustment = correctForFairness(state)
     const suggestion = suggestNextRound(applyFairnessAdjustment(state, adjustment), {
       tier_overrides: adjustment.tier_overrides,
+      max_runtime_ms: options.maxRuntimeMs,
     }).alternatives[0]
     if (!suggestion) break
     state = simulateRound(state, suggestion.matches, suggestion.resting)

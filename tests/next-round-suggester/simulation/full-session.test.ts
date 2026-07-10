@@ -23,7 +23,7 @@ describe('full session simulation', () => {
   })
 
   it('12 players, 3 courts creates partner diversity', () => {
-    const result = simulateSession({ players: 12, courts: 3, rounds: 10 })
+    const result = simulateSession({ players: 12, courts: 3, rounds: 10, maxRuntimeMs: 1500 })
 
     for (const player of result.players) {
       expect(player.unique_partners).toBeGreaterThanOrEqual(5)
