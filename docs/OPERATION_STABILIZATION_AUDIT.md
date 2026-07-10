@@ -167,11 +167,13 @@ Fix: `buildSuggestedMatchPayloads` now applies the full fairness adjustment befo
 
 ### ENG-P1-02 - Engine and client use different logical-round reconstruction
 
-Status: OPEN; same foundation as OPS-P1-01
+Status: FIXED IN WORKTREE; SQL canonical identity remains OPS-P1-01
 
 `buildSuggestedMatchPayloads` trusts every non-null persisted `round_no`. The client first validates round groups and falls back to sequence chunks when rolling-lane round numbers are unreliable. The persistence model can reuse completed players while the minimum active `round_no` remains unchanged, so engine repeat windows, rest projection and fairness state can drift from the client and snapshot.
 
-Required fix: create one shared canonical cycle reconstruction and use it in SQL persistence/snapshot, engine, client, replay and tests. Drift warnings must become failing contract tests.
+Fix: `reconstructLiveRounds` now owns filtering, de-duplication, persisted-group validation and sequence fallback. The live engine, completed-cycle synthesis and round display all consume the same map, with regression coverage for valid persisted groups, dirty repeated-court groups and cancelled rows. Focused live gates pass 58/58.
+
+Remaining boundary: persistence/snapshot still need one schema-level cycle identity and drift warnings still need to become failing contract tests; that work remains OPS-P1-01 rather than being hidden inside this engine fix. Full-project typecheck remains blocked by pre-existing diagnostic/tmp errors unrelated to these files.
 
 ### ENG-P1-03 - Effective PVNA is only partially honored
 

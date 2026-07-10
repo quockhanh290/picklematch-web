@@ -1,0 +1,64 @@
+import { reconstructLiveRounds } from '../../../lib/next-round-suggester/live-rounds'
+import type { SessionLiveMatchRow } from '../../../lib/next-round-suggester/types'
+
+function liveMatch(
+  id: string,
+  sequenceNo: number,
+  roundNo: number | null,
+  courtIdx: number,
+  status: SessionLiveMatchRow['status'] = 'completed',
+): SessionLiveMatchRow {
+  return {
+    id,
+    session_id: 'session-test',
+    sequence_no: sequenceNo,
+    round_no: roundNo,
+    court_idx: courtIdx,
+    status,
+    team_a: [`${id}-a`, `${id}-b`],
+    team_b: [`${id}-c`, `${id}-d`],
+    resting: [],
+    score_a: 0,
+    score_b: 0,
+    suggested_at: '2026-07-10T00:00:00.000Z',
+    started_at: null,
+    ended_at: null,
+  }
+}
+
+describe('reconstructLiveRounds', () => {
+  it('keeps valid persisted round numbers', () => {
+    const result = reconstructLiveRounds([
+      liveMatch('m1', 1, 3, 0),
+      liveMatch('m2', 2, 3, 1),
+      liveMatch('m3', 3, 4, 0),
+    ], 2)
+
+    expect(result.persistedRoundNoReliable).toBe(true)
+    expect([...result.roundByMatchId.values()]).toEqual([3, 3, 4])
+  })
+
+  it('reconstructs rounds by sequence when a persisted round repeats a court', () => {
+    const result = reconstructLiveRounds([
+      liveMatch('m1', 1, 3, 0),
+      liveMatch('m2', 2, 3, 1),
+      liveMatch('m3', 3, 3, 0),
+      liveMatch('m4', 4, 4, 1),
+    ], 2)
+
+    expect(result.persistedRoundNoReliable).toBe(false)
+    expect([...result.roundByMatchId.values()]).toEqual([0, 0, 1, 1])
+  })
+
+  it('does not let cancelled matches consume reconstructed round slots', () => {
+    const result = reconstructLiveRounds([
+      liveMatch('m1', 1, null, 0),
+      liveMatch('cancelled', 2, null, 1, 'cancelled'),
+      liveMatch('m2', 3, null, 1),
+      liveMatch('m3', 4, null, 0),
+    ], 2)
+
+    expect(result.matches.map(match => match.id)).toEqual(['m1', 'm2', 'm3'])
+    expect([...result.roundByMatchId.values()]).toEqual([0, 0, 1])
+  })
+})

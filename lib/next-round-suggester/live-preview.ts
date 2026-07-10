@@ -25,6 +25,8 @@ import {
 import { bestPartitioning } from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { suggestNextMatch, type ExhaustiveFallbackDiagnostic } from './suggest.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import { reconstructLiveRounds } from './live-rounds.ts'
 import type {
   PlayerSessionState,
   SessionLiveMatchRow,
@@ -2987,15 +2989,12 @@ export function buildSuggestedMatchPayloads({
   const courtIdxsByRound = new Map<number, Set<number>>()
   const matchesByRound = new Map<number, SessionLiveMatchRow[]>()
   const lastCompletedRoundByCourtIdx = new Map<number, number>()
-  const countableMatches = liveMatchRows
-    .filter(match => match.status !== 'cancelled')
-    .sort((left, right) => left.sequence_no - right.sequence_no)
+  const reconstructedRounds = reconstructLiveRounds(liveMatchRows, courtCapacity)
+  const countableMatches = reconstructedRounds.matches
   const previewCountableMatchCount = countableMatches.length
-  const logicalRoundByMatchId = new Map<string, number>()
-  countableMatches.forEach((match, matchIndex) => {
-    const indexRoundNo = Math.floor(matchIndex / courtCapacity)
-    const logicalRoundNo = match.round_no ?? indexRoundNo
-    logicalRoundByMatchId.set(match.id, logicalRoundNo)
+  const logicalRoundByMatchId = reconstructedRounds.roundByMatchId
+  countableMatches.forEach((match) => {
+    const logicalRoundNo = logicalRoundByMatchId.get(match.id) ?? 0
     roundCounts.set(logicalRoundNo, (roundCounts.get(logicalRoundNo) ?? 0) + 1)
     const roundMatches = matchesByRound.get(logicalRoundNo) ?? []
     roundMatches.push(match)

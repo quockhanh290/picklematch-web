@@ -38,6 +38,7 @@ import {
 } from '@/lib/next-round-suggester/fairness/metrics'
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
 import { computeFairnessEvolution } from '@/lib/next-round-suggester/fairness/summary'
+import { reconstructLiveRounds } from '@/lib/next-round-suggester/live-rounds'
 import {
   MAX_PROJECTED_OPPONENT_PAIR_COUNT,
   MAX_PROJECTED_PARTNER_PAIR_COUNT,
@@ -1846,41 +1847,11 @@ function groupMatchesByLogicalRound<TMatch extends SessionLiveMatchRow>(
 }
 
 export function buildLogicalRoundDisplayMap(matches: SessionLiveMatchRow[], roundSize: number) {
-  const safeRoundSize = Math.max(1, Math.floor(roundSize))
-  const uniqueMatchesById = new Map<string, SessionLiveMatchRow>()
-  for (const match of matches) {
-    if (match.status === 'cancelled') continue
-    const existing = uniqueMatchesById.get(match.id)
-    if (!existing || existing.status !== 'completed') {
-      uniqueMatchesById.set(match.id, match)
-    }
-  }
-  const countableMatches = [...uniqueMatchesById.values()]
-    .sort((left, right) => left.sequence_no - right.sequence_no)
-  const roundNoLooksReliable = doesPersistedRoundNoLookReliable(countableMatches, safeRoundSize)
-  return new Map(countableMatches.map((match, index) => [
+  const reconstructedRounds = reconstructLiveRounds(matches, roundSize)
+  return new Map(reconstructedRounds.matches.map(match => [
     match.id,
-    roundNoLooksReliable && match.round_no !== null && match.round_no !== undefined
-      ? match.round_no + 1
-      : Math.floor(index / safeRoundSize) + 1,
+    (reconstructedRounds.roundByMatchId.get(match.id) ?? 0) + 1,
   ]))
-}
-
-function doesPersistedRoundNoLookReliable(matches: SessionLiveMatchRow[], roundSize: number) {
-  const rounds = new Map<number, { count: number; courts: Set<number> }>()
-  for (const match of matches) {
-    if (match.round_no === null || match.round_no === undefined) return false
-    const roundNo = Number(match.round_no)
-    if (!Number.isFinite(roundNo) || roundNo < 0) return false
-    const courtIdx = displayCourtIdxFor(match)
-    const group = rounds.get(roundNo) ?? { count: 0, courts: new Set<number>() }
-    group.count += 1
-    if (group.courts.has(courtIdx)) return false
-    group.courts.add(courtIdx)
-    if (group.count > roundSize) return false
-    rounds.set(roundNo, group)
-  }
-  return true
 }
 
 export function RoundDivider({ roundNo }: { roundNo: number }) {
