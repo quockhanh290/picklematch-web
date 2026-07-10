@@ -49,6 +49,9 @@ app-example
 playwright-report/
 test-results/
 courts_output/
+/diagnostics/
+/tmp/
+/.understand-anything/
 tmp_*/
 tmp_*.tsx
 *.log
