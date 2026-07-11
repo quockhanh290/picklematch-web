@@ -146,6 +146,7 @@ import {
 } from './next-round-v2/helpers'
 import type { NextRoundSuggesterV2Props, LiveRows } from './next-round-v2/types'
 import { liveSessionQueryKeys } from './next-round-v2/queries'
+import { classifyPersistAssignmentConflict } from './next-round-v2/preview-conflict-recovery'
 import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
 import { pruneOptimisticLiveMatchesByServerId } from './next-round-v2/optimisticLiveMatches'
 import { useCheckInMutation, useCheckOutMutation, useStartMatchMutation, useCompleteMatchMutation } from './next-round-v2/mutations'
@@ -591,6 +592,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
   const previewBaseKeyRef = useRef<string | null>(null)
   const previewRecoveryKeyRef = useRef<string | null>(null)
   const previewIncompleteRetryRef = useRef<{ key: string; count: number }>({ key: '', count: 0 })
+  const previewAssignmentConflictRetryRef = useRef<{ key: string; count: number }>({ key: '', count: 0 })
   const previewBlockedIncompleteKeysRef = useRef(new Set<string>())
   const previewUnblockNonceRef = useRef(0)
   const startingPreviewIdsRef = useRef(new Set<string>())
@@ -742,6 +744,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     previewRecoveryVersionRef.current = nextVersion
     previewBlockedIncompleteKeysRef.current.clear()
     previewIncompleteRetryRef.current = { key: '', count: 0 }
+    previewAssignmentConflictRetryRef.current = { key: '', count: 0 }
     previewScheduledRetryKeysRef.current.clear()
     previewUnblockNonceRef.current += 1
   }, [rows.liveStateVersion])
@@ -814,6 +817,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     previewBlockedIncompleteKeysRef.current.clear()
     previewUnblockNonceRef.current = 0
     previewIncompleteRetryRef.current = { key: '', count: 0 }
+    previewAssignmentConflictRetryRef.current = { key: '', count: 0 }
     previewRetryTimeoutsRef.current.forEach(clearTimeout)
     previewRetryTimeoutsRef.current.clear()
     previewScheduledRetryKeysRef.current.clear()
@@ -3443,7 +3447,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
             retainedPreviewCount: retainedMatches.length,
           })
         })
-        .catch(err => {
+        .catch(async err => {
           if (!isCurrentPreviewRequest()) return
           // Update stuck hint for kind classification
           const errMsg = String(err?.message ?? '')
@@ -3508,8 +3512,57 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           setIsSuggestingPreview(false)
           previewBlockedIncompleteKeysRef.current.delete(incompleteRequestKey)
           if (isPersistAssignmentConflict) {
-            previewBlockedIncompleteKeysRef.current.add(incompleteRequestKey)
-            traceClientPreviewEvent('client_preview_persist_assignment_conflict_blocked', {
+            let authoritativeRefetchError: string | null = null
+            try {
+              await queryClient.refetchQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) })
+            } catch (refetchError) {
+              authoritativeRefetchError = String((refetchError as Error)?.message ?? refetchError)
+            }
+            if (!isCurrentPreviewRequest()) return
+            const cached = queryClient.getQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId))
+            const classification = classifyPersistAssignmentConflict({
+              requestVersion: snapshotLiveStateVersion,
+              snapshotVersion: cached?.liveStateVersion,
+              liveMatchRows: cached?.liveMatchRows ?? [],
+            })
+            if (classification.authoritativeVersion !== null) {
+              liveStateVersionRef.current = Math.max(
+                liveStateVersionRef.current ?? 0,
+                classification.authoritativeVersion,
+              )
+            }
+            if (classification.stateAdvanced) {
+              previewAssignmentConflictRetryRef.current = { key: '', count: 0 }
+              suggestedPreviewBatchRef.current = null
+              suggestedLaneCacheRef.current.clear()
+              setSuggestedLiveMatches(current => current.length === 0 ? current : [])
+              previewUnblockNonceRef.current += 1
+              traceClientPreviewEvent('client_preview_persist_assignment_conflict_state_advanced', {
+                requestId: previewClientRequestId,
+                detail: {
+                  request_live_state_version: snapshotLiveStateVersion,
+                  authoritative_live_state_version: classification.authoritativeVersion,
+                  conflicting_match_ids: classification.conflictingMatchIds,
+                  conflicting_player_ids: classification.conflictingPlayerIds,
+                  conflicting_court_idxs: classification.conflictingCourtIdxs,
+                  authoritative_refetch_error: authoritativeRefetchError,
+                },
+              })
+              setPreviewRefreshNonce(value => value + 1)
+              return
+            }
+            const conflictRetryCount = previewAssignmentConflictRetryRef.current.key === incompleteRequestKey
+              ? previewAssignmentConflictRetryRef.current.count + 1
+              : 1
+            previewAssignmentConflictRetryRef.current = { key: incompleteRequestKey, count: conflictRetryCount }
+            const retryScheduled = conflictRetryCount < 2
+              ? schedulePreviewRetry(`assignment-conflict:${incompleteRequestKey}`, LIVE_PREVIEW_INCOMPLETE_RETRY_MS, () => {
+                  setPreviewRefreshNonce(value => value + 1)
+                })
+              : false
+            traceClientPreviewEvent(conflictRetryCount < 2
+              ? 'client_preview_persist_assignment_conflict_retry_scheduled'
+              : 'client_preview_persist_assignment_conflict_terminal', {
               requestId: previewClientRequestId,
               detail: {
                 incomplete_request_key: incompleteTraceKey,
@@ -3517,11 +3570,27 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
                 error_kind: hintKind,
                 error: errMsg,
                 requested_replacement_courts: requestedReplacementCourtIdxs,
+                authoritative_live_state_version: classification.authoritativeVersion,
+                conflicting_match_ids: classification.conflictingMatchIds,
+                conflicting_player_ids: classification.conflictingPlayerIds,
+                conflicting_court_idxs: classification.conflictingCourtIdxs,
+                authoritative_refetch_error: authoritativeRefetchError,
+                retry_count: conflictRetryCount,
+                retry_scheduled: retryScheduled,
                 total_ms: Math.round(nowMs() - previewT0),
               },
             })
             setEdgeDebug(`PERSIST_ASSIGNMENT_CONFLICT: ${err.message || 'edge persist failed'}`)
-            if (__DEV__) console.warn('[NextRoundSuggesterV2] preview persist assignment conflict blocked until state changes', err)
+            if (conflictRetryCount >= 2) {
+              previewBlockedIncompleteKeysRef.current.add(incompleteRequestKey)
+              schedulePreviewRetry(`assignment-conflict-cooldown:${incompleteRequestKey}`, LIVE_PREVIEW_BLOCKED_RETRY_MS, () => {
+                previewBlockedIncompleteKeysRef.current.delete(incompleteRequestKey)
+                previewAssignmentConflictRetryRef.current = { key: '', count: 0 }
+                previewUnblockNonceRef.current += 1
+                setPreviewRefreshNonce(value => value + 1)
+              })
+            }
+            if (__DEV__) console.warn('[NextRoundSuggesterV2] preview persist assignment conflict reconciled with authoritative snapshot', err)
             return
           }
           const retryDelayMs = errMsg === 'Preview suggest soft timeout'

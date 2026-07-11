@@ -19,7 +19,7 @@ Audit ledger: `docs/OPERATION_STABILIZATION_AUDIT.md`
 - [x] ENG-P2-03: add a production-equivalent rolling-lane engine harness.
 - [x] OPS-P1-01: replace ambiguous rolling `round_no` semantics with one canonical logical cycle model.
 - [ ] OPS-P1-03: replace legacy/dirty E2E reset and CTA assertions with disposable live-lane lifecycle tests.
-- [ ] OPS-P1-04: replace permanent assignment-conflict blocking with refetch + bounded recovery.
+- [x] OPS-P1-04: replace permanent assignment-conflict blocking with refetch + bounded recovery.
 - [ ] OPS-P2-01: unify manual and automatic starts on persisted match identity.
 - [ ] OPS-P2-02: include all preview policies in one request/cache fingerprint.
 - [ ] OPS-P2-03: detect version changes from another tab/device while focused.

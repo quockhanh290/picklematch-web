@@ -106,7 +106,7 @@ Required fix:
 ### OPS-P1-04 - Persist assignment conflicts can become a permanent client block
 
 Severity: P1  
-Status: OPEN
+Status: FIXED IN CODE
 
 Evidence:
 
@@ -116,11 +116,13 @@ Impact:
 
 If the authoritative conflict is caused by a stale/inconsistent preview row but does not produce a new version visible to this client, the same courts remain stuck indefinitely, including after ordinary rerenders.
 
-Required fix:
+Fix:
 
-- Refetch once and classify the conflict against the authoritative snapshot.
-- If state advanced, regenerate immediately.
-- If state did not advance, emit a terminal invariant event with conflicting match/player IDs and use bounded recovery, never an unbounded block.
+- Assignment-conflict handling now refetches the authoritative snapshot once before deciding recovery.
+- If the live version advanced, stale preview/cache state is cleared and regeneration happens immediately.
+- If the version is unchanged, the client records authoritative conflicting match, player, and court IDs, retries once, then emits a terminal invariant event.
+- Exhausted recovery enters a six-second cooldown with a scheduled unblock and counter reset; no conflict key remains blocked indefinitely.
+- The recovery counter resets on version advance and session change. The full next-round-v2 gate passes 26/26, including focused classification coverage.
 
 ### OPS-P2-01 - Two independent start models remain active
 
