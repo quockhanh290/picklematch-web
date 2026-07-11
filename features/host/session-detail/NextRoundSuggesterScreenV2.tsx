@@ -49,7 +49,8 @@ import {
 
 import { buildPreviewBatchKey } from './next-round-v2/preview'
 import { buildPreviewPolicyFingerprint } from './next-round-v2/preview-policy'
-import { createClientTraceId, fetchLiveMatchesPreview, recordClientSessionAuditEvent } from './next-round-v2/api'
+import { createClientTraceId, fetchLiveMatchesPreview, fetchLiveSessionVersion, recordClientSessionAuditEvent } from './next-round-v2/api'
+import { LIVE_VERSION_POLL_INTERVAL_MS, shouldRefetchForExternalVersion } from './next-round-v2/version-poll'
 import { getMissingPreviewCourtIdxs, getRequestedReplacementCourtIdxs, isPreviewBoardComplete } from './next-round-v2/court-lanes'
 import { getLiveRowsForPreviewMode, isCommittedPreviewMatch, isPreviewResponseCurrent, isStartablePreviewRow } from './next-round-v2/preview-consistency'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
@@ -729,6 +730,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
   }, [loading, sessionId])
 
   const lastBusRefreshRef = useRef(0)
+  const [screenFocused, setScreenFocused] = useState(true)
+  const versionPollInFlightRef = useRef(false)
   const liveStateVersionRef = useRef<number | null>(rows.liveStateVersion ?? null)
 
   React.useEffect(() => {
@@ -995,10 +998,40 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
 
 
   useFocusEffect(useCallback(() => {
-    if (isFirstFocusRef.current) { isFirstFocusRef.current = false; return }
-    if (Date.now() - lastBusRefreshRef.current < 2000) return
-    void loadLiveState()
+    setScreenFocused(true)
+    if (isFirstFocusRef.current) {
+      isFirstFocusRef.current = false
+    } else if (Date.now() - lastBusRefreshRef.current >= 2000) {
+      void loadLiveState()
+    }
+    return () => setScreenFocused(false)
   }, [loadLiveState]))
+
+  React.useEffect(() => {
+    if (!screenFocused) return
+    const poll = async () => {
+      if (AppState.currentState !== 'active' || versionPollInFlightRef.current) return
+      versionPollInFlightRef.current = true
+      try {
+        const serverVersion = await fetchLiveSessionVersion(sessionId)
+        if (shouldRefetchForExternalVersion(liveStateVersionRef.current, serverVersion)) {
+          traceClientPreviewEvent('client_external_live_version_advanced', {
+            detail: {
+              local_live_state_version: liveStateVersionRef.current,
+              server_live_state_version: serverVersion,
+            },
+          })
+          await loadLiveState()
+        }
+      } catch (pollError) {
+        if (__DEV__) console.warn('[NextRoundSuggesterV2] live version poll failed', pollError)
+      } finally {
+        versionPollInFlightRef.current = false
+      }
+    }
+    const interval = setInterval(() => { void poll() }, LIVE_VERSION_POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [loadLiveState, screenFocused, sessionId, traceClientPreviewEvent])
 
   const openRoster = useCallback(() => {
     router.push({ pathname: '/host/session/[id]/roster', params: { id: sessionId } } as any)

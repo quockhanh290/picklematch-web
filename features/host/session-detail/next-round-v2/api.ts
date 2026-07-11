@@ -681,3 +681,15 @@ export async function persistAndStartLiveMatch(
     audit_payload: { ...auditPayload, source: 'client-manual-lineup-start-persisted' },
   })
 }
+
+export async function fetchLiveSessionVersion(sessionId: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('live_state_version')
+    .eq('id', sessionId)
+    .maybeSingle()
+  if (error) throw error
+  if (data?.live_state_version === null || data?.live_state_version === undefined) return null
+  const version = Number(data.live_state_version)
+  return Number.isFinite(version) ? version : null
+}

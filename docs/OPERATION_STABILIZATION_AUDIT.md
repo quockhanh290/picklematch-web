@@ -149,11 +149,11 @@ Fix: `buildPreviewPolicyFingerprint` now canonically covers court count, configu
 ### OPS-P2-03 - External state changes have no live subscription
 
 Severity: P2  
-Status: OPEN / product decision
+Status: FIXED IN CODE
 
 The query has no polling or realtime subscription. It refreshes after local operations, focus changes, app activation, and manual refresh. A second host tab/device can mutate the session while the first tab remains stale until one of those triggers occurs.
 
-Required fix: subscribe to the session version or use a low-cost version poll while this screen is focused, then refetch the full versioned snapshot only when the version advances.
+Fix: while the screen is focused and the app is active, a guarded four-second poll reads only `sessions.live_state_version`. It never overlaps itself and fetches the full authoritative snapshot only when the server version is greater than the local version. Blur/background cleanup stops useful work, local mutations still use their immediate reconcile paths, and external advances emit an audit trace. Next-round-v2 passes 35/35.
 
 ### OPS-P3-01 - Dead duplicate live-cycle implementation remains in the model
 
