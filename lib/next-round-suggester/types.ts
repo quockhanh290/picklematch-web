@@ -158,6 +158,7 @@ export type SessionLiveMatchRow = {
   session_id: string
   sequence_no: number
   round_no: number | null
+  cycle_no?: number | null
   court_idx: number | null
   status: LiveMatchStatus
   team_a: Team
