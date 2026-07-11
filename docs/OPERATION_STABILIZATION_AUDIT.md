@@ -131,11 +131,11 @@ Fix:
 ### OPS-P2-01 - Two independent start models remain active
 
 Severity: P2  
-Status: OPEN
+Status: FIXED IN CODE
 
 The normal edge preview starts a persisted match by ID, while `manual_available_pool` still calls `start_live_session_match_from_payload_versioned`. These paths have different identity, stale checks, and persistence semantics. They can drift as either RPC evolves.
 
-Required fix: persist every startable lineup first, including host replacements, then use only `start_live_session_match_versioned`.
+Fix: manual available-pool lineups are now persisted through `replace_live_session_suggestions_versioned`, then started through the same persisted-ID Edge path as automatic previews. The persistence response supplies the authoritative match ID and advanced version to `session-live-matches-start`; client mutations and E2E helpers no longer call `start_live_session_match_from_payload_versioned`. The API regression gate proves persist happens before start and that the returned ID/version are forwarded. Next-round-v2 passes 27/27.
 
 ### OPS-P2-02 - Preview policy changes are absent from the request identity
 

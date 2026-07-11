@@ -1283,17 +1283,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
           preview_countable_match_count: previewCountableMatchCount,
           expected_round_matches: queueCourtCount,
         }
-        const rpcPayload = {
-          p_session_id: sessionId,
-          p_expected_live_state_version: expectedVersion,
-          p_match: {
+        const persistAndStartPayload = {
+          expectedLiveStateVersion: expectedVersion,
+          match: {
             court_idx: match.court_idx,
             team_a: match.team_a,
             team_b: match.team_b,
             resting: match.resting ?? [],
             round_no: match.round_no ?? -1,
           },
-          p_audit_payload: auditPayload,
+          auditPayload,
         }
         const edgePayload = {
           expected_live_state_version: expectedVersion,
@@ -1303,7 +1302,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         const payloadBuildMs = nowMs() - payloadBuildT0
         const rpcT0 = nowMs()
         try {
-          const payload = await startMatchMutation.mutateAsync(usePersistedMatchStart ? { edgePayload } : { rpcPayload })
+          const payload = await startMatchMutation.mutateAsync(usePersistedMatchStart ? { edgePayload } : { persistAndStartPayload })
           const rpcMs = nowMs() - rpcT0
           const nextVersion = Number(payload?.live_state_version)
           if (Number.isFinite(nextVersion)) {

@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { liveSessionQueryKeys } from './queries'
 import type { LiveRows } from './types'
 import type { SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
-import { checkInLiveSessionPlayers, checkOutLiveSessionPlayers, startPersistedLiveMatch } from './api'
+import { checkInLiveSessionPlayers, checkOutLiveSessionPlayers, persistAndStartLiveMatch, startPersistedLiveMatch } from './api'
 
 export function useCheckInMutation(sessionId: string) {
   const queryClient = useQueryClient()
@@ -67,13 +67,12 @@ export function useStartMatchMutation(sessionId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationKey: ['liveSession', sessionId],
-    mutationFn: async ({ rpcPayload, edgePayload }: { rpcPayload?: any; edgePayload?: any }) => {
+    mutationFn: async ({ persistAndStartPayload, edgePayload }: { persistAndStartPayload?: any; edgePayload?: any }) => {
       if (edgePayload) {
         return startPersistedLiveMatch(sessionId, edgePayload)
       }
-      const { data, error } = await supabase.rpc('start_live_session_match_from_payload_versioned', rpcPayload)
-      if (error) throw error
-      return data
+      if (!persistAndStartPayload) throw new Error('Missing persisted match start payload')
+      return persistAndStartLiveMatch(sessionId, persistAndStartPayload)
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) })

@@ -648,3 +648,36 @@ export async function startPersistedLiveMatch(
 ) {
   return invokeLiveSessionFunction('session-live-matches-start', sessionId, body)
 }
+
+export async function persistAndStartLiveMatch(
+  sessionId: string,
+  {
+    expectedLiveStateVersion,
+    match,
+    auditPayload,
+  }: {
+    expectedLiveStateVersion: number
+    match: { court_idx: number | null; team_a: string[]; team_b: string[]; resting: string[]; round_no: number }
+    auditPayload: Record<string, unknown>
+  },
+) {
+  const { data, error } = await supabase.rpc('replace_live_session_suggestions_versioned', {
+    p_session_id: sessionId,
+    p_expected_live_state_version: expectedLiveStateVersion,
+    p_matches: [match],
+    p_replace_court_idxs: match.court_idx === null ? [] : [match.court_idx],
+    p_replace_all: false,
+    p_audit_payload: { ...auditPayload, source: 'client-manual-lineup-persist' },
+  })
+  if (error) throw error
+  const persistedMatch = Array.isArray(data?.matches) ? data.matches[0] : null
+  const persistedVersion = Number(data?.live_state_version)
+  if (!persistedMatch?.id || !Number.isFinite(persistedVersion)) {
+    throw new Error('Manual lineup was not persisted as a startable match')
+  }
+  return startPersistedLiveMatch(sessionId, {
+    expected_live_state_version: persistedVersion,
+    match_id: persistedMatch.id,
+    audit_payload: { ...auditPayload, source: 'client-manual-lineup-start-persisted' },
+  })
+}

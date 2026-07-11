@@ -210,16 +210,10 @@ async function startFirstSuggestedViaRpc(ctx: E2EContext, courtIdx?: number) {
   const suggested = (await liveRows(ctx)).find(row => row.status === 'suggested' && (courtIdx == null || row.court_idx === courtIdx))
   if (!suggested) throw new Error('No suggested match to start')
   const version = await getVersion(ctx)
-  const { data, error } = await ctx.host.rpc('start_live_session_match_from_payload_versioned', {
+  const { data, error } = await ctx.host.rpc('start_live_session_match_versioned', {
     p_session_id: ctx.sessionId,
     p_expected_live_state_version: version,
-    p_match: {
-      court_idx: suggested.court_idx,
-      team_a: suggested.team_a,
-      team_b: suggested.team_b,
-      resting: suggested.resting ?? [],
-      round_no: suggested.round_no ?? 0,
-    },
+    p_match_id: suggested.id,
     p_audit_payload: {
       source: 'tests/e2e-ui/host-session.spec.ts',
       preview_live_state_version: version,

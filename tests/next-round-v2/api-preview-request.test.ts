@@ -1,6 +1,7 @@
 const mockGetSession = jest.fn(async () => ({
   data: { session: { access_token: 'test-access-token' } },
 }))
+const mockRpc = jest.fn()
 
 jest.mock('../../lib/supabase', () => ({
   supabase: {
@@ -8,6 +9,7 @@ jest.mock('../../lib/supabase', () => ({
       getSession: mockGetSession,
       refreshSession: jest.fn(),
     },
+    rpc: mockRpc,
   },
 }))
 
@@ -71,5 +73,38 @@ describe('live preview request ownership', () => {
 
     await expect(first).rejects.toThrow('Request cancelled')
     await expect(second).resolves.toMatchObject({ ok: true, payloads: [] })
+  })
+
+  it('persists a manual lineup before starting it by persisted identity', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: {
+        live_state_version: 8,
+        matches: [{ id: 'persisted-match-1' }],
+      },
+      error: null,
+    })
+    const fetchMock = jest.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      live_state_version: 9,
+      match: { id: 'persisted-match-1', status: 'live' },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    global.fetch = fetchMock as typeof fetch
+    const { persistAndStartLiveMatch } = require('../../features/host/session-detail/next-round-v2/api') as typeof import('../../features/host/session-detail/next-round-v2/api')
+
+    await expect(persistAndStartLiveMatch('session-1', {
+      expectedLiveStateVersion: 7,
+      match: { court_idx: 1, team_a: ['p1', 'p2'], team_b: ['p3', 'p4'], resting: [], round_no: 2 },
+      auditPayload: { client_request_id: 'request-1' },
+    })).resolves.toMatchObject({ match: { id: 'persisted-match-1', status: 'live' } })
+
+    expect(mockRpc).toHaveBeenCalledWith('replace_live_session_suggestions_versioned', expect.objectContaining({
+      p_expected_live_state_version: 7,
+      p_replace_court_idxs: [1],
+    }))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      expected_live_state_version: 8,
+      match_id: 'persisted-match-1',
+    })
   })
 })
