@@ -38,7 +38,7 @@ Make every operational state transition deterministic, idempotent, recoverable, 
 ### OPS-P1-01 - Rolling lanes do not have a canonical round identity
 
 Severity: P1  
-Status: OPEN - foundational fix required
+Status: FIXED IN CODE; migrations not applied
 
 Evidence:
 
@@ -54,12 +54,17 @@ Impact:
 - DB snapshot, client display, fairness counters, target-round completion, and replay can disagree.
 - UI fixes that infer display rounds hide the symptom but do not repair historical semantics.
 
-Required fix:
+Fix:
 
-- Define one canonical `cycle_no`/logical round for rolling lanes, separate from physical court lane and active overlap.
-- Assign it transactionally when suggestions are persisted.
-- Make snapshot, completion counters, fairness, report and UI consume that value.
-- Backfill/compatibility logic must remain for old sessions only.
+- `session_live_matches.cycle_no` is now the canonical rolling logical-cycle identity, separate from court lane and overlap state.
+- Preview persistence assigns `cycle_no` transactionally from each engine payload and mirrors it to legacy `round_no` during the compatibility window.
+- Shared reconstruction prefers `cycle_no` only when the full row set has canonical identity. Mixed and historical sessions retain sequence validation/fallback; ambiguous history is intentionally not backfilled.
+- Completion counters, `last_played_round`, and completion audit events use `coalesce(cycle_no, round_no)`. Snapshot live rows already use `select *`; synthetic rows stay aligned because the writer mirrors the canonical value.
+- Focused canonical/legacy/live-chain gate passes 59/59; property invariants pass 100/100.
+
+Deployment boundary: apply migrations `20260710000001` through `20260710000003`, then redeploy the six Edge bundles and ship a client build so every reader prefers `cycle_no`. Old clients remain compatible through mirrored `round_no`.
+
+Residual gate note: the pre-existing cap-2 A1 timing test currently returns no board at about 1.977s under its 2s deadline, both in the full unit run and in isolation. Giving forced rescue the regular probe's extra 100ms did not change that result, so no unrelated engine change is included in OPS-P1-01.
 
 ### OPS-P1-02 - Abortable preview requests shared cancellation ownership
 
