@@ -21,7 +21,7 @@ Audit ledger: `docs/OPERATION_STABILIZATION_AUDIT.md`
 - [ ] OPS-P1-03: replace legacy/dirty E2E reset and CTA assertions with disposable live-lane lifecycle tests.
 - [x] OPS-P1-04: replace permanent assignment-conflict blocking with refetch + bounded recovery.
 - [x] OPS-P2-01: unify manual and automatic starts on persisted match identity.
-- [ ] OPS-P2-02: include all preview policies in one request/cache fingerprint.
+- [x] OPS-P2-02: include all preview policies in one request/cache fingerprint.
 - [ ] OPS-P2-03: detect version changes from another tab/device while focused.
 - [ ] OPS-P3-01: remove duplicate dead live-cycle implementation after canonical tests are in place.
 

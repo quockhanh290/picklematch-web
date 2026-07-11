@@ -186,6 +186,7 @@ export function buildPreviewBatchKey(
   pvnaTolerance: number,
   fairnessAdjustment: { tier_overrides: Record<string, Tier>; applied_for_warnings: unknown[] },
   liveQualityPolicy: BuildSuggestedMatchOptions['liveQualityPolicy'] = 'current',
+  policyFingerprint = '',
 ) {
   const playersKey = [...state.players.values()]
     .map(player => {
@@ -228,6 +229,7 @@ export function buildPreviewBatchKey(
     courtCount,
     pvnaTolerance,
     liveQualityPolicy,
+    policyFingerprint,
     state.config.pvna_tolerance,
     JSON.stringify(state.config.weights),
     fairnessAdjustment.applied_for_warnings.map(String).sort().join(','),

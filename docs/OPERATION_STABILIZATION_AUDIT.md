@@ -140,11 +140,11 @@ Fix: manual available-pool lineups are now persisted through `replace_live_sessi
 ### OPS-P2-02 - Preview policy changes are absent from the request identity
 
 Severity: P2  
-Status: OPEN
+Status: FIXED IN CODE
 
 `planned_total_rounds`, `court_preset`, and `avoid_pairs` are sent to Edge from `previewBodyRef`, but they are not all represented in `previewRequestKey`. A setting change can therefore update the body without invalidating the committed/cached preview.
 
-Required fix: create one canonical preview-policy fingerprint and use it for request identity, lane cache identity, dump trace, and tests.
+Fix: `buildPreviewPolicyFingerprint` now canonically covers court count, configured PVNA tolerance, target rounds, court preset, live-quality policy, and stable-sorted avoid pairs. The same fingerprint participates in batch identity, lane-cache identity, request identity, and request audit traces. Focused tests prove every policy change invalidates identity while avoid-pair direction/order remains stable. Next-round-v2 passes 33/33.
 
 ### OPS-P2-03 - External state changes have no live subscription
 

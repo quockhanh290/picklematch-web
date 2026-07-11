@@ -48,6 +48,7 @@ import {
 } from './next-round-v2/components/ScreenComponents'
 
 import { buildPreviewBatchKey } from './next-round-v2/preview'
+import { buildPreviewPolicyFingerprint } from './next-round-v2/preview-policy'
 import { createClientTraceId, fetchLiveMatchesPreview, recordClientSessionAuditEvent } from './next-round-v2/api'
 import { getMissingPreviewCourtIdxs, getRequestedReplacementCourtIdxs, isPreviewBoardComplete } from './next-round-v2/court-lanes'
 import { getLiveRowsForPreviewMode, isCommittedPreviewMatch, isPreviewResponseCurrent, isStartablePreviewRow } from './next-round-v2/preview-consistency'
@@ -2170,9 +2171,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     startingPreviewIds,
     state,
   ])
+  const previewPolicyFingerprint = useMemo(() => buildPreviewPolicyFingerprint({
+    courtCount: queueCourtCount,
+    pvnaTolerance,
+    plannedTotalRounds: effectiveTargetRounds,
+    courtPreset,
+    avoidPairs,
+  }), [avoidPairs, courtPreset, effectiveTargetRounds, pvnaTolerance, queueCourtCount])
   const previewBatchKey = useMemo(
-    () => buildPreviewBatchKey(sessionId, state, queueCourtCount, pvnaTolerance, fairnessAdjustment),
-    [fairnessAdjustment, pvnaTolerance, queueCourtCount, sessionId, state],
+    () => buildPreviewBatchKey(sessionId, state, queueCourtCount, pvnaTolerance, fairnessAdjustment, 'current', previewPolicyFingerprint),
+    [fairnessAdjustment, previewPolicyFingerprint, pvnaTolerance, queueCourtCount, sessionId, state],
   )
   const previewLaneCacheKey = useMemo(() => {
     const playerKey = rows.playerRows
@@ -2197,6 +2205,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       .join(',')
     return [
       sessionId,
+      previewPolicyFingerprint,
       state.status,
       queueCourtCount,
       pvnaTolerance,
@@ -2206,7 +2215,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
       tierKey,
       playerKey,
     ].join('||')
-  }, [fairnessAdjustment, playersById, pvnaTolerance, queueCourtCount, rows.playerRows, sessionId, state.config.pvna_tolerance, state.config.weights, state.status])
+  }, [fairnessAdjustment, playersById, previewPolicyFingerprint, pvnaTolerance, queueCourtCount, rows.playerRows, sessionId, state.config.pvna_tolerance, state.config.weights, state.status])
   React.useEffect(() => {
     if (previewBaseKeyRef.current === null) {
       previewBaseKeyRef.current = previewLaneCacheKey
@@ -2537,6 +2546,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
         incomplete_request_key_bytes: incompleteRequestKey.length,
         preview_request_key: previewTraceKey,
         preview_request_key_bytes: previewRequestKey.length,
+        preview_policy_fingerprint: previewPolicyFingerprint,
         request_serial: requestSerial,
         suggested_queue_count: fetchSuggestedCount,
         target_suggested_queue_count: suggestedQueueCount,
