@@ -23,7 +23,7 @@ Audit ledger: `docs/OPERATION_STABILIZATION_AUDIT.md`
 - [x] OPS-P2-01: unify manual and automatic starts on persisted match identity.
 - [x] OPS-P2-02: include all preview policies in one request/cache fingerprint.
 - [x] OPS-P2-03: detect version changes from another tab/device while focused.
-- [ ] OPS-P3-01: remove duplicate dead live-cycle implementation after canonical tests are in place.
+- [x] OPS-P3-01: remove duplicate dead live-cycle implementation after canonical tests are in place.
 
 ### Discipline
 - Do not tune engine ranking during this pass without a replay proving a ranking defect.

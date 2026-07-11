@@ -158,11 +158,11 @@ Fix: while the screen is focused and the app is active, a guarded four-second po
 ### OPS-P3-01 - Dead duplicate live-cycle implementation remains in the model
 
 Severity: P3  
-Status: OPEN cleanup
+Status: FIXED IN CODE
 
-`useNextRoundModel.ts` still exports an older `buildCompletedLiveCycleRows` implementation while runtime imports and uses the newer implementation from `live-cycle-rows.ts`. Keeping two definitions invites tests or future imports to validate the wrong model.
+`useNextRoundModel.ts` exported an older `buildCompletedLiveCycleRows` implementation while runtime imported and used the newer implementation from `live-cycle-rows.ts`. Keeping two definitions invited tests or future imports to validate the wrong model.
 
-Required fix: remove the dead implementation and keep all cycle tests against the canonical module.
+Fix: removed both the exported duplicate and the commented legacy reconstruction block. The model now imports `buildCompletedLiveCycleRows` directly from `live-cycle-rows.ts`, so runtime and cycle tests share one canonical implementation.
 
 ## Engine audit - 2026-07-10
 

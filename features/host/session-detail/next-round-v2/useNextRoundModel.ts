@@ -31,7 +31,7 @@ import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { getComparableElo, getReliability, getSkillLevelId, getSkillTag } from '@/lib/sessionDetail'
 import { getLevelIdForElo } from '@/lib/eloSystem'
 import { markNextRoundStage } from './telemetry'
-import { buildCompletedLiveCycleRows as buildCompletedLiveCycleRowsBySequence } from './live-cycle-rows'
+import { buildCompletedLiveCycleRows } from './live-cycle-rows'
 import { mergePlayerStateRows } from './player-state-rows'
 
 function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): SuggestionAlternative | null {
@@ -142,98 +142,6 @@ function withoutRestPenalty(alternative: SuggestionAlternative | null | undefine
     ...alternative,
     resting: [],
   }
-}
-
-function sortLiveMatchesBySequence(matches: SessionLiveMatchRow[]): SessionLiveMatchRow[] {
-  return [...matches].sort((a, b) => {
-    if (a.sequence_no !== b.sequence_no) return a.sequence_no - b.sequence_no
-    return (a.court_idx ?? 0) - (b.court_idx ?? 0)
-  })
-}
-
-function buildCompletedRoundResting(
-  matches: SessionLiveMatchRow[],
-  playedIds: Set<string>,
-  fallbackPresentIds: string[],
-  fallbackOptedRestPlayerIds: Set<string>,
-): string[] {
-  const finalRoundSnapshot = sortLiveMatchesBySequence(matches).at(-1)?.resting ?? []
-  const source = finalRoundSnapshot.length > 0
-    ? finalRoundSnapshot
-    : fallbackPresentIds.filter(id => !fallbackOptedRestPlayerIds.has(id))
-
-  return [...new Set(source)].filter(id => !playedIds.has(id))
-}
-
-export function buildCompletedLiveCycleRows({
-  liveMatchRows,
-  legacyRoundRows,
-  playerRows,
-  sessionId,
-  courtCount,
-}: {
-  liveMatchRows: SessionLiveMatchRow[]
-  legacyRoundRows: LiveRows['roundRows']
-  playerRows: SessionPlayerStateRow[]
-  sessionId: string
-  courtCount: number
-}): LiveRows['roundRows'] {
-  const normalizedCourtCount = normalizeCourtCount(courtCount)
-  const baseRoundNo = legacyRoundRows.reduce((max, row) => Math.max(max, row.round_no), -1) + 1
-  const completedLive = sortLiveMatchesBySequence(liveMatchRows.filter(match => match.status === 'completed'))
-  const presentPlayerIds = playerRows
-    .filter(row => !row.checked_out_at)
-    .map(row => row.player_id)
-  const optedRestPlayerIds = new Set(
-    playerRows
-      .filter(row => !row.checked_out_at && row.opted_rest)
-      .map(row => row.player_id),
-  )
-  const liveRoundRows: LiveRows['roundRows'] = []
-
-  for (let index = 0; index + normalizedCourtCount <= completedLive.length; index += normalizedCourtCount) {
-    const matches = completedLive.slice(index, index + normalizedCourtCount)
-    const playedIds = new Set(matches.flatMap(match => [...match.team_a, ...match.team_b]))
-    const roundStartedAt = matches.map(match => match.started_at).filter(Boolean).sort()[0]
-    const roundEndedAt = matches.map(match => match.ended_at).filter(Boolean).sort().reverse()[0]
-
-    let roundPresentIds: string[]
-    if (roundStartedAt) {
-      const roundStartMs = new Date(roundStartedAt).getTime()
-      const roundEndMs = roundEndedAt ? new Date(roundEndedAt).getTime() : Infinity
-      roundPresentIds = playerRows
-        .filter(player => {
-          const checkedIn = new Date(player.checked_in_at).getTime()
-          const checkedOut = player.checked_out_at ? new Date(player.checked_out_at).getTime() : Infinity
-          return checkedIn <= roundEndMs && checkedOut >= roundStartMs
-        })
-        .map(player => player.player_id)
-    } else {
-      roundPresentIds = presentPlayerIds
-    }
-
-    liveRoundRows.push({
-      id: matches[0].id,
-      session_id: sessionId,
-      round_no: baseRoundNo + liveRoundRows.length,
-      status: 'completed',
-      matches: matches.map(match => ({
-        court_idx: match.court_idx ?? 0,
-        team_a: match.team_a,
-        team_b: match.team_b,
-      })),
-      resting: buildCompletedRoundResting(
-        matches,
-        playedIds,
-        roundPresentIds,
-        optedRestPlayerIds,
-      ),
-      started_at: roundStartedAt ?? null,
-      ended_at: roundEndedAt ?? null,
-    })
-  }
-
-  return [...legacyRoundRows, ...liveRoundRows]
 }
 
 const SETTINGS_STORAGE_PREFIX = 'next-round-v2-settings'
@@ -459,100 +367,10 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   const enrichedPlayerRowsRef = useRef(enrichedPlayerRows)
   const pairRowsRef = useRef(deferredRows.pairRows)
   const roundRowsRef = useRef(deferredRows.roundRows)
-  /*
-  const legacyGroupedRoundRows = useMemo(() => {
-    const legacyRows = deferredRows.roundRows
-    const baseRoundNo = legacyRows.reduce((max, row) => Math.max(max, row.round_no), -1) + 1
-
-    const completedLive = deferredRows.liveMatchRows.filter(m => m.status === 'completed')
-
-    // Group by round_no từ DB nếu có. Nếu không (migration chưa apply):
-    // greedy group theo sân — các trận không trùng court_idx thuộc cùng 1 vòng.
-    const byRound = new Map<number, typeof completedLive>()
-    for (const match of completedLive.filter(m => m.round_no != null)) {
-      const key = match.round_no!
-      if (!byRound.has(key)) byRound.set(key, [])
-      byRound.get(key)!.push(match)
-    }
-
-    // Some live sessions contain older completed matches with round_no = null mixed
-    // with newer rows that have round_no. Keep those legacy rows as separate
-    // greedy court groups; grouping all nulls together creates fake mega-rounds.
-    let nextFallbackRoundKey = Math.max(-1, ...byRound.keys()) + 1
-    for (const match of completedLive.filter(m => m.round_no == null).sort((a, b) => a.sequence_no - b.sequence_no)) {
-      const courtIdx = match.court_idx ?? match.sequence_no
-      const targetRound = [...byRound.entries()]
-        .filter(([key]) => key >= nextFallbackRoundKey)
-        .find(([, matches]) => !matches.some(m => (m.court_idx ?? m.sequence_no) === courtIdx))
-      const key = targetRound ? targetRound[0] : nextFallbackRoundKey++
-      if (!byRound.has(key)) byRound.set(key, [])
-      byRound.get(key)!.push(match)
-    }
-
-    // Fallback: người có mặt hiện tại (dùng khi không có timing data)
-    const presentPlayerIds = enginePlayerRows
-      .filter(r => !r.checked_out_at)
-      .map(r => r.player_id)
-    const optedRestPlayerIds = new Set(
-      enginePlayerRows
-        .filter(r => !r.checked_out_at && r.opted_rest)
-        .map(r => r.player_id),
-    )
-
-    const liveRoundRows = [...byRound.entries()]
-      .sort(([a], [b]) => a - b)
-      .filter(([, matches]) => matches.length >= engineCourtCount)
-      .map(([, unsortedMatches], index) => {
-        const matches = sortLiveMatchesBySequence(unsortedMatches)
-        const playedIds = new Set(matches.flatMap(m => [...m.team_a, ...m.team_b]))
-        const roundStartedAt = matches.map(m => m.started_at).filter(Boolean).sort()[0]
-        const roundEndedAt = matches.map(m => m.ended_at).filter(Boolean).sort().reverse()[0]
-
-        // Tính roster tại thời điểm vòng đó dựa trên timestamp.
-        // Dùng tất cả playerRows (kể cả đã checked_out) để tính đúng lịch sử.
-        let roundPresentIds: string[]
-        if (roundStartedAt) {
-          const roundStartMs = new Date(roundStartedAt).getTime()
-          const roundEndMs = roundEndedAt ? new Date(roundEndedAt).getTime() : Infinity
-          roundPresentIds = enginePlayerRows
-            .filter(p => {
-              const checkedIn = new Date(p.checked_in_at).getTime()
-              const checkedOut = p.checked_out_at ? new Date(p.checked_out_at).getTime() : Infinity
-              return checkedIn <= roundEndMs && checkedOut >= roundStartMs
-            })
-            .map(p => p.player_id)
-        } else {
-          roundPresentIds = presentPlayerIds
-        }
-
-        return {
-          id: matches[0].id,
-          session_id: sessionId,
-          round_no: baseRoundNo + index,
-          status: 'completed' as const,
-          matches: matches.map(m => ({
-            court_idx: m.court_idx ?? 0,
-            team_a: m.team_a,
-            team_b: m.team_b,
-          })),
-          resting: buildCompletedRoundResting(
-            matches,
-            playedIds,
-            roundPresentIds,
-            optedRestPlayerIds,
-          ),
-          started_at: roundStartedAt ?? null,
-          ended_at: roundEndedAt ?? null,
-        }
-      })
-
-    return [...legacyRows, ...liveRoundRows]
-  }, [deferredRows.liveMatchRows, deferredRows.roundRows, enginePlayerRows, sessionId, engineCourtCount])
-  */
   const stateRoundRows = useMemo(() => {
     const legacyRoundRows = deferredRows.roundRows.filter(row => row.status !== 'active')
 
-    return buildCompletedLiveCycleRowsBySequence({
+    return buildCompletedLiveCycleRows({
       liveMatchRows: deferredRows.liveMatchRows,
       legacyRoundRows,
       playerRows: enginePlayerRows,
