@@ -6,6 +6,7 @@ const useLocalWebServer = !process.env.E2E_BASE_URL
 
 export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
+  globalTeardown: './e2e/global-teardown.ts',
   testDir: '.',
   testMatch: ['e2e/**/*.spec.ts', 'e2e/setup/*.setup.ts', 'tests/e2e-ui/**/*.spec.ts'],
   timeout: 60_000,

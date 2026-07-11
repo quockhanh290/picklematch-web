@@ -15,9 +15,7 @@ import { expect, test } from '@playwright/test'
 // ── Resolve session ID ────────────────────────────────────────────────────────
 
 // fullConfirmed — 4 player confirmed, host là host.confirmed@picklematch.vn, tồn tại trong DB từ seed cũ
-const FALLBACK_SESSION_ID = '55555555-5555-5555-5555-555555555553'
-
-function resolveSessionId(): string {
+function resolveSessionId(): string | null {
   try {
     const contextPath = path.resolve(process.cwd(), 'e2e/.auth/session-context.json')
     const raw = fs.readFileSync(contextPath, 'utf8')
@@ -27,12 +25,12 @@ function resolveSessionId(): string {
       return ctx.sessionId
     }
   } catch { /* file chưa có hoặc parse lỗi */ }
-  console.log(`[next-round] Dùng fallback session: ${FALLBACK_SESSION_ID}`)
-  return FALLBACK_SESSION_ID
+  return null
 }
 
 const SESSION_ID = resolveSessionId()
 const NR_URL = `/host/session/${SESSION_ID}/next-round`
+test.skip(!SESSION_ID, 'Disposable next-round session requires SUPABASE_SERVICE_ROLE_KEY')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -346,7 +344,7 @@ test.describe('NR8: group management', () => {
 
 // ── NR9: bắt đầu vòng ────────────────────────────────────────────────────────
 
-test.describe('NR9: bắt đầu vòng', () => {
+test.describe.skip('NR9 legacy: bắt đầu vòng', () => {
   test('nhấn start → chuyển sang active phase', async ({ page }) => {
     await gotoNextRound(page)
     await syncRosterIfNeeded(page)
@@ -364,7 +362,7 @@ test.describe('NR9: bắt đầu vòng', () => {
 
 // ── NR10: kết thúc vòng ───────────────────────────────────────────────────────
 
-test.describe('NR10: kết thúc vòng', () => {
+test.describe.skip('NR10 legacy: kết thúc vòng', () => {
   test('nhấn end → về plan phase với alternatives mới', async ({ page }) => {
     await gotoNextRound(page)
 
@@ -393,7 +391,7 @@ test.describe('NR10: kết thúc vòng', () => {
 
 // ── NR11: vòng 2 ─────────────────────────────────────────────────────────────
 
-test.describe('NR11: vòng thứ hai', () => {
+test.describe.skip('NR11 legacy: vòng thứ hai', () => {
   test('sau vòng 1, start/end vòng 2 thành công', async ({ page }) => {
     // Dùng timeout dài hơn vì test này cần start + end 2 vòng
     test.setTimeout(120_000)
@@ -431,6 +429,32 @@ test.describe('NR11: vòng thứ hai', () => {
 })
 
 // ── NR12: kiểm tra không crash ────────────────────────────────────────────────
+
+test.describe('NR9: rolling-lane lifecycle', () => {
+  test('starts two courts, survives refresh, completes out of order, and refills each lane', async ({ page }) => {
+    test.setTimeout(150_000)
+    await gotoNextRound(page)
+    await syncRosterIfNeeded(page)
+
+    await expect(page.getByTestId('nrv2-start-match-court-0')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('nrv2-start-match-court-1')).toBeVisible({ timeout: 60_000 })
+    await page.getByTestId('nrv2-start-match-court-0').click({ force: true })
+    await expect(page.getByTestId('nrv2-live-card-court-0')).toBeVisible({ timeout: 30_000 })
+    await page.getByTestId('nrv2-start-match-court-1').click({ force: true })
+    await expect(page.getByTestId('nrv2-live-card-court-1')).toBeVisible({ timeout: 30_000 })
+
+    await page.reload()
+    await expect(page.getByTestId('nrv2-live-card-court-0')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('nrv2-live-card-court-1')).toBeVisible({ timeout: 30_000 })
+
+    await page.getByTestId('nrv2-complete-match-court-1').click({ force: true })
+    await expect(page.getByTestId('nrv2-start-match-court-1')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('nrv2-live-card-court-0')).toBeVisible()
+
+    await page.getByTestId('nrv2-complete-match-court-0').click({ force: true })
+    await expect(page.getByText('BÁO CÁO TRẬN ĐẤU')).toBeVisible({ timeout: 60_000 })
+  })
+})
 
 test.describe('NR12: không crash', () => {
   test('không có fatal error overlay khi load trang', async ({ page }) => {

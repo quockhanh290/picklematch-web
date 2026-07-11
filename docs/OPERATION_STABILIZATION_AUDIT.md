@@ -86,7 +86,7 @@ Verification: `tests/next-round-v2/api-preview-request.test.ts` PASS.
 ### OPS-P1-03 - E2E reset and assertions target the retired round flow
 
 Severity: P1 test-gap  
-Status: OPEN
+Status: IMPLEMENTED IN CODE; live E2E gate pending Supabase credentials
 
 Evidence:
 
@@ -98,10 +98,14 @@ Impact:
 - Test sessions can begin dirty.
 - Green E2E does not cover persisted suggestions, asynchronous court completion, stale-version recovery, lane refill, or end-of-session behavior.
 
-Required fix:
+Implementation:
 
-- Provision a dedicated disposable session per test run through a guarded test helper/RPC.
-- Exercise 2+ courts completing out of order, refresh during requests, stale response ordering, and final target-round transition.
+- Global setup creates a fresh session through the production `create_session_with_host` RPC, clones only a confirmed roster with service-role access, configures two courts and a one-round target, and never resets an existing session.
+- Global teardown deletes the disposable session and slot; setup also cleans partial fixtures when provisioning fails.
+- Without `SUPABASE_SERVICE_ROLE_KEY`, the next-round suite skips instead of falling back to a fixed/real session.
+- The active lifecycle starts two persisted court matches, refreshes while both are live, completes court 2 before court 1, verifies lane refill, then verifies the final target transition to recap. Retired single-CTA round tests are disabled pending dead-code removal.
+
+Verification: Playwright collection and scoped TypeScript validation pass. The live browser gate remains pending because the configured Supabase credentials currently return 401.
 
 ### OPS-P1-04 - Persist assignment conflicts can become a permanent client block
 
