@@ -25,7 +25,7 @@ begin
   v_definition := v_updated;
   v_updated := regexp_replace(
     v_definition,
-    '([[:space:]]*v_base_sequence [+] ordinality::integer - 1,[[:space:]]*)v_round_no,',
+    '([[:space:]]*v_base_sequence [+] ordinality::(int|integer) - 1,[[:space:]]*)v_round_no,',
     E'\\1coalesce((match.value ->> ''round_no'')::integer, v_round_no),\n      coalesce((match.value ->> ''round_no'')::integer, v_round_no),',
     'n'
   );
