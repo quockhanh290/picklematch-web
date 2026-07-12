@@ -1262,7 +1262,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       return
     }
     startingPreviewIdsRef.current.add(match.id)
-    if (startedCourtIdx !== null) suggestedLaneCacheRef.current.delete(startedCourtIdx)
 
     setStartingPreviewIds(current => {
       const next = new Set(current)
@@ -2158,7 +2157,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       const courtIdx = getSuggestedLaneCourtIdx(match)
       if (courtIdx === null || courtIdx < 0 || courtIdx >= queueCourtCount) continue
       if (occupiedCourts.has(courtIdx)) continue
-      if (startedPreviewIds.has(match.id) || startingPreviewIds.has(match.id) || startingPreviewIdsRef.current.has(match.id)) continue
+      // Keep an in-flight start visible so SuggestedLiveMatchCard can own the
+      // transition and show its "starting" spinner until the live row arrives.
+      if (startedPreviewIds.has(match.id)) continue
       const hasPreviewStalenessMetadata = suggestedMatch.preview_live_state_version != null
         && suggestedMatch.preview_countable_match_count != null
       if (!isPersistedSuggestedMatch(suggestedMatch) && hasPreviewStalenessMetadata && isPreviewInvalidatedByCompletedMatch(suggestedMatch)) continue
