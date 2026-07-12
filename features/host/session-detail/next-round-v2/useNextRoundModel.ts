@@ -145,6 +145,14 @@ function withoutRestPenalty(alternative: SuggestionAlternative | null | undefine
 }
 
 const SETTINGS_STORAGE_PREFIX = 'next-round-v2-settings'
+const EMPTY_LIVE_ROWS: LiveRows = {
+  playerRows: [],
+  registeredPlayerRows: [],
+  pairRows: [],
+  roundRows: [],
+  liveMatchRows: [],
+  liveStateVersion: null,
+}
 
 type PersistedSettings = {
   courtCountOverride?: number | null
@@ -266,7 +274,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
 
   const routePlayersById = useMemo(() => new Map(players.map(player => [String(player.id), player])), [players])
   const { data: rowsData, isLoading: loading, error: queryError } = useLiveSessionQuery(sessionId, routePlayersById)
-  const rows: LiveRows = rowsData || { playerRows: [], registeredPlayerRows: [], pairRows: [], roundRows: [], liveMatchRows: [], liveStateVersion: null }
+  const rows: LiveRows = rowsData ?? EMPTY_LIVE_ROWS
   const playersById = useMemo(() => {
     const merged = new Map(routePlayersById)
     for (const row of rows.registeredPlayerRows) {

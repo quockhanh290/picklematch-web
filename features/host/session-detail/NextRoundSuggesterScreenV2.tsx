@@ -165,6 +165,7 @@ const LIVE_PREVIEW_INCOMPLETE_RETRY_MS = 900
 const LIVE_PREVIEW_BLOCKED_RETRY_MS = 6000
 const LIVE_PREVIEW_ERROR_RETRY_MS = 1500
 const LIVE_PREVIEW_SOFT_TIMEOUT_RETRY_MS = 3500
+const EMPTY_ARRANGEMENT_PLAYERS: ArrangementPlayer[] = []
 const LiveMatchBoardComponent = CourtLaneLiveMatchBoard
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_REPEAT_COST_WEIGHT = 3
@@ -549,7 +550,7 @@ function hasHardPreviewQualityViolation(
 
 
 
-export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bootstrapTelemetry = null, initialShowReport = false }: NextRoundSuggesterV2Props) {
+export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEMENT_PLAYERS, courts, bootstrapTelemetry = null, initialShowReport = false }: NextRoundSuggesterV2Props) {
   const queryClient = useQueryClient()
   const checkInMutation = useCheckInMutation(sessionId)
   const checkOutMutation = useCheckOutMutation(sessionId)

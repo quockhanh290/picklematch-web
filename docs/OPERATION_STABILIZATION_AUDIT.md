@@ -169,9 +169,9 @@ Fix: removed both the exported duplicate and the commented legacy reconstruction
 Severity: P1 client runtime
 Status: FIXED IN CODE
 
-The focused-version poll stored navigation focus in React state and changed that state from `useFocusEffect` mount/cleanup. On web, focus-effect lifecycle churn could feed another render and repeatedly toggle the state until React raised `Maximum update depth exceeded`.
+The focused-version poll stored navigation focus in React state and changed that state from `useFocusEffect` mount/cleanup. The route also omitted the optional `players` prop while the component defaulted it to a fresh `[]`, and the model allocated a fresh empty `LiveRows` object whenever query data was unavailable. Those changing identities repeatedly invalidated downstream memo/effect dependencies during loading and error states, allowing focus and state-synchronization effects to feed another render until React raised `Maximum update depth exceeded`.
 
-Fix: focus is now an imperative ref because it only gates the polling callback and has no visual output. Focus mount/cleanup no longer schedules component renders; the poll still skips work while blurred or backgrounded. Next-round-v2 passes 35/35 and the web production bundle builds successfully.
+Fix: focus is now an imperative ref because it only gates the polling callback and has no visual output. The optional roster default and empty query rows are module-level constants, so empty inputs retain identity across renders. Focus mount/cleanup no longer schedules component renders, and loading/error renders no longer manufacture new dependency graphs. The poll still skips work while blurred or backgrounded. Focused client gates pass 37/37 and the web production bundle builds successfully.
 
 ## Engine audit - 2026-07-10
 
