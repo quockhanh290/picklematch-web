@@ -25,6 +25,37 @@ function optionalNumber(value: unknown): number | undefined {
 
 const REPLAY_SCHEMA_VERSION = 2
 const EDGE_FUNCTION_NAME = 'session-live-matches-suggest'
+const SLOW_SUGGEST_THRESHOLD_MS = 3_000
+
+type SuggestTimingStage =
+  | 'auth'
+  | 'request_parse'
+  | 'snapshot_load'
+  | 'state_build'
+  | 'fairness'
+  | 'engine_search'
+  | 'consistency_check'
+  | 'persistence'
+  | 'postprocess'
+
+function roundedDuration(startedAt: number) {
+  return Math.round((performance.now() - startedAt) * 10) / 10
+}
+
+function classifySlowSuggest(timingMs: Record<SuggestTimingStage, number>) {
+  const stages = Object.entries(timingMs) as [SuggestTimingStage, number][]
+  const [slowStage, slowStageMs] = stages.reduce((slowest, current) =>
+    current[1] > slowest[1] ? current : slowest
+  )
+  const slowReason = slowStage === 'engine_search'
+    ? 'engine_search'
+    : slowStage === 'snapshot_load' || slowStage === 'consistency_check' || slowStage === 'persistence'
+      ? 'database_roundtrip'
+      : slowStage === 'auth'
+        ? 'auth_roundtrip'
+        : 'edge_processing'
+  return { slow_stage: slowStage, slow_stage_ms: slowStageMs, slow_reason: slowReason }
+}
 
 function getEngineBuildInfo() {
   return {
@@ -213,16 +244,21 @@ Deno.serve(async (request) => {
   }
 
   const requestReceivedAt = new Date().toISOString()
+  const requestStartedAt = performance.now()
   const suggestionRequestId = edgeRequestId
   const clientRequestId = request.headers.get('x-request-id')
     ?? request.headers.get('x-client-request-id')
     ?? null
 
   try {
+    let stageStartedAt = performance.now()
     const auth = await requireHost(request, sessionId, 'session-live-matches-suggest')
     if (auth.error) return auth.error
     if (!auth.supabase) return jsonResponse({ ok: false, error: 'Unable to verify host access' }, 500)
+    const timingMs = {} as Record<SuggestTimingStage, number>
+    timingMs.auth = roundedDuration(stageStartedAt)
 
+    stageStartedAt = performance.now()
     const body = await readJson(request)
 
     if (!Array.isArray(body.player_rows)) {
@@ -232,6 +268,7 @@ Deno.serve(async (request) => {
     if (requestLiveStateVersion === undefined) {
       return jsonResponse({ ok: false, error: 'Missing live_state_version' }, 400)
     }
+    timingMs.request_parse = roundedDuration(stageStartedAt)
     const loadLiveStateVersion = async () => {
       const { data, error } = await auth.supabase
         .from('sessions')
@@ -241,6 +278,7 @@ Deno.serve(async (request) => {
       if (error) throw new Error(`Could not verify live state version: ${error.message}`)
       return Number(data.live_state_version)
     }
+    stageStartedAt = performance.now()
     const { data: authoritativeSnapshotData, error: authoritativeSnapshotError } = await auth.supabase.rpc(
       'get_live_session_snapshot_versioned',
       { p_session_id: sessionId },
@@ -265,8 +303,10 @@ Deno.serve(async (request) => {
         current_live_state_version: versionBeforeSuggest,
       }, 409)
     }
+    timingMs.snapshot_load = roundedDuration(stageStartedAt)
 
     // 1. Reconstruct engine state from the authoritative DB snapshot.
+    stageStartedAt = performance.now()
     const courtCount = optionalNumber(body.court_count) ?? 1
     const pvnaTolerance = optionalNumber(body.pvna_tolerance) ?? 0.5
     const plannedTotalRounds = optionalNumber(body.planned_total_rounds)
@@ -290,6 +330,7 @@ Deno.serve(async (request) => {
       },
     })
     const completedRoundsCount = state.rounds.filter(round => round.status === 'completed').length
+    timingMs.state_build = roundedDuration(stageStartedAt)
     if (plannedTotalRounds != null && completedRoundsCount >= plannedTotalRounds) {
       console.log('[suggest] target_rounds_reached', {
         suggestion_request_id: suggestionRequestId,
@@ -315,8 +356,10 @@ Deno.serve(async (request) => {
     }
 
     // 2. Compute fairness (pure functions, no DB)
+    stageStartedAt = performance.now()
     const adjustment = correctForFairness(state)
     const warnings = detectFairnessIssues(state)
+    timingMs.fairness = roundedDuration(stageStartedAt)
 
     // 3. Reconstruct request params
     const requestedCount = typeof body.count === 'number' ? body.count : 1
@@ -372,12 +415,14 @@ Deno.serve(async (request) => {
     const verifyDumpEnabled = Deno.env.get('VERIFY_DUMP') === '1'
     const decisionSource = preferAvailablePool ? 'host_replacement' : 'engine_auto'
     const verifyDumps: import('../../../lib/next-round-suggester/live-preview.ts').IncompleteDump[] = []
+    const instrumentEvents: { event: string; detail: string; court_count?: number; available?: number }[] = []
     const onIncompleteDump = verifyDumpEnabled
       ? (dump: import('../../../lib/next-round-suggester/live-preview.ts').IncompleteDump) => {
           verifyDumps.push(dump)
         }
       : undefined
     const onInstrumentEvent = (event: { event: string; detail: string; court_count?: number; available?: number }) => {
+      instrumentEvents.push({ ...event })
       const instrumentationWrite = serviceClient.from('engine_instrumentation').insert({
         session_id: sessionId,
         event: event.event,
@@ -396,6 +441,7 @@ Deno.serve(async (request) => {
       backgroundWrites.push(Promise.resolve(instrumentationWrite))
     }
     const selectionDebug: any[] = []
+    stageStartedAt = performance.now()
     let payloads = buildSuggestedMatchPayloads({
       count,
       sessionId,
@@ -466,6 +512,8 @@ Deno.serve(async (request) => {
         qualityRescueUsed = true
       }
     }
+    timingMs.engine_search = roundedDuration(stageStartedAt)
+    stageStartedAt = performance.now()
     const currentCountableMatchCount = liveMatchRows.filter((match: any) =>
       match?.status !== 'cancelled' && match?.status !== 'suggested'
     ).length
@@ -488,6 +536,8 @@ Deno.serve(async (request) => {
         current_live_state_version: versionAfterSuggest,
       }, 409)
     }
+    timingMs.consistency_check = roundedDuration(stageStartedAt)
+    stageStartedAt = performance.now()
     const liveBusyIds = new Set<string>(
       liveMatchRows
         .filter((m: any) => m.status === 'live' && !completingLiveMatchIds.has(m.id))
@@ -547,6 +597,8 @@ Deno.serve(async (request) => {
       ? targetCourtIdxs.length
       : count
     const targetCountShortfall = Math.max(0, targetExpectedCount - filledTargetCount)
+    timingMs.postprocess = roundedDuration(stageStartedAt)
+    stageStartedAt = performance.now()
     let persistedPreviewVersion = liveStateVersion
     let persistedPreviewNoop = false
     if (finalPreviewBoard.length > 0 || targetCourtIdxs.length > 0) {
@@ -616,6 +668,11 @@ Deno.serve(async (request) => {
           }).final_preview_board
         : normalizedPersistedMatches
     }
+    timingMs.persistence = roundedDuration(stageStartedAt)
+
+    const totalTimingMs = roundedDuration(requestStartedAt)
+    const slowRequest = totalTimingMs >= SLOW_SUGGEST_THRESHOLD_MS
+    const slowDiagnostic = slowRequest ? classifySlowSuggest(timingMs) : null
 
     if (verifyDumpEnabled) {
       const latestDump = verifyDumps.at(-1)
@@ -765,6 +822,27 @@ Deno.serve(async (request) => {
           max_courts_with_free_players: Math.floor(freeCount / 4),
           max_courts_with_free_plus_live_busy_players: maxCourtsWithEveryone,
         },
+        timing_ms: {
+          ...timingMs,
+          total: totalTimingMs,
+        },
+        slow_request: slowRequest,
+        slow_diagnostic: slowDiagnostic
+          ? {
+              threshold_ms: SLOW_SUGGEST_THRESHOLD_MS,
+              ...slowDiagnostic,
+              engine_instrumentation_events: instrumentEvents,
+              search_shape: {
+                selection_count: selectionDebug.length,
+                max_busy_count: Math.max(0, ...selectionDebug.map((court: any) => Number(court.busy_count) || 0)),
+                min_eligible_count: selectionDebug.length > 0
+                  ? Math.min(...selectionDebug.map((court: any) => Array.isArray(court.eligible_players) ? court.eligible_players.length : 0))
+                  : 0,
+                max_required_count: Math.max(0, ...selectionDebug.map((court: any) => Array.isArray(court.required_for_court) ? court.required_for_court.length : 0)),
+                quality_rescue_used: qualityRescueUsed || board.quality_rescue_used,
+              },
+            }
+          : null,
         player_snapshot_lite: compactPlayers,
         round_snapshot_lite: compactRounds,
         busy_player_ids: [...allOccupiedIds].sort(),
@@ -871,6 +949,9 @@ Deno.serve(async (request) => {
       player_limited_courts: playerLimitedCourts,
       temp_limited_courts: tempLimitedCourts,
       real_limited_courts: realLimitedCourts,
+      timing_ms: { ...timingMs, total: totalTimingMs },
+      slow_request: slowRequest,
+      slow_diagnostic: slowDiagnostic,
     })
 
     const auditWrite = writeSessionAuditEvent(serviceClient, {
@@ -918,6 +999,9 @@ Deno.serve(async (request) => {
         persisted_preview: true,
         persisted_preview_noop: persistedPreviewNoop,
         persisted_preview_live_state_version: persistedPreviewVersion,
+        timing_ms: { ...timingMs, total: totalTimingMs },
+        slow_request: slowRequest,
+        slow_diagnostic: slowDiagnostic,
       },
       detail: {
         decision_source: decisionSource,
