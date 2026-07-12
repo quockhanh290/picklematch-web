@@ -4,6 +4,7 @@ Status: IN PROGRESS
 Audit ledger: `docs/OPERATION_STABILIZATION_AUDIT.md`
 
 ### Completed
+- [x] Fix post-deploy client render loop: focus-aware version polling now tracks focus in a ref instead of setting React state from `useFocusEffect` mount/cleanup.
 - [x] Map the client -> Edge -> versioned RPC -> snapshot operation path.
 - [x] Inventory load, preview, persist, start, complete, cancel, roster, refresh and end-session transitions.
 - [x] Run focused gate: 6 suites / 74 tests pass; record the remaining round-projection drift warnings.

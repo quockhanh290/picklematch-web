@@ -164,6 +164,15 @@ Status: FIXED IN CODE
 
 Fix: removed both the exported duplicate and the commented legacy reconstruction block. The model now imports `buildCompletedLiveCycleRows` directly from `live-cycle-rows.ts`, so runtime and cycle tests share one canonical implementation.
 
+### OPS-REG-01 - Focus polling triggers a React update-depth loop
+
+Severity: P1 client runtime
+Status: FIXED IN CODE
+
+The focused-version poll stored navigation focus in React state and changed that state from `useFocusEffect` mount/cleanup. On web, focus-effect lifecycle churn could feed another render and repeatedly toggle the state until React raised `Maximum update depth exceeded`.
+
+Fix: focus is now an imperative ref because it only gates the polling callback and has no visual output. Focus mount/cleanup no longer schedules component renders; the poll still skips work while blurred or backgrounded. Next-round-v2 passes 35/35 and the web production bundle builds successfully.
+
 ## Engine audit - 2026-07-10
 
 Scope: all production modules under `lib/next-round-suggester`, the live Edge call chain, and the unit/fairness/scenario/property/simulation gates. This pass is review-only; no engine behavior was changed.

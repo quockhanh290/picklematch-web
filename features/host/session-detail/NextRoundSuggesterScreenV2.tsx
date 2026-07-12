@@ -730,7 +730,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
   }, [loading, sessionId])
 
   const lastBusRefreshRef = useRef(0)
-  const [screenFocused, setScreenFocused] = useState(true)
+  const screenFocusedRef = useRef(true)
   const versionPollInFlightRef = useRef(false)
   const liveStateVersionRef = useRef<number | null>(rows.liveStateVersion ?? null)
 
@@ -998,19 +998,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
 
 
   useFocusEffect(useCallback(() => {
-    setScreenFocused(true)
+    screenFocusedRef.current = true
     if (isFirstFocusRef.current) {
       isFirstFocusRef.current = false
     } else if (Date.now() - lastBusRefreshRef.current >= 2000) {
       void loadLiveState()
     }
-    return () => setScreenFocused(false)
+    return () => {
+      screenFocusedRef.current = false
+    }
   }, [loadLiveState]))
 
   React.useEffect(() => {
-    if (!screenFocused) return
     const poll = async () => {
-      if (AppState.currentState !== 'active' || versionPollInFlightRef.current) return
+      if (!screenFocusedRef.current || AppState.currentState !== 'active' || versionPollInFlightRef.current) return
       versionPollInFlightRef.current = true
       try {
         const serverVersion = await fetchLiveSessionVersion(sessionId)
@@ -1031,7 +1032,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = [], courts, bo
     }
     const interval = setInterval(() => { void poll() }, LIVE_VERSION_POLL_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [loadLiveState, screenFocused, sessionId, traceClientPreviewEvent])
+  }, [loadLiveState, sessionId, traceClientPreviewEvent])
 
   const openRoster = useCallback(() => {
     router.push({ pathname: '/host/session/[id]/roster', params: { id: sessionId } } as any)
