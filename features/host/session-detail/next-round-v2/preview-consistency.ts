@@ -2,6 +2,15 @@ type PreviewRow = {
   status?: string | null
 }
 
+export function mergePersistedSuggestionMetadata<T extends { suggestion_metadata?: Record<string, unknown> | null }>(row: T) {
+  return {
+    ...((row.suggestion_metadata && typeof row.suggestion_metadata === 'object')
+      ? row.suggestion_metadata
+      : {}),
+    ...row,
+  }
+}
+
 export function getLiveRowsForPreviewMode<T extends PreviewRow>(
   mode: 'full_board' | 'replace_courts',
   liveRows: T[],

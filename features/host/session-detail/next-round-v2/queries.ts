@@ -5,6 +5,7 @@ import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { getPlayerPvna, normalizeRoundRow, type RawRoundRow } from './helpers'
 import type { LiveRows, RegisteredSessionPlayerRow } from './types'
 import { markNextRoundStage } from './telemetry'
+import { mergePersistedSuggestionMetadata } from './preview-consistency'
 
 export const liveSessionQueryKeys = {
   all: ['liveSession'] as const,
@@ -66,14 +67,17 @@ export function useLiveSessionQuery(sessionId: string, playersById: Map<string, 
         registeredPlayerRows: (raw.registered_player_rows ?? []) as RegisteredSessionPlayerRow[],
         pairRows: (raw.pair_rows ?? []) as SessionPairHistoryRow[],
         roundRows: ((raw.round_rows ?? []) as RawRoundRow[]).map(normalizeRoundRow),
-        liveMatchRows: ((raw.live_match_rows ?? []) as SessionLiveMatchRow[]).map(row => ({
-          ...row,
-          team_a: row.team_a,
-          team_b: row.team_b,
-          resting: row.resting ?? [],
-          score_a: row.score_a ?? 0,
-          score_b: row.score_b ?? 0,
-        })),
+        liveMatchRows: ((raw.live_match_rows ?? []) as SessionLiveMatchRow[]).map(rawRow => {
+          const row = mergePersistedSuggestionMetadata(rawRow) as SessionLiveMatchRow
+          return {
+            ...row,
+            team_a: row.team_a,
+            team_b: row.team_b,
+            resting: row.resting ?? [],
+            score_a: row.score_a ?? 0,
+            score_b: row.score_b ?? 0,
+          }
+        }),
         liveStateVersion,
       }
       markNextRoundStage(sessionId, 'rows_loaded', {

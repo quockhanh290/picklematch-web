@@ -171,6 +171,7 @@ export type SessionLiveMatchRow = {
   ended_at: string | null
   created_at?: string
   updated_at?: string
+  suggestion_metadata?: Record<string, unknown> | null
 }
 
 export type HostCheckInRequest = {

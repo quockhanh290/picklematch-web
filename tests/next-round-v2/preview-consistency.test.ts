@@ -4,6 +4,7 @@ import {
   isCommittedPreviewMatch,
   isPreviewResponseCurrent,
   isStartablePreviewRow,
+  mergePersistedSuggestionMetadata,
 } from '../../features/host/session-detail/next-round-v2/preview-consistency'
 
 describe('preview consistency', () => {
@@ -65,6 +66,23 @@ describe('preview consistency', () => {
   it('keeps a committed batch across request-version churn while its lane policy is unchanged', () => {
     expect(isPreviewBatchCacheCurrent('stable-lane-policy', 'stable-lane-policy')).toBe(true)
     expect(isPreviewBatchCacheCurrent('old-lane-policy', 'new-lane-policy')).toBe(false)
+  })
+
+  it('restores quality metadata without letting it override the persisted row identity', () => {
+    expect(mergePersistedSuggestionMetadata({
+      id: 'server-row',
+      status: 'suggested',
+      suggestion_metadata: {
+        id: 'metadata-row',
+        warnings: ['PVNA_TOLERANCE_RELAXED'],
+        approval_required: true,
+      },
+    })).toMatchObject({
+      id: 'server-row',
+      status: 'suggested',
+      warnings: ['PVNA_TOLERANCE_RELAXED'],
+      approval_required: true,
+    })
   })
 
   it('allows an edge-committed partial lane to start without a complete batch', () => {

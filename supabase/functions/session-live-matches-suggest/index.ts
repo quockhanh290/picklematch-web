@@ -86,11 +86,15 @@ function normalizeStartablePreviewMatch(match: any, {
   countableMatchCount: number
   maxSequenceNo: number
 }) {
+  const suggestionMetadata = match?.suggestion_metadata && typeof match.suggestion_metadata === 'object'
+    ? match.suggestion_metadata
+    : {}
   const teamA = Array.isArray(match?.team_a) ? match.team_a.map(String) : []
   const teamB = Array.isArray(match?.team_b) ? match.team_b.map(String) : []
   const courtIdx = Number(match?.court_idx ?? match?.sequence_no)
   if (teamA.length !== 2 || teamB.length !== 2 || !Number.isFinite(courtIdx)) return null
   return {
+    ...suggestionMetadata,
     ...match,
     id: typeof match?.id === 'string' && match.id.length > 0 ? match.id : previewMatchId({ ...match, team_a: teamA, team_b: teamB, court_idx: courtIdx }),
     status: 'suggested',
