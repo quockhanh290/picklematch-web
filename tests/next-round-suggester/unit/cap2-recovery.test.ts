@@ -9,7 +9,6 @@
 import { commitCompletedRound } from '../../../lib/next-round-suggester/commit'
 import {
   buildSuggestedMatchPayloads,
-  isRecentSuggestedLiveMatch,
 } from '../../../lib/next-round-suggester/live-preview'
 import type { SuggestedMatchPayload } from '../../../lib/next-round-suggester/live-preview'
 import { suggestNextRound } from '../../../lib/next-round-suggester/suggest'
@@ -188,7 +187,7 @@ describe('A: board fill — 40-player / 6-court pool', () => {
       }))
 
       for (const row of liveMatchRowsOverride) {
-        expect(isRecentSuggestedLiveMatch(row)).toBe(true)
+        expect(row.status).toBe('suggested')
       }
 
       const newPayloads = buildSuggestedMatchPayloads({
