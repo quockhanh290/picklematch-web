@@ -5,6 +5,7 @@ import { correctForFairness } from '../../../lib/next-round-suggester/fairness/c
 import { detectFairnessIssues } from '../../../lib/next-round-suggester/fairness/detector.ts'
 import {
   buildFinalPreviewBoard,
+  getPreviewMatchesToPersist,
   buildSuggestedMatchPayloads,
   hasFulfilledPreviewBoardReplacements,
   improvesPreviewBoardPvna,
@@ -555,12 +556,17 @@ Deno.serve(async (request) => {
             .map((payload: any) => Number(payload.court_idx))
             .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
       const replaceAllSuggestions = mode === 'full_board' && explicitTargetCourtIdxs.length === 0
+      const matchesToPersist = getPreviewMatchesToPersist({
+        mode,
+        finalPreviewBoard,
+        replacementCourtIdxs: replaceCourtIdxs,
+      })
       const { data: persistedPreviewData, error: persistedPreviewError } = await auth.supabase.rpc(
         'replace_live_session_suggestions_versioned',
         {
           p_session_id: sessionId,
           p_expected_live_state_version: requestLiveStateVersion,
-          p_matches: finalPreviewBoard,
+          p_matches: matchesToPersist,
           p_replace_court_idxs: replaceCourtIdxs,
           p_replace_all: replaceAllSuggestions,
           p_audit_payload: {
@@ -593,13 +599,22 @@ Deno.serve(async (request) => {
       const persistedMatches = Array.isArray((persistedPreviewData as any)?.matches)
         ? (persistedPreviewData as any).matches
         : []
-      finalPreviewBoard = persistedMatches
+      const normalizedPersistedMatches = persistedMatches
         .map((payload: any) => normalizeStartablePreviewMatch(payload, {
           liveStateVersion: persistedPreviewVersion,
           countableMatchCount: currentCountableMatchCount,
           maxSequenceNo: currentMaxSequenceNo,
         }))
         .filter(isNonNullPreviewMatch)
+      finalPreviewBoard = mode === 'replace_courts'
+        ? buildFinalPreviewBoard({
+            mode,
+            payloads: normalizedPersistedMatches,
+            currentPreviewBoard,
+            replacementCourtIdxs: replaceCourtIdxs,
+            courtCount,
+          }).final_preview_board
+        : normalizedPersistedMatches
     }
 
     if (verifyDumpEnabled) {

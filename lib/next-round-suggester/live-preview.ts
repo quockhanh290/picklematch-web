@@ -53,23 +53,11 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-const SUGGESTED_MATCH_BUSY_TTL_MS = 60_000
 export const LIVE_PREVIEW_ALGORITHM_VERSION = 11
 
 const BEAM_K = 3
 const BEAM_ACTIVE_PLAYER_LIMIT = 50
 const BEAM_PER_CANDIDATE_MAX_MS = 100
-
-export function isRecentSuggestedLiveMatch(
-  match: SessionLiveMatchRow,
-  nowMs = Date.now(),
-  ttlMs = SUGGESTED_MATCH_BUSY_TTL_MS,
-) {
-  if (match.status !== 'suggested') return false
-  const suggestedAtMs = Date.parse(match.suggested_at ?? '')
-  if (!Number.isFinite(suggestedAtMs)) return false
-  return suggestedAtMs <= nowMs + ttlMs && nowMs - suggestedAtMs < ttlMs
-}
 
 export function isLiveRoundFullyCompleted(
   roundNo: number,
@@ -263,6 +251,20 @@ export type FinalPreviewBoardResult = {
   replaced_court_idxs: number[]
   locked_court_idxs: number[]
   quality_rescue_used: boolean
+}
+
+export function getPreviewMatchesToPersist({
+  mode,
+  finalPreviewBoard,
+  replacementCourtIdxs,
+}: {
+  mode: PreviewBoardMode
+  finalPreviewBoard: SuggestedMatchPayload[]
+  replacementCourtIdxs: number[]
+}) {
+  if (mode !== 'replace_courts') return finalPreviewBoard
+  const replacementSet = new Set(replacementCourtIdxs.map(Number).filter(Number.isFinite))
+  return finalPreviewBoard.filter(match => replacementSet.has(Number(match.court_idx)))
 }
 
 type CompletedMatchGroup = {
@@ -2943,9 +2945,9 @@ export function buildSuggestedMatchPayloads({
     tier_overrides: fairnessAdjustment.tier_overrides,
     applied_for_warnings: fairnessAdjustment.applied_for_warnings,
   })
-  const previewNowMs = Date.now()
-  const liveMatchRows = (options.liveMatchRowsOverride ?? rows.liveMatchRows)
-    .filter(match => match.status !== 'suggested' || isRecentSuggestedLiveMatch(match, previewNowMs))
+  // Persisted suggestions are authoritative locks until they are replaced or
+  // cancelled. Their age must not make their players available to another court.
+  const liveMatchRows = options.liveMatchRowsOverride ?? rows.liveMatchRows
   const previewSeedBase = buildPreviewBatchKey(
     sessionId,
     suggestionState,

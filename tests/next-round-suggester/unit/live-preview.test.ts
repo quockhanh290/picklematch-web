@@ -2,10 +2,10 @@ import {
   buildPreviewBatchKey,
   buildSuggestedMatchPayloads,
   buildFinalPreviewBoard,
+  getPreviewMatchesToPersist,
   deferLowViabilityRequiredIdsForCourt,
   getLivePreviewCourtBudgetMs,
   isLiveRoundFullyCompleted,
-  isRecentSuggestedLiveMatch,
   warnLiveRoundProjectionDrift,
   buildLiveTierOverrides,
   buildProjectedStateAfterCompletedLiveRound,
@@ -196,24 +196,6 @@ describe('buildPreviewBatchKey', () => {
 
     expect(rescueKey).not.toBe(currentKey)
     expect(buildPreviewBatchKey(state.session_id, state, 1, 0.5, fairnessAdjustment)).toBe(currentKey)
-  })
-})
-
-describe('isRecentSuggestedLiveMatch', () => {
-  it('treats only fresh suggested rows as active preview locks', () => {
-    const now = Date.parse('2026-05-14T12:02:00.000Z')
-    const fresh = {
-      ...liveRow('fresh-suggested', 0, 'suggested', ['p1', 'p2'], ['p3', 'p4']),
-      suggested_at: '2026-05-14T12:01:30.000Z',
-    }
-    const stale = {
-      ...fresh,
-      id: 'stale-suggested',
-      suggested_at: '2026-05-14T12:00:30.000Z',
-    }
-
-    expect(isRecentSuggestedLiveMatch(fresh, now)).toBe(true)
-    expect(isRecentSuggestedLiveMatch(stale, now)).toBe(false)
   })
 })
 
@@ -573,7 +555,7 @@ describe('projected live match state', () => {
     expect(dumps[0].payload.busy_player_ids).toHaveLength(16)
   })
 
-  it('ignores stale suggested rows so old previews do not block players forever', () => {
+  it('keeps persisted suggested rows locked until they are replaced or cancelled', () => {
     const state = createState({
       courts: 1,
       players: [
@@ -581,6 +563,10 @@ describe('projected live match state', () => {
         createPlayer('p2', { pvna: 3.1 }),
         createPlayer('p3', { pvna: 3.2 }),
         createPlayer('p4', { pvna: 3.3 }),
+        createPlayer('p5', { pvna: 3.4 }),
+        createPlayer('p6', { pvna: 3.5 }),
+        createPlayer('p7', { pvna: 3.6 }),
+        createPlayer('p8', { pvna: 3.7 }),
       ],
     })
     const staleSuggested = {
@@ -602,8 +588,8 @@ describe('projected live match state', () => {
     })
 
     expect(payloads).toHaveLength(1)
-    expect(payloads[0].preview_countable_match_count).toBe(0)
-    expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(new Set(['p1', 'p2', 'p3', 'p4']))
+    expect(payloads[0].preview_countable_match_count).toBe(1)
+    expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(new Set(['p5', 'p6', 'p7', 'p8']))
   })
 
   it('reuses a physically open court when every court index already appears in the logical round', () => {
@@ -819,6 +805,25 @@ describe('projected live match state', () => {
     expect(result.final_preview_board[0]).toMatchObject(currentPreviewBoard[0])
     expect(result.final_preview_board[1]).toMatchObject(replacement)
     expect(result.final_preview_board[2]).toMatchObject(currentPreviewBoard[2])
+  })
+
+  it('persists only requested courts for a partial replacement', () => {
+    const finalPreviewBoard = [
+      previewPayload(0, ['p1', 'p2'], ['p3', 'p4']),
+      previewPayload(1, ['p5', 'p6'], ['p7', 'p8']),
+      previewPayload(2, ['p9', 'p10'], ['p11', 'p12']),
+    ]
+
+    expect(getPreviewMatchesToPersist({
+      mode: 'replace_courts',
+      finalPreviewBoard,
+      replacementCourtIdxs: [1],
+    }).map(match => match.court_idx)).toEqual([1])
+    expect(getPreviewMatchesToPersist({
+      mode: 'full_board',
+      finalPreviewBoard,
+      replacementCourtIdxs: [],
+    })).toEqual(finalPreviewBoard)
   })
 
   it('does not add a replacement that overlaps an earlier replacement', () => {
