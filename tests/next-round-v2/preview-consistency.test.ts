@@ -70,6 +70,26 @@ describe('preview consistency', () => {
     })).toBe(true)
   })
 
+  it('allows an edge-committed DB suggestion to start after the client cache resets', () => {
+    expect(isCommittedPreviewMatch({
+      previewSource: 'edge_committed',
+      matchId: 'persisted-court-2',
+      committedBatchMatchIds: [],
+      committedLaneMatchId: null,
+      persistedSuggestedMatchId: 'persisted-court-2',
+    })).toBe(true)
+  })
+
+  it('does not trust a persisted id when the preview source is local', () => {
+    expect(isCommittedPreviewMatch({
+      previewSource: 'local_fallback',
+      matchId: 'persisted-court-2',
+      committedBatchMatchIds: [],
+      committedLaneMatchId: null,
+      persistedSuggestedMatchId: 'persisted-court-2',
+    })).toBe(false)
+  })
+
   it('does not trust a partial lane from a non-edge source', () => {
     expect(isCommittedPreviewMatch({
       previewSource: 'local_fallback',

@@ -36,16 +36,19 @@ export function isCommittedPreviewMatch({
   matchId,
   committedBatchMatchIds,
   committedLaneMatchId,
+  persistedSuggestedMatchId,
 }: {
   previewSource?: string | null
   matchId: string
   committedBatchMatchIds: string[]
   committedLaneMatchId?: string | null
+  persistedSuggestedMatchId?: string | null
 }) {
   return previewSource === 'edge_committed'
     && (
       committedBatchMatchIds.includes(matchId)
       || committedLaneMatchId === matchId
+      || persistedSuggestedMatchId === matchId
     )
 }
 

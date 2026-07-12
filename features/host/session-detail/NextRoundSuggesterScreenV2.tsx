@@ -1199,6 +1199,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       matchId: match.id,
       committedBatchMatchIds: committedBatch?.matches.map(candidate => candidate.id) ?? [],
       committedLaneMatchId: committedLane?.id,
+      persistedSuggestedMatchId: persistedSuggestedMatchIds.has(match.id) ? match.id : null,
     })
     if (!isManualAvailablePoolStart && !isCommittedEdgeStart) {
       blockUntrustedStart('preview_not_committed', {
