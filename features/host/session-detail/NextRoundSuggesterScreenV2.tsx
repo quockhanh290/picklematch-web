@@ -592,7 +592,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
   const sessionGenerationRef = useRef(0)
   const activeSessionIdRef = useRef(sessionId)
   const previewBaseKeyRef = useRef<string | null>(null)
-  const previewRecoveryKeyRef = useRef<string | null>(null)
   const previewIncompleteRetryRef = useRef<{ key: string; count: number }>({ key: '', count: 0 })
   const previewAssignmentConflictRetryRef = useRef<{ key: string; count: number }>({ key: '', count: 0 })
   const previewBlockedIncompleteKeysRef = useRef(new Set<string>())
@@ -2305,51 +2304,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     courtPreset,
   })
   previewBodyRef.current = { effectiveLiveMatchRows, liveStateVersion: rows.liveStateVersion, completingLiveMatchIds, playersById, rows, queueCourtCount, pvnaTolerance, suggestedQueueCount, sessionId, avoidPairs, effectiveTargetRounds, courtPreset }
-
-  useEffect(() => {
-    if (phase !== 'plan' || !settingsHydrated || rows.playerRows.length === 0) return
-    if (isSuggestingPreview || previewRequestInFlightRef.current || suggestedQueueCount === 0) return
-    // Stale batch from a prior request — don't recover against it.
-    // null means incomplete batch (edge returned fewer than needed) — allow recovery.
-    if (suggestedPreviewBatchRef.current !== null && suggestedPreviewBatchRef.current.key !== previewRequestKey) {
-      suggestedPreviewBatchRef.current = null
-      suggestedLaneCacheRef.current.clear()
-      setPreviewRefreshNonce(value => value + 1)
-      return
-    }
-
-    const visibleSuggestedCount = suggestedLiveMatches.filter(match => !startedPreviewIds.has(match.id)).length
-    const batchMatchCount = suggestedPreviewBatchRef.current?.matches.length ?? 0
-    const batchWasComplete = batchMatchCount >= suggestedQueueCount
-    if (visibleSuggestedCount > 0 && batchWasComplete && visibleSuggestedCount === batchMatchCount) return
-    if (visibleSuggestedCount >= suggestedQueueCount) return
-
-    const recoveryKey = [
-      previewBatchKey,
-      rows.liveStateVersion ?? 'noversion',
-      suggestedQueueCount,
-      visibleSuggestedCount,
-      effectiveLiveMatchRows.map(match => `${match.id}:${match.status}:${match.court_idx ?? ''}`).join(','),
-    ].join('||')
-
-    if (previewRecoveryKeyRef.current === recoveryKey) return
-    previewRecoveryKeyRef.current = recoveryKey
-    suggestedPreviewBatchRef.current = null
-    setPreviewRefreshNonce(value => value + 1)
-  }, [
-    completedLiveMatchCommitNonce,
-    effectiveLiveMatchRows,
-    isSuggestingPreview,
-    phase,
-    previewBatchKey,
-    previewRequestKey,
-    rows.liveStateVersion,
-    rows.playerRows.length,
-    settingsHydrated,
-    startedPreviewIds,
-    suggestedLiveMatches,
-    suggestedQueueCount,
-  ])
 
   useEffect(() => {
     const previewReady = phase === 'plan'
