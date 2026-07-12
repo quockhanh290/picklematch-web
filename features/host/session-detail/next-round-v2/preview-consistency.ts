@@ -31,6 +31,10 @@ export function isPreviewResponseCurrent({
   return requestVersion === responseVersion && responseVersion === currentVersion
 }
 
+export function isPreviewBatchCacheCurrent(cachedKey: string | null, laneCacheKey: string) {
+  return cachedKey === laneCacheKey
+}
+
 export function isCommittedPreviewMatch({
   previewSource,
   matchId,

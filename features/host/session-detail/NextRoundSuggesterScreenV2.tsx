@@ -52,7 +52,7 @@ import { buildPreviewPolicyFingerprint } from './next-round-v2/preview-policy'
 import { createClientTraceId, fetchLiveMatchesPreview, fetchLiveSessionVersion, recordClientSessionAuditEvent } from './next-round-v2/api'
 import { LIVE_VERSION_POLL_INTERVAL_MS, shouldRefetchForExternalVersion } from './next-round-v2/version-poll'
 import { getMissingPreviewCourtIdxs, getRequestedReplacementCourtIdxs, isPreviewBoardComplete } from './next-round-v2/court-lanes'
-import { getLiveRowsForPreviewMode, isCommittedPreviewMatch, isPreviewResponseCurrent, isStartablePreviewRow } from './next-round-v2/preview-consistency'
+import { getLiveRowsForPreviewMode, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isStartablePreviewRow } from './next-round-v2/preview-consistency'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -2321,12 +2321,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     if (previewRequestInFlightRef.current) return
 
     let cachedBatch = suggestedPreviewBatchRef.current
-    if (cachedBatch !== null && cachedBatch.key !== previewRequestKey) {
+    if (cachedBatch !== null && !isPreviewBatchCacheCurrent(cachedBatch.key, previewLaneCacheKey)) {
       suggestedPreviewBatchRef.current = null
       suggestedLaneCacheRef.current.clear()
       cachedBatch = null
     }
-    if (cachedBatch?.key === previewRequestKey) {
+    if (cachedBatch && isPreviewBatchCacheCurrent(cachedBatch.key, previewLaneCacheKey)) {
       const reusableCachedMatches = cachedBatch.matches
         .filter((match: SuggestedLiveMatchRow) => !startedPreviewIds.has(match.id))
         .filter((match: SuggestedLiveMatchRow) => isPersistedSuggestedMatch(match) || !isPreviewInvalidatedByCompletedMatch(match))
@@ -2416,7 +2416,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     )
     if (!hasHardReusableQualityViolation && !missingReplacementCourt && reusableMatches.length >= suggestedQueueCount) {
       const newMatches = reusableMatches.slice(0, suggestedQueueCount)
-      suggestedPreviewBatchRef.current = { key: previewRequestKey, matches: newMatches }
+      suggestedPreviewBatchRef.current = { key: previewLaneCacheKey, matches: newMatches }
       setSuggestedLiveMatches(prev => {
         if (prev.length === newMatches.length && prev.every((m, i) => m.id === newMatches[i].id)) return prev
         return newMatches
@@ -3006,7 +3006,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             if (shouldCommitPreviewBatch) {
               suggestedLaneCacheRef.current = nextLaneCache
               suggestedPreviewBatchRef.current = previewBatchComplete
-                ? { key: previewRequestKey, matches: committedCandidateMatches }
+                ? { key: previewLaneCacheKey, matches: committedCandidateMatches }
                 : null
               setSuggestedLiveMatches(committedCandidateMatches)
             } else {
@@ -3303,7 +3303,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             })
             suggestedLaneCacheRef.current = committedLaneCache
             suggestedPreviewBatchRef.current = previewBatchComplete
-              ? { key: previewRequestKey, matches: committedMatches }
+              ? { key: previewLaneCacheKey, matches: committedMatches }
               : null
             setSuggestedLiveMatches(committedMatches)
           } else {
@@ -3670,7 +3670,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         previewAbortController?.abort()
       }
     }
-  }, [phase, previewRequestKey, queryClient, rows.playerRows.length, sessionId, settingsHydrated, suggestedQueueCount, traceClientPreviewEvent])
+  }, [phase, previewLaneCacheKey, previewRequestKey, queryClient, rows.playerRows.length, sessionId, settingsHydrated, suggestedQueueCount, traceClientPreviewEvent])
   const liveLogicalRoundByMatchId = useMemo(
     () => buildLogicalRoundDisplayMap([...completedLiveMatches, ...activeLiveMatches], queueCourtCount),
     [activeLiveMatches, completedLiveMatches, queueCourtCount],

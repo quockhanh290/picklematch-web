@@ -1,5 +1,6 @@
 import {
   getLiveRowsForPreviewMode,
+  isPreviewBatchCacheCurrent,
   isCommittedPreviewMatch,
   isPreviewResponseCurrent,
   isStartablePreviewRow,
@@ -59,6 +60,11 @@ describe('preview consistency', () => {
       responseVersion: 43,
       currentVersion: 42,
     })).toBe(false)
+  })
+
+  it('keeps a committed batch across request-version churn while its lane policy is unchanged', () => {
+    expect(isPreviewBatchCacheCurrent('stable-lane-policy', 'stable-lane-policy')).toBe(true)
+    expect(isPreviewBatchCacheCurrent('old-lane-policy', 'new-lane-policy')).toBe(false)
   })
 
   it('allows an edge-committed partial lane to start without a complete batch', () => {
