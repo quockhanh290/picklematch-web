@@ -783,6 +783,71 @@ describe('projected live match state', () => {
     expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(new Set(['p5', 'p6', 'p7', 'p8']))
   })
 
+  it('does not defer rest-one players beyond a single-court rolling request', () => {
+    const state = createState({
+      courts: 6,
+      players: [
+        createPlayer('rest-1', { pvna: 3.00, consecutive_rest: 1, matches_played: 2 }),
+        createPlayer('rest-2', { pvna: 3.10, consecutive_rest: 1, matches_played: 2 }),
+        createPlayer('rest-3', { pvna: 3.20, consecutive_rest: 1, matches_played: 2 }),
+        createPlayer('rest-4', { pvna: 3.30, consecutive_rest: 1, matches_played: 2 }),
+        createPlayer('fresh-1', { pvna: 3.00, matches_played: 3 }),
+        createPlayer('fresh-2', { pvna: 3.10, matches_played: 3 }),
+        createPlayer('fresh-3', { pvna: 3.20, matches_played: 3 }),
+        createPlayer('fresh-4', { pvna: 3.30, matches_played: 3 }),
+      ],
+    })
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 6,
+      state,
+      rows: { liveMatchRows: [], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+      options: { courtIdxs: [4] },
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(new Set([...payloads[0].team_a, ...payloads[0].team_b])).toEqual(
+      new Set(['rest-1', 'rest-2', 'rest-3', 'rest-4']),
+    )
+  })
+
+  it('surfaces an intra-team tradeoff from the exact final lineup', () => {
+    const state = createState({
+      courts: 1,
+      players: [
+        createPlayer('high-1', { pvna: 4.80 }),
+        createPlayer('high-2', { pvna: 4.20 }),
+        createPlayer('low-1', { pvna: 2.10 }),
+        createPlayer('low-2', { pvna: 2.80 }),
+      ],
+    })
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 1,
+      state,
+      rows: { liveMatchRows: [], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+    })
+
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].warnings).toContain('INTRA_TEAM_GAP_RELAXED')
+    expect(payloads[0].tradeoffs?.some(tradeoff => tradeoff.type === 'intra_team_gap_relaxed')).toBe(true)
+    expect(payloads[0].approval_required).toBe(true)
+  })
+
   it('builds a final preview board by replacing only requested courts', () => {
     const currentPreviewBoard = [
       previewPayload(0, ['p1', 'p2'], ['p3', 'p4']),

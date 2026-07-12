@@ -2151,7 +2151,12 @@ function repairPayloadBatchRepeatExposure(
   return current
 }
 
-function normalizeRepairedPayload(payload: SuggestedMatchPayload, state: SessionState, pvnaTolerance: number) {
+function normalizeRepairedPayload(
+  payload: SuggestedMatchPayload,
+  state: SessionState,
+  pvnaTolerance: number,
+  options: { clearTradeoffChoices?: boolean } = {},
+) {
   const pvnaGap = getPayloadPvnaGap(payload, state)
   const intraGap = getPayloadIntraTeamGap(payload, state)
   const pvnaOverBy = Math.max(0, pvnaGap - pvnaTolerance)
@@ -2192,8 +2197,10 @@ function normalizeRepairedPayload(payload: SuggestedMatchPayload, state: Session
     warnings: [...warnings],
     tradeoffs,
     approval_required: tradeoffs.length > 0,
-    tradeoff_choices: undefined,
-    recommended_tradeoff_choice: undefined,
+    tradeoff_choices: options.clearTradeoffChoices === false ? payload.tradeoff_choices : undefined,
+    recommended_tradeoff_choice: options.clearTradeoffChoices === false
+      ? payload.recommended_tradeoff_choice
+      : undefined,
   }
 }
 
@@ -3206,12 +3213,13 @@ export function buildSuggestedMatchPayloads({
     const remainingCourtsInRound = Math.max(1, courtCapacity - projectedRoundMatchCount)
     const availableRequiredIds = [...roundRequiredIds]
       .filter(playerId => !roundBusyIds.has(playerId) && !batchBusyIds.has(playerId))
-    // When ignoreCapacityLock is false (available-pool mode), we're suggesting a single replacement
-    // court in isolation. Don't defer MUST_PLAY players to "future courts" that aren't part of
-    // this request — they must be placed here or they'll stay resting another round.
-    const futureRoundSlots = ignoreCapacityLock
-      ? Math.max(0, (remainingCourtsInRound - 1) * 4)
-      : 0
+    // Only defer required players into courts this request will actually fill.
+    // Rolling lanes can assign future open courts to a later logical cycle.
+    const futureBatchSlots = Math.max(0, (effectiveCount - index - 1) * 4)
+    const futureRoundSlots = Math.min(
+      Math.max(0, (remainingCourtsInRound - 1) * 4),
+      futureBatchSlots,
+    )
     const minRequiredForThisCourt = Math.min(
       4,
       Math.max(0, availableRequiredIds.length - futureRoundSlots),
@@ -3852,8 +3860,16 @@ export function buildSuggestedMatchPayloads({
   const hasStartedOrCompletedLiveMatches = countableMatches.some(match =>
     match.status === 'live' || match.status === 'completed',
   )
-  return repairSuggestedPayloadBatch(payloads, repairState, pvnaTolerance, onRepairInstrument, {
+  const repairedPayloads = repairSuggestedPayloadBatch(payloads, repairState, pvnaTolerance, onRepairInstrument, {
     isTrueFirstRound: state.rounds.length === 0 && !hasStartedOrCompletedLiveMatches,
     allowEarlyQualityRepair: payloads.length >= openCourtIdxsForBatch.length,
   })
+  // Derive warnings from the exact lineups returned to persistence. Rescue and
+  // repair paths must not leave over-cap quality metadata stale.
+  return repairedPayloads.map(payload => normalizeRepairedPayload(
+    payload,
+    repairState,
+    pvnaTolerance,
+    { clearTradeoffChoices: false },
+  ))
 }
