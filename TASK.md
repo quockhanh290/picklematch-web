@@ -4,7 +4,7 @@ Status: IN PROGRESS
 Audit ledger: `docs/OPERATION_STABILIZATION_AUDIT.md`
 
 ### Completed
-- [x] Fix post-deploy client render loop: focus polling uses a ref, and omitted roster/query data reuse stable module-level empty values instead of changing effect dependencies every render.
+- [x] Fix post-deploy client render loop: remove the `previewRequestKey`-driven `startedPreviewIds` reset effect identified by the browser trace; focus and empty inputs also retain stable identity.
 - [x] Map the client -> Edge -> versioned RPC -> snapshot operation path.
 - [x] Inventory load, preview, persist, start, complete, cancel, roster, refresh and end-session transitions.
 - [x] Run focused gate: 6 suites / 74 tests pass; record the remaining round-projection drift warnings.

@@ -591,7 +591,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
   const previewScheduledRetryKeysRef = useRef(new Set<string>())
   const sessionGenerationRef = useRef(0)
   const activeSessionIdRef = useRef(sessionId)
-  const previewBatchKeyRef = useRef<string | null>(null)
   const previewBaseKeyRef = useRef<string | null>(null)
   const previewRecoveryKeyRef = useRef<string | null>(null)
   const previewIncompleteRetryRef = useRef<{ key: string; count: number }>({ key: '', count: 0 })
@@ -816,7 +815,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     autoRepairStateAttemptedRef.current = false
     suggestedPreviewBatchRef.current = null
     suggestedLaneCacheRef.current.clear()
-    previewBatchKeyRef.current = null
     previewBaseKeyRef.current = null
     previewPendingRequestKeysRef.current.clear()
     previewBlockedIncompleteKeysRef.current.clear()
@@ -2292,15 +2290,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     rows.playerRows.length,
     rows.roundRows.length,
   ])
-  React.useEffect(() => {
-    if (previewBatchKeyRef.current === null) {
-      previewBatchKeyRef.current = previewRequestKey
-      return
-    }
-    if (previewBatchKeyRef.current === previewRequestKey) return
-    previewBatchKeyRef.current = previewRequestKey
-    setStartedPreviewIds(current => current.size === 0 ? current : new Set())
-  }, [previewRequestKey])
   const previewBodyRef = useRef({
     effectiveLiveMatchRows,
     liveStateVersion: rows.liveStateVersion,
