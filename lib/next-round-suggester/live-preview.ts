@@ -141,6 +141,18 @@ export function getLivePreviewCourtBudgetMs(remainingBatchMs: number, remainingC
   )
 }
 
+export function shouldDeferTightPoolSuggestion(input: {
+  enabled: boolean
+  activeLiveCourtCount: number
+  availablePlayerCount: number
+  pvnaGap: number
+  intraTeamGap: number
+  configuredPvnaTolerance: number
+}) {
+  if (!input.enabled || input.activeLiveCourtCount === 0 || input.availablePlayerCount > 4) return false
+  return input.pvnaGap > Math.max(1.25, input.configuredPvnaTolerance + 0.75) || input.intraTeamGap > 2
+}
+
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_INTRA_TEAM_GAP_COST_WEIGHT = 8
 const BALANCED_REPEAT_COST_WEIGHT = 15
@@ -197,6 +209,7 @@ export type BuildSuggestedMatchOptions = {
   liveQualityPolicy?: LiveQualityPolicy
   forcedRequiredPlayerIds?: string[]
   ignoreCapacityLock?: boolean
+  deferExtremeTightPool?: boolean
   onIncompleteDump?: (dump: IncompleteDump) => void
   onInstrumentEvent?: (event: import('./suggest').EngineInstrumentEvent) => void
 }
@@ -3673,6 +3686,31 @@ export function buildSuggestedMatchPayloads({
     if (!alternative || !match) continue
     const effectivePvnaTolerance = suggestionState.config.pvna_tolerance
     const pvnaDiff = match.stats?.pvna_diff ?? 0
+    const selectedIntraTeamGap = getAlternativeIntraTeamGap(alternative, suggestionStateForCourt)
+    const availablePlayerCount = [...suggestionStateForCourt.players.values()].filter(player =>
+      player.checked_out_at === null
+      && !player.opted_rest
+      && !batchBusyIds.has(player.player_id)
+      && !roundBusyIds.has(player.player_id)
+    ).length
+    if (shouldDeferTightPoolSuggestion({
+      enabled: options.deferExtremeTightPool === true && count === 1,
+      activeLiveCourtCount: liveCourtIdxs.size,
+      availablePlayerCount,
+      pvnaGap: pvnaDiff,
+      intraTeamGap: selectedIntraTeamGap,
+      configuredPvnaTolerance,
+    })) {
+      try {
+        options.onInstrumentEvent?.({
+          event: 'repair',
+          detail: `tight_pool_quality_deferred:court=${courtIdx};available=${availablePlayerCount};pvna=${pvnaDiff.toFixed(2)};intra=${selectedIntraTeamGap.toFixed(2)}`,
+          court_count: courtCount,
+          available: availablePlayerCount,
+        })
+      } catch { /* noop */ }
+      continue
+    }
     const displayPvnaOverBy = Math.max(0, pvnaDiff - configuredPvnaTolerance)
     const hasEnginePvnaTradeoff = alternative.tradeoffs?.some(tradeoff => tradeoff.type === 'pvna_tolerance_relaxed') ?? false
     const shouldSurfaceAutoPvnaTradeoff = displayPvnaOverBy > 0 && effectivePvnaTolerance > configuredPvnaTolerance && !hasEnginePvnaTradeoff

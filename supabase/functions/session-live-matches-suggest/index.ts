@@ -460,6 +460,7 @@ Deno.serve(async (request) => {
       options: {
         ...(courtIdxs && courtIdxs.length > 0 ? { courtIdxs } : {}),
         ignoreCapacityLock: !preferAvailablePool,
+        deferExtremeTightPool: true,
         onIncompleteDump,
         onInstrumentEvent,
       },

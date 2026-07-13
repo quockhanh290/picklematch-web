@@ -19,6 +19,7 @@ import {
   needsEarlyFullBoardPvnaRescue,
   repairSuggestedPayloadBatch,
   resolveLivePreviewFinalChoice,
+  shouldDeferTightPoolSuggestion,
 } from '../../../lib/next-round-suggester/live-preview'
 import type { SessionLiveMatchRow, SuggestionAlternative } from '../../../lib/next-round-suggester/types'
 import { Tier } from '../../../lib/next-round-suggester/classify'
@@ -54,6 +55,22 @@ function alternative(teamA: [string, string], teamB: [string, string], pvnaDiff:
     },
   }
 }
+
+describe('Edge tight-pool quality policy', () => {
+  it('defers only extreme four-player choices while another court is live', () => {
+    const base = { enabled: true, activeLiveCourtCount: 5, availablePlayerCount: 4, configuredPvnaTolerance: 0.5 }
+    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 2.18, intraTeamGap: 0.4 })).toBe(true)
+    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.4, intraTeamGap: 2.75 })).toBe(true)
+    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.5, intraTeamGap: 0.8 })).toBe(false)
+  })
+
+  it('never defers when disabled, the pool is wider, or no live court can release players', () => {
+    const base = { enabled: true, activeLiveCourtCount: 5, availablePlayerCount: 4, configuredPvnaTolerance: 0.5, pvnaGap: 2.18, intraTeamGap: 0.4 }
+    expect(shouldDeferTightPoolSuggestion({ ...base, enabled: false })).toBe(false)
+    expect(shouldDeferTightPoolSuggestion({ ...base, availablePlayerCount: 5 })).toBe(false)
+    expect(shouldDeferTightPoolSuggestion({ ...base, activeLiveCourtCount: 0 })).toBe(false)
+  })
+})
 
 function liveMatch(teamA: [string, string], teamB: [string, string], roundNo = 0): SessionLiveMatchRow {
   return {
