@@ -3135,7 +3135,6 @@ export function buildSuggestedMatchPayloads({
       .map(player => player.player_id)
     return new Set(required.slice(0, remainingRoundSlots))
   }
-  let roundRequiredIds = new Set<string>()
   const projectedExistingMatches = countableMatches.filter(match =>
     match.status === 'live'
     || match.status === 'suggested'
@@ -3222,12 +3221,6 @@ export function buildSuggestedMatchPayloads({
     courtIdxsByRound,
   })
   let roundCourtIdxs = getInitialRoundCourtIdxs(projectedRoundNo)
-  let roundBusyIds = new Set(playerIdsByRound.get(projectedRoundNo) ?? [])
-  roundRequiredIds = getRoundRequiredIds(
-    projectedRoundNo,
-    courtCapacity - projectedRoundMatchCount,
-    new Set([...roundBusyIds, ...batchBusyIds]),
-  )
   
   for (let index = 0; index < effectiveCount; index += 1) {
     const remainingBatchMs = LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)
@@ -3243,12 +3236,6 @@ export function buildSuggestedMatchPayloads({
       projectedRoundNo += 1
       projectedRoundMatchCount = 0
       roundCourtIdxs = getInitialRoundCourtIdxs(projectedRoundNo)
-      roundBusyIds = new Set(playerIdsByRound.get(projectedRoundNo) ?? [])
-      roundRequiredIds = getRoundRequiredIds(
-        projectedRoundNo,
-        courtCapacity,
-        new Set([...roundBusyIds, ...batchBusyIds]),
-      )
     }
     const requestedCourtIdx = options.courtIdxs?.[index] ?? options.courtIdx
     const openCourtIdxs = Array.from({ length: courtCapacity }, (_, idx) => idx)
@@ -3261,9 +3248,19 @@ export function buildSuggestedMatchPayloads({
       ? courtLastCompletedRound + 1
       : projectedRoundNo
     const previewSeed = `${previewSeedBase}|court:${index}`
-    const remainingCourtsInRound = Math.max(1, courtCapacity - projectedRoundMatchCount)
-    const availableRequiredIds = [...roundRequiredIds]
-      .filter(playerId => !roundBusyIds.has(playerId) && !batchBusyIds.has(playerId))
+    // Rolling courts can target an older logical round than the board's newest
+    // round. Selection invariants must follow this court's round, otherwise a
+    // lagging court can reuse players who already played in that same round.
+    const courtRoundMatchCount = roundCounts.get(payloadRoundNo) ?? 0
+    const courtRoundBusyIds = new Set(playerIdsByRound.get(payloadRoundNo) ?? [])
+    const remainingCourtsInRound = Math.max(1, courtCapacity - courtRoundMatchCount)
+    const courtRoundRequiredIds = getRoundRequiredIds(
+      payloadRoundNo,
+      remainingCourtsInRound,
+      new Set([...courtRoundBusyIds, ...batchBusyIds]),
+    )
+    const availableRequiredIds = [...courtRoundRequiredIds]
+      .filter(playerId => !courtRoundBusyIds.has(playerId) && !batchBusyIds.has(playerId))
     // Only defer required players into courts this request will actually fill.
     // Rolling lanes can assign future open courts to a later logical cycle.
     const futureBatchSlots = Math.max(0, (effectiveCount - index - 1) * 4)
@@ -3286,7 +3283,7 @@ export function buildSuggestedMatchPayloads({
     requiredForThisCourt = deferLowViabilityRequiredIdsForCourt({
       requiredForThisCourt,
       availableRequiredIds,
-      busyIds: new Set([...batchBusyIds, ...roundBusyIds]),
+      busyIds: new Set([...batchBusyIds, ...courtRoundBusyIds]),
       remainingCourtsInRound,
       state: suggestionState,
     })
@@ -3296,7 +3293,7 @@ export function buildSuggestedMatchPayloads({
     const requiredForThisCourtIds = new Set(requiredForThisCourt)
     const deferredRequiredIds = availableRequiredIds
       .filter(playerId => !requiredForThisCourtIds.has(playerId))
-    const busyIds = new Set([...batchBusyIds, ...roundBusyIds])
+    const busyIds = new Set([...batchBusyIds, ...courtRoundBusyIds])
     const activePlayersForBias = [...suggestionState.players.values()]
       .filter(player => player.checked_out_at === null && !player.opted_rest && !busyIds.has(player.player_id))
     const availabilityForBias = getAvailabilityMetricsForState(suggestionState)
@@ -3352,7 +3349,7 @@ export function buildSuggestedMatchPayloads({
     liveSelectionGuard.protectedIds.forEach(playerId => busyIds.add(playerId))
     const buildBusyIdsForProtected = (protectedIds: Set<string>) => new Set([
       ...batchBusyIds,
-      ...roundBusyIds,
+      ...courtRoundBusyIds,
       ...protectedIds,
     ])
     const buildRelaxedTierOverrides = () => {
@@ -3709,7 +3706,7 @@ export function buildSuggestedMatchPayloads({
       )
       const beamBaseSimBusy = new Set([
         ...batchBusyIds,
-        ...[...roundBusyIds].filter(id => !liveLockedPlayerIds.has(id)),
+        ...[...courtRoundBusyIds].filter(id => !liveLockedPlayerIds.has(id)),
       ])
       const beamAlt = pickBeamAlternative(
         finalAlternatives.slice(0, BEAM_K),
@@ -3729,7 +3726,7 @@ export function buildSuggestedMatchPayloads({
       player.checked_out_at === null
       && !player.opted_rest
       && !batchBusyIds.has(player.player_id)
-      && !roundBusyIds.has(player.player_id)
+      && !courtRoundBusyIds.has(player.player_id)
     ).length
     const tightPoolDeferUntilMs = options.tightPoolQualityDeferUntilByCourt?.[courtIdx]
     const tightPoolWaitIsActive = isTightPoolQualityWaitActive(
@@ -3850,13 +3847,19 @@ export function buildSuggestedMatchPayloads({
     match.team_b.forEach(playerId => busyIds.add(playerId))
     match.team_a.forEach(playerId => batchBusyIds.add(playerId))
     match.team_b.forEach(playerId => batchBusyIds.add(playerId))
-    match.team_a.forEach(playerId => roundBusyIds.add(playerId))
-    match.team_b.forEach(playerId => roundBusyIds.add(playerId))
-    match.team_a.forEach(playerId => roundRequiredIds.delete(playerId))
-    match.team_b.forEach(playerId => roundRequiredIds.delete(playerId))
-    roundCourtIdxs.add(courtIdx)
+    match.team_a.forEach(playerId => courtRoundBusyIds.add(playerId))
+    match.team_b.forEach(playerId => courtRoundBusyIds.add(playerId))
+    playerIdsByRound.set(payloadRoundNo, courtRoundBusyIds)
+    const nextCourtRoundMatchCount = courtRoundMatchCount + 1
+    roundCounts.set(payloadRoundNo, nextCourtRoundMatchCount)
+    const courtRoundCourtIdxs = courtIdxsByRound.get(payloadRoundNo) ?? new Set<number>()
+    courtRoundCourtIdxs.add(courtIdx)
+    courtIdxsByRound.set(payloadRoundNo, courtRoundCourtIdxs)
+    if (payloadRoundNo === projectedRoundNo) {
+      roundCourtIdxs.add(courtIdx)
+      projectedRoundMatchCount = nextCourtRoundMatchCount
+    }
     queuedCourtIdxs.add(courtIdx)
-    projectedRoundMatchCount += 1
     
     const projectedMatch: SessionLiveMatchRow = {
       id: `preview-projected-${index}`,
@@ -3880,8 +3883,8 @@ export function buildSuggestedMatchPayloads({
       team_a: projectedMatch.team_a,
       team_b: projectedMatch.team_b,
     })
-    if (projectedRoundMatchCount >= courtCapacity) {
-      suggestionState = buildProjectedStateAfterCompletedLiveRound(suggestionState, roundBusyIds)
+    if (nextCourtRoundMatchCount >= courtCapacity) {
+      suggestionState = buildProjectedStateAfterCompletedLiveRound(suggestionState, courtRoundBusyIds)
     }
   }
   const filledCourtIdxs = new Set(payloads.map(p => p.court_idx))

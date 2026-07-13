@@ -788,6 +788,58 @@ describe('projected live match state', () => {
     }
   })
 
+  it('does not reuse same-round players when a lagging court trails newer lanes', () => {
+    const state = createState({
+      courts: 3,
+      players: Array.from({ length: 20 }, (_, index) =>
+        createPlayer(`p${index + 1}`, { pvna: 3 + index * 0.02 }),
+      ),
+    })
+    const liveMatchRows = [
+      {
+        ...liveRow('round-0-court-2', 2, 'completed', ['p17', 'p18'], ['p19', 'p20']),
+        sequence_no: 2,
+        round_no: 0,
+      },
+      {
+        ...liveRow('round-1-court-0', 0, 'completed', ['p1', 'p2'], ['p3', 'p4']),
+        sequence_no: 3,
+        round_no: 1,
+      },
+      {
+        ...liveRow('round-2-court-0', 0, 'live', ['p5', 'p6'], ['p7', 'p8']),
+        sequence_no: 6,
+        round_no: 2,
+      },
+    ]
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 3,
+      state,
+      rows: { liveMatchRows, liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: {
+        tier_overrides: Object.fromEntries(
+          ['p1', 'p2', 'p3', 'p4'].map(playerId => [playerId, Tier.MUST_PLAY]),
+        ),
+        applied_for_warnings: [],
+      },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+      options: { courtIdxs: [2] },
+    })
+
+    const selectedPlayerIds = new Set([...payloads[0].team_a, ...payloads[0].team_b])
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].round_no).toBe(1)
+    for (const playerId of ['p1', 'p2', 'p3', 'p4']) {
+      expect(selectedPlayerIds.has(playerId)).toBe(false)
+    }
+  })
+
   it('honors explicit replacement court indexes when retained previews occupy other lanes', () => {
     const state = createState({
       courts: 3,
