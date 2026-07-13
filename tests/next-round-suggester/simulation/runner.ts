@@ -140,7 +140,9 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
 
     const alternative = suggestion.alternatives[altIdx] ?? suggestion.alternatives[0]
     if (!alternative) {
-      invariantViolations.push(`R${roundNo}: no suggestion available`)
+      invariantViolations.push(
+        `R${roundNo}: no suggestion available (${suggestion.warnings.join(',') || 'no warnings'})`,
+      )
       break
     }
 
