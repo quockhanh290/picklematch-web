@@ -93,3 +93,34 @@ nhung duoc so sanh voi `Date.now()` trong `suggest.ts`. Doi ngay sang epoch cloc
 lam request replay van duoi 2 giay, nhung full simulation gate khong hoan tat
 trong 4 phut. Vi vay thay doi production nay da duoc rut lai; can benchmark va
 thiet ke lai bounded rescue budget rieng truoc khi sua.
+
+## Bounded-wait counterfactual
+
+Replay them mot counterfactual: tai moi request co 4-7 nguoi hop le va quality
+outlier, giu nguyen state nhung danh dau cac san thuc su ket thuc trong cua so
+cho la `completing`, sau do goi lai engine.
+
+Lenh mau:
+
+```powershell
+npx tsx scripts/diagnostics/replay-live-engine-session.ts tmp/session-b3885ff2-8871-4e82-a53d-ce861939d614-end-state/dump_slices.json --wait-seconds=10 --live-matches=tmp/session-b3885ff2-8871-4e82-a53d-ce861939d614-end-state/live_matches.json
+```
+
+Ket qua tren session nay:
+
+- Outlier team gap `2.75`: mot san khac ket thuc sau 3.9 giay. Engine moi giam
+  team gap xuong `0.98`, intra tang `0.40 -> 0.95`, partner repeat tang 1.
+- Hai request intra `2.43`: san khac ket thuc sau 5.6-7.7 giay. Engine moi giam
+  intra xuong `1.08`, team gap tang nhe `0.05 -> 0.19`, khong tang repeat.
+- Outlier team gap `2.06`: nguoi duoc tha sau 11.5-13.4 giay van khong tao
+  lineup khac hop le cho cung logical round; cho khong co loi ich.
+- Trong 7 request extreme co nguoi duoc tha trong 10 giay, strict no-regression
+  guard chi danh dau 1 safe improvement va muc cai thien rat nho. Cac cai thien
+  lon deu co tradeoff ro rang ve repeat, intra hoac match-count quota.
+- Cua so 30 giay khong tot hon mot cach on dinh: nhieu san duoc tha cung luc co
+  the day engine sang mot tradeoff khac.
+
+Ket luan: neu dua vao production, nen cho den **lan release dau tien**, toi da
+10 giay, roi so sanh suggestion moi voi suggestion cu. Chi thay suggestion cu
+khi quality gain du lon va guard fairness/repeat cho phep; neu khong thi tra lai
+suggestion cu ngay. Khong nen cho co dinh du 30 giay.

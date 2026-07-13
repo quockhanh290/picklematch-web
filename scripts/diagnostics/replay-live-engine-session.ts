@@ -318,7 +318,10 @@ function percentile(values: number[], p: number): number {
 function main() {
   const path = process.argv[2]
   if (!path) throw new Error('Usage: npx tsx scripts/diagnostics/replay-live-engine-session.ts <dump_slices.json>')
-  const dumpId = process.argv[3]
+  const args = process.argv.slice(3)
+  const dumpId = args.find(arg => !arg.startsWith('--'))
+  const waitSeconds = number(args.find(arg => arg.startsWith('--wait-seconds='))?.split('=')[1])
+  const liveMatchesPath = args.find(arg => arg.startsWith('--live-matches='))?.split('=')[1]
   const raw = JSON.parse(readFileSync(path, 'utf8')) as JsonRecord[]
   const seen = new Set<string>()
   const rows = raw.filter(row => {
@@ -333,6 +336,61 @@ function main() {
   const results = new Map<LiveQualityPolicy, ReplayResult[]>()
   const safeWins = new Map<LiveQualityPolicy, number>()
   for (const policy of POLICIES) results.set(policy, [])
+
+  if (waitSeconds > 0 && liveMatchesPath) {
+    const finalLiveRows = JSON.parse(readFileSync(liveMatchesPath, 'utf8')) as JsonRecord[]
+    const finalById = new Map(finalLiveRows.map(row => [row.id, row]))
+    const cases: Array<{
+      row: JsonRecord
+      baseline: ReplayResult
+      waited: ReplayResult
+      released: JsonRecord[]
+    }> = []
+    for (const row of rows) {
+      const baseline = replay(row, 'current')
+      const eligible = Math.max(0, ...baseline.debug.map(debug => debug.eligible_players.length))
+      if (eligible < 4 || eligible > 7) continue
+      if (baseline.metrics.maxTeamGap <= 1.25 && baseline.metrics.maxIntraGap <= 2) continue
+      const capturedAtMs = Date.parse(row.created_at)
+      const released = (row.live_rows ?? [])
+        .filter((liveRow: JsonRecord) => liveRow.status === 'live')
+        .map((liveRow: JsonRecord) => finalById.get(liveRow.id))
+        .filter((liveRow): liveRow is JsonRecord => Boolean(liveRow?.ended_at))
+        .filter(liveRow => {
+          const endedAtMs = Date.parse(liveRow.ended_at)
+          return endedAtMs > capturedAtMs && endedAtMs <= capturedAtMs + waitSeconds * 1_000
+        })
+      if (released.length === 0) continue
+      const waitedRow = structuredClone(row)
+      waitedRow.request_v2.completing_live_match_ids = [...new Set([
+        ...(waitedRow.request_v2.completing_live_match_ids ?? []),
+        ...released.map(liveRow => liveRow.id),
+      ])]
+      const waited = replay(waitedRow, 'current')
+      cases.push({ row, baseline, waited, released })
+    }
+    console.log('BOUNDED-WAIT COUNTERFACTUAL')
+    console.log(`wait_seconds=${waitSeconds} eligible_pool=4..7 extreme_cases_with_release=${cases.length}`)
+    console.log(`safe_improvements=${cases.filter(item => safeQualityWin(item.waited, item.baseline)).length}`)
+    for (const item of cases) {
+      const capturedAtMs = Date.parse(item.row.created_at)
+      const releaseMs = Math.min(...item.released.map(row => Date.parse(row.ended_at) - capturedAtMs))
+      console.log([
+        `dump=${item.row.id}`,
+        `round=${item.row.state?.current_round}`,
+        `eligible=${Math.max(0, ...item.baseline.debug.map(debug => debug.eligible_players.length))}`,
+        `release_after_ms=${releaseMs}`,
+        `released_players=${item.released.length * 4}`,
+        `team_gap=${item.baseline.metrics.maxTeamGap.toFixed(3)}->${item.waited.metrics.maxTeamGap.toFixed(3)}`,
+        `intra=${item.baseline.metrics.maxIntraGap.toFixed(3)}->${item.waited.metrics.maxIntraGap.toFixed(3)}`,
+        `partner_repeat=${item.baseline.metrics.partnerRepeats}->${item.waited.metrics.partnerRepeats}`,
+        `opponent_repeat=${item.baseline.metrics.opponentRepeats}->${item.waited.metrics.opponentRepeats}`,
+        `safe=${safeQualityWin(item.waited, item.baseline)}`,
+        `runtime_ms=${item.waited.runtimeMs.toFixed(1)}`,
+      ].join(' '))
+    }
+    return
+  }
 
   for (const row of rows) {
     const baseline = replay(row, 'current')
