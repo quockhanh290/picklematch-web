@@ -1,5 +1,6 @@
 import {
   getLiveRowsForPreviewMode,
+  getSuggestedPreviewQueueCount,
   isPreviewBatchCacheCurrent,
   isCommittedPreviewMatch,
   isPreviewResponseCurrent,
@@ -8,6 +9,46 @@ import {
 } from '../../features/host/session-detail/next-round-v2/preview-consistency'
 
 describe('preview consistency', () => {
+  it('fills every open court during the initial bootstrap', () => {
+    expect(getSuggestedPreviewQueueCount({
+      courtCount: 6,
+      capacityOccupyingMatchCount: 1,
+      completedMatchCount: 0,
+      persistedSuggestedMatchCount: 5,
+      previewAheadLimit: 2,
+    })).toBe(5)
+  })
+
+  it('limits preview-ahead to two after play has completed', () => {
+    expect(getSuggestedPreviewQueueCount({
+      courtCount: 6,
+      capacityOccupyingMatchCount: 2,
+      completedMatchCount: 1,
+      persistedSuggestedMatchCount: 1,
+      previewAheadLimit: 2,
+    })).toBe(2)
+  })
+
+  it('lets a larger persisted bootstrap batch drain without cancelling it', () => {
+    expect(getSuggestedPreviewQueueCount({
+      courtCount: 6,
+      capacityOccupyingMatchCount: 1,
+      completedMatchCount: 1,
+      persistedSuggestedMatchCount: 4,
+      previewAheadLimit: 2,
+    })).toBe(4)
+  })
+
+  it('never requests more suggestions than open courts', () => {
+    expect(getSuggestedPreviewQueueCount({
+      courtCount: 6,
+      capacityOccupyingMatchCount: 5,
+      completedMatchCount: 3,
+      persistedSuggestedMatchCount: 4,
+      previewAheadLimit: 2,
+    })).toBe(1)
+  })
+
   it('does not reserve retained suggestions during a full-board rebuild', () => {
     const liveRows = [
       { id: 'live', status: 'live' },

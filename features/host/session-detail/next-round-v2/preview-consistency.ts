@@ -2,6 +2,30 @@ type PreviewRow = {
   status?: string | null
 }
 
+export function getSuggestedPreviewQueueCount({
+  courtCount,
+  capacityOccupyingMatchCount,
+  completedMatchCount,
+  persistedSuggestedMatchCount,
+  previewAheadLimit,
+}: {
+  courtCount: number
+  capacityOccupyingMatchCount: number
+  completedMatchCount: number
+  persistedSuggestedMatchCount: number
+  previewAheadLimit: number
+}) {
+  const openCourtCount = Math.max(0, Math.floor(courtCount) - Math.max(0, capacityOccupyingMatchCount))
+  if (completedMatchCount === 0) return openCourtCount
+
+  // Let a larger bootstrap batch drain naturally. Reducing its target immediately would
+  // cancel still-visible suggestions and recreate the stale-id race this limit avoids.
+  return Math.min(
+    openCourtCount,
+    Math.max(Math.max(0, persistedSuggestedMatchCount), Math.max(0, previewAheadLimit)),
+  )
+}
+
 export function mergePersistedSuggestionMetadata<T extends { suggestion_metadata?: Record<string, unknown> | null }>(row: T) {
   return {
     ...((row.suggestion_metadata && typeof row.suggestion_metadata === 'object')
