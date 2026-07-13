@@ -1,6 +1,7 @@
 import {
   getLiveRowsForPreviewMode,
   getSuggestedPreviewQueueCount,
+  hasMissingRestPriorityPlayer,
   isPreviewBatchCacheCurrent,
   isCommittedPreviewMatch,
   isPreviewResponseCurrent,
@@ -47,6 +48,27 @@ describe('preview consistency', () => {
       persistedSuggestedMatchCount: 4,
       previewAheadLimit: 2,
     })).toBe(1)
+  })
+
+  it('invalidates a persisted board that omits an available player who already rested once', () => {
+    expect(hasMissingRestPriorityPlayer({
+      players: [
+        { player_id: 'rested', consecutive_rest: 1, opted_rest: false, checked_out_at: null },
+        { player_id: 'fresh', consecutive_rest: 0, opted_rest: false, checked_out_at: null },
+      ],
+      assignedPlayerIds: new Set(['fresh']),
+    })).toBe(true)
+  })
+
+  it('does not invalidate for opted-rest, checked-out, or already-assigned players', () => {
+    expect(hasMissingRestPriorityPlayer({
+      players: [
+        { player_id: 'assigned', consecutive_rest: 2, opted_rest: false, checked_out_at: null },
+        { player_id: 'opted', consecutive_rest: 2, opted_rest: true, checked_out_at: null },
+        { player_id: 'left', consecutive_rest: 2, opted_rest: false, checked_out_at: '2026-07-13' },
+      ],
+      assignedPlayerIds: new Set(['assigned']),
+    })).toBe(false)
   })
 
   it('does not reserve retained suggestions during a full-board rebuild', () => {

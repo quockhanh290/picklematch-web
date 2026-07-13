@@ -26,6 +26,26 @@ export function getSuggestedPreviewQueueCount({
   )
 }
 
+export function hasMissingRestPriorityPlayer({
+  players,
+  assignedPlayerIds,
+}: {
+  players: Array<{
+    player_id: string
+    consecutive_rest: number
+    opted_rest: boolean
+    checked_out_at: unknown
+  }>
+  assignedPlayerIds: Set<string>
+}) {
+  return players.some(player =>
+    player.checked_out_at === null
+    && !player.opted_rest
+    && player.consecutive_rest >= 1
+    && !assignedPlayerIds.has(player.player_id)
+  )
+}
+
 export function mergePersistedSuggestionMetadata<T extends { suggestion_metadata?: Record<string, unknown> | null }>(row: T) {
   return {
     ...((row.suggestion_metadata && typeof row.suggestion_metadata === 'object')

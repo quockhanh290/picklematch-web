@@ -52,7 +52,7 @@ import { buildPreviewPolicyFingerprint } from './next-round-v2/preview-policy'
 import { createClientTraceId, fetchLiveMatchesPreview, fetchLiveSessionVersion, recordClientSessionAuditEvent } from './next-round-v2/api'
 import { LIVE_VERSION_POLL_INTERVAL_MS, shouldRefetchForExternalVersion } from './next-round-v2/version-poll'
 import { getMissingPreviewCourtIdxs, getRequestedReplacementCourtIdxs, isPreviewBoardComplete } from './next-round-v2/court-lanes'
-import { getLiveRowsForPreviewMode, getSuggestedPreviewQueueCount, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isStartablePreviewRow } from './next-round-v2/preview-consistency'
+import { getLiveRowsForPreviewMode, getSuggestedPreviewQueueCount, hasMissingRestPriorityPlayer, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isStartablePreviewRow } from './next-round-v2/preview-consistency'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -2378,9 +2378,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     // Capture the visible board before reusable filtering clears previews made stale
     // by the just-completed match. Edge revalidates and restamps retained lanes.
     const reusableMatches = getReusableSuggestedLaneMatches()
-    const hasHardReusableQualityViolation = currentPreviewBoardForEdge.some(match =>
-      !isPersistedSuggestedMatch(match)
-      && !match.available_pool_only
+    const assignedPreviewPlayerIds = new Set([
+      ...activeLiveMatches.flatMap(match => getMatchPlayerIds(match)),
+      ...currentPreviewBoardForEdge.flatMap(match => getMatchPlayerIds(match)),
+    ])
+    const hasRestPriorityMiss = completedLiveMatches.length > 0 && hasMissingRestPriorityPlayer({
+      players: [...state.players.values()],
+      assignedPlayerIds: assignedPreviewPlayerIds,
+    })
+    const hasHardReusableQualityViolation = hasRestPriorityMiss || currentPreviewBoardForEdge.some(match =>
+      !match.available_pool_only
       && hasHardPreviewQualityViolation(match, state, pvnaTolerance)
     )
     // When getCurrentPreviewBoardForEdge returns [] (e.g. live-player filter drops all courts),
@@ -2410,7 +2417,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       && reusableMatches.length < suggestedQueueCount
     const hardPreviewQualityCourtIdxs = hasHardReusableQualityViolation
       ? currentPreviewBoardForEdge
-          .filter(match => !isPersistedSuggestedMatch(match) && hasHardPreviewQualityViolation(match, state, pvnaTolerance))
+          .filter(match => hasRestPriorityMiss || hasHardPreviewQualityViolation(match, state, pvnaTolerance))
           .map(match => getSuggestedLaneCourtIdx(match))
           .filter((courtIdx): courtIdx is number => courtIdx !== null)
       : []
