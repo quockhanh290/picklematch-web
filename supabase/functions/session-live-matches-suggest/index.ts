@@ -530,18 +530,6 @@ Deno.serve(async (request) => {
         maxSequenceNo: currentMaxSequenceNo,
       }))
       .filter(isNonNullPreviewMatch)
-    const versionAfterSuggest = await loadLiveStateVersion()
-    if (versionAfterSuggest !== requestLiveStateVersion) {
-      return jsonResponse({
-        ok: false,
-        error: 'PREVIEW_STATE_CHANGED',
-        state_changed: true,
-        request_live_state_version: requestLiveStateVersion,
-        current_live_state_version: versionAfterSuggest,
-      }, 409)
-    }
-    timingMs.consistency_check = roundedDuration(stageStartedAt)
-    stageStartedAt = performance.now()
     const liveBusyIds = new Set<string>(
       liveMatchRows
         .filter((m: any) => m.status === 'live' && !completingLiveMatchIds.has(m.id))
@@ -602,6 +590,20 @@ Deno.serve(async (request) => {
       : count
     const targetCountShortfall = Math.max(0, targetExpectedCount - filledTargetCount)
     timingMs.postprocess = roundedDuration(stageStartedAt)
+    stageStartedAt = performance.now()
+    if (finalPreviewBoard.length === 0 && targetCourtIdxs.length === 0) {
+      const versionAfterSuggest = await loadLiveStateVersion()
+      if (versionAfterSuggest !== requestLiveStateVersion) {
+        return jsonResponse({
+          ok: false,
+          error: 'PREVIEW_STATE_CHANGED',
+          state_changed: true,
+          request_live_state_version: requestLiveStateVersion,
+          current_live_state_version: versionAfterSuggest,
+        }, 409)
+      }
+    }
+    timingMs.consistency_check = roundedDuration(stageStartedAt)
     stageStartedAt = performance.now()
     let persistedPreviewVersion = liveStateVersion
     let persistedPreviewNoop = false
