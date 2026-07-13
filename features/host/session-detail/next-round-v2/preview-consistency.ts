@@ -2,6 +2,40 @@ type PreviewRow = {
   status?: string | null
 }
 
+type PreviewLaneRow = PreviewRow & {
+  court_idx?: unknown
+  sequence_no?: unknown
+}
+
+function previewCourtIndex(row: PreviewLaneRow) {
+  const courtIdx = Number(row.court_idx ?? row.sequence_no)
+  return Number.isFinite(courtIdx) && courtIdx >= 0 ? courtIdx : null
+}
+
+export function mergePreviewLaneCandidates<T extends PreviewLaneRow>({
+  cachedMatches,
+  visibleMatches,
+  persistedMatches,
+}: {
+  cachedMatches: Iterable<[number, T]>
+  visibleMatches: T[]
+  persistedMatches: T[]
+}) {
+  const candidates = new Map<number, T>()
+  for (const [courtIdx, match] of cachedMatches) {
+    if (Number.isFinite(courtIdx) && courtIdx >= 0 && !candidates.has(courtIdx)) {
+      candidates.set(courtIdx, match)
+    }
+  }
+  for (const matches of [visibleMatches, persistedMatches]) {
+    for (const match of matches) {
+      const courtIdx = previewCourtIndex(match)
+      if (courtIdx !== null && !candidates.has(courtIdx)) candidates.set(courtIdx, match)
+    }
+  }
+  return candidates
+}
+
 export function getSuggestedPreviewQueueCount({
   courtCount,
   capacityOccupyingMatchCount,

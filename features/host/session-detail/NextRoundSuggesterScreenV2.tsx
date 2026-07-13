@@ -53,7 +53,7 @@ import { createClientTraceId, fetchLiveMatchesPreview, fetchLiveSessionVersion, 
 import { LIVE_VERSION_POLL_INTERVAL_MS, shouldRefetchForExternalVersion } from './next-round-v2/version-poll'
 import { getMissingPreviewCourtIdxs, getRequestedReplacementCourtIdxs, isPreviewBoardComplete } from './next-round-v2/court-lanes'
 import { hasReachedCompletedLiveCycleTarget } from './next-round-v2/live-cycle-rows'
-import { getLiveRowsForPreviewMode, getSuggestedPreviewQueueCount, hasMissingRestPriorityPlayer, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isStartablePreviewRow } from './next-round-v2/preview-consistency'
+import { getLiveRowsForPreviewMode, getSuggestedPreviewQueueCount, hasMissingRestPriorityPlayer, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isStartablePreviewRow, mergePreviewLaneCandidates } from './next-round-v2/preview-consistency'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -2076,13 +2076,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
 
     const reusable: SuggestedLiveMatchRow[] = []
     const nextCache = new Map<number, SuggestedLiveMatchRow>()
-    const reusableCandidates = new Map<number, SuggestedLiveMatchRow>(suggestedLaneCacheRef.current)
-    for (const match of suggestedLiveMatches) {
-      const courtIdx = getSuggestedLaneCourtIdx(match)
-      if (courtIdx !== null && !reusableCandidates.has(courtIdx)) {
-        reusableCandidates.set(courtIdx, match)
-      }
-    }
+    const reusableCandidates = mergePreviewLaneCandidates<SuggestedLiveMatchRow>({
+      cachedMatches: suggestedLaneCacheRef.current,
+      visibleMatches: suggestedLiveMatches,
+      persistedMatches: rows.liveMatchRows
+        .filter(match => match.status === 'suggested') as SuggestedLiveMatchRow[],
+    })
     const cachedMatches = [...reusableCandidates.entries()]
       .sort(([leftCourt], [rightCourt]) => leftCourt - rightCourt)
 
@@ -2107,7 +2106,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
 
     suggestedLaneCacheRef.current = nextCache
     return reusable
-  }, [activeLiveMatches, isPersistedSuggestedMatch, isPreviewInvalidatedByCompletedMatch, pvnaTolerance, queueCourtCount, startedPreviewIds, startingPreviewIds, state, suggestedLiveMatches, suggestedQueueCount])
+  }, [activeLiveMatches, isPersistedSuggestedMatch, isPreviewInvalidatedByCompletedMatch, pvnaTolerance, queueCourtCount, rows.liveMatchRows, startedPreviewIds, startingPreviewIds, state, suggestedLiveMatches, suggestedQueueCount])
   const getCurrentPreviewBoardForEdge = useCallback(() => {
     const occupiedCourts = new Set<number>()
     const usedPlayerIds = new Set<string>()
@@ -2117,18 +2116,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       getMatchPlayerIds(match).forEach(playerId => usedPlayerIds.add(playerId))
     }
 
-    const candidates = new Map<number, SuggestedLiveMatchRow>(suggestedLaneCacheRef.current)
-    for (const match of suggestedLiveMatches) {
-      const courtIdx = getSuggestedLaneCourtIdx(match)
-      if (courtIdx !== null && !candidates.has(courtIdx)) candidates.set(courtIdx, match)
-    }
-    // After refresh, suggestedLiveMatches is empty but DB may still have suggested matches.
-    // Include them as fallback candidates so we don't re-request courts that already have suggestions.
-    for (const match of rows.liveMatchRows) {
-      if (match.status !== 'suggested') continue
-      const courtIdx = getSuggestedLaneCourtIdx(match)
-      if (courtIdx !== null && !candidates.has(courtIdx)) candidates.set(courtIdx, match as SuggestedLiveMatchRow)
-    }
+    const candidates = mergePreviewLaneCandidates<SuggestedLiveMatchRow>({
+      cachedMatches: suggestedLaneCacheRef.current,
+      visibleMatches: suggestedLiveMatches,
+      persistedMatches: rows.liveMatchRows
+        .filter(match => match.status === 'suggested') as SuggestedLiveMatchRow[],
+    })
 
     const board: SuggestedLiveMatchRow[] = []
     for (const [courtIdx, match] of [...candidates.entries()].sort(([left], [right]) => left - right)) {
@@ -2286,19 +2279,13 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     const liveRowsKey = effectiveLiveMatchRows
       .map(match => `${match.id}:${match.status}:${match.court_idx ?? ''}:${match.sequence_no}`)
       .join(',')
-    const completingKey = [...completingLiveMatchIds].sort().join(',')
-    const creatingKey = [...creatingNextMatchIds].sort().join(',')
     return [
       previewBatchKey,
       rowVersionKey,
       liveRowsKey,
-      completingKey,
-      creatingKey,
       previewRefreshNonce,
     ].join('||')
   }, [
-    completingLiveMatchIds,
-    creatingNextMatchIds,
     effectiveLiveMatchRows,
     previewBatchKey,
     previewRefreshNonce,

@@ -6,6 +6,7 @@ import {
   isCommittedPreviewMatch,
   isPreviewResponseCurrent,
   isStartablePreviewRow,
+  mergePreviewLaneCandidates,
   mergePersistedSuggestionMetadata,
 } from '../../features/host/session-detail/next-round-v2/preview-consistency'
 
@@ -129,6 +130,33 @@ describe('preview consistency', () => {
   it('keeps a committed batch across request-version churn while its lane policy is unchanged', () => {
     expect(isPreviewBatchCacheCurrent('stable-lane-policy', 'stable-lane-policy')).toBe(true)
     expect(isPreviewBatchCacheCurrent('old-lane-policy', 'new-lane-policy')).toBe(false)
+  })
+
+  it('treats a just-persisted DB suggestion as reusable before local hydration runs', () => {
+    const persisted = { id: 'persisted-2', status: 'suggested', court_idx: 2, sequence_no: 8 }
+    const candidates = mergePreviewLaneCandidates({
+      cachedMatches: [],
+      visibleMatches: [],
+      persistedMatches: [persisted],
+    })
+
+    expect(candidates.get(2)).toBe(persisted)
+  })
+
+  it('keeps cache and visible matches ahead of a delayed persisted copy', () => {
+    const cached = { id: 'cached-1', status: 'suggested', court_idx: 1, sequence_no: 7 }
+    const visible = { id: 'visible-2', status: 'suggested', court_idx: 2, sequence_no: 8 }
+    const candidates = mergePreviewLaneCandidates({
+      cachedMatches: [[1, cached] as [number, typeof cached]],
+      visibleMatches: [visible],
+      persistedMatches: [
+        { ...cached, id: 'db-1' },
+        { ...visible, id: 'db-2' },
+      ],
+    })
+
+    expect(candidates.get(1)?.id).toBe('cached-1')
+    expect(candidates.get(2)?.id).toBe('visible-2')
   })
 
   it('restores quality metadata without letting it override the persisted row identity', () => {
