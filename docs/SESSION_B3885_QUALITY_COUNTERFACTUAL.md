@@ -4,6 +4,12 @@ Ngay phan tich: 2026-07-13
 
 Session: `b3885ff2-8871-4e82-a53d-ce861939d614`
 
+> Luu y phuong phap: bang `Lookahead co rang buoc` ben duoi la tran ly thuyet
+> khi da biet ca nhom 24 nguoi cua mot vong. No khong dai dien cho pool ma live
+> engine nhin thay tai tung thoi diem, va khong duoc dung de ket luan engine da
+> bo lo mot tran tot hon. Ket luan ve production phai den tu request-level replay
+> bang chinh `buildSuggestedMatchPayloads`.
+
 ## Pham vi
 
 - 33 nguoi choi, 6 san, 8 vong logic, 48 tran da hoan tat.
@@ -59,3 +65,31 @@ Thoi gian benchmark offline: khoang 51 giay. Khong phu hop de dua nguyen thuat t
 2. Chay counterfactual tren nhieu session, khong chi mot session.
 3. Neu quality-debt thang o nhieu session, chi dung lam tie-breaker trong cung quality/fairness tier.
 4. Neu van con nhieu outlier unavoidable, can product decision ve thoi gian cho toi da hoac lap ke hoach ca vong truoc.
+
+## Request-level replay bang engine that
+
+Script:
+
+```powershell
+npx tsx scripts/diagnostics/replay-live-engine-session.ts tmp/session-b3885ff2-8871-4e82-a53d-ce861939d614-end-state/dump_slices.json
+```
+
+- Dung lai `buildSuggestedMatchPayloads` voi player snapshot, pair history,
+  fairness adjustment, live locks, completing IDs va court target cua tung request.
+- 62 request duy nhat; policy hien tai lap 70 board, khong co invariant failure,
+  khong request nao qua gate 2 giay (max quan sat 1.41 giay).
+- Current engine tai HEAD khop chinh xac lineup lich su 38/62 request trong
+  lan replay sau cung. Phan con
+  lai khong phai exact historical replay vi engine da thay doi sau session va
+  `live_rows_lite` khong luu day du timestamp/cycle/metadata cua row.
+- So sanh giua cac policy tren cung HEAD van hop le. Khong policy nao thang toan
+  dien: giam team gap thuong danh doi intra gap hoac repeat burden.
+- Vi vay chua co bang chung de thay policy production toan cuc. Chi nen sua
+  mot gate cuc bo neu request-level replay chung minh no cai thien ma khong tang
+  repeat, overplay, missing board hoac runtime.
+
+Replay cung phat hien `force_budget_deadline` duoc tao bang `performance.now()`
+nhung duoc so sanh voi `Date.now()` trong `suggest.ts`. Doi ngay sang epoch clock
+lam request replay van duoi 2 giay, nhung full simulation gate khong hoan tat
+trong 4 phut. Vi vay thay doi production nay da duoc rut lai; can benchmark va
+thiet ke lai bounded rescue budget rieng truoc khi sua.
