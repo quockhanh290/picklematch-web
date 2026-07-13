@@ -1,5 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { findCanonicalSuggestedMatch } from '../_shared/canonical-live-match.ts'
 import { getSessionId, handleCorsPreflight, jsonResponse, readJson, writeSessionAuditEvent } from '../_shared/live-session.ts'
 
 function createUserClient(request: Request) {
@@ -42,15 +43,54 @@ Deno.serve(async (request) => {
     const t1 = Date.now()
     const supabase = createUserClient(request)
     const t2 = Date.now()
-    const { data, error } = await supabase.rpc('start_live_session_match_versioned', {
+    const requestedMatchId = requiredString(body.match_id, 'match_id')
+    const expectedVersion = requiredNumber(body.expected_live_state_version, 'expected_live_state_version')
+    let canonicalMatchId = requestedMatchId
+    let canonicalized = false
+    let { data, error } = await supabase.rpc('start_live_session_match_versioned', {
       p_session_id: sessionId,
-      p_expected_live_state_version: requiredNumber(body.expected_live_state_version, 'expected_live_state_version'),
-      p_match_id: requiredString(body.match_id, 'match_id'),
+      p_expected_live_state_version: expectedVersion,
+      p_match_id: requestedMatchId,
       p_audit_payload: {
         ...auditPayload,
         source: 'session-live-matches-start',
       },
     })
+    if (error?.message.includes('Only suggested matches can be started')) {
+      const [{ data: matchRows, error: matchesError }, { data: sessionRow, error: sessionError }] = await Promise.all([
+        supabase
+          .from('session_live_matches')
+          .select('id,court_idx,team_a,team_b,status')
+          .eq('session_id', sessionId)
+          .in('status', ['suggested', 'cancelled']),
+        supabase
+          .from('sessions')
+          .select('live_state_version')
+          .eq('id', sessionId)
+          .single(),
+      ])
+      const requestedMatch = matchRows?.find(match => match.id === requestedMatchId)
+      const canonicalMatch = requestedMatch
+        ? findCanonicalSuggestedMatch(requestedMatch, matchRows ?? [])
+        : null
+      const canonicalVersion = Number(sessionRow?.live_state_version)
+      if (!matchesError && !sessionError && canonicalMatch?.id !== requestedMatchId && Number.isFinite(canonicalVersion)) {
+        canonicalMatchId = canonicalMatch.id
+        canonicalized = true
+        const retry = await supabase.rpc('start_live_session_match_versioned', {
+          p_session_id: sessionId,
+          p_expected_live_state_version: canonicalVersion,
+          p_match_id: canonicalMatchId,
+          p_audit_payload: {
+            ...auditPayload,
+            source: 'session-live-matches-start-canonical-retry',
+            requested_match_id: requestedMatchId,
+          },
+        })
+        data = retry.data
+        error = retry.error
+      }
+    }
     const t3 = Date.now()
     if (error) {
       console.error('[session-live-matches-start] rpc failed', {
@@ -84,6 +124,9 @@ Deno.serve(async (request) => {
       },
       responsePayload: data && typeof data === 'object' ? data : {},
       detail: {
+        requested_match_id: requestedMatchId,
+        canonical_match_id: canonicalMatchId,
+        canonicalized,
         timing_ms: {
           read_body: t1 - t0,
           create_client: t2 - t1,
