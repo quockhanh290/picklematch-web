@@ -1,7 +1,7 @@
 import { computeRestFairness } from '../../lib/next-round-suggester/fairness/metrics'
 import { mapRowsToSessionState } from '../../lib/next-round-suggester/state'
 import type { SessionLiveMatchRow, SessionPairHistoryRow, SessionPlayerStateRow } from '../../lib/next-round-suggester/types'
-import { buildCompletedLiveCycleRows } from '../../features/host/session-detail/next-round-v2/live-cycle-rows'
+import { buildCompletedLiveCycleRows, hasReachedCompletedLiveCycleTarget } from '../../features/host/session-detail/next-round-v2/live-cycle-rows'
 
 function playerRow(playerId: string): SessionPlayerStateRow {
   return {
@@ -145,5 +145,31 @@ describe('buildCompletedLiveCycleRows', () => {
     expect(roundRows.map(row => row.round_no)).toEqual([0])
     expect(roundRows[0].matches).toHaveLength(2)
     expect(roundRows[0].matches.map(match => match.court_idx)).toEqual([0, 1])
+  })
+
+  it('reaches the target only when the final court in the final live cycle completes', () => {
+    const playerRows = Array.from({ length: 24 }, (_, index) => playerRow(`p${index}`))
+    const liveRows = Array.from({ length: 48 }, (_, index) => {
+      const playerOffset = (index % 6) * 4
+      return liveMatch(index, Math.floor(index / 6), index % 6, [
+        `p${playerOffset}`,
+        `p${playerOffset + 1}`,
+        `p${playerOffset + 2}`,
+        `p${playerOffset + 3}`,
+      ], index === 47 ? 'live' : 'completed')
+    })
+    const input = {
+      legacyRoundRows: [],
+      playerRows,
+      sessionId: 'session-test',
+      courtCount: 6,
+      targetRounds: 8,
+    }
+
+    expect(hasReachedCompletedLiveCycleTarget({ ...input, liveMatchRows: liveRows })).toBe(false)
+    expect(hasReachedCompletedLiveCycleTarget({
+      ...input,
+      liveMatchRows: liveRows.map(row => row.id === 'live-47' ? { ...row, status: 'completed' } : row),
+    })).toBe(true)
   })
 })

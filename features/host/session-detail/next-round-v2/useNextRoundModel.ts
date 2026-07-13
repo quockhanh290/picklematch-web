@@ -33,6 +33,7 @@ import { getLevelIdForElo } from '@/lib/eloSystem'
 import { markNextRoundStage } from './telemetry'
 import { buildCompletedLiveCycleRows } from './live-cycle-rows'
 import { mergePlayerStateRows } from './player-state-rows'
+import { resolveNextRoundPhase } from './session-report'
 
 function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): SuggestionAlternative | null {
   if (!alternative) return null
@@ -191,6 +192,7 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   const [groupSelection, setGroupSelection] = useState<string[]>([])
   const [showEngineStats, setShowEngineStats] = useState(false)
   const [showSessionReport, setShowSessionReport] = useState(initialShowReport)
+  const autoOpenedReportKeyRef = useRef<string | null>(null)
   const settingsStorageKey = `${SETTINGS_STORAGE_PREFIX}:${sessionId}`
 
   const applyPersistedSettings = useCallback((settings: Partial<PersistedSettings | PersistedNextRoundSettings>) => {
@@ -508,7 +510,6 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     && presentRows.length > 0
     && presentRows.every(row => row.matches_played >= effectiveTargetRounds)
   const reportReady = effectiveTargetRounds > 0 && completedRoundCount >= effectiveTargetRounds
-  const targetRoundsComplete = reportReady && !activeRound
   const reportState = useMemo(
     () => (completedRoundCount > 0 ? rebuildStateThroughRound(state, completedRounds[0].round_no) : state),
     [completedRoundCount, completedRounds, state],
@@ -531,11 +532,19 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   )
   const groupSummaries = useMemo(() => buildGroupSummaries(deferredRows.playerRows), [deferredRows.playerRows])
   const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
-  const phase: 'plan' | 'active' | 'recap' = (targetRoundsComplete || (showSessionReport && (reportReady || initialShowReport) && !activeRound))
-    ? 'recap'
-    : activeRound
-      ? 'active'
-      : 'plan'
+  useEffect(() => {
+    if (!reportReady || activeRound) return
+    const reportKey = `${sessionId}:${effectiveTargetRounds}`
+    if (autoOpenedReportKeyRef.current === reportKey) return
+    autoOpenedReportKeyRef.current = reportKey
+    setShowSessionReport(true)
+  }, [activeRound, effectiveTargetRounds, reportReady, sessionId])
+  const phase = resolveNextRoundPhase({
+    showSessionReport,
+    reportReady,
+    initialShowReport,
+    hasActiveRound: Boolean(activeRound),
+  })
 
   const rememberRoundSelection = (reason: string) => {
     setSelectionUndo({

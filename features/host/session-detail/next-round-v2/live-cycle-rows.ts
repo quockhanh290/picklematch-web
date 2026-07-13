@@ -168,3 +168,30 @@ export function buildCompletedLiveCycleRows({
 
   return [...legacyRoundRows, ...liveRoundRows]
 }
+
+export function hasReachedCompletedLiveCycleTarget({
+  liveMatchRows,
+  legacyRoundRows,
+  playerRows,
+  sessionId,
+  courtCount,
+  targetRounds,
+}: {
+  liveMatchRows: SessionLiveMatchRow[]
+  legacyRoundRows: LiveRows['roundRows']
+  playerRows: SessionPlayerStateRow[]
+  sessionId: string
+  courtCount: number
+  targetRounds: number
+}) {
+  if (targetRounds <= 0) return false
+  const completedRounds = buildCompletedLiveCycleRows({
+    liveMatchRows,
+    legacyRoundRows,
+    playerRows,
+    sessionId,
+    courtCount,
+  }).filter(round => round.status === 'completed')
+
+  return completedRounds.length >= targetRounds
+}

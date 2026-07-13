@@ -52,6 +52,7 @@ import { buildPreviewPolicyFingerprint } from './next-round-v2/preview-policy'
 import { createClientTraceId, fetchLiveMatchesPreview, fetchLiveSessionVersion, recordClientSessionAuditEvent } from './next-round-v2/api'
 import { LIVE_VERSION_POLL_INTERVAL_MS, shouldRefetchForExternalVersion } from './next-round-v2/version-poll'
 import { getMissingPreviewCourtIdxs, getRequestedReplacementCourtIdxs, isPreviewBoardComplete } from './next-round-v2/court-lanes'
+import { hasReachedCompletedLiveCycleTarget } from './next-round-v2/live-cycle-rows'
 import { getLiveRowsForPreviewMode, getSuggestedPreviewQueueCount, hasMissingRestPriorityPlayer, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isStartablePreviewRow } from './next-round-v2/preview-consistency'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
@@ -1651,11 +1652,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       const projectedState = buildProjectedStateAfterLiveMatch(state, match)
       const projectMs = nowMs() - projectT0
       const targetT0 = nowMs()
-      const projectedActivePlayers = [...projectedState.players.values()]
-        .filter(player => player.checked_out_at === null)
-      const targetReachedAfterMatch = effectiveTargetRounds > 0
-        && projectedActivePlayers.length > 0
-        && projectedActivePlayers.every(player => player.matches_played >= effectiveTargetRounds)
+      const projectedLiveMatchRows = effectiveLiveMatchRows.map(row => row.id === match.id
+        ? { ...row, status: 'completed' as const, ended_at: new Date().toISOString() }
+        : row)
+      const targetReachedAfterMatch = hasReachedCompletedLiveCycleTarget({
+        liveMatchRows: projectedLiveMatchRows,
+        legacyRoundRows: rows.roundRows.filter(row => row.status !== 'active'),
+        playerRows: rows.playerRows,
+        sessionId,
+        courtCount: queueCourtCount,
+        targetRounds: effectiveTargetRounds,
+      })
       const targetMs = nowMs() - targetT0
       const fairnessT0 = nowMs()
       const projectedScore = computeSessionFairness(projectedState).total
@@ -1806,6 +1813,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         return next
       })
       if (result?.targetReachedAfterMatch) {
+        setShowSessionReport(true)
         setCompletingLiveMatchIds(current => {
           if (!current.has(match.id)) return current
           const next = new Set(current)
