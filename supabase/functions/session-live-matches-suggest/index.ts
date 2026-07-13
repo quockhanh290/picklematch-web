@@ -4,6 +4,7 @@ import { createServiceClient, getSessionId, handleCorsPreflight, jsonResponse, r
 import { correctForFairness } from '../../../lib/next-round-suggester/fairness/corrector.ts'
 import { detectFairnessIssues } from '../../../lib/next-round-suggester/fairness/detector.ts'
 import {
+  buildTightPoolQualityDeferUntilByCourt,
   buildFinalPreviewBoard,
   getPreviewMatchesToPersist,
   buildSuggestedMatchPayloads,
@@ -390,6 +391,10 @@ Deno.serve(async (request) => {
     const completingLiveMatchIds = new Set<string>(
       Array.isArray(body.completing_live_match_ids) ? body.completing_live_match_ids : []
     )
+    const tightPoolQualityDeferUntilByCourt = buildTightPoolQualityDeferUntilByCourt(
+      authoritativeLiveMatchRows,
+      courtIdxs,
+    )
     console.log('[suggest] request_start', {
       suggestion_request_id: suggestionRequestId,
       client_request_id: clientRequestId,
@@ -461,6 +466,7 @@ Deno.serve(async (request) => {
         ...(courtIdxs && courtIdxs.length > 0 ? { courtIdxs } : {}),
         ignoreCapacityLock: !preferAvailablePool,
         deferExtremeTightPool: true,
+        tightPoolQualityDeferUntilByCourt,
         onIncompleteDump,
         onInstrumentEvent,
       },

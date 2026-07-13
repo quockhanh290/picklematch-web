@@ -1,5 +1,6 @@
 import {
   buildPreviewBatchKey,
+  buildTightPoolQualityDeferUntilByCourt,
   buildSuggestedMatchPayloads,
   buildFinalPreviewBoard,
   getPreviewMatchesToPersist,
@@ -16,6 +17,7 @@ import {
   findStrictCleanLiveAlternative,
   hasFulfilledPreviewBoardReplacements,
   improvesPreviewBoardPvna,
+  isTightPoolQualityWaitActive,
   needsEarlyFullBoardPvnaRescue,
   repairSuggestedPayloadBatch,
   resolveLivePreviewFinalChoice,
@@ -69,6 +71,25 @@ describe('Edge tight-pool quality policy', () => {
     expect(shouldDeferTightPoolSuggestion({ ...base, enabled: false })).toBe(false)
     expect(shouldDeferTightPoolSuggestion({ ...base, availablePlayerCount: 5 })).toBe(false)
     expect(shouldDeferTightPoolSuggestion({ ...base, activeLiveCourtCount: 0 })).toBe(false)
+  })
+
+  it('uses the latest completion on each requested court as a stable 30-second deadline', () => {
+    const rows = [
+      { ...liveRow('old-court-1', 1, 'completed', ['p1', 'p2'], ['p3', 'p4']), ended_at: '2026-07-12T12:00:10.000Z' },
+      { ...liveRow('new-court-1', 1, 'completed', ['p5', 'p6'], ['p7', 'p8']), ended_at: '2026-07-12T12:01:00.000Z' },
+      { ...liveRow('court-2', 2, 'completed', ['p1', 'p3'], ['p2', 'p4']), ended_at: '2026-07-12T12:02:00.000Z' },
+    ]
+
+    expect(buildTightPoolQualityDeferUntilByCourt(rows, [1], 30_000)).toEqual({
+      1: Date.parse('2026-07-12T12:01:30.000Z'),
+    })
+  })
+
+  it('stops waiting exactly when the per-court quality deadline expires', () => {
+    const deadline = Date.parse('2026-07-12T12:01:30.000Z')
+    expect(isTightPoolQualityWaitActive({ 1: deadline }, 1, deadline - 1)).toBe(true)
+    expect(isTightPoolQualityWaitActive({ 1: deadline }, 1, deadline)).toBe(false)
+    expect(isTightPoolQualityWaitActive({ 1: deadline }, 2, deadline - 1)).toBe(false)
   })
 })
 

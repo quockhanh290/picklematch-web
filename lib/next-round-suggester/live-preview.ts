@@ -153,6 +153,42 @@ export function shouldDeferTightPoolSuggestion(input: {
   return input.pvnaGap > Math.max(1.25, input.configuredPvnaTolerance + 0.75) || input.intraTeamGap > 2
 }
 
+export const TIGHT_POOL_QUALITY_WAIT_MS = 30_000
+
+export function buildTightPoolQualityDeferUntilByCourt(
+  liveMatchRows: SessionLiveMatchRow[],
+  courtIdxs: number[] | undefined,
+  waitMs = TIGHT_POOL_QUALITY_WAIT_MS,
+) {
+  const requestedCourts = new Set((courtIdxs ?? []).filter(Number.isFinite))
+  const latestCompletedAtByCourt = new Map<number, number>()
+
+  for (const row of liveMatchRows) {
+    const courtIdx = Number(row.court_idx)
+    if (row.status !== 'completed' || !requestedCourts.has(courtIdx) || !row.ended_at) continue
+    const endedAtMs = Date.parse(row.ended_at)
+    if (!Number.isFinite(endedAtMs)) continue
+    latestCompletedAtByCourt.set(
+      courtIdx,
+      Math.max(latestCompletedAtByCourt.get(courtIdx) ?? 0, endedAtMs),
+    )
+  }
+
+  return Object.fromEntries(
+    [...latestCompletedAtByCourt].map(([courtIdx, endedAtMs]) => [courtIdx, endedAtMs + waitMs]),
+  ) as Record<number, number>
+}
+
+export function isTightPoolQualityWaitActive(
+  deferUntilByCourt: Record<number, number> | undefined,
+  courtIdx: number,
+  nowMs = Date.now(),
+) {
+  if (deferUntilByCourt === undefined) return true
+  const deferUntilMs = deferUntilByCourt[courtIdx]
+  return deferUntilMs !== undefined && nowMs < deferUntilMs
+}
+
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_INTRA_TEAM_GAP_COST_WEIGHT = 8
 const BALANCED_REPEAT_COST_WEIGHT = 15
@@ -210,6 +246,8 @@ export type BuildSuggestedMatchOptions = {
   forcedRequiredPlayerIds?: string[]
   ignoreCapacityLock?: boolean
   deferExtremeTightPool?: boolean
+  tightPoolQualityDeferUntilByCourt?: Record<number, number>
+  nowMs?: number
   onIncompleteDump?: (dump: IncompleteDump) => void
   onInstrumentEvent?: (event: import('./suggest').EngineInstrumentEvent) => void
 }
@@ -3693,8 +3731,14 @@ export function buildSuggestedMatchPayloads({
       && !batchBusyIds.has(player.player_id)
       && !roundBusyIds.has(player.player_id)
     ).length
+    const tightPoolDeferUntilMs = options.tightPoolQualityDeferUntilByCourt?.[courtIdx]
+    const tightPoolWaitIsActive = isTightPoolQualityWaitActive(
+      options.tightPoolQualityDeferUntilByCourt,
+      courtIdx,
+      options.nowMs,
+    )
     if (shouldDeferTightPoolSuggestion({
-      enabled: options.deferExtremeTightPool === true && count === 1,
+      enabled: options.deferExtremeTightPool === true && count === 1 && tightPoolWaitIsActive,
       activeLiveCourtCount: liveCourtIdxs.size,
       availablePlayerCount,
       pvnaGap: pvnaDiff,
@@ -3704,7 +3748,7 @@ export function buildSuggestedMatchPayloads({
       try {
         options.onInstrumentEvent?.({
           event: 'repair',
-          detail: `tight_pool_quality_deferred:court=${courtIdx};available=${availablePlayerCount};pvna=${pvnaDiff.toFixed(2)};intra=${selectedIntraTeamGap.toFixed(2)}`,
+          detail: `tight_pool_quality_deferred:court=${courtIdx};available=${availablePlayerCount};pvna=${pvnaDiff.toFixed(2)};intra=${selectedIntraTeamGap.toFixed(2)};until=${tightPoolDeferUntilMs ?? 'unbounded'}`,
           court_count: courtCount,
           available: availablePlayerCount,
         })
