@@ -86,6 +86,10 @@ not call or mutate Supabase.
 
 ```bash
 npx tsx scripts/diagnostics/evaluate-session-quality-counterfactual.ts <export-directory>
+npx tsx scripts/diagnostics/evaluate-session-quality-counterfactual.ts <export-directory> --shadow-only --passes=3
+npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts
+npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --players=32 --courts=6 --rounds=8 --passes=1
+npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --full --passes=3
 ```
 
 Architecture and rollout gates: `docs/PRECOMPUTED_SESSION_PLANNER.md`.

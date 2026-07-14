@@ -6,7 +6,7 @@ import { scoreMatch } from '@/lib/next-round-suggester/score'
 import { DEFAULT_SCORING_WEIGHTS } from '@/lib/next-round-suggester/state'
 import type { PlayerSessionState, SessionState, Team } from '@/lib/next-round-suggester/types'
 
-type RawPlayer = {
+export type RawPlayer = {
   player_id: string
   session_id?: string
   group_id?: string | null
@@ -15,7 +15,7 @@ type RawPlayer = {
   effective_pvna?: number | null
 }
 
-type RawProfile = {
+export type RawProfile = {
   id: string
   name?: string
   pvna?: number
@@ -83,6 +83,22 @@ const TOLERANCE = 0.5
 const LATE_ROUND_START = 5
 const LOCAL_SEARCH_PASSES = 3
 
+export type ShadowPlannerOptions = {
+  localSearchPasses?: number
+}
+
+export type ShadowPlannerTimings = {
+  total_ms: number
+  rest_schedule_ms: number
+  rounds: Array<{
+    round: number
+    seed_ms: number
+    optimize_ms: number
+    projection_ms: number
+    total_ms: number
+  }>
+}
+
 function preference(value?: string): 'M' | 'F' | 'any' {
   if (value === 'male' || value === 'M') return 'M'
   if (value === 'female' || value === 'F') return 'F'
@@ -93,7 +109,7 @@ function gender(value?: string): 'M' | 'F' {
   return value === 'female' || value === 'F' ? 'F' : 'M'
 }
 
-function buildInitialState(players: RawPlayer[], profiles: RawProfile[], courts: number): SessionState {
+export function buildInitialState(players: RawPlayer[], profiles: RawProfile[], courts: number): SessionState {
   const profilesById = new Map(profiles.map(profile => [profile.id, profile]))
   const playerStates = new Map<string, PlayerSessionState>()
   for (const row of players) {
@@ -264,10 +280,11 @@ function optimizeBoard(
   state: SessionState,
   debt: Map<string, number>,
   variant: Exclude<Variant, 'baseline'>,
+  localSearchPasses = LOCAL_SEARCH_PASSES,
 ) {
   let board = initial.map(match => ({ team_a: [...match.team_a] as Team, team_b: [...match.team_b] as Team }))
   const invariantCaps = summarizeBoard(board, state, debt)
-  for (let pass = 0; pass < LOCAL_SEARCH_PASSES; pass += 1) {
+  for (let pass = 0; pass < localSearchPasses; pass += 1) {
     let improved = false
     for (let left = 0; left < board.length; left += 1) {
       for (let right = left + 1; right < board.length; right += 1) {
@@ -399,11 +416,62 @@ function runVariant(
   return result
 }
 
-function buildShadowPrecomputedPlan(
+function greatestCommonDivisor(left: number, right: number) {
+  let a = Math.abs(left)
+  let b = Math.abs(right)
+  while (b !== 0) {
+    const remainder = a % b
+    a = b
+    b = remainder
+  }
+  return a
+}
+
+function buildBalancedRestSchedule(
+  playerIds: string[],
+  roundCount: number,
+  restPerRound: number,
+) {
+  if (restPerRound === 0) return Array.from({ length: roundCount }, () => [] as string[])
+  const playerCount = playerIds.length
+  let stride = Math.max(1, Math.floor(playerCount * 0.618))
+  while (greatestCommonDivisor(stride, playerCount) !== 1) stride += 1
+  const restCounts = new Map(playerIds.map(id => [id, 0]))
+  const restStreaks = new Map(playerIds.map(id => [id, 0]))
+
+  return Array.from({ length: roundCount }, (_, roundNo) => {
+    const tieOrder = new Map<string, number>()
+    const offset = (roundNo * restPerRound) % playerCount
+    for (let index = 0; index < playerCount; index += 1) {
+      tieOrder.set(playerIds[(offset + index * stride) % playerCount], index)
+    }
+    const resting = [...playerIds]
+      .sort((left, right) => {
+        const streakDelta = (restStreaks.get(left) ?? 0) - (restStreaks.get(right) ?? 0)
+        if (streakDelta !== 0) return streakDelta
+        const countDelta = (restCounts.get(left) ?? 0) - (restCounts.get(right) ?? 0)
+        return countDelta || (tieOrder.get(left) ?? 0) - (tieOrder.get(right) ?? 0)
+      })
+      .slice(0, restPerRound)
+    const restingSet = new Set(resting)
+    playerIds.forEach(id => {
+      restStreaks.set(id, restingSet.has(id) ? (restStreaks.get(id) ?? 0) + 1 : 0)
+    })
+    resting.forEach(id => {
+      restCounts.set(id, (restCounts.get(id) ?? 0) + 1)
+    })
+    return resting
+  })
+}
+
+export function buildShadowPrecomputedPlan(
   initialState: SessionState,
   roundCount: number,
   courts: number,
+  options: ShadowPlannerOptions = {},
 ) {
+  const totalStartedAt = performance.now()
+  const localSearchPasses = options.localSearchPasses ?? LOCAL_SEARCH_PASSES
   const activePlayers = [...initialState.players.values()]
     .filter(player => player.checked_out_at === null)
     .sort((left, right) => {
@@ -415,15 +483,13 @@ function buildShadowPrecomputedPlan(
   if (slotsPerRound !== courts * 4) {
     throw new Error(`Shadow planner requires enough players for all courts: players=${activePlayers.length} courts=${courts}`)
   }
-  if (restPerRound > 0 && activePlayers.length % restPerRound !== 0) {
-    throw new Error(`Shadow planner prototype requires even rest groups: players=${activePlayers.length} rest_per_round=${restPerRound}`)
-  }
-
-  const restGroupCount = restPerRound === 0 ? 1 : activePlayers.length / restPerRound
-  const restGroups = Array.from({ length: restGroupCount }, () => [] as string[])
-  activePlayers.forEach((player, index) => {
-    restGroups[index % restGroupCount].push(player.player_id)
-  })
+  const restScheduleStartedAt = performance.now()
+  const restSchedule = buildBalancedRestSchedule(
+    activePlayers.map(player => player.player_id),
+    roundCount,
+    restPerRound,
+  )
+  const restScheduleMs = performance.now() - restScheduleStartedAt
 
   let state = initialState
   let debt = new Map([...state.players.keys()].map(id => [id, 0]))
@@ -436,9 +502,11 @@ function buildShadowPrecomputedPlan(
     allMatches: [],
   }
   const schedule: Array<{ round: number; resting: string[]; matches: BoardMatch[] }> = []
+  const roundTimings: ShadowPlannerTimings['rounds'] = []
 
   for (let roundNo = 0; roundNo < roundCount; roundNo += 1) {
-    const resting = new Set(restPerRound === 0 ? [] : restGroups[roundNo % restGroupCount])
+    const roundStartedAt = performance.now()
+    const resting = new Set(restSchedule[roundNo])
     const playing = activePlayers
       .filter(player => !resting.has(player.player_id))
       .map(player => player.player_id)
@@ -451,7 +519,10 @@ function buildShadowPrecomputedPlan(
         team_b: [ids[1], ids[2]],
       })
     }
-    const board = optimizeBoard(initialBoard, state, debt, 'shadow_precomputed')
+    const seedMs = performance.now() - roundStartedAt
+    const optimizeStartedAt = performance.now()
+    const board = optimizeBoard(initialBoard, state, debt, 'shadow_precomputed', localSearchPasses)
+    const optimizeMs = performance.now() - optimizeStartedAt
     const before = summarizeBoard(initialBoard, state, debt)
     const after = summarizeBoard(board, state, debt)
     result.rounds.push({ round: roundNo + 1, duplicateSlotsRepaired: 0, before, after })
@@ -464,6 +535,7 @@ function buildShadowPrecomputedPlan(
         team_b: [...match.team_b] as Team,
       })),
     })
+    const projectionStartedAt = performance.now()
     debt = applyDebt(debt, board, state)
     state = applyBoard(state, board, roundNo)
     for (const player of state.players.values()) {
@@ -472,6 +544,14 @@ function buildShadowPrecomputedPlan(
         Math.max(maxRestByPlayer.get(player.player_id) ?? 0, player.consecutive_rest),
       )
     }
+    const projectionMs = performance.now() - projectionStartedAt
+    roundTimings.push({
+      round: roundNo + 1,
+      seed_ms: seedMs,
+      optimize_ms: optimizeMs,
+      projection_ms: projectionMs,
+      total_ms: performance.now() - roundStartedAt,
+    })
   }
 
   result.state = state
@@ -489,10 +569,15 @@ function buildShadowPrecomputedPlan(
       full_rounds: schedule.filter(round => round.matches.length === courts).length,
       expected_rounds: roundCount,
     },
+    timings: {
+      total_ms: performance.now() - totalStartedAt,
+      rest_schedule_ms: restScheduleMs,
+      rounds: roundTimings,
+    } satisfies ShadowPlannerTimings,
   }
 }
 
-function aggregate(result: VariantResult) {
+export function aggregate(result: VariantResult) {
   const roundMetrics = result.rounds.map(round => round.after)
   const totalMatches = roundMetrics.reduce((sum, round) => sum + round.matches, 0)
   const matchCounts = [...result.state.players.values()].map(player => player.matches_played)
@@ -522,6 +607,9 @@ function roundNumber(match: RawMatch) {
 
 function main() {
   const directory = process.argv[2]
+  const shadowOnly = process.argv.includes('--shadow-only')
+  const passesArg = process.argv.find(argument => argument.startsWith('--passes='))
+  const localSearchPasses = passesArg ? Number(passesArg.split('=')[1]) : LOCAL_SEARCH_PASSES
   if (!directory) {
     throw new Error('Usage: npx tsx scripts/diagnostics/evaluate-session-quality-counterfactual.ts <session-data-directory>')
   }
@@ -541,9 +629,11 @@ function main() {
     }))
   const initialState = buildInitialState(players, profiles, courts)
   const startedAt = performance.now()
-  const results = (['baseline', 'lookahead', 'quality_debt'] as Variant[])
-    .map(variant => runVariant(variant, initialState, rounds))
-  const shadow = buildShadowPrecomputedPlan(initialState, rounds.length, courts)
+  const results = shadowOnly
+    ? []
+    : (['baseline', 'lookahead', 'quality_debt'] as Variant[])
+      .map(variant => runVariant(variant, initialState, rounds))
+  const shadow = buildShadowPrecomputedPlan(initialState, rounds.length, courts, { localSearchPasses })
   const elapsedMs = performance.now() - startedAt
   const compactMetrics = (metrics: BoardMetrics) => ({
     avg_team_gap: Number(metrics.avgInter.toFixed(3)),
@@ -580,6 +670,7 @@ function main() {
   console.log(JSON.stringify({
     input: { directory, players: players.length, courts, rounds: rounds.length, completed_matches: completed.length },
     elapsed_ms: Math.round(elapsedMs),
+    planner_timings: shadow.timings,
     shadow_plan_path: shadowPath,
     variants: Object.fromEntries([...results, shadow.result].map(result => [result.variant, {
       summary: aggregate(result),
@@ -596,4 +687,5 @@ function main() {
   }, null, 2))
 }
 
-main()
+const invokedPath = process.argv[1]?.replaceAll('\\', '/') ?? ''
+if (invokedPath.endsWith('/evaluate-session-quality-counterfactual.ts')) main()

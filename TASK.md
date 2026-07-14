@@ -57,10 +57,16 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   repeats.
 - [x] Document objective order, Free Plan decision gates, invalidation contract,
   rollout phases, and rollback.
+- [x] Instrument isolated planner stages: the real 32-player plan takes 32.2s at
+  three passes and 9.8s at one pass; local search owns nearly all runtime.
+- [x] Add/run quick quality and full structural benchmark matrices. Six-court
+  one-pass rounds peak around 1.8-2.1s, so current chunks are not Free Edge safe.
+- [x] Generalize diagnostic rest scheduling; 36 players on four courts now caps
+  the mathematically unavoidable rest streak at two instead of three.
 
 ### Next steps
-- [ ] Phase 0: split timing by planning stage and run the benchmark matrix.
-- [ ] Phase 1: extract a shared planner kernel without changing live-engine
+- [x] Phase 0: split timing by planning stage and run quick/structural matrices.
+- [ ] Phase 1: extract and optimize a shared planner kernel without changing live-engine
   outputs when the feature flag is off.
 - [ ] Phase 2: simulate mutations and hybrid replan before creating any DB table
   or Edge function.

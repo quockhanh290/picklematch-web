@@ -97,12 +97,43 @@ unless it has become invalid.
   duplicate player in a cycle.
 - [x] Record the first trade-off: zero partner/opponent repeats and no team gap
   above `1.0`, with higher intra-team compromise than the actual session.
-- [ ] Separate timing for rest scheduling, seed construction, per-round search,
+- [x] Separate timing for rest scheduling, seed construction, per-round search,
   state projection, and output serialization.
-- [ ] Add benchmark matrices for 24/28/32/36 players, 4/5/6 courts, and 6/8/10
-  rounds.
+- [x] Add a reusable quick quality matrix and a full 36-case structural matrix for
+  24/28/32/36 players, 4/5/6 courts, and 6/8/10 rounds.
+- [ ] Run the full matrix with production-quality search passes after Phase 1
+  removes the current rescoring bottleneck.
 
 No Supabase token, migration, or deployment is needed in this phase.
+
+### Phase 0 runtime findings
+
+The isolated real-session shadow planner took `32.2s` with three local-search
+passes and `9.8s` with one pass. Rest scheduling took about `1ms`, seed creation
+was below `1ms` per round, and state projection was normally around `1-4ms` per
+round. Candidate local search owns effectively all runtime.
+
+The one-pass quick synthetic matrix produced:
+
+| Players / courts / rounds | Total wall | Slowest round | Hard quality violations |
+| --- | ---: | ---: | ---: |
+| 24 / 4 / 8 | 1.4s | 281ms | 0 |
+| 28 / 6 / 8 | 8.2s | 1.78s | 0 |
+| 32 / 6 / 8 | 9.9s | 2.07s | 0 |
+| 36 / 6 / 8 | 9.7s | 2.10s | 0 |
+
+All quick cases filled every court, kept match-count spread at most one, avoided
+consecutive rest where feasible, and had no team gap above `1.0` or intra-team
+gap above `2.0`. A zero-search 36-case structural run covered all player/court/
+round combinations. It exposed and then locked the unavoidable-rest case: 36
+players on four courts now caps the prototype at two consecutive rests instead
+of three; because 20 of 36 players must rest each cycle, a cap of one is
+mathematically impossible there.
+
+Decision: reject both a single Edge invocation and the current one-round chunk
+implementation for Supabase Free. Several one-round chunks consume the entire
+two-second envelope before network, auth, serialization, or cold-start overhead.
+Phase 1 must target a measured chunk below `500ms` before any shadow deploy.
 
 ### Phase 1 - Shared planning kernel
 
@@ -113,6 +144,8 @@ No Supabase token, migration, or deployment is needed in this phase.
 - Make search resumable and deterministic from a seed/checkpoint.
 - Cache team and four-player match metrics to avoid rescoring identical
   candidates.
+- Replace full-board rescoring inside pair swaps with score deltas for the two
+  changed courts.
 - Add a strict time budget and always return the best valid plan found so far.
 
 Gate: existing live-engine outputs and all operation tests remain unchanged when
