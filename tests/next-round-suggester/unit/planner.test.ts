@@ -7,6 +7,11 @@ import {
   type PairSwapCheckpoint,
   type PlannedBoardMatch,
 } from '@/lib/next-round-suggester/planner/pair-swap-search'
+import {
+  isBetterSocialPlan,
+  isWithinSocialPlannerCaps,
+  type SocialPlannerMetrics,
+} from '@/lib/next-round-suggester/planner/objective'
 
 function restMetrics(playerIds: string[], schedule: string[][]) {
   const counts = new Map(playerIds.map(id => [id, 0]))
@@ -25,6 +30,63 @@ function restMetrics(playerIds: string[], schedule: string[][]) {
 }
 
 describe('precomputed planner primitives', () => {
+  const metrics = (overrides: Partial<SocialPlannerMetrics> = {}): SocialPlannerMetrics => ({
+    matches: 6,
+    interOverOne: 0,
+    intraOverTwo: 0,
+    partnerRepeats: 0,
+    opponentRepeats: 0,
+    interOverTolerance: 0,
+    intraOverOne: 0,
+    maxInter: 0.2,
+    maxIntra: 0.5,
+    maxProjectedDebt: 0,
+    squaredProjectedDebt: 0,
+    genderPenalty: 0,
+    engineScore: 0,
+    ...overrides,
+  })
+
+  it('never buys a hard quality violation to improve repeats', () => {
+    const safeWithRepeat = metrics({ partnerRepeats: 1 })
+    const blowoutWithoutRepeat = metrics({ interOverOne: 1 })
+
+    expect(isBetterSocialPlan(safeWithRepeat, blowoutWithoutRepeat)).toBe(true)
+    expect(isBetterSocialPlan(blowoutWithoutRepeat, safeWithRepeat)).toBe(false)
+  })
+
+  it('prioritizes partner variety and per-player quality debt before soft averages', () => {
+    expect(isBetterSocialPlan(
+      metrics({ maxInter: 0.5 }),
+      metrics({ partnerRepeats: 1, maxInter: 0.1 }),
+    )).toBe(true)
+    expect(isBetterSocialPlan(
+      metrics({ maxProjectedDebt: 1, maxInter: 0.5 }),
+      metrics({ maxProjectedDebt: 2, maxInter: 0.1 }),
+    )).toBe(true)
+  })
+
+  it('limits opponent-repeat overflow before optimizing soft quality warnings', () => {
+    expect(isBetterSocialPlan(
+      metrics({ maxProjectedDebt: 0.4, opponentRepeats: 12, interOverTolerance: 1 }),
+      metrics({ maxProjectedDebt: 0.1, opponentRepeats: 13 }),
+    )).toBe(true)
+  })
+
+  it('optimizes soft quality before opponent repeats inside the repeat budget', () => {
+    expect(isBetterSocialPlan(
+      metrics({ maxProjectedDebt: 0.4, opponentRepeats: 12 }),
+      metrics({ maxProjectedDebt: 0.1, opponentRepeats: 1, interOverTolerance: 1 }),
+    )).toBe(true)
+  })
+
+  it('enforces repeat and preference caps independently of ranking', () => {
+    const caps = { partnerRepeats: 1, opponentRepeats: 2, genderPenalty: 0 }
+    expect(isWithinSocialPlannerCaps(metrics({ partnerRepeats: 1, opponentRepeats: 2 }), caps)).toBe(true)
+    expect(isWithinSocialPlannerCaps(metrics({ opponentRepeats: 3 }), caps)).toBe(false)
+    expect(isWithinSocialPlannerCaps(metrics({ genderPenalty: 1 }), caps)).toBe(false)
+  })
+
   it('balances six-court rest counts without consecutive rests', () => {
     const players = Array.from({ length: 32 }, (_, index) => `p${index + 1}`)
     const schedule = buildBalancedRestSchedule(players, 8, 8)

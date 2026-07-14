@@ -44,13 +44,20 @@ higher-priority violation.
 2. Minimize matches with intra-team gap above `2.0`.
 3. Minimize partner repeats.
 4. Minimize the maximum per-player quality debt.
-5. Minimize average team gap and matches above configured tolerance.
-6. Minimize intra-team gap, opponent repeats, and preference penalties.
-7. During replan, minimize churn in the nearest already-visible lineups.
+5. Keep repeated opponent encounters within two per active court for the cycle.
+6. Minimize matches above configured team-gap and intra-team soft thresholds.
+7. Minimize opponent repeats inside that budget.
+8. Minimize exact average/maximum gaps and preference penalties.
+9. During replan, minimize churn in the nearest already-visible lineups.
 
 Partner variety is ranked ahead of opponent variety because repeating a partner
 is more visible in a social session. Per-player quality debt prevents one player
 from repeatedly absorbing the compromises needed to improve session averages.
+Quality debt is compared in `0.5` bands before soft-threshold counts and opponent
+variety, then by its exact value. Opponent-repeat overflow above the active-court
+count is ranked before soft warnings; repeats inside that social budget are
+ranked after them. This prevents both dozens of repeat encounters and avoidable
+warning-level matches from winning through a tiny improvement elsewhere.
 
 ## Free-plan execution decision
 

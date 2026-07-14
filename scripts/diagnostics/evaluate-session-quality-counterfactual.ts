@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { buildProjectedStateAfterCompletedLiveRound, buildProjectedStateAfterLiveMatch } from '@/lib/next-round-suggester/live-preview'
 import { runPairSwapSearch } from '@/lib/next-round-suggester/planner/pair-swap-search'
+import { isBetterSocialPlan, isWithinSocialPlannerCaps } from '@/lib/next-round-suggester/planner/objective'
 import { buildBalancedRestSchedule } from '@/lib/next-round-suggester/planner/rest-schedule'
 import { scoreMatch } from '@/lib/next-round-suggester/score'
 import { DEFAULT_SCORING_WEIGHTS } from '@/lib/next-round-suggester/state'
@@ -219,20 +220,6 @@ function summarizeBoard(
 }
 
 function comparisonTuple(metrics: BoardMetrics, variant: Exclude<Variant, 'baseline'>) {
-  if (variant === 'shadow_precomputed') {
-    return [
-      metrics.interOverOne,
-      metrics.intraOverTwo,
-      metrics.partnerRepeats,
-      metrics.opponentRepeats,
-      metrics.interOverTolerance,
-      metrics.intraOverOne,
-      metrics.maxInter,
-      metrics.maxIntra,
-      metrics.genderPenalty,
-      metrics.engineScore,
-    ]
-  }
   const quality = [
     metrics.interOverOne,
     metrics.intraOverTwo,
@@ -248,6 +235,7 @@ function comparisonTuple(metrics: BoardMetrics, variant: Exclude<Variant, 'basel
 }
 
 function isBetter(left: BoardMetrics, right: BoardMetrics, variant: Exclude<Variant, 'baseline'>) {
+  if (variant === 'shadow_precomputed') return isBetterSocialPlan(left, right)
   const leftTuple = comparisonTuple(left, variant)
   const rightTuple = comparisonTuple(right, variant)
   for (let index = 0; index < leftTuple.length; index += 1) {
@@ -294,11 +282,7 @@ function optimizeBoard(
     initialBoard: initial,
     passes: localSearchPasses,
     evaluate: summarizeCandidate,
-    isAllowed: metrics => (
-      metrics.partnerRepeats <= invariantCaps.partnerRepeats
-      && metrics.opponentRepeats <= invariantCaps.opponentRepeats
-      && metrics.genderPenalty <= invariantCaps.genderPenalty
-    ),
+    isAllowed: metrics => isWithinSocialPlannerCaps(metrics, invariantCaps),
     isBetter: (candidate, current) => isBetter(candidate, current, variant),
     maxRuntimeMs,
   })
