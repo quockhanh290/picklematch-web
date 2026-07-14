@@ -11,6 +11,7 @@ import {
   hasFulfilledPreviewBoardReplacements,
   improvesPreviewBoardPvna,
   needsEarlyFullBoardPvnaRescue,
+  LIVE_PREVIEW_ALGORITHM_VERSION,
 } from '../../../lib/next-round-suggester/live-preview.ts'
 import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state.ts'
 import type {
@@ -63,6 +64,7 @@ function getEngineBuildInfo() {
     function_name: EDGE_FUNCTION_NAME,
     replay_schema_version: REPLAY_SCHEMA_VERSION,
     build_label: 'live-suggest-session-audit-v2',
+    algorithm_version: LIVE_PREVIEW_ALGORITHM_VERSION,
     git_sha: Deno.env.get('ENGINE_GIT_SHA')
       ?? Deno.env.get('GIT_COMMIT_SHA')
       ?? Deno.env.get('VERCEL_GIT_COMMIT_SHA')
@@ -715,6 +717,8 @@ Deno.serve(async (request) => {
         rounds_available: player.rounds_available,
         opted_rest: player.opted_rest,
         checked_out: player.checked_out_at !== null,
+        checked_in_at: player.checked_in_at instanceof Date ? player.checked_in_at.toISOString() : player.checked_in_at,
+        checked_out_at: player.checked_out_at instanceof Date ? player.checked_out_at.toISOString() : player.checked_out_at,
         group_id: player.group_id ?? null,
         partner_counts: Object.fromEntries(player.partner_counts ?? []),
         opponent_counts: Object.fromEntries(player.opponent_counts ?? []),
@@ -729,6 +733,7 @@ Deno.serve(async (request) => {
         id: match?.id ?? null,
         status: match?.status ?? null,
         round_no: match?.round_no ?? null,
+        cycle_no: match?.cycle_no ?? null,
         sequence_no: match?.sequence_no ?? null,
         court_idx: match?.court_idx ?? null,
         team_a: [...(match?.team_a ?? [])],

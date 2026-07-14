@@ -10,6 +10,7 @@
  */
 import { readFileSync } from 'node:fs'
 import {
+  buildTightPoolQualityDeferUntilByCourt,
   buildSuggestedMatchPayloads,
   type CourtSelectionDebug,
   type LiveQualityPolicy,
@@ -138,8 +139,9 @@ function buildState(row: JsonRecord): SessionState {
   const config = state.config ?? {}
   const sessionId = state.session_id ?? row.session_id ?? 'replay-session'
   const players = new Map<string, PlayerSessionState>()
+  const capturedAt = row.request_received_at ?? row.created_at
   for (const raw of row.players ?? []) {
-    const player = toPlayer(raw, row.created_at)
+    const player = toPlayer(raw, capturedAt)
     players.set(player.player_id, player)
   }
   return {
@@ -220,9 +222,15 @@ function invariantErrors(
 
 function replay(row: JsonRecord, policy: LiveQualityPolicy): ReplayResult {
   const request = row.request_v2
+  const capturedAt = row.request_received_at ?? row.created_at
   const state = buildState(row)
-  const liveRows = (row.live_rows ?? []).map((liveRow: JsonRecord) => toLiveRow(liveRow, state.session_id, row.created_at))
+  const liveRows = (row.live_rows ?? []).map((liveRow: JsonRecord) => toLiveRow(liveRow, state.session_id, capturedAt))
   const completingIds = new Set<string>(request.completing_live_match_ids ?? [])
+  const requestedCourtIdxs = request.court_idxs?.length ? request.court_idxs : undefined
+  const tightPoolQualityDeferUntilByCourt = buildTightPoolQualityDeferUntilByCourt(
+    liveRows,
+    requestedCourtIdxs,
+  )
   const debug: CourtSelectionDebug[] = []
   const started = performance.now()
   const originalLog = console.log
@@ -245,11 +253,12 @@ function replay(row: JsonRecord, policy: LiveQualityPolicy): ReplayResult {
       playersById: new Map([...state.players.keys()].map(id => [id, { name: id.slice(0, 8) }])),
       pvnaTolerance: number(request.pvna_tolerance, state.config.pvna_tolerance),
       options: {
-        courtIdxs: request.court_idxs?.length ? request.court_idxs : undefined,
+        courtIdxs: requestedCourtIdxs,
         ignoreCapacityLock: !request.prefer_available_pool,
-        deferExtremeTightPool: false,
+        deferExtremeTightPool: true,
+        tightPoolQualityDeferUntilByCourt,
         liveQualityPolicy: policy,
-        nowMs: Date.parse(row.created_at),
+        nowMs: Date.parse(capturedAt),
       },
       debugOut: debug,
     })
