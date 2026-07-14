@@ -93,7 +93,7 @@ npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --passes=3 --round-b
 npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --full --passes=3
 npx tsx scripts/diagnostics/simulate-precomputed-mutations.ts <export-directory>
 npx tsx scripts/diagnostics/benchmark-precomputed-mutations.ts
-npx tsx scripts/diagnostics/smoke-session-plan-shadow.ts [--session-id=<id>] [--persist]
+npx tsx scripts/diagnostics/smoke-session-plan-shadow.ts [--session-id=<id>] [--rounds=<count>] [--persist]
 ```
 
 Architecture and rollout gates: `docs/PRECOMPUTED_SESSION_PLANNER.md`.
