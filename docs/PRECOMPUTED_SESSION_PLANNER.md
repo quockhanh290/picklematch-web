@@ -1,6 +1,6 @@
 # Precomputed session planner
 
-Status: PROPOSED - shadow diagnostic only
+Status: SHADOW DEPLOYED - not consumed by live matchmaking
 
 ## Architecture decision
 
@@ -303,13 +303,32 @@ session_plan_rounds     compact ordered rest IDs and four-player lineups
 Gate: no 546/timeout across the benchmark matrix and no measurable latency impact
 on live suggest/start/complete functions.
 
-`session-plan-shadow` is now implemented but not yet deployed. It authenticates
+`session-plan-shadow` is deployed as an isolated shadow function. It authenticates
 the session host, loads the existing engine state, hashes a reproducible input,
 runs the deployable one-pass planner, rechecks `live_state_version`, and writes
 only `session_plan_*`. A changed session marks the job stale and publishes no
 version. `persist:false` runs the same compute path without requiring the shadow
-tables, enabling a pre-migration smoke. Deno type-check passes with the repo's
-extensionless-import resolver.
+tables, enabling a pre-migration smoke. Strict Deno type-check and server-side
+Supabase bundling both pass.
+
+Remote rollout evidence on 2026-07-14:
+
+- Migration `20260714000001_create_shadow_session_plans.sql` is applied; a
+  subsequent `db push --dry-run` reports the remote database up to date.
+- `session-plan-shadow` is ACTIVE at version 2. No existing live function and no
+  client/Vercel bundle was deployed.
+- A two-round `persist:false` smoke and persisted smoke both passed on session
+  `0bbe25c1-...`; persisted IDs were job `4fb2d0ae-...` and version
+  `27f32c1d-...`.
+- Repeating the identical persisted request reused the same job ID, confirming
+  the idempotent input identity.
+- Cold wall time was about `9-10s` on the first invocation and `2.8-5.6s` when
+  warm/reused. Reported planner active compute was only `3.4-3.5ms`; the smoke
+  session currently exposes one configured court and existing history, so its
+  match quality is not used as a six-court quality benchmark.
+
+This deployment still cannot influence live suggestions. Phase 5 advisory
+lookup remains intentionally unimplemented.
 
 ### Phase 5 - Advisory integration
 

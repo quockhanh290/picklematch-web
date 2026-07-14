@@ -106,9 +106,16 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   idempotent job reuse, stale-version rejection, compact round publication,
   failed-job capture, and `persist:false` compute smoke mode. It writes no live
   state and passes Deno check.
-- [ ] Push commits, dry-run/apply the one planner migration, deploy only the new
+- [x] Push commits, dry-run/apply the one planner migration, deploy only the new
   shadow function, then verify remote migration/function state. Do not deploy
   client or existing live Edge functions.
+- [x] Remote smoke `session-plan-shadow` in dry-run and persisted modes; both
+  pass, and repeating the same input reuses job `4fb2d0ae-...`. Function is
+  ACTIVE v2, DB is up to date, and planner active compute is about 3.5ms for the
+  two-round one-court smoke.
+- [ ] Phase 5 advisory integration remains gated. Do not connect shadow plans to
+  `session-live-matches-suggest` until a fresh six-court pre-session shadow run
+  confirms hosted runtime/quality and stale-plan fallback behavior.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.
