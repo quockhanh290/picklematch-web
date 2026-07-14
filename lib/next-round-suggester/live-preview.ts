@@ -53,7 +53,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 11
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 12
 
 const BEAM_K = 3
 const BEAM_ACTIVE_PLAYER_LIMIT = 50
@@ -3116,12 +3116,33 @@ export function buildSuggestedMatchPayloads({
       team_b: match.team_b,
     }))
   const hasCompletedRounds = suggestionState.rounds.some(round => round.status === 'completed')
+  const getPreviousLogicalRoundRestedIds = (roundNo: number) => {
+    if (roundNo <= 0) return new Set<string>()
+    const previousRoundNo = roundNo - 1
+    const previousRoundMatches = matchesByRound.get(previousRoundNo) ?? []
+    const previousRoundCourts = courtIdxsByRound.get(previousRoundNo) ?? new Set<number>()
+    if (previousRoundMatches.length < courtCapacity || previousRoundCourts.size < courtCapacity) {
+      return new Set<string>()
+    }
+    const previousRoundOpenedAt = Math.min(...previousRoundMatches
+      .map(match => Date.parse(match.suggested_at ?? match.started_at ?? match.created_at ?? ''))
+      .filter(Number.isFinite))
+    if (!Number.isFinite(previousRoundOpenedAt)) return new Set<string>()
+    const previousRoundPlayers = playerIdsByRound.get(previousRoundNo) ?? new Set<string>()
+    return new Set([...suggestionState.players.values()]
+      .filter(player => player.checked_out_at === null && !player.opted_rest)
+      .filter(player => player.checked_in_at.getTime() <= previousRoundOpenedAt)
+      .filter(player => !previousRoundPlayers.has(player.player_id))
+      .map(player => player.player_id))
+  }
   const getRoundRequiredIds = (roundNo: number, remainingCourts: number, busyIds: Set<string>) => {
     const remainingRoundSlots = Math.max(0, remainingCourts * 4)
     if (remainingRoundSlots <= 0) return new Set<string>()
+    const previousLogicalRoundRestedIds = getPreviousLogicalRoundRestedIds(roundNo)
     const required = [...suggestionState.players.values()]
       .filter(player => player.checked_out_at === null && !player.opted_rest && !busyIds.has(player.player_id))
       .filter(player => {
+        if (previousLogicalRoundRestedIds.has(player.player_id)) return true
         const isLateArrival = hasCompletedRounds && player.matches_played === 0
         if (isLateArrival) return player.consecutive_rest >= 2
         return player.consecutive_rest >= 1

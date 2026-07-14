@@ -908,6 +908,48 @@ describe('projected live match state', () => {
     )
   })
 
+  it('prioritizes players omitted from the previous logical round before counters catch up', () => {
+    const state = createState({
+      courts: 6,
+      players: Array.from({ length: 32 }, (_, index) =>
+        createPlayer(`p${index + 1}`, { pvna: 3 }),
+      ),
+    })
+    const previousRound = Array.from({ length: 6 }, (_, courtIdx) => {
+      const first = courtIdx * 4 + 1
+      return {
+        ...liveRow(
+          `round-0-court-${courtIdx}`,
+          courtIdx,
+          courtIdx === 0 ? 'completed' : 'live',
+          [`p${first}`, `p${first + 1}`],
+          [`p${first + 2}`, `p${first + 3}`],
+        ),
+        sequence_no: courtIdx,
+        round_no: 0,
+      } as SessionLiveMatchRow
+    })
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 6,
+      state,
+      rows: { liveMatchRows: previousRound, liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+      options: { courtIdxs: [0] },
+    })
+
+    expect(payloads).toHaveLength(1)
+    const selectedPlayerIds = [...payloads[0].team_a, ...payloads[0].team_b]
+    expect(selectedPlayerIds).toHaveLength(4)
+    expect(selectedPlayerIds.every(playerId => Number(playerId.slice(1)) >= 25)).toBe(true)
+  })
+
   it('surfaces an intra-team tradeoff from the exact final lineup', () => {
     const state = createState({
       courts: 1,
