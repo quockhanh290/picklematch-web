@@ -30,9 +30,22 @@ async function invokePlan(
       persist,
     },
   })
+  let errorDetail: unknown = null
+  const context = (error as { context?: Response } | null)?.context
+  if (context) {
+    const response = context.clone()
+    const bodyText = await response.text()
+    let body: unknown = bodyText
+    try {
+      body = JSON.parse(bodyText)
+    } catch {
+      // Keep the raw body when the gateway does not return JSON.
+    }
+    errorDetail = { status: context.status, body }
+  }
   return {
     data,
-    error: error?.message ?? null,
+    error: error ? { message: error.message, detail: errorDetail } : null,
     wall_ms: Math.round(performance.now() - startedAt),
   }
 }
@@ -102,7 +115,7 @@ async function main() {
     throw new Error('--rounds must be a positive integer')
   }
   const requestedPasses = argument('--passes')
-  const localSearchPasses = requestedPasses === undefined ? 1 : Number(requestedPasses)
+  const localSearchPasses = requestedPasses === undefined ? 2 : Number(requestedPasses)
   if (!Number.isInteger(localSearchPasses) || localSearchPasses <= 0 || localSearchPasses > 3) {
     throw new Error('--passes must be an integer from 1 to 3')
   }

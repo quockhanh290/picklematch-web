@@ -92,7 +92,7 @@ Deno.serve(async (request) => {
 
   const persist = body.persist !== false
   const maxRoundRuntimeMs = positiveInteger(body.max_round_runtime_ms) ?? undefined
-  const localSearchPasses = positiveInteger(body.local_search_passes) ?? 1
+  const localSearchPasses = positiveInteger(body.local_search_passes) ?? 2
   if (localSearchPasses > MAX_LOCAL_SEARCH_PASSES) {
     return jsonResponse({ ok: false, error: `local_search_passes must be <= ${MAX_LOCAL_SEARCH_PASSES}` }, 400, request)
   }
