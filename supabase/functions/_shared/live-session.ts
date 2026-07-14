@@ -159,7 +159,7 @@ export async function writeSessionAuditEvent(
     includeSnapshotAfter?: boolean
   },
 ) {
-  const detail = input.detail && typeof input.detail === 'object' && !Array.isArray(input.detail)
+  const detail: Record<string, unknown> = input.detail && typeof input.detail === 'object' && !Array.isArray(input.detail)
     ? { ...(input.detail as Record<string, unknown>) }
     : input.detail === undefined
       ? {}

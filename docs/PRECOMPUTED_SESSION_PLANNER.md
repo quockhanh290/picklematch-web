@@ -303,6 +303,14 @@ session_plan_rounds     compact ordered rest IDs and four-player lineups
 Gate: no 546/timeout across the benchmark matrix and no measurable latency impact
 on live suggest/start/complete functions.
 
+`session-plan-shadow` is now implemented but not yet deployed. It authenticates
+the session host, loads the existing engine state, hashes a reproducible input,
+runs the deployable one-pass planner, rechecks `live_state_version`, and writes
+only `session_plan_*`. A changed session marks the job stale and publishes no
+version. `persist:false` runs the same compute path without requiring the shadow
+tables, enabling a pre-migration smoke. Deno type-check passes with the repo's
+extensionless-import resolver.
+
 ### Phase 5 - Advisory integration
 
 - Add a feature-flagged plan lookup to `session-live-matches-suggest`.

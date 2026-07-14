@@ -102,8 +102,13 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
 - [x] Extract deployable `planner/session-plan.ts`; it imports the existing
   scorer/state projection, has no diagnostic or Node I/O dependency, matches
   the diagnostic oracle exactly, and passes quick + 36-case structural gates.
-- [ ] Implement `session-plan-shadow` against the staged schema and test it
-  locally before applying the migration or deploying the function.
+- [x] Implement `session-plan-shadow`: host auth, canonical input/plan hashes,
+  idempotent job reuse, stale-version rejection, compact round publication,
+  failed-job capture, and `persist:false` compute smoke mode. It writes no live
+  state and passes Deno check.
+- [ ] Push commits, dry-run/apply the one planner migration, deploy only the new
+  shadow function, then verify remote migration/function state. Do not deploy
+  client or existing live Edge functions.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.
