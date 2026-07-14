@@ -63,6 +63,10 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   one-pass rounds peak around 1.8-2.1s, so current chunks are not Free Edge safe.
 - [x] Generalize diagnostic rest scheduling; 36 players on four courts now caps
   the mathematically unavoidable rest streak at two instead of three.
+- [x] Phase 1 probe: cache match/board scoring without changing one-pass output;
+  real-session runtime fell from 9.8s to 1.88s and slowest round to 263ms.
+- [x] Add bounded anytime search. A 400ms deadline returns a valid best-so-far
+  board; deterministic one-pass remains the current quality/runtime baseline.
 
 ### Next steps
 - [x] Phase 0: split timing by planning stage and run quick/structural matrices.

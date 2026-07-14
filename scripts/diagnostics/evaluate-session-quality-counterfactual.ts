@@ -85,6 +85,7 @@ const LOCAL_SEARCH_PASSES = 3
 
 export type ShadowPlannerOptions = {
   localSearchPasses?: number
+  maxRoundRuntimeMs?: number
 }
 
 export type ShadowPlannerTimings = {
@@ -96,6 +97,8 @@ export type ShadowPlannerTimings = {
     optimize_ms: number
     projection_ms: number
     total_ms: number
+    timed_out: boolean
+    candidates_evaluated: number
   }>
 }
 
@@ -180,8 +183,13 @@ function playerBurden(matchMetrics: MatchMetrics, partnerIntra: number) {
   return Math.max(0, matchMetrics.inter - TOLERANCE) * 2 + Math.max(0, partnerIntra - 1)
 }
 
-function summarizeBoard(board: BoardMatch[], state: SessionState, debt: Map<string, number>): BoardMetrics {
-  const metrics = board.map(match => metricsForMatch(match, state))
+function summarizeBoard(
+  board: BoardMatch[],
+  state: SessionState,
+  debt: Map<string, number>,
+  resolveMetrics: (match: BoardMatch) => MatchMetrics = match => metricsForMatch(match, state),
+): BoardMetrics {
+  const metrics = board.map(resolveMetrics)
   const projectedDebt = new Map(debt)
   board.forEach((match, index) => {
     const matchMetrics = metrics[index]
@@ -281,20 +289,51 @@ function optimizeBoard(
   debt: Map<string, number>,
   variant: Exclude<Variant, 'baseline'>,
   localSearchPasses = LOCAL_SEARCH_PASSES,
+  maxRuntimeMs?: number,
+  searchStats: { timedOut: boolean; candidatesEvaluated: number } = { timedOut: false, candidatesEvaluated: 0 },
 ) {
+  const deadline = maxRuntimeMs === undefined ? Number.POSITIVE_INFINITY : performance.now() + maxRuntimeMs
+  const matchMetricsCache = new Map<string, MatchMetrics>()
+  const boardMetricsCache = new Map<string, BoardMetrics>()
+  const matchKey = (match: BoardMatch) => {
+    const teamA = [...match.team_a].sort().join(',')
+    const teamB = [...match.team_b].sort().join(',')
+    return `${teamA}|${teamB}`
+  }
+  const resolveMetrics = (match: BoardMatch) => {
+    const key = matchKey(match)
+    const cached = matchMetricsCache.get(key)
+    if (cached) return cached
+    const metrics = metricsForMatch(match, state)
+    matchMetricsCache.set(key, metrics)
+    return metrics
+  }
+  const summarizeCandidate = (candidate: BoardMatch[]) => {
+    const key = candidate.map(matchKey).sort().join(';')
+    const cached = boardMetricsCache.get(key)
+    if (cached) return cached
+    const metrics = summarizeBoard(candidate, state, debt, resolveMetrics)
+    boardMetricsCache.set(key, metrics)
+    return metrics
+  }
   let board = initial.map(match => ({ team_a: [...match.team_a] as Team, team_b: [...match.team_b] as Team }))
-  const invariantCaps = summarizeBoard(board, state, debt)
-  for (let pass = 0; pass < localSearchPasses; pass += 1) {
+  const invariantCaps = summarizeCandidate(board)
+  search: for (let pass = 0; pass < localSearchPasses; pass += 1) {
     let improved = false
     for (let left = 0; left < board.length; left += 1) {
       for (let right = left + 1; right < board.length; right += 1) {
         const otherMatches = board.filter((_, index) => index !== left && index !== right)
         const ids = [...board[left].team_a, ...board[left].team_b, ...board[right].team_a, ...board[right].team_b]
         let bestBoard = board
-        let bestMetrics = summarizeBoard(board, state, debt)
+        let bestMetrics = summarizeCandidate(board)
         for (const pair of twoCourtBoards(ids)) {
+          if (performance.now() >= deadline) {
+            searchStats.timedOut = true
+            break
+          }
+          searchStats.candidatesEvaluated += 1
           const candidate = [...otherMatches, ...pair]
-          const candidateMetrics = summarizeBoard(candidate, state, debt)
+          const candidateMetrics = summarizeCandidate(candidate)
           if (
             candidateMetrics.partnerRepeats > invariantCaps.partnerRepeats
             || candidateMetrics.opponentRepeats > invariantCaps.opponentRepeats
@@ -311,6 +350,7 @@ function optimizeBoard(
           board = bestBoard
           improved = true
         }
+        if (searchStats.timedOut) break search
       }
     }
     if (!improved) break
@@ -521,7 +561,16 @@ export function buildShadowPrecomputedPlan(
     }
     const seedMs = performance.now() - roundStartedAt
     const optimizeStartedAt = performance.now()
-    const board = optimizeBoard(initialBoard, state, debt, 'shadow_precomputed', localSearchPasses)
+    const searchStats = { timedOut: false, candidatesEvaluated: 0 }
+    const board = optimizeBoard(
+      initialBoard,
+      state,
+      debt,
+      'shadow_precomputed',
+      localSearchPasses,
+      options.maxRoundRuntimeMs,
+      searchStats,
+    )
     const optimizeMs = performance.now() - optimizeStartedAt
     const before = summarizeBoard(initialBoard, state, debt)
     const after = summarizeBoard(board, state, debt)
@@ -551,6 +600,8 @@ export function buildShadowPrecomputedPlan(
       optimize_ms: optimizeMs,
       projection_ms: projectionMs,
       total_ms: performance.now() - roundStartedAt,
+      timed_out: searchStats.timedOut,
+      candidates_evaluated: searchStats.candidatesEvaluated,
     })
   }
 
@@ -609,7 +660,9 @@ function main() {
   const directory = process.argv[2]
   const shadowOnly = process.argv.includes('--shadow-only')
   const passesArg = process.argv.find(argument => argument.startsWith('--passes='))
+  const roundBudgetArg = process.argv.find(argument => argument.startsWith('--round-budget-ms='))
   const localSearchPasses = passesArg ? Number(passesArg.split('=')[1]) : LOCAL_SEARCH_PASSES
+  const maxRoundRuntimeMs = roundBudgetArg ? Number(roundBudgetArg.split('=')[1]) : undefined
   if (!directory) {
     throw new Error('Usage: npx tsx scripts/diagnostics/evaluate-session-quality-counterfactual.ts <session-data-directory>')
   }
@@ -633,7 +686,10 @@ function main() {
     ? []
     : (['baseline', 'lookahead', 'quality_debt'] as Variant[])
       .map(variant => runVariant(variant, initialState, rounds))
-  const shadow = buildShadowPrecomputedPlan(initialState, rounds.length, courts, { localSearchPasses })
+  const shadow = buildShadowPrecomputedPlan(initialState, rounds.length, courts, {
+    localSearchPasses,
+    maxRoundRuntimeMs,
+  })
   const elapsedMs = performance.now() - startedAt
   const compactMetrics = (metrics: BoardMetrics) => ({
     avg_team_gap: Number(metrics.avgInter.toFixed(3)),

@@ -135,6 +135,33 @@ implementation for Supabase Free. Several one-round chunks consume the entire
 two-second envelope before network, auth, serialization, or cold-start overhead.
 Phase 1 must target a measured chunk below `500ms` before any shadow deploy.
 
+### Phase 1 optimization probe
+
+Per-round match and board caches removed repeated calls to the existing engine
+scorer without changing the one-pass real-session output. On the same exported
+session, one-pass runtime fell from `9.8s` to `1.88s`, and the slowest round fell
+from `1.97s` to `263ms`.
+
+The cached one-pass quick matrix measured total/slowest-round wall time as:
+
+| Players / courts / rounds | Total wall | Slowest round |
+| --- | ---: | ---: |
+| 24 / 4 / 8 | 558ms | 86ms |
+| 28 / 6 / 8 | 1.31s | 182ms |
+| 32 / 6 / 8 | 1.86s | 318ms |
+| 36 / 6 / 8 | 2.00s | 303ms |
+
+All quality and invariant gates from the pre-cache quick run remained clean.
+Three cached passes improved the real-session quality further but took `5.45s`,
+with the slowest round around `1.01s`. A `400ms` anytime deadline successfully
+returned a valid best-so-far plan, but every round reached the deadline and its
+quality landed between the one-pass and unbounded three-pass variants.
+
+Decision update: a deterministic one-pass round now meets the local `<500ms`
+chunk target. A whole-plan invocation still lacks safe Free Edge headroom. Keep
+the Queue/checkpoint option, and require a deployed shadow benchmark before
+claiming the hosted CPU gate passes.
+
 ### Phase 1 - Shared planning kernel
 
 - Extract reusable objective comparison, invariant validation, effective-PVNA
@@ -147,6 +174,10 @@ Phase 1 must target a measured chunk below `500ms` before any shadow deploy.
 - Replace full-board rescoring inside pair swaps with score deltas for the two
   changed courts.
 - Add a strict time budget and always return the best valid plan found so far.
+
+Progress: cache and anytime-budget behavior are proven in diagnostics. Moving
+the code into the shared planner module, deterministic candidate checkpoints,
+and regression tests remain before Phase 1 is complete.
 
 Gate: existing live-engine outputs and all operation tests remain unchanged when
 the planner feature flag is off.

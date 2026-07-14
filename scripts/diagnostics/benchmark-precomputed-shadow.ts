@@ -64,6 +64,7 @@ function main() {
     return argument ? Number(argument.split('=')[1]) : undefined
   }
   const passesArg = process.argv.find(argument => argument.startsWith('--passes='))
+  const roundBudgetMs = numericArg('round-budget-ms')
   const localSearchPasses = passesArg ? Number(passesArg.split('=')[1]) : full ? 3 : 1
   const selectedPlayers = numericArg('players')
   const selectedCourts = numericArg('courts')
@@ -81,6 +82,7 @@ function main() {
     const wallStartedAt = performance.now()
     const shadow = buildShadowPrecomputedPlan(state, scenario.rounds, scenario.courts, {
       localSearchPasses,
+      maxRoundRuntimeMs: roundBudgetMs,
     })
     const wallMs = performance.now() - wallStartedAt
     const cpu = process.cpuUsage(cpuStartedAt)
@@ -108,6 +110,8 @@ function main() {
       heap_delta_mb: Number(((process.memoryUsage().heapUsed - heapBefore) / 1024 / 1024).toFixed(2)),
       slowest_round_ms: Math.round(Math.max(...shadow.timings.rounds.map(round => round.total_ms))),
       avg_round_ms: Math.round(shadow.timings.rounds.reduce((sum, round) => sum + round.total_ms, 0) / scenario.rounds),
+      timed_out_rounds: shadow.timings.rounds.filter(round => round.timed_out).length,
+      candidates_evaluated: shadow.timings.rounds.reduce((sum, round) => sum + round.candidates_evaluated, 0),
       invariants: shadow.invariants,
       quality: {
         match_count_range: [summary.match_count_min, summary.match_count_max],
@@ -124,6 +128,7 @@ function main() {
   console.log(JSON.stringify({
     mode: selectedPlayers ? 'custom' : full ? 'full' : 'quick',
     local_search_passes: localSearchPasses,
+    round_budget_ms: roundBudgetMs ?? null,
     scenario_count: results.length,
     edge_cpu_budget_ms: 2000,
     results,

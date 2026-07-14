@@ -89,6 +89,7 @@ npx tsx scripts/diagnostics/evaluate-session-quality-counterfactual.ts <export-d
 npx tsx scripts/diagnostics/evaluate-session-quality-counterfactual.ts <export-directory> --shadow-only --passes=3
 npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts
 npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --players=32 --courts=6 --rounds=8 --passes=1
+npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --passes=3 --round-budget-ms=400
 npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --full --passes=3
 ```
 
