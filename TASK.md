@@ -95,6 +95,12 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   combinations and report per-player quality tails.
 - [ ] Phase 3: add the versioned, idempotent, owner-guarded shadow persistence
   contract without touching live suggestions.
+- [x] Stage the Phase 3 shadow schema migration: host-read/service-write RLS,
+  idempotent job/version keys, composite session ownership FKs, compact rounds,
+  and no dependency on live-match tables. Keep it unapplied until shadow Edge
+  passes its end-to-end gate.
+- [ ] Extract the planner assembly from diagnostics into the deployable shared
+  library, then implement `session-plan-shadow` against the staged schema.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.

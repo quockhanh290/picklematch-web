@@ -262,6 +262,18 @@ replacement remain valid. Maximum per-player quality debt ranges from `0.41` to
 - Apply RLS and security-definer guards using authenticated session ownership.
 - Make job creation and result publication idempotent.
 
+Schema implementation is staged in
+`20260714000001_create_shadow_session_plans.sql`. The three tables are isolated
+from live-match state, use composite foreign keys to prevent cross-session plan
+rows, and make job/version publication idempotent through unique input and plan
+identities. Authenticated users receive host-scoped read access only; there is
+no client insert/update/delete policy. Shadow writes require `service_role`
+after the Edge function has independently authenticated the session host.
+
+The migration is intentionally not applied until the shadow function can create
+and publish a plan end to end in tests. Applying the schema alone would be safe
+but would create inert tables with no operational value.
+
 Candidate ownership model:
 
 ```text
