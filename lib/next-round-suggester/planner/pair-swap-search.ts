@@ -15,6 +15,7 @@ type PairSwapSearchOptions<Metrics> = {
   initialBoard: PlannedBoardMatch[]
   passes: number
   evaluate: (board: PlannedBoardMatch[]) => Metrics
+  evaluateReplacement?: (otherMatches: PlannedBoardMatch[], replacement: PlannedBoardMatch[]) => Metrics
   isBetter: (candidate: Metrics, current: Metrics) => boolean
   isAllowed?: (candidate: Metrics) => boolean
   checkpoint?: PairSwapCheckpoint
@@ -108,11 +109,12 @@ export function runPairSwapSearch<Metrics>(options: PairSwapSearchOptions<Metric
     let bestMetrics = options.evaluate(cursor.board)
     for (const pair of buildTwoCourtBoards(ids)) {
       candidatesEvaluated += 1
-      const candidate = [...otherMatches, ...pair]
-      const candidateMetrics = options.evaluate(candidate)
+      const candidateMetrics = options.evaluateReplacement
+        ? options.evaluateReplacement(otherMatches, pair)
+        : options.evaluate([...otherMatches, ...pair])
       if (options.isAllowed && !options.isAllowed(candidateMetrics)) continue
       if (options.isBetter(candidateMetrics, bestMetrics)) {
-        bestBoard = candidate
+        bestBoard = [...otherMatches, ...pair]
         bestMetrics = candidateMetrics
       }
     }

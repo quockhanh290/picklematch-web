@@ -105,14 +105,49 @@ function playerBurden(metrics: MatchMetrics, partnerIntra: number, tolerance: nu
   return Math.max(0, metrics.inter - tolerance) * 2 + Math.max(0, partnerIntra - 1)
 }
 
+type DebtProjectionScratch = {
+  indexById: ReadonlyMap<string, number>
+  base: Float64Array
+  projected: Float64Array
+  touched: Uint8Array
+  touchedIndices: number[]
+}
+
+function createDebtProjectionScratch(
+  state: SessionState,
+  debt: ReadonlyMap<string, number>,
+): DebtProjectionScratch {
+  const playerIds = [...new Set([...debt.keys(), ...state.players.keys()])]
+  const indexById = new Map(playerIds.map((id, index) => [id, index]))
+  const base = new Float64Array(playerIds.map(id => debt.get(id) ?? 0))
+  return {
+    indexById,
+    base,
+    projected: new Float64Array(base),
+    touched: new Uint8Array(playerIds.length),
+    touchedIndices: [],
+  }
+}
+
 export function summarizeSessionPlanBoard(
   board: SessionPlanMatch[],
   state: SessionState,
   debt: ReadonlyMap<string, number>,
   resolveMetrics: (match: SessionPlanMatch) => MatchMetrics = match => metricsForMatch(match, state),
 ): SessionPlanBoardMetrics {
+  return summarizeSessionPlanBoardParts([board], state, debt, resolveMetrics)
+}
+
+function summarizeSessionPlanBoardParts(
+  parts: ReadonlyArray<ReadonlyArray<SessionPlanMatch>>,
+  state: SessionState,
+  debt: ReadonlyMap<string, number>,
+  resolveMetrics: (match: SessionPlanMatch) => MatchMetrics,
+  debtScratch?: DebtProjectionScratch,
+): SessionPlanBoardMetrics {
   const tolerance = state.config.pvna_tolerance
-  const burdenByPlayer = new Map<string, number>()
+  const burdenByPlayer = debtScratch ? null : new Map<string, number>()
+  let matchCount = 0
   let interTotal = 0
   let intraTotal = 0
   let maxInter = 0
@@ -125,48 +160,76 @@ export function summarizeSessionPlanBoard(
   let opponentRepeats = 0
   let genderPenalty = 0
   let engineScore = 0
+  const addBurden = (id: string, burden: number) => {
+    if (!debtScratch) {
+      burdenByPlayer!.set(id, (burdenByPlayer!.get(id) ?? 0) + burden)
+      return
+    }
+    const index = debtScratch.indexById.get(id)
+    if (index === undefined) return
+    if (debtScratch.touched[index] === 0) {
+      debtScratch.touched[index] = 1
+      debtScratch.touchedIndices.push(index)
+    }
+    debtScratch.projected[index] += burden
+  }
 
-  for (const match of board) {
-    const metrics = resolveMetrics(match)
-    interTotal += metrics.inter
-    intraTotal += metrics.maxIntra
-    maxInter = Math.max(maxInter, metrics.inter)
-    maxIntra = Math.max(maxIntra, metrics.maxIntra)
-    if (metrics.inter > tolerance + 1e-9) interOverTolerance += 1
-    if (metrics.inter > 1 + 1e-9) interOverOne += 1
-    if (metrics.maxIntra > 1 + 1e-9) intraOverOne += 1
-    if (metrics.maxIntra > 2 + 1e-9) intraOverTwo += 1
-    partnerRepeats += metrics.partnerRepeats
-    opponentRepeats += metrics.opponentRepeats
-    genderPenalty += metrics.genderPenalty
-    engineScore += metrics.score
+  for (const part of parts) {
+    for (const match of part) {
+      matchCount += 1
+      const metrics = resolveMetrics(match)
+      interTotal += metrics.inter
+      intraTotal += metrics.maxIntra
+      maxInter = Math.max(maxInter, metrics.inter)
+      maxIntra = Math.max(maxIntra, metrics.maxIntra)
+      if (metrics.inter > tolerance + 1e-9) interOverTolerance += 1
+      if (metrics.inter > 1 + 1e-9) interOverOne += 1
+      if (metrics.maxIntra > 1 + 1e-9) intraOverOne += 1
+      if (metrics.maxIntra > 2 + 1e-9) intraOverTwo += 1
+      partnerRepeats += metrics.partnerRepeats
+      opponentRepeats += metrics.opponentRepeats
+      genderPenalty += metrics.genderPenalty
+      engineScore += metrics.score
 
-    const teamABurden = playerBurden(metrics, metrics.intraA, tolerance)
-    const teamBBurden = playerBurden(metrics, metrics.intraB, tolerance)
-    for (const id of match.team_a) burdenByPlayer.set(id, (burdenByPlayer.get(id) ?? 0) + teamABurden)
-    for (const id of match.team_b) burdenByPlayer.set(id, (burdenByPlayer.get(id) ?? 0) + teamBBurden)
+      const teamABurden = playerBurden(metrics, metrics.intraA, tolerance)
+      const teamBBurden = playerBurden(metrics, metrics.intraB, tolerance)
+      for (const id of match.team_a) addBurden(id, teamABurden)
+      for (const id of match.team_b) addBurden(id, teamBBurden)
+    }
   }
 
   let maxProjectedDebt = 0
   let squaredProjectedDebt = 0
-  for (const [id, value] of debt) {
-    const projected = value + (burdenByPlayer.get(id) ?? 0)
-    maxProjectedDebt = Math.max(maxProjectedDebt, projected)
-    squaredProjectedDebt += projected * projected
-    burdenByPlayer.delete(id)
-  }
-  for (const burden of burdenByPlayer.values()) {
-    maxProjectedDebt = Math.max(maxProjectedDebt, burden)
-    squaredProjectedDebt += burden * burden
+  if (debtScratch) {
+    for (const projected of debtScratch.projected) {
+      maxProjectedDebt = Math.max(maxProjectedDebt, projected)
+      squaredProjectedDebt += projected * projected
+    }
+    for (const index of debtScratch.touchedIndices) {
+      debtScratch.projected[index] = debtScratch.base[index]
+      debtScratch.touched[index] = 0
+    }
+    debtScratch.touchedIndices.length = 0
+  } else {
+    for (const [id, value] of debt) {
+      const projected = value + (burdenByPlayer!.get(id) ?? 0)
+      maxProjectedDebt = Math.max(maxProjectedDebt, projected)
+      squaredProjectedDebt += projected * projected
+      burdenByPlayer!.delete(id)
+    }
+    for (const burden of burdenByPlayer!.values()) {
+      maxProjectedDebt = Math.max(maxProjectedDebt, burden)
+      squaredProjectedDebt += burden * burden
+    }
   }
 
   return {
-    matches: board.length,
-    avgInter: interTotal / Math.max(1, board.length),
+    matches: matchCount,
+    avgInter: interTotal / Math.max(1, matchCount),
     maxInter,
     interOverTolerance,
     interOverOne,
-    avgIntra: intraTotal / Math.max(1, board.length),
+    avgIntra: intraTotal / Math.max(1, matchCount),
     maxIntra,
     intraOverOne,
     intraOverTwo,
@@ -188,33 +251,46 @@ function optimizeBoard(
   searchStats: { timedOut: boolean; candidatesEvaluated: number },
 ) {
   const matchMetricsCache = new Map<string, MatchMetrics>()
-  const boardMetricsCache = new Map<string, SessionPlanBoardMetrics>()
+  const matchObjectMetricsCache = new WeakMap<SessionPlanMatch, MatchMetrics>()
+  const debtScratch = createDebtProjectionScratch(state, debt)
   const matchKey = (match: SessionPlanMatch) => {
-    const teamA = [...match.team_a].sort().join(',')
-    const teamB = [...match.team_b].sort().join(',')
+    const teamA = match.team_a[0] < match.team_a[1]
+      ? `${match.team_a[0]},${match.team_a[1]}`
+      : `${match.team_a[1]},${match.team_a[0]}`
+    const teamB = match.team_b[0] < match.team_b[1]
+      ? `${match.team_b[0]},${match.team_b[1]}`
+      : `${match.team_b[1]},${match.team_b[0]}`
     return `${teamA}|${teamB}`
   }
   const resolveMetrics = (match: SessionPlanMatch) => {
+    const objectCached = matchObjectMetricsCache.get(match)
+    if (objectCached) return objectCached
     const key = matchKey(match)
     const cached = matchMetricsCache.get(key)
-    if (cached) return cached
+    if (cached) {
+      matchObjectMetricsCache.set(match, cached)
+      return cached
+    }
     const metrics = metricsForMatch(match, state)
     matchMetricsCache.set(key, metrics)
+    matchObjectMetricsCache.set(match, metrics)
     return metrics
   }
   const summarize = (candidate: SessionPlanMatch[]) => {
-    const key = candidate.map(matchKey).sort().join(';')
-    const cached = boardMetricsCache.get(key)
-    if (cached) return cached
-    const metrics = summarizeSessionPlanBoard(candidate, state, debt, resolveMetrics)
-    boardMetricsCache.set(key, metrics)
-    return metrics
+    return summarizeSessionPlanBoardParts([candidate], state, debt, resolveMetrics, debtScratch)
   }
   const invariantCaps = summarize(initial)
   const result = runPairSwapSearch({
     initialBoard: initial,
     passes: localSearchPasses,
     evaluate: summarize,
+    evaluateReplacement: (otherMatches, replacement) => summarizeSessionPlanBoardParts(
+      [otherMatches, replacement],
+      state,
+      debt,
+      resolveMetrics,
+      debtScratch,
+    ),
     isAllowed: metrics => isWithinSocialPlannerCaps(metrics, invariantCaps),
     isBetter: isBetterSocialPlan,
     maxRuntimeMs,
