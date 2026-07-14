@@ -175,9 +175,25 @@ claiming the hosted CPU gate passes.
   changed courts.
 - Add a strict time budget and always return the best valid plan found so far.
 
-Progress: cache and anytime-budget behavior are proven in diagnostics. Moving
-the code into the shared planner module, deterministic candidate checkpoints,
-and regression tests remain before Phase 1 is complete.
+Progress: cache and anytime-budget behavior are proven in diagnostics. The
+deterministic scheduler and pair-swap orchestration now live in shared planner
+modules; production objective/validation assembly remains before Phase 1 is
+complete.
+
+Shared extraction progress:
+
+- `planner/rest-schedule.ts` owns deterministic balanced rest scheduling and its
+  mathematical unavoidable-rest bound.
+- `planner/pair-swap-search.ts` owns deterministic two-court candidate ordering,
+  bounded court-pair chunks, and serializable resume checkpoints.
+- Running the search uninterrupted or one court-pair per checkpoint produces
+  the same final board.
+- Focused planner tests pass 3/3. The full unit gate passes 163/164; the only
+  failure is the pre-existing Cap-2 A1 runtime fixture where `suggestNextRound`
+  exhausts its 2000ms budget and returns no alternatives.
+
+The planner extraction is not wired into any live function. Existing live-engine
+selection and persistence behavior remain unchanged.
 
 Gate: existing live-engine outputs and all operation tests remain unchanged when
 the planner feature flag is off.

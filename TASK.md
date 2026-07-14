@@ -67,6 +67,10 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   real-session runtime fell from 9.8s to 1.88s and slowest round to 263ms.
 - [x] Add bounded anytime search. A 400ms deadline returns a valid best-so-far
   board; deterministic one-pass remains the current quality/runtime baseline.
+- [x] Extract shared deterministic rest scheduling and checkpointable pair-swap
+  search under `lib/next-round-suggester/planner/`; focused tests pass 3/3.
+- [x] Re-run full unit gate: 163/164 pass; only the documented pre-existing
+  Cap-2 A1 2000ms-budget fixture remains red.
 
 ### Next steps
 - [x] Phase 0: split timing by planning stage and run quick/structural matrices.

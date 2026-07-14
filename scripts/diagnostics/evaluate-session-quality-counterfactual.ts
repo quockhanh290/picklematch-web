@@ -2,6 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { buildProjectedStateAfterCompletedLiveRound, buildProjectedStateAfterLiveMatch } from '@/lib/next-round-suggester/live-preview'
+import { runPairSwapSearch } from '@/lib/next-round-suggester/planner/pair-swap-search'
+import { buildBalancedRestSchedule } from '@/lib/next-round-suggester/planner/rest-schedule'
 import { scoreMatch } from '@/lib/next-round-suggester/score'
 import { DEFAULT_SCORING_WEIGHTS } from '@/lib/next-round-suggester/state'
 import type { PlayerSessionState, SessionState, Team } from '@/lib/next-round-suggester/types'
@@ -255,34 +257,6 @@ function isBetter(left: BoardMetrics, right: BoardMetrics, variant: Exclude<Vari
   return false
 }
 
-function teamSplits(ids: string[]): Array<[Team, Team]> {
-  return [
-    [[ids[0], ids[1]], [ids[2], ids[3]]],
-    [[ids[0], ids[2]], [ids[1], ids[3]]],
-    [[ids[0], ids[3]], [ids[1], ids[2]]],
-  ]
-}
-
-function twoCourtBoards(ids: string[]): BoardMatch[][] {
-  const boards: BoardMatch[][] = []
-  const first = ids[0]
-  for (let a = 1; a < ids.length; a += 1) {
-    for (let b = a + 1; b < ids.length; b += 1) {
-      for (let c = b + 1; c < ids.length; c += 1) {
-        const firstFour = [first, ids[a], ids[b], ids[c]]
-        const firstSet = new Set(firstFour)
-        const secondFour = ids.filter(id => !firstSet.has(id))
-        for (const [teamA, teamB] of teamSplits(firstFour)) {
-          for (const [teamC, teamD] of teamSplits(secondFour)) {
-            boards.push([{ team_a: teamA, team_b: teamB }, { team_a: teamC, team_b: teamD }])
-          }
-        }
-      }
-    }
-  }
-  return boards
-}
-
 function optimizeBoard(
   initial: BoardMatch[],
   state: SessionState,
@@ -292,7 +266,6 @@ function optimizeBoard(
   maxRuntimeMs?: number,
   searchStats: { timedOut: boolean; candidatesEvaluated: number } = { timedOut: false, candidatesEvaluated: 0 },
 ) {
-  const deadline = maxRuntimeMs === undefined ? Number.POSITIVE_INFINITY : performance.now() + maxRuntimeMs
   const matchMetricsCache = new Map<string, MatchMetrics>()
   const boardMetricsCache = new Map<string, BoardMetrics>()
   const matchKey = (match: BoardMatch) => {
@@ -316,46 +289,22 @@ function optimizeBoard(
     boardMetricsCache.set(key, metrics)
     return metrics
   }
-  let board = initial.map(match => ({ team_a: [...match.team_a] as Team, team_b: [...match.team_b] as Team }))
-  const invariantCaps = summarizeCandidate(board)
-  search: for (let pass = 0; pass < localSearchPasses; pass += 1) {
-    let improved = false
-    for (let left = 0; left < board.length; left += 1) {
-      for (let right = left + 1; right < board.length; right += 1) {
-        const otherMatches = board.filter((_, index) => index !== left && index !== right)
-        const ids = [...board[left].team_a, ...board[left].team_b, ...board[right].team_a, ...board[right].team_b]
-        let bestBoard = board
-        let bestMetrics = summarizeCandidate(board)
-        for (const pair of twoCourtBoards(ids)) {
-          if (performance.now() >= deadline) {
-            searchStats.timedOut = true
-            break
-          }
-          searchStats.candidatesEvaluated += 1
-          const candidate = [...otherMatches, ...pair]
-          const candidateMetrics = summarizeCandidate(candidate)
-          if (
-            candidateMetrics.partnerRepeats > invariantCaps.partnerRepeats
-            || candidateMetrics.opponentRepeats > invariantCaps.opponentRepeats
-            || candidateMetrics.genderPenalty > invariantCaps.genderPenalty
-          ) {
-            continue
-          }
-          if (isBetter(candidateMetrics, bestMetrics, variant)) {
-            bestBoard = candidate
-            bestMetrics = candidateMetrics
-          }
-        }
-        if (bestBoard !== board) {
-          board = bestBoard
-          improved = true
-        }
-        if (searchStats.timedOut) break search
-      }
-    }
-    if (!improved) break
-  }
-  return board
+  const invariantCaps = summarizeCandidate(initial)
+  const result = runPairSwapSearch({
+    initialBoard: initial,
+    passes: localSearchPasses,
+    evaluate: summarizeCandidate,
+    isAllowed: metrics => (
+      metrics.partnerRepeats <= invariantCaps.partnerRepeats
+      && metrics.opponentRepeats <= invariantCaps.opponentRepeats
+      && metrics.genderPenalty <= invariantCaps.genderPenalty
+    ),
+    isBetter: (candidate, current) => isBetter(candidate, current, variant),
+    maxRuntimeMs,
+  })
+  searchStats.timedOut = result.timedOut
+  searchStats.candidatesEvaluated = result.candidatesEvaluated
+  return result.board
 }
 
 function repairDuplicateSlots(board: BoardMatch[], state: SessionState) {
@@ -454,54 +403,6 @@ function runVariant(
   result.state = state
   result.debt = debt
   return result
-}
-
-function greatestCommonDivisor(left: number, right: number) {
-  let a = Math.abs(left)
-  let b = Math.abs(right)
-  while (b !== 0) {
-    const remainder = a % b
-    a = b
-    b = remainder
-  }
-  return a
-}
-
-function buildBalancedRestSchedule(
-  playerIds: string[],
-  roundCount: number,
-  restPerRound: number,
-) {
-  if (restPerRound === 0) return Array.from({ length: roundCount }, () => [] as string[])
-  const playerCount = playerIds.length
-  let stride = Math.max(1, Math.floor(playerCount * 0.618))
-  while (greatestCommonDivisor(stride, playerCount) !== 1) stride += 1
-  const restCounts = new Map(playerIds.map(id => [id, 0]))
-  const restStreaks = new Map(playerIds.map(id => [id, 0]))
-
-  return Array.from({ length: roundCount }, (_, roundNo) => {
-    const tieOrder = new Map<string, number>()
-    const offset = (roundNo * restPerRound) % playerCount
-    for (let index = 0; index < playerCount; index += 1) {
-      tieOrder.set(playerIds[(offset + index * stride) % playerCount], index)
-    }
-    const resting = [...playerIds]
-      .sort((left, right) => {
-        const streakDelta = (restStreaks.get(left) ?? 0) - (restStreaks.get(right) ?? 0)
-        if (streakDelta !== 0) return streakDelta
-        const countDelta = (restCounts.get(left) ?? 0) - (restCounts.get(right) ?? 0)
-        return countDelta || (tieOrder.get(left) ?? 0) - (tieOrder.get(right) ?? 0)
-      })
-      .slice(0, restPerRound)
-    const restingSet = new Set(resting)
-    playerIds.forEach(id => {
-      restStreaks.set(id, restingSet.has(id) ? (restStreaks.get(id) ?? 0) + 1 : 0)
-    })
-    resting.forEach(id => {
-      restCounts.set(id, (restCounts.get(id) ?? 0) + 1)
-    })
-    return resting
-  })
 }
 
 export function buildShadowPrecomputedPlan(
