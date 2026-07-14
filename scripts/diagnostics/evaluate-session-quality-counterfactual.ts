@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { buildProjectedStateAfterCompletedLiveRound, buildProjectedStateAfterLiveMatch } from '@/lib/next-round-suggester/live-preview'
@@ -8,6 +8,7 @@ import type { PlayerSessionState, SessionState, Team } from '@/lib/next-round-su
 
 type RawPlayer = {
   player_id: string
+  session_id?: string
   group_id?: string | null
   checked_in_at?: string
   checked_out_at?: string | null
@@ -34,7 +35,7 @@ type RawMatch = {
 }
 
 type BoardMatch = { team_a: Team; team_b: Team }
-type Variant = 'baseline' | 'lookahead' | 'quality_debt'
+type Variant = 'baseline' | 'lookahead' | 'quality_debt' | 'shadow_precomputed'
 
 type MatchMetrics = {
   inter: number
@@ -192,6 +193,20 @@ function summarizeBoard(board: BoardMatch[], state: SessionState, debt: Map<stri
 }
 
 function comparisonTuple(metrics: BoardMetrics, variant: Exclude<Variant, 'baseline'>) {
+  if (variant === 'shadow_precomputed') {
+    return [
+      metrics.interOverOne,
+      metrics.intraOverTwo,
+      metrics.partnerRepeats,
+      metrics.opponentRepeats,
+      metrics.interOverTolerance,
+      metrics.intraOverOne,
+      metrics.maxInter,
+      metrics.maxIntra,
+      metrics.genderPenalty,
+      metrics.engineScore,
+    ]
+  }
   const quality = [
     metrics.interOverOne,
     metrics.intraOverTwo,
@@ -384,6 +399,99 @@ function runVariant(
   return result
 }
 
+function buildShadowPrecomputedPlan(
+  initialState: SessionState,
+  roundCount: number,
+  courts: number,
+) {
+  const activePlayers = [...initialState.players.values()]
+    .filter(player => player.checked_out_at === null)
+    .sort((left, right) => {
+      const pvnaDelta = pvna(initialState, left.player_id) - pvna(initialState, right.player_id)
+      return pvnaDelta || left.player_id.localeCompare(right.player_id)
+    })
+  const slotsPerRound = Math.min(courts * 4, Math.floor(activePlayers.length / 4) * 4)
+  const restPerRound = activePlayers.length - slotsPerRound
+  if (slotsPerRound !== courts * 4) {
+    throw new Error(`Shadow planner requires enough players for all courts: players=${activePlayers.length} courts=${courts}`)
+  }
+  if (restPerRound > 0 && activePlayers.length % restPerRound !== 0) {
+    throw new Error(`Shadow planner prototype requires even rest groups: players=${activePlayers.length} rest_per_round=${restPerRound}`)
+  }
+
+  const restGroupCount = restPerRound === 0 ? 1 : activePlayers.length / restPerRound
+  const restGroups = Array.from({ length: restGroupCount }, () => [] as string[])
+  activePlayers.forEach((player, index) => {
+    restGroups[index % restGroupCount].push(player.player_id)
+  })
+
+  let state = initialState
+  let debt = new Map([...state.players.keys()].map(id => [id, 0]))
+  const maxRestByPlayer = new Map([...state.players.keys()].map(id => [id, 0]))
+  const result: VariantResult = {
+    variant: 'shadow_precomputed',
+    state,
+    debt,
+    rounds: [],
+    allMatches: [],
+  }
+  const schedule: Array<{ round: number; resting: string[]; matches: BoardMatch[] }> = []
+
+  for (let roundNo = 0; roundNo < roundCount; roundNo += 1) {
+    const resting = new Set(restPerRound === 0 ? [] : restGroups[roundNo % restGroupCount])
+    const playing = activePlayers
+      .filter(player => !resting.has(player.player_id))
+      .map(player => player.player_id)
+      .sort((left, right) => pvna(state, left) - pvna(state, right) || left.localeCompare(right))
+    const initialBoard: BoardMatch[] = []
+    for (let offset = 0; offset < playing.length; offset += 4) {
+      const ids = playing.slice(offset, offset + 4)
+      initialBoard.push({
+        team_a: [ids[0], ids[3]],
+        team_b: [ids[1], ids[2]],
+      })
+    }
+    const board = optimizeBoard(initialBoard, state, debt, 'shadow_precomputed')
+    const before = summarizeBoard(initialBoard, state, debt)
+    const after = summarizeBoard(board, state, debt)
+    result.rounds.push({ round: roundNo + 1, duplicateSlotsRepaired: 0, before, after })
+    result.allMatches.push(...board)
+    schedule.push({
+      round: roundNo + 1,
+      resting: [...resting].sort(),
+      matches: board.map(match => ({
+        team_a: [...match.team_a] as Team,
+        team_b: [...match.team_b] as Team,
+      })),
+    })
+    debt = applyDebt(debt, board, state)
+    state = applyBoard(state, board, roundNo)
+    for (const player of state.players.values()) {
+      maxRestByPlayer.set(
+        player.player_id,
+        Math.max(maxRestByPlayer.get(player.player_id) ?? 0, player.consecutive_rest),
+      )
+    }
+  }
+
+  result.state = state
+  result.debt = debt
+  const duplicatePlayerRounds = schedule.filter(round => {
+    const ids = round.matches.flatMap(match => [...match.team_a, ...match.team_b])
+    return ids.length !== new Set(ids).size
+  }).length
+  return {
+    result,
+    schedule,
+    invariants: {
+      duplicate_player_rounds: duplicatePlayerRounds,
+      max_consecutive_rest: Math.max(0, ...maxRestByPlayer.values()),
+      full_rounds: schedule.filter(round => round.matches.length === courts).length,
+      expected_rounds: roundCount,
+    },
+  }
+}
+
 function aggregate(result: VariantResult) {
   const roundMetrics = result.rounds.map(round => round.after)
   const totalMatches = roundMetrics.reduce((sum, round) => sum + round.matches, 0)
@@ -435,6 +543,7 @@ function main() {
   const startedAt = performance.now()
   const results = (['baseline', 'lookahead', 'quality_debt'] as Variant[])
     .map(variant => runVariant(variant, initialState, rounds))
+  const shadow = buildShadowPrecomputedPlan(initialState, rounds.length, courts)
   const elapsedMs = performance.now() - startedAt
   const compactMetrics = (metrics: BoardMetrics) => ({
     avg_team_gap: Number(metrics.avgInter.toFixed(3)),
@@ -449,11 +558,32 @@ function main() {
     opponent_repeats: metrics.opponentRepeats,
     max_projected_debt: Number(metrics.maxProjectedDebt.toFixed(3)),
   })
+  const profilesById = new Map(profiles.map(profile => [profile.id, profile]))
+  const shadowOutput = {
+    generated_at: new Date().toISOString(),
+    source: 'shadow_precomputed_from_initial_roster',
+    session_id: players[0]?.session_id ?? null,
+    invariants: shadow.invariants,
+    summary: aggregate(shadow.result),
+    rounds: shadow.schedule.map(round => ({
+      ...round,
+      resting: round.resting.map(id => ({ id, name: profilesById.get(id)?.name ?? id })),
+      matches: round.matches.map((match, courtIdx) => ({
+        court_idx: courtIdx,
+        team_a: match.team_a.map(id => ({ id, name: profilesById.get(id)?.name ?? id, pvna: pvna(initialState, id) })),
+        team_b: match.team_b.map(id => ({ id, name: profilesById.get(id)?.name ?? id, pvna: pvna(initialState, id) })),
+      })),
+    })),
+  }
+  const shadowPath = join(directory, 'shadow-precomputed-plan.json')
+  writeFileSync(shadowPath, JSON.stringify(shadowOutput, null, 2))
   console.log(JSON.stringify({
     input: { directory, players: players.length, courts, rounds: rounds.length, completed_matches: completed.length },
     elapsed_ms: Math.round(elapsedMs),
-    variants: Object.fromEntries(results.map(result => [result.variant, {
+    shadow_plan_path: shadowPath,
+    variants: Object.fromEntries([...results, shadow.result].map(result => [result.variant, {
       summary: aggregate(result),
+      ...(result.variant === 'shadow_precomputed' ? { invariants: shadow.invariants } : {}),
       changed_rounds: result.rounds
         .filter(round => JSON.stringify(round.before) !== JSON.stringify(round.after) || round.duplicateSlotsRepaired > 0)
         .map(round => ({
