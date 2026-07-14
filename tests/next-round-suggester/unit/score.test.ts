@@ -51,6 +51,29 @@ describe('scoreMatch', () => {
     expect(result.score).toBe(6)
   })
 
+  it('preserves repeat stats when a diagnostic caller allows PVNA tolerance overflow', () => {
+    const p1 = createPlayer('p1', { pvna: 4.5 })
+    const p2 = createPlayer('p2', { pvna: 4.0 })
+    const p3 = createPlayer('p3', { pvna: 3.8 })
+    const p4 = createPlayer('p4', { pvna: 3.7 })
+    setPartnerRepeats(p1, p2, 1)
+    setOpponentRepeats(p1, p3, 2)
+    const state = createState({ pvnaTolerance: 0.5, players: [p1, p2, p3, p4] })
+
+    expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], state, {
+      allowRepeatOverflow: true,
+    }).score).toBe(Infinity)
+
+    const diagnostic = scoreMatch(['p1', 'p2'], ['p3', 'p4'], state, {
+      allowPvnaToleranceOverflow: true,
+      allowRepeatOverflow: true,
+    })
+    expect(Number.isFinite(diagnostic.score)).toBe(true)
+    expect(diagnostic.stats.pvna_diff).toBe(1)
+    expect(diagnostic.stats.partner_repeats).toBe(1)
+    expect(diagnostic.stats.opponent_repeats).toBe(2)
+  })
+
   it('subtracts group bonus for grouped players', () => {
     const state = createState({
       players: [

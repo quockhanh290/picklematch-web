@@ -13,13 +13,18 @@ import {
   type SocialPlannerMetrics,
 } from '@/lib/next-round-suggester/planner/objective'
 import { repairUnavailablePlannedBoard, validatePlannedBoard } from '@/lib/next-round-suggester/planner/validation'
-import { buildPrecomputedSessionPlan, summarizeSessionPlan } from '@/lib/next-round-suggester/planner/session-plan'
+import {
+  buildPrecomputedSessionPlan,
+  summarizeSessionPlan,
+  summarizeSessionPlanBoard,
+} from '@/lib/next-round-suggester/planner/session-plan'
 import type { PlayerSessionState } from '@/lib/next-round-suggester/types'
 import {
   aggregate,
   buildInitialState,
   buildShadowPrecomputedPlan,
 } from '@/scripts/diagnostics/evaluate-session-quality-counterfactual'
+import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
 
 function restMetrics(playerIds: string[], schedule: string[][]) {
   const counts = new Map(playerIds.map(id => [id, 0]))
@@ -72,6 +77,25 @@ describe('precomputed planner primitives', () => {
       metrics({ maxProjectedDebt: 1, maxInter: 0.5 }),
       metrics({ maxProjectedDebt: 2, maxInter: 0.1 }),
     )).toBe(true)
+  })
+
+  it('counts repeat exposure on lineups over the configured PVNA tolerance', () => {
+    const p1 = createPlayer('p1', { pvna: 4.5 })
+    const p2 = createPlayer('p2', { pvna: 4.0 })
+    const p3 = createPlayer('p3', { pvna: 3.8 })
+    const p4 = createPlayer('p4', { pvna: 3.7 })
+    setPartnerRepeats(p1, p2, 1)
+    const state = createState({ pvnaTolerance: 0.5, players: [p1, p2, p3, p4] })
+
+    const result = summarizeSessionPlanBoard(
+      [{ team_a: ['p1', 'p2'], team_b: ['p3', 'p4'] }],
+      state,
+      new Map([...state.players.keys()].map(id => [id, 0])),
+    )
+
+    expect(result.interOverTolerance).toBe(1)
+    expect(result.partnerRepeats).toBe(1)
+    expect(Number.isFinite(result.engineScore)).toBe(true)
   })
 
   it('limits opponent-repeat overflow before optimizing soft quality warnings', () => {

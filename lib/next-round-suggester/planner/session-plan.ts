@@ -84,6 +84,7 @@ function metricsForMatch(match: SessionPlanMatch, state: SessionState): MatchMet
   const intraB = Math.abs(effectivePvna(state, match.team_b[0]) - effectivePvna(state, match.team_b[1]))
   const result = scoreMatch(match.team_a, match.team_b, state, {
     tolerance,
+    allowPvnaToleranceOverflow: true,
     allowRepeatOverflow: true,
     allowIntraTeamGapOverflow: true,
     allowRecentGroupRematch: true,
@@ -111,36 +112,70 @@ export function summarizeSessionPlanBoard(
   resolveMetrics: (match: SessionPlanMatch) => MatchMetrics = match => metricsForMatch(match, state),
 ): SessionPlanBoardMetrics {
   const tolerance = state.config.pvna_tolerance
-  const metrics = board.map(resolveMetrics)
-  const projectedDebt = new Map(debt)
-  board.forEach((match, index) => {
-    const matchMetrics = metrics[index]
-    match.team_a.forEach(id => projectedDebt.set(
-      id,
-      (projectedDebt.get(id) ?? 0) + playerBurden(matchMetrics, matchMetrics.intraA, tolerance),
-    ))
-    match.team_b.forEach(id => projectedDebt.set(
-      id,
-      (projectedDebt.get(id) ?? 0) + playerBurden(matchMetrics, matchMetrics.intraB, tolerance),
-    ))
-  })
-  const debtValues = [...projectedDebt.values()]
+  const burdenByPlayer = new Map<string, number>()
+  let interTotal = 0
+  let intraTotal = 0
+  let maxInter = 0
+  let maxIntra = 0
+  let interOverTolerance = 0
+  let interOverOne = 0
+  let intraOverOne = 0
+  let intraOverTwo = 0
+  let partnerRepeats = 0
+  let opponentRepeats = 0
+  let genderPenalty = 0
+  let engineScore = 0
+
+  for (const match of board) {
+    const metrics = resolveMetrics(match)
+    interTotal += metrics.inter
+    intraTotal += metrics.maxIntra
+    maxInter = Math.max(maxInter, metrics.inter)
+    maxIntra = Math.max(maxIntra, metrics.maxIntra)
+    if (metrics.inter > tolerance + 1e-9) interOverTolerance += 1
+    if (metrics.inter > 1 + 1e-9) interOverOne += 1
+    if (metrics.maxIntra > 1 + 1e-9) intraOverOne += 1
+    if (metrics.maxIntra > 2 + 1e-9) intraOverTwo += 1
+    partnerRepeats += metrics.partnerRepeats
+    opponentRepeats += metrics.opponentRepeats
+    genderPenalty += metrics.genderPenalty
+    engineScore += metrics.score
+
+    const teamABurden = playerBurden(metrics, metrics.intraA, tolerance)
+    const teamBBurden = playerBurden(metrics, metrics.intraB, tolerance)
+    for (const id of match.team_a) burdenByPlayer.set(id, (burdenByPlayer.get(id) ?? 0) + teamABurden)
+    for (const id of match.team_b) burdenByPlayer.set(id, (burdenByPlayer.get(id) ?? 0) + teamBBurden)
+  }
+
+  let maxProjectedDebt = 0
+  let squaredProjectedDebt = 0
+  for (const [id, value] of debt) {
+    const projected = value + (burdenByPlayer.get(id) ?? 0)
+    maxProjectedDebt = Math.max(maxProjectedDebt, projected)
+    squaredProjectedDebt += projected * projected
+    burdenByPlayer.delete(id)
+  }
+  for (const burden of burdenByPlayer.values()) {
+    maxProjectedDebt = Math.max(maxProjectedDebt, burden)
+    squaredProjectedDebt += burden * burden
+  }
+
   return {
     matches: board.length,
-    avgInter: metrics.reduce((sum, item) => sum + item.inter, 0) / Math.max(1, metrics.length),
-    maxInter: Math.max(0, ...metrics.map(item => item.inter)),
-    interOverTolerance: metrics.filter(item => item.inter > tolerance + 1e-9).length,
-    interOverOne: metrics.filter(item => item.inter > 1 + 1e-9).length,
-    avgIntra: metrics.reduce((sum, item) => sum + item.maxIntra, 0) / Math.max(1, metrics.length),
-    maxIntra: Math.max(0, ...metrics.map(item => item.maxIntra)),
-    intraOverOne: metrics.filter(item => item.maxIntra > 1 + 1e-9).length,
-    intraOverTwo: metrics.filter(item => item.maxIntra > 2 + 1e-9).length,
-    partnerRepeats: metrics.reduce((sum, item) => sum + item.partnerRepeats, 0),
-    opponentRepeats: metrics.reduce((sum, item) => sum + item.opponentRepeats, 0),
-    genderPenalty: metrics.reduce((sum, item) => sum + item.genderPenalty, 0),
-    engineScore: metrics.reduce((sum, item) => sum + item.score, 0),
-    maxProjectedDebt: Math.max(0, ...debtValues),
-    squaredProjectedDebt: debtValues.reduce((sum, value) => sum + value * value, 0),
+    avgInter: interTotal / Math.max(1, board.length),
+    maxInter,
+    interOverTolerance,
+    interOverOne,
+    avgIntra: intraTotal / Math.max(1, board.length),
+    maxIntra,
+    intraOverOne,
+    intraOverTwo,
+    partnerRepeats,
+    opponentRepeats,
+    genderPenalty,
+    engineScore,
+    maxProjectedDebt,
+    squaredProjectedDebt,
   }
 }
 

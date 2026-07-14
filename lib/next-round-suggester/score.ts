@@ -521,6 +521,7 @@ export function scoreMatch(
   options: {
     tolerance?: number
     weights?: ScoringWeights
+    allowPvnaToleranceOverflow?: boolean
     allowRepeatOverflow?: boolean
     allowIntraTeamGapOverflow?: boolean
     allowRecentGroupRematch?: boolean
@@ -564,7 +565,7 @@ export function scoreMatch(
   const teamBPvna = getEffectivePvna(teamB0) + getEffectivePvna(teamB1)
   const pvnaDiff = Math.abs(teamAPvna - teamBPvna)
   const tolerance = options.tolerance ?? state.config.pvna_tolerance
-  if (pvnaDiff > tolerance) return INFINITY_SCORE
+  if (!options.allowPvnaToleranceOverflow && pvnaDiff > tolerance) return INFINITY_SCORE
 
   if (!options.allowRecentGroupRematch && hasRecentGroupRematch(teamA, teamB, state)) {
     return INFINITY_SCORE
