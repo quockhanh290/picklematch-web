@@ -13,7 +13,13 @@ import {
   type SocialPlannerMetrics,
 } from '@/lib/next-round-suggester/planner/objective'
 import { repairUnavailablePlannedBoard, validatePlannedBoard } from '@/lib/next-round-suggester/planner/validation'
+import { buildPrecomputedSessionPlan, summarizeSessionPlan } from '@/lib/next-round-suggester/planner/session-plan'
 import type { PlayerSessionState } from '@/lib/next-round-suggester/types'
+import {
+  aggregate,
+  buildInitialState,
+  buildShadowPrecomputedPlan,
+} from '@/scripts/diagnostics/evaluate-session-quality-counterfactual'
 
 function restMetrics(playerIds: string[], schedule: string[][]) {
   const counts = new Map(playerIds.map(id => [id, 0]))
@@ -189,6 +195,27 @@ describe('precomputed planner primitives', () => {
     })
 
     expect(resumed).toEqual(full.slice(3))
+  })
+
+  it('keeps deployable planner output identical to the proven diagnostic planner', () => {
+    const rawPlayers = Array.from({ length: 24 }, (_, index) => ({
+      player_id: `p${index + 1}`,
+      checked_in_at: new Date(0).toISOString(),
+      checked_out_at: null,
+      effective_pvna: 2.5 + ((index * 37) % 101) / 100 * 3,
+    }))
+    const profiles = rawPlayers.map((player, index) => ({
+      id: player.player_id,
+      pvna: player.effective_pvna,
+      gender: index % 2 === 0 ? 'male' : 'female',
+    }))
+    const state = buildInitialState(rawPlayers, profiles, 4)
+    const diagnostic = buildShadowPrecomputedPlan(state, 3, 4, { localSearchPasses: 1 })
+    const deployable = buildPrecomputedSessionPlan(state, 3, 4, { localSearchPasses: 1 })
+
+    expect(deployable.rounds.map(({ round, resting, matches }) => ({ round, resting, matches })))
+      .toEqual(diagnostic.schedule)
+    expect(summarizeSessionPlan(deployable)).toEqual(aggregate(diagnostic.result))
   })
 
   it('resumes deterministic pair-swap checkpoints to the same final board', () => {

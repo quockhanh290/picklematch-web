@@ -99,8 +99,11 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   idempotent job/version keys, composite session ownership FKs, compact rounds,
   and no dependency on live-match tables. Keep it unapplied until shadow Edge
   passes its end-to-end gate.
-- [ ] Extract the planner assembly from diagnostics into the deployable shared
-  library, then implement `session-plan-shadow` against the staged schema.
+- [x] Extract deployable `planner/session-plan.ts`; it imports the existing
+  scorer/state projection, has no diagnostic or Node I/O dependency, matches
+  the diagnostic oracle exactly, and passes quick + 36-case structural gates.
+- [ ] Implement `session-plan-shadow` against the staged schema and test it
+  locally before applying the migration or deploying the function.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.

@@ -1,12 +1,14 @@
 import { performance } from 'node:perf_hooks'
 
 import {
-  aggregate,
   buildInitialState,
-  buildShadowPrecomputedPlan,
   type RawPlayer,
   type RawProfile,
 } from './evaluate-session-quality-counterfactual'
+import {
+  buildPrecomputedSessionPlan,
+  summarizeSessionPlan,
+} from '../../lib/next-round-suggester/planner/session-plan'
 
 type Scenario = {
   players: number
@@ -80,13 +82,13 @@ function main() {
     const heapBefore = process.memoryUsage().heapUsed
     const cpuStartedAt = process.cpuUsage()
     const wallStartedAt = performance.now()
-    const shadow = buildShadowPrecomputedPlan(state, scenario.rounds, scenario.courts, {
+    const shadow = buildPrecomputedSessionPlan(state, scenario.rounds, scenario.courts, {
       localSearchPasses,
       maxRoundRuntimeMs: roundBudgetMs,
     })
     const wallMs = performance.now() - wallStartedAt
     const cpu = process.cpuUsage(cpuStartedAt)
-    const summary = aggregate(shadow.result)
+    const summary = summarizeSessionPlan(shadow)
     const playingPerRound = scenario.courts * 4
     const restPerRound = scenario.players - playingPerRound
     const expectedMaxRestStreak = restPerRound === 0 ? 0 : Math.ceil(restPerRound / playingPerRound)

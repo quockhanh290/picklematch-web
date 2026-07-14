@@ -199,14 +199,23 @@ Shared extraction progress:
   and excessive opponent repeats.
 - `planner/validation.ts` rejects missing, duplicate, checked-out, opted-rest,
   busy, and reserved players and can minimally repair only invalid visible slots.
+- `planner/session-plan.ts` is the deployable assembly: it owns rest/seed/search/
+  projection orchestration while importing the existing production scorer and
+  live state projection. It has no Node file-system or diagnostic dependency.
 - Running the search uninterrupted or one court-pair per checkpoint produces
   the same final board.
-- Focused planner tests pass 10/10. The full unit gate passes 170/171; the only
+- Focused planner tests pass 11/11, including exact schedule/summary parity
+  between the deployable module and the original diagnostic oracle. The full
+  unit gate passes 170/171; the only
   failure is the pre-existing Cap-2 A1 runtime fixture where `suggestNextRound`
   exhausts its 2000ms budget and returns no alternatives.
 
 The planner extraction is not wired into any live function. Existing live-engine
 selection and persistence behavior remain unchanged.
+
+The quick and 36-case structural matrices now execute the deployable `lib/`
+module directly. The latest one-pass quick run keeps the prior quality output
+and measures slowest rounds at `84-190ms`.
 
 Gate: existing live-engine outputs and all operation tests remain unchanged when
 the planner feature flag is off.
