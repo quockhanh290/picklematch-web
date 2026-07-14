@@ -18,6 +18,7 @@ async function invokePlan(
   client: ReturnType<typeof createClient>,
   sessionId: string,
   plannedRoundCount: number,
+  localSearchPasses: number,
   persist: boolean,
 ) {
   const startedAt = performance.now()
@@ -25,6 +26,7 @@ async function invokePlan(
     body: {
       session_id: sessionId,
       planned_round_count: plannedRoundCount,
+      local_search_passes: localSearchPasses,
       persist,
     },
   })
@@ -99,6 +101,11 @@ async function main() {
   if (!Number.isInteger(plannedRoundCount) || plannedRoundCount <= 0) {
     throw new Error('--rounds must be a positive integer')
   }
+  const requestedPasses = argument('--passes')
+  const localSearchPasses = requestedPasses === undefined ? 1 : Number(requestedPasses)
+  if (!Number.isInteger(localSearchPasses) || localSearchPasses <= 0 || localSearchPasses > 3) {
+    throw new Error('--passes must be an integer from 1 to 3')
+  }
   const sessionIds = requestedSessionId
     ? [requestedSessionId]
     : await (async () => {
@@ -116,7 +123,7 @@ async function main() {
   let dryRun: Awaited<ReturnType<typeof invokePlan>> | null = null
   const rejected: Array<{ session_id: string; error: unknown }> = []
   for (const sessionId of sessionIds) {
-    const result = await invokePlan(client, sessionId, plannedRoundCount, false)
+    const result = await invokePlan(client, sessionId, plannedRoundCount, localSearchPasses, false)
     if (result.data?.ok) {
       selectedSessionId = sessionId
       dryRun = result
@@ -129,7 +136,7 @@ async function main() {
   }
 
   const persisted = process.argv.includes('--persist')
-    ? await invokePlan(client, selectedSessionId, plannedRoundCount, true)
+    ? await invokePlan(client, selectedSessionId, plannedRoundCount, localSearchPasses, true)
     : null
   if (persisted && !persisted.data?.ok) {
     throw new Error(`Persisted shadow smoke failed: ${persisted.data?.error ?? persisted.error}`)
@@ -141,6 +148,7 @@ async function main() {
   console.log(JSON.stringify({
     session_id: selectedSessionId,
     planned_round_count: plannedRoundCount,
+    local_search_passes: localSearchPasses,
     dry_run: {
       ok: dryRun.data.ok,
       wall_ms: dryRun.wall_ms,

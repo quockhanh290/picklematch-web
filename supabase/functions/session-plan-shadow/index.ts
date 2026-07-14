@@ -17,8 +17,9 @@ import { calculateOptimalCourts } from '../../../lib/court-calculator/calculator
 import type { CourtPreset } from '../../../lib/court-calculator/types.ts'
 import type { SessionState } from '../../../lib/next-round-suggester/types.ts'
 
-const ENGINE_VERSION = 'precomputed-v2-court-parity'
+const ENGINE_VERSION = 'precomputed-v3-truthful-metrics'
 const MAX_PLANNED_ROUNDS = 12
+const MAX_LOCAL_SEARCH_PASSES = 3
 
 function stableValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableValue)
@@ -91,6 +92,10 @@ Deno.serve(async (request) => {
 
   const persist = body.persist !== false
   const maxRoundRuntimeMs = positiveInteger(body.max_round_runtime_ms) ?? undefined
+  const localSearchPasses = positiveInteger(body.local_search_passes) ?? 1
+  if (localSearchPasses > MAX_LOCAL_SEARCH_PASSES) {
+    return jsonResponse({ ok: false, error: `local_search_passes must be <= ${MAX_LOCAL_SEARCH_PASSES}` }, 400, request)
+  }
   let jobId: string | null = null
 
   try {
@@ -146,6 +151,7 @@ Deno.serve(async (request) => {
       planner: {
         engine_version: ENGINE_VERSION,
         planned_round_count: requestedRounds,
+        local_search_passes: localSearchPasses,
         court_count: courts,
         court_source: courtOverride === null ? 'court_suggester' : 'session_override',
         court_suggester: {
@@ -219,7 +225,7 @@ Deno.serve(async (request) => {
     }
 
     const plan = buildPrecomputedSessionPlan(state, requestedRounds, courts, {
-      localSearchPasses: 1,
+      localSearchPasses,
       maxRoundRuntimeMs,
       startingRound: state.current_round,
     })
