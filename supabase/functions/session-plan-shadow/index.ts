@@ -9,7 +9,10 @@ import {
 import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
 import {
   buildPrecomputedSessionPlan,
+  buildPrecomputedSessionPlanChunk,
   summarizeSessionPlan,
+  type SessionPlan,
+  type SessionPlanChunkCheckpoint,
 } from '../../../lib/next-round-suggester/planner/session-plan.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { calculateOptimalCourts } from '../../../lib/court-calculator/calculator.ts'
@@ -17,7 +20,7 @@ import { calculateOptimalCourts } from '../../../lib/court-calculator/calculator
 import type { CourtPreset } from '../../../lib/court-calculator/types.ts'
 import type { SessionState } from '../../../lib/next-round-suggester/types.ts'
 
-const ENGINE_VERSION = 'precomputed-v3-truthful-metrics'
+const ENGINE_VERSION = 'precomputed-v4-round-checkpoints'
 const MAX_PLANNED_ROUNDS = 12
 const MAX_LOCAL_SEARCH_PASSES = 3
 
@@ -91,12 +94,19 @@ Deno.serve(async (request) => {
   if (auth.error) return auth.error
 
   const persist = body.persist !== false
+  const chunked = body.chunked === true
+  if (chunked && !persist) {
+    return jsonResponse({ ok: false, error: 'chunked planning requires persist=true' }, 400, request)
+  }
   const maxRoundRuntimeMs = positiveInteger(body.max_round_runtime_ms) ?? undefined
   const localSearchPasses = positiveInteger(body.local_search_passes) ?? 2
   if (localSearchPasses > MAX_LOCAL_SEARCH_PASSES) {
     return jsonResponse({ ok: false, error: `local_search_passes must be <= ${MAX_LOCAL_SEARCH_PASSES}` }, 400, request)
   }
   let jobId: string | null = null
+  let checkpoint: SessionPlanChunkCheckpoint | null = null
+  let previousChunkComputeMs = 0
+  let previousMaxChunkComputeMs = 0
 
   try {
     const [
@@ -152,6 +162,7 @@ Deno.serve(async (request) => {
         engine_version: ENGINE_VERSION,
         planned_round_count: requestedRounds,
         local_search_passes: localSearchPasses,
+        execution_mode: chunked ? 'round_checkpointed' : 'single_request',
         court_count: courts,
         court_source: courtOverride === null ? 'court_suggester' : 'session_override',
         court_suggester: {
@@ -195,7 +206,7 @@ Deno.serve(async (request) => {
       if (insertError?.code === '23505') {
         const { data: existingJob, error: existingError } = await auth.supabase
           .from('session_plan_jobs')
-          .select('id, status')
+          .select('id, status, checkpoint, runtime_summary, updated_at')
           .eq('session_id', sessionId)
           .eq('live_state_version', liveStateVersion)
           .eq('input_hash', inputHash)
@@ -206,17 +217,61 @@ Deno.serve(async (request) => {
         if (existingJob.status === 'completed') {
           return jsonResponse({ ok: true, reused: true, job_id: jobId, input_hash: inputHash }, 200, request)
         }
-        const { error: restartError } = await auth.supabase
-          .from('session_plan_jobs')
-          .update({
-            status: 'running',
-            error_detail: null,
-            started_at: new Date().toISOString(),
-            completed_at: null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', jobId)
-        if (restartError) throw new Error(restartError.message)
+        if (chunked) {
+          if (existingJob.status === 'stale' || existingJob.status === 'cancelled') {
+            return jsonResponse({ ok: false, job_id: jobId, error: `Plan job is ${existingJob.status}` }, 409, request)
+          }
+          const runtime = existingJob.runtime_summary as Record<string, unknown> | null
+          previousChunkComputeMs = finiteNumber(runtime?.chunk_compute_ms, 0)
+          previousMaxChunkComputeMs = finiteNumber(runtime?.max_chunk_compute_ms, 0)
+          checkpoint = existingJob.checkpoint as SessionPlanChunkCheckpoint | null
+          const updatedAtMs = Date.parse(String(existingJob.updated_at))
+          const runningLeaseExpired = Number.isFinite(updatedAtMs) && Date.now() - updatedAtMs > 120_000
+          if (existingJob.status === 'running' && !runningLeaseExpired) {
+            return jsonResponse({
+              ok: true,
+              completed: false,
+              in_progress: true,
+              job_id: jobId,
+              checkpoint_rounds: checkpoint?.rounds.length ?? 0,
+            }, 202, request)
+          }
+          const claimAt = new Date().toISOString()
+          let claimQuery = auth.supabase
+            .from('session_plan_jobs')
+            .update({
+              status: 'running',
+              error_detail: null,
+              completed_at: null,
+              updated_at: claimAt,
+            })
+            .eq('id', jobId)
+            .eq('status', existingJob.status)
+          if (existingJob.updated_at) claimQuery = claimQuery.eq('updated_at', existingJob.updated_at)
+          const { data: claimed, error: claimError } = await claimQuery.select('id').maybeSingle()
+          if (claimError) throw new Error(claimError.message)
+          if (!claimed) {
+            return jsonResponse({
+              ok: true,
+              completed: false,
+              in_progress: true,
+              job_id: jobId,
+              checkpoint_rounds: checkpoint?.rounds.length ?? 0,
+            }, 202, request)
+          }
+        } else {
+          const { error: restartError } = await auth.supabase
+            .from('session_plan_jobs')
+            .update({
+              status: 'running',
+              error_detail: null,
+              started_at: new Date().toISOString(),
+              completed_at: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', jobId)
+          if (restartError) throw new Error(restartError.message)
+        }
       } else if (insertError || !insertedJob) {
         throw new Error(insertError?.message ?? 'Unable to create plan job')
       } else {
@@ -224,11 +279,82 @@ Deno.serve(async (request) => {
       }
     }
 
-    const plan = buildPrecomputedSessionPlan(state, requestedRounds, courts, {
-      localSearchPasses,
-      maxRoundRuntimeMs,
-      startingRound: state.current_round,
-    })
+    let plan: SessionPlan
+    let runtimeSummary: Record<string, unknown>
+    if (chunked) {
+      if (!jobId) throw new Error('Chunked plan job identity is missing')
+      const chunk = buildPrecomputedSessionPlanChunk(state, requestedRounds, courts, checkpoint, {
+        localSearchPasses,
+        maxRoundRuntimeMs,
+        startingRound: state.current_round,
+      })
+      const chunkComputeMs = previousChunkComputeMs + chunk.chunk_runtime_ms
+      const maxChunkComputeMs = Math.max(previousMaxChunkComputeMs, chunk.chunk_runtime_ms)
+      runtimeSummary = {
+        execution_mode: 'round_checkpointed',
+        chunks_completed: chunk.checkpoint.rounds.length,
+        chunk_compute_ms: chunkComputeMs,
+        max_chunk_compute_ms: maxChunkComputeMs,
+        planner_compute_ms: chunk.checkpoint.rest_schedule_ms
+          + chunk.checkpoint.round_timings.reduce((sum, round) => sum + round.total_ms, 0),
+        rounds: chunk.checkpoint.round_timings,
+      }
+
+      if (!chunk.completed || !chunk.plan) {
+        const { data: currentSession, error: currentSessionError } = await auth.supabase
+          .from('sessions')
+          .select('live_state_version')
+          .eq('id', sessionId)
+          .single()
+        if (currentSessionError || !currentSession) {
+          throw new Error(currentSessionError?.message ?? 'Unable to recheck session version')
+        }
+        if (Number(currentSession.live_state_version) !== liveStateVersion) {
+          await auth.supabase
+            .from('session_plan_jobs')
+            .update({ status: 'stale', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            .eq('id', jobId)
+          return jsonResponse({ ok: false, stale: true, job_id: jobId, error: 'Session changed while planning' }, 409, request)
+        }
+        const { error: checkpointError } = await auth.supabase
+          .from('session_plan_jobs')
+          .update({
+            status: 'checkpointed',
+            checkpoint: chunk.checkpoint,
+            runtime_summary: runtimeSummary,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', jobId)
+          .eq('status', 'running')
+        if (checkpointError) throw new Error(checkpointError.message)
+        return jsonResponse({
+          ok: true,
+          persisted: true,
+          completed: false,
+          resume_required: true,
+          job_id: jobId,
+          input_hash: inputHash,
+          engine_version: ENGINE_VERSION,
+          checkpoint_rounds: chunk.checkpoint.rounds.length,
+          planned_round_count: requestedRounds,
+          chunk_runtime_ms: chunk.chunk_runtime_ms,
+          runtime_summary: runtimeSummary,
+        }, 202, request)
+      }
+      plan = chunk.plan
+      runtimeSummary = {
+        ...runtimeSummary,
+        total_ms: plan.timings.total_ms,
+        rest_schedule_ms: plan.timings.rest_schedule_ms,
+      }
+    } else {
+      plan = buildPrecomputedSessionPlan(state, requestedRounds, courts, {
+        localSearchPasses,
+        maxRoundRuntimeMs,
+        startingRound: state.current_round,
+      })
+      runtimeSummary = plan.timings as unknown as Record<string, unknown>
+    }
     const qualitySummary = summarizeSessionPlan(plan)
     const compactRounds = plan.rounds.map(round => ({
       round_no: round.round,
@@ -255,7 +381,7 @@ Deno.serve(async (request) => {
         engine_version: ENGINE_VERSION,
         invariants: plan.invariants,
         quality_summary: qualitySummary,
-        runtime_summary: plan.timings,
+        runtime_summary: runtimeSummary,
       }, 200, request)
     }
     if (!jobId) throw new Error('Plan job identity is missing')
@@ -284,7 +410,7 @@ Deno.serve(async (request) => {
         plan_hash: planHash,
         engine_version: ENGINE_VERSION,
         quality_summary: qualitySummary,
-        runtime_summary: plan.timings,
+        runtime_summary: runtimeSummary,
       }, { onConflict: 'job_id' })
       .select('id')
       .single()
@@ -305,7 +431,8 @@ Deno.serve(async (request) => {
       .from('session_plan_jobs')
       .update({
         status: 'completed',
-        runtime_summary: plan.timings,
+        runtime_summary: runtimeSummary,
+        checkpoint: null,
         completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
@@ -322,7 +449,7 @@ Deno.serve(async (request) => {
       engine_version: ENGINE_VERSION,
       invariants: plan.invariants,
       quality_summary: qualitySummary,
-      runtime_summary: plan.timings,
+      runtime_summary: runtimeSummary,
     }, 200, request)
   } catch (error) {
     if (jobId) {

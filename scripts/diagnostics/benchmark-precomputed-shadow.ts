@@ -7,7 +7,10 @@ import {
 } from './evaluate-session-quality-counterfactual'
 import {
   buildPrecomputedSessionPlan,
+  buildPrecomputedSessionPlanChunk,
   summarizeSessionPlan,
+  type SessionPlan,
+  type SessionPlanChunkCheckpoint,
 } from '../../lib/next-round-suggester/planner/session-plan'
 
 type Scenario = {
@@ -61,6 +64,7 @@ function syntheticRoster(playerCount: number) {
 
 function main() {
   const full = process.argv.includes('--full')
+  const chunked = process.argv.includes('--chunked')
   const numericArg = (name: string) => {
     const argument = process.argv.find(value => value.startsWith(`--${name}=`))
     return argument ? Number(argument.split('=')[1]) : undefined
@@ -82,10 +86,31 @@ function main() {
     const heapBefore = process.memoryUsage().heapUsed
     const cpuStartedAt = process.cpuUsage()
     const wallStartedAt = performance.now()
-    const shadow = buildPrecomputedSessionPlan(state, scenario.rounds, scenario.courts, {
-      localSearchPasses,
-      maxRoundRuntimeMs: roundBudgetMs,
-    })
+    let shadow: SessionPlan
+    const chunkRuntimes: number[] = []
+    if (chunked) {
+      let checkpoint: SessionPlanChunkCheckpoint | null = null
+      let chunk = buildPrecomputedSessionPlanChunk(state, scenario.rounds, scenario.courts, checkpoint, {
+        localSearchPasses,
+        maxRoundRuntimeMs: roundBudgetMs,
+      })
+      chunkRuntimes.push(chunk.chunk_runtime_ms)
+      while (!chunk.completed) {
+        checkpoint = JSON.parse(JSON.stringify(chunk.checkpoint)) as SessionPlanChunkCheckpoint
+        chunk = buildPrecomputedSessionPlanChunk(state, scenario.rounds, scenario.courts, checkpoint, {
+          localSearchPasses,
+          maxRoundRuntimeMs: roundBudgetMs,
+        })
+        chunkRuntimes.push(chunk.chunk_runtime_ms)
+      }
+      if (!chunk.plan) throw new Error(`Chunked planner did not publish ${JSON.stringify(scenario)}`)
+      shadow = chunk.plan
+    } else {
+      shadow = buildPrecomputedSessionPlan(state, scenario.rounds, scenario.courts, {
+        localSearchPasses,
+        maxRoundRuntimeMs: roundBudgetMs,
+      })
+    }
     const wallMs = performance.now() - wallStartedAt
     const cpu = process.cpuUsage(cpuStartedAt)
     const summary = summarizeSessionPlan(shadow)
@@ -109,6 +134,8 @@ function main() {
       passes: localSearchPasses,
       wall_ms: Math.round(wallMs),
       cpu_ms: Math.round((cpu.user + cpu.system) / 1000),
+      chunks: chunkRuntimes.length || 1,
+      max_chunk_ms: chunkRuntimes.length ? Math.round(Math.max(...chunkRuntimes)) : null,
       heap_delta_mb: Number(((process.memoryUsage().heapUsed - heapBefore) / 1024 / 1024).toFixed(2)),
       slowest_round_ms: Math.round(Math.max(...shadow.timings.rounds.map(round => round.total_ms))),
       avg_round_ms: Math.round(shadow.timings.rounds.reduce((sum, round) => sum + round.total_ms, 0) / scenario.rounds),
@@ -128,7 +155,7 @@ function main() {
   })
 
   console.log(JSON.stringify({
-    mode: selectedPlayers ? 'custom' : full ? 'full' : 'quick',
+    mode: `${selectedPlayers ? 'custom' : full ? 'full' : 'quick'}${chunked ? '_chunked' : ''}`,
     local_search_passes: localSearchPasses,
     round_budget_ms: roundBudgetMs ?? null,
     scenario_count: results.length,

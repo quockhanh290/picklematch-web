@@ -15,8 +15,10 @@ import {
 import { repairUnavailablePlannedBoard, validatePlannedBoard } from '@/lib/next-round-suggester/planner/validation'
 import {
   buildPrecomputedSessionPlan,
+  buildPrecomputedSessionPlanChunk,
   summarizeSessionPlan,
   summarizeSessionPlanBoard,
+  type SessionPlanChunkCheckpoint,
 } from '@/lib/next-round-suggester/planner/session-plan'
 import type { PlayerSessionState } from '@/lib/next-round-suggester/types'
 import {
@@ -240,6 +242,30 @@ describe('precomputed planner primitives', () => {
     expect(deployable.rounds.map(({ round, resting, matches }) => ({ round, resting, matches })))
       .toEqual(diagnostic.schedule)
     expect(summarizeSessionPlan(deployable)).toEqual(aggregate(diagnostic.result))
+  })
+
+  it('builds the same pass-three plan one persisted round checkpoint at a time', () => {
+    const players = Array.from({ length: 24 }, (_, index) => createPlayer(`p${index + 1}`, {
+      effective_pvna: 2.5 + ((index * 37) % 101) / 100 * 3,
+    }))
+    const state = createState({ players, courts: 4, currentRound: 0 })
+    const full = buildPrecomputedSessionPlan(state, 4, 4, { localSearchPasses: 3 })
+    let checkpoint: SessionPlanChunkCheckpoint | null = null
+    let result = buildPrecomputedSessionPlanChunk(state, 4, 4, checkpoint, { localSearchPasses: 3 })
+    let chunks = 1
+
+    while (!result.completed) {
+      checkpoint = JSON.parse(JSON.stringify(result.checkpoint)) as SessionPlanChunkCheckpoint
+      result = buildPrecomputedSessionPlanChunk(state, 4, 4, checkpoint, { localSearchPasses: 3 })
+      chunks += 1
+      if (chunks > 4) throw new Error('Session planner chunk did not converge')
+    }
+
+    expect(chunks).toBe(4)
+    expect(result.plan).not.toBeNull()
+    expect(result.plan!.rounds).toEqual(full.rounds)
+    expect(result.plan!.invariants).toEqual(full.invariants)
+    expect(summarizeSessionPlan(result.plan!)).toEqual(summarizeSessionPlan(full))
   })
 
   it('resumes deterministic pair-swap checkpoints to the same final board', () => {

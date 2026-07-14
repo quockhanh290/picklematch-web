@@ -20,6 +20,7 @@ async function invokePlan(
   plannedRoundCount: number,
   localSearchPasses: number,
   persist: boolean,
+  chunked = false,
 ) {
   const startedAt = performance.now()
   const { data, error } = await client.functions.invoke('session-plan-shadow', {
@@ -28,6 +29,7 @@ async function invokePlan(
       planned_round_count: plannedRoundCount,
       local_search_passes: localSearchPasses,
       persist,
+      chunked,
     },
   })
   let errorDetail: unknown = null
@@ -109,6 +111,10 @@ async function main() {
   if (authError || !auth.user) throw new Error(authError?.message ?? 'Unable to sign in')
 
   const requestedSessionId = argument('--session-id')
+  const chunked = process.argv.includes('--chunked')
+  if (chunked && !requestedSessionId) {
+    throw new Error('--chunked requires an explicit --session-id')
+  }
   const requestedRounds = argument('--rounds')
   const plannedRoundCount = requestedRounds === undefined ? 2 : Number(requestedRounds)
   if (!Number.isInteger(plannedRoundCount) || plannedRoundCount <= 0) {
@@ -135,24 +141,40 @@ async function main() {
   let selectedSessionId: string | null = null
   let dryRun: Awaited<ReturnType<typeof invokePlan>> | null = null
   const rejected: Array<{ session_id: string; error: unknown }> = []
-  for (const sessionId of sessionIds) {
-    const result = await invokePlan(client, sessionId, plannedRoundCount, localSearchPasses, false)
-    if (result.data?.ok) {
-      selectedSessionId = sessionId
-      dryRun = result
-      break
+  if (chunked) {
+    selectedSessionId = requestedSessionId!
+  } else {
+    for (const sessionId of sessionIds) {
+      const result = await invokePlan(client, sessionId, plannedRoundCount, localSearchPasses, false)
+      if (result.data?.ok) {
+        selectedSessionId = sessionId
+        dryRun = result
+        break
+      }
+      rejected.push({ session_id: sessionId, error: result.data?.error ?? result.error })
     }
-    rejected.push({ session_id: sessionId, error: result.data?.error ?? result.error })
   }
-  if (!selectedSessionId || !dryRun) {
+  if (!selectedSessionId || (!chunked && !dryRun)) {
     throw new Error(`No hosted session passed dry-run smoke: ${JSON.stringify(rejected.slice(0, 5))}`)
   }
 
-  const persisted = process.argv.includes('--persist')
-    ? await invokePlan(client, selectedSessionId, plannedRoundCount, localSearchPasses, true)
-    : null
+  const chunkResults: Awaited<ReturnType<typeof invokePlan>>[] = []
+  let persisted: Awaited<ReturnType<typeof invokePlan>> | null = null
+  if (chunked) {
+    for (let attempt = 0; attempt < plannedRoundCount + 3; attempt += 1) {
+      persisted = await invokePlan(client, selectedSessionId, plannedRoundCount, localSearchPasses, true, true)
+      chunkResults.push(persisted)
+      if (!persisted.data?.ok || persisted.data.completed !== false) break
+      if (persisted.data.in_progress) await new Promise(resolve => setTimeout(resolve, 1_000))
+    }
+  } else if (process.argv.includes('--persist')) {
+    persisted = await invokePlan(client, selectedSessionId, plannedRoundCount, localSearchPasses, true)
+  }
   if (persisted && !persisted.data?.ok) {
     throw new Error(`Persisted shadow smoke failed: ${persisted.data?.error ?? persisted.error}`)
+  }
+  if (chunked && persisted?.data?.completed === false) {
+    throw new Error(`Chunked shadow smoke did not complete after ${chunkResults.length} requests`)
   }
   const persistedSummary = persisted?.data?.job_id
     ? await loadPersistedSummary(client, persisted.data.job_id)
@@ -162,14 +184,24 @@ async function main() {
     session_id: selectedSessionId,
     planned_round_count: plannedRoundCount,
     local_search_passes: localSearchPasses,
-    dry_run: {
+    execution_mode: chunked ? 'round_checkpointed' : 'single_request',
+    dry_run: dryRun ? {
       ok: dryRun.data.ok,
       wall_ms: dryRun.wall_ms,
       engine_version: dryRun.data.engine_version,
       invariants: dryRun.data.invariants,
       quality_summary: dryRun.data.quality_summary,
       active_compute_ms: dryRun.data.runtime_summary?.total_ms,
-    },
+    } : null,
+    chunks: chunkResults.map((result, index) => ({
+      chunk: index + 1,
+      ok: result.data?.ok === true,
+      completed: result.data?.completed !== false,
+      checkpoint_rounds: result.data?.checkpoint_rounds ?? plannedRoundCount,
+      wall_ms: result.wall_ms,
+      active_compute_ms: result.data?.chunk_runtime_ms ?? null,
+      error: result.error,
+    })),
     persisted: persisted ? {
       ok: persisted.data.ok,
       wall_ms: persisted.wall_ms,

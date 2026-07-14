@@ -90,12 +90,18 @@ npx tsx scripts/diagnostics/evaluate-session-quality-counterfactual.ts <export-d
 npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts
 npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --players=32 --courts=6 --rounds=8 --passes=1
 npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --passes=3 --round-budget-ms=400
+npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --players=32 --courts=6 --rounds=8 --passes=3 --chunked
 npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --full --passes=3
 npx tsx scripts/diagnostics/simulate-precomputed-mutations.ts <export-directory>
 npx tsx scripts/diagnostics/benchmark-precomputed-mutations.ts
 npx tsx scripts/diagnostics/smoke-session-plan-shadow.ts [--session-id=<id>] [--rounds=<count>] [--passes=1|2|3] [--persist]
+npx tsx scripts/diagnostics/smoke-session-plan-shadow.ts --session-id=<id> --rounds=8 --passes=3 --chunked
 npx tsx scripts/diagnostics/evaluate-session-plan-shadow.ts --session-id=<id> [--passes=1,2,3,5] [--round-budget-ms=<ms>]
 ```
+
+`--chunked` persists one optimized round per Edge invocation and resumes the
+same deterministic job until publication. It is shadow-only and requires an
+explicit session ID; the script performs all resume calls automatically.
 
 Architecture and rollout gates: `docs/PRECOMPUTED_SESSION_PLANNER.md`.
 

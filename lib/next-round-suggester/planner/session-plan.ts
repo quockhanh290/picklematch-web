@@ -69,6 +69,20 @@ export type SessionPlan = {
   timings: SessionPlanTimings
 }
 
+export type SessionPlanChunkCheckpoint = {
+  version: 1
+  rounds: SessionPlan['rounds']
+  round_timings: SessionPlanTimings['rounds']
+  rest_schedule_ms: number
+}
+
+export type SessionPlanChunkResult = {
+  completed: boolean
+  checkpoint: SessionPlanChunkCheckpoint
+  plan: SessionPlan | null
+  chunk_runtime_ms: number
+}
+
 const DEFAULT_LOCAL_SEARCH_PASSES = 1
 
 function effectivePvna(state: SessionState, playerId: string) {
@@ -463,6 +477,177 @@ export function buildPrecomputedSessionPlan(
       rest_schedule_ms: restScheduleMs,
       rounds: roundTimings,
     },
+  }
+}
+
+export function buildPrecomputedSessionPlanChunk(
+  initialState: SessionState,
+  roundCount: number,
+  courts: number,
+  checkpoint: SessionPlanChunkCheckpoint | null,
+  options: SessionPlanOptions = {},
+): SessionPlanChunkResult {
+  const chunkStartedAt = performance.now()
+  const localSearchPasses = options.localSearchPasses ?? DEFAULT_LOCAL_SEARCH_PASSES
+  const startingRound = options.startingRound ?? initialState.current_round
+  const activePlayers = [...initialState.players.values()]
+    .filter(player => player.checked_out_at === null && !player.opted_rest)
+    .sort((left, right) => {
+      const pvnaDelta = effectivePvna(initialState, left.player_id) - effectivePvna(initialState, right.player_id)
+      return pvnaDelta || left.player_id.localeCompare(right.player_id)
+    })
+  const slotsPerRound = Math.min(courts * 4, Math.floor(activePlayers.length / 4) * 4)
+  if (slotsPerRound !== courts * 4) {
+    throw new Error(`Session planner requires enough players for all courts: players=${activePlayers.length} courts=${courts}`)
+  }
+  if (checkpoint && checkpoint.version !== 1) {
+    throw new Error('Unsupported session planner checkpoint version')
+  }
+  if ((checkpoint?.rounds.length ?? 0) > roundCount) {
+    throw new Error('Session planner checkpoint exceeds requested round count')
+  }
+
+  const restStartedAt = performance.now()
+  const restSchedule = buildBalancedRestSchedule(
+    activePlayers.map(player => player.player_id),
+    roundCount,
+    activePlayers.length - slotsPerRound,
+    {
+      startingRound,
+      initialRestCounts: new Map(activePlayers.map(player => [
+        player.player_id,
+        Math.max(0, player.rounds_available - player.matches_played),
+      ])),
+      initialRestStreaks: new Map(activePlayers.map(player => [player.player_id, player.consecutive_rest])),
+    },
+  )
+  const measuredRestScheduleMs = performance.now() - restStartedAt
+  const restScheduleMs = checkpoint?.rest_schedule_ms ?? measuredRestScheduleMs
+
+  let state = initialState
+  let debt = new Map([...state.players.keys()].map(id => [id, options.initialDebt?.get(id) ?? 0]))
+  const maxRestByPlayer = new Map(activePlayers.map(player => [player.player_id, player.consecutive_rest]))
+  const rounds: SessionPlan['rounds'] = (checkpoint?.rounds ?? []).map(round => ({
+    ...round,
+    resting: [...round.resting],
+    matches: round.matches.map(match => ({
+      team_a: [...match.team_a] as Team,
+      team_b: [...match.team_b] as Team,
+    })),
+  }))
+  const roundTimings = [...(checkpoint?.round_timings ?? [])]
+  if (roundTimings.length !== rounds.length) {
+    throw new Error('Session planner checkpoint timing count does not match completed rounds')
+  }
+
+  for (let roundOffset = 0; roundOffset < rounds.length; roundOffset += 1) {
+    const round = rounds[roundOffset]
+    const expectedRound = startingRound + roundOffset + 1
+    if (round.round !== expectedRound) {
+      throw new Error(`Session planner checkpoint round mismatch: expected=${expectedRound} actual=${round.round}`)
+    }
+    const expectedResting = [...restSchedule[roundOffset]].sort()
+    if (JSON.stringify([...round.resting].sort()) !== JSON.stringify(expectedResting)) {
+      throw new Error(`Session planner checkpoint rest schedule mismatch at round ${round.round}`)
+    }
+    debt = projectSessionPlanDebt(debt, round.matches, state)
+    state = projectSessionPlanBoard(state, round.matches, startingRound + roundOffset)
+    activePlayers.forEach(player => {
+      const current = state.players.get(player.player_id)?.consecutive_rest ?? 0
+      maxRestByPlayer.set(player.player_id, Math.max(maxRestByPlayer.get(player.player_id) ?? 0, current))
+    })
+  }
+
+  const roundOffset = rounds.length
+  if (roundOffset < roundCount) {
+    const roundStartedAt = performance.now()
+    const absoluteRound = startingRound + roundOffset
+    const resting = new Set(restSchedule[roundOffset])
+    const playing = activePlayers
+      .filter(player => !resting.has(player.player_id))
+      .map(player => player.player_id)
+      .sort((left, right) => effectivePvna(state, left) - effectivePvna(state, right) || left.localeCompare(right))
+    const seed: SessionPlanMatch[] = []
+    for (let offset = 0; offset < playing.length; offset += 4) {
+      const ids = playing.slice(offset, offset + 4)
+      seed.push({ team_a: [ids[0], ids[3]], team_b: [ids[1], ids[2]] })
+    }
+    const seedMs = performance.now() - roundStartedAt
+    const optimizeStartedAt = performance.now()
+    const searchStats = { timedOut: false, candidatesEvaluated: 0 }
+    const seedMetrics = summarizeSessionPlanBoard(seed, state, debt)
+    const board = optimizeBoard(
+      seed,
+      state,
+      debt,
+      localSearchPasses,
+      options.maxRoundRuntimeMs,
+      searchStats,
+    )
+    const optimizeMs = performance.now() - optimizeStartedAt
+    const metrics = summarizeSessionPlanBoard(board, state, debt)
+    rounds.push({
+      round: absoluteRound + 1,
+      resting: [...resting].sort(),
+      matches: board.map(match => ({
+        team_a: [...match.team_a] as Team,
+        team_b: [...match.team_b] as Team,
+      })),
+      seedMetrics,
+      metrics,
+    })
+    const projectionStartedAt = performance.now()
+    debt = projectSessionPlanDebt(debt, board, state)
+    state = projectSessionPlanBoard(state, board, absoluteRound)
+    activePlayers.forEach(player => {
+      const current = state.players.get(player.player_id)?.consecutive_rest ?? 0
+      maxRestByPlayer.set(player.player_id, Math.max(maxRestByPlayer.get(player.player_id) ?? 0, current))
+    })
+    const projectionMs = performance.now() - projectionStartedAt
+    roundTimings.push({
+      round: absoluteRound + 1,
+      seed_ms: seedMs,
+      optimize_ms: optimizeMs,
+      projection_ms: projectionMs,
+      total_ms: performance.now() - roundStartedAt,
+      timed_out: searchStats.timedOut,
+      candidates_evaluated: searchStats.candidatesEvaluated,
+    })
+  }
+
+  const nextCheckpoint: SessionPlanChunkCheckpoint = {
+    version: 1,
+    rounds,
+    round_timings: roundTimings,
+    rest_schedule_ms: restScheduleMs,
+  }
+  const completed = rounds.length === roundCount
+  const duplicatePlayerRounds = rounds.filter(round => {
+    const ids = round.matches.flatMap(match => [...match.team_a, ...match.team_b])
+    return ids.length !== new Set(ids).size
+  }).length
+  const plan = completed ? {
+    state,
+    debt,
+    rounds,
+    invariants: {
+      duplicate_player_rounds: duplicatePlayerRounds,
+      max_consecutive_rest: Math.max(0, ...maxRestByPlayer.values()),
+      full_rounds: rounds.filter(round => round.matches.length === courts).length,
+      expected_rounds: roundCount,
+    },
+    timings: {
+      total_ms: restScheduleMs + roundTimings.reduce((sum, round) => sum + round.total_ms, 0),
+      rest_schedule_ms: restScheduleMs,
+      rounds: roundTimings,
+    },
+  } satisfies SessionPlan : null
+
+  return {
+    completed,
+    checkpoint: nextCheckpoint,
+    plan,
+    chunk_runtime_ms: performance.now() - chunkStartedAt,
   }
 }
 
