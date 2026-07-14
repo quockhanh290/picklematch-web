@@ -1,4 +1,5 @@
-import type { Team } from '../types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { Team } from '../types.ts'
 
 export type PlannedBoardMatch = { team_a: Team; team_b: Team }
 

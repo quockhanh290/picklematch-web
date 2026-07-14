@@ -1,5 +1,7 @@
-import type { PlannedBoardMatch } from './pair-swap-search'
-import type { PlayerSessionState } from '../types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { PlannedBoardMatch } from './pair-swap-search.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { PlayerSessionState } from '../types.ts'
 
 export type PlannedMatchViolation = {
   matchIndex: number

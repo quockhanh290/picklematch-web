@@ -1,4 +1,5 @@
-import type { SessionLiveMatchRow } from './types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { SessionLiveMatchRow } from './types.ts'
 
 export type ReconstructedLiveRounds = {
   matches: SessionLiveMatchRow[]

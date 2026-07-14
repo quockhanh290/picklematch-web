@@ -1,9 +1,15 @@
-import { buildProjectedStateAfterCompletedLiveRound, buildProjectedStateAfterLiveMatch } from '../live-preview'
-import { scoreMatch } from '../score'
-import type { SessionState, Team } from '../types'
-import { isBetterSocialPlan, isWithinSocialPlannerCaps, type SocialPlannerMetrics } from './objective'
-import { runPairSwapSearch } from './pair-swap-search'
-import { buildBalancedRestSchedule } from './rest-schedule'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { buildProjectedStateAfterCompletedLiveRound, buildProjectedStateAfterLiveMatch } from '../live-preview.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { scoreMatch } from '../score.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { SessionState, Team } from '../types.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { isBetterSocialPlan, isWithinSocialPlannerCaps, type SocialPlannerMetrics } from './objective.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { runPairSwapSearch } from './pair-swap-search.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { buildBalancedRestSchedule } from './rest-schedule.ts'
 
 export type SessionPlanMatch = { team_a: Team; team_b: Team }
 

@@ -24,7 +24,7 @@ import {
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { bestPartitioning } from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { suggestNextMatch, type ExhaustiveFallbackDiagnostic } from './suggest.ts'
+import { suggestNextMatch, type EngineInstrumentEvent, type ExhaustiveFallbackDiagnostic } from './suggest.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { reconstructLiveRounds } from './live-rounds.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
@@ -231,7 +231,7 @@ export type IncompleteDump = {
     team_b: string[]
     is_replacement: boolean
     warnings: string[]
-    tradeoffs: import('./types').SuggestionTradeoff[]
+    tradeoffs: SuggestionTradeoff[]
   }[]
   pvna_tolerance: number
   rounds: { round_no: number; status: string; matches: { team_a: string[]; team_b: string[] }[]; resting: string[] }[]
@@ -249,7 +249,7 @@ export type BuildSuggestedMatchOptions = {
   tightPoolQualityDeferUntilByCourt?: Record<number, number>
   nowMs?: number
   onIncompleteDump?: (dump: IncompleteDump) => void
-  onInstrumentEvent?: (event: import('./suggest').EngineInstrumentEvent) => void
+  onInstrumentEvent?: (event: EngineInstrumentEvent) => void
 }
 
 export type LiveQualityPolicy =
