@@ -69,12 +69,13 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, error: 'Method not allowed' }, 405, request)
   }
 
+  const body = await readJson(request)
   const sessionId = getSessionId(request)
+    ?? (typeof body.session_id === 'string' ? body.session_id : null)
   if (!sessionId) return jsonResponse({ ok: false, error: 'Missing session id' }, 400, request)
   const auth = await requireHost(request, sessionId, 'session-plan-shadow')
   if (auth.error) return auth.error
 
-  const body = await readJson(request)
   const persist = body.persist !== false
   const maxRoundRuntimeMs = positiveInteger(body.max_round_runtime_ms) ?? undefined
   let jobId: string | null = null
