@@ -54,8 +54,8 @@ Partner variety is ranked ahead of opponent variety because repeating a partner
 is more visible in a social session. Per-player quality debt prevents one player
 from repeatedly absorbing the compromises needed to improve session averages.
 Quality debt is compared in `0.5` bands before soft-threshold counts and opponent
-variety, then by its exact value. Opponent-repeat overflow above the active-court
-count is ranked before soft warnings; repeats inside that social budget are
+variety, then by its exact value. Opponent-repeat overflow above twice the
+active-court count is ranked before soft warnings; repeats inside that social budget are
 ranked after them. This prevents both dozens of repeat encounters and avoidable
 warning-level matches from winning through a tiny improvement elsewhere.
 
@@ -183,9 +183,10 @@ claiming the hosted CPU gate passes.
 - Add a strict time budget and always return the best valid plan found so far.
 
 Progress: cache and anytime-budget behavior are proven in diagnostics. The
-deterministic scheduler and pair-swap orchestration now live in shared planner
-modules; production objective/validation assembly remains before Phase 1 is
-complete.
+deterministic scheduler, pair-swap orchestration, social objective, and live
+eligibility validator now live in shared planner modules. The offline builder
+reuses the production scorer and state projection and remains disconnected from
+the live path.
 
 Shared extraction progress:
 
@@ -193,9 +194,14 @@ Shared extraction progress:
   mathematical unavoidable-rest bound.
 - `planner/pair-swap-search.ts` owns deterministic two-court candidate ordering,
   bounded court-pair chunks, and serializable resume checkpoints.
+- `planner/objective.ts` owns the balanced social objective and explicit repeat
+  budget instead of allowing lexicographic tuning to swing between gap warnings
+  and excessive opponent repeats.
+- `planner/validation.ts` rejects missing, duplicate, checked-out, opted-rest,
+  busy, and reserved players and can minimally repair only invalid visible slots.
 - Running the search uninterrupted or one court-pair per checkpoint produces
   the same final board.
-- Focused planner tests pass 3/3. The full unit gate passes 163/164; the only
+- Focused planner tests pass 10/10. The full unit gate passes 170/171; the only
   failure is the pre-existing Cap-2 A1 runtime fixture where `suggestNextRound`
   exhausts its 2000ms budget and returns no alternatives.
 
@@ -215,6 +221,29 @@ the planner feature flag is off.
 
 Gate: no invariant regression, match-count spread at most one when feasible,
 bounded runtime, and no visible-lineup churn without a real invalidating event.
+
+First real-session mutation gate (`0bbe25c1-...`) passes:
+
+- Resume after three rounds with no mutation changes `0` future lineups.
+- Checkout and opted-rest select the unavailable player `0` times and change
+  exactly one nearest-visible lineup, the lineup containing that player.
+- A late arrival leaves the nearest visible lineup unchanged and enters three of
+  the four subsequently replanned rounds.
+- One slow court blocks only the planned match containing its four busy players;
+  two out-of-order courts block two matches. Remaining matches contain zero busy
+  players and can be consumed independently.
+- Cancellation can reissue the unchanged valid lineup; a deterministic manual
+  replacement remains board-valid.
+- Checkout leaves continuously active players at a `6-7` match-count range.
+  The late arrival legitimately finishes at three matches while established
+  players finish at six, so raw count spread is not used as an availability-
+  normalized failure.
+- No-mutation suffix runtime was about `2.0s` for five rounds; mutation tails
+  were `0.9-1.4s`. Each measured round remained below the local `500ms` gate.
+
+The full 36-case structural matrix still passes after continuation support. The
+one-pass quick matrix keeps every round full, hard team/intra violations at zero,
+partner repeats at zero, and slowest-round time at `106-237ms`.
 
 ### Phase 3 - Persistence contract
 
@@ -278,14 +307,14 @@ Real-session shadow result for `0bbe25c1-095e-444e-986d-f1e4fa11b132`:
 | --- | ---: | ---: |
 | Completed matches | 48 | 48 |
 | Match-count range | 5-7 | 6-6 |
-| Average team gap | 0.597 | 0.263 |
-| Maximum team gap | 4.55 | 0.62 |
+| Average team gap | 0.597 | 0.215 |
+| Maximum team gap | 4.55 | 0.56 |
 | Team gap above 1.0 | 9 | 0 |
 | Partner repeats | 6 | 0 |
-| Opponent repeats | 41 | 0 |
-| Maximum intra-team gap | 2.23 | 1.99 |
-| Intra-team gap above 1.0 | 8 | 15 |
+| Opponent repeats | 41 | 40 |
+| Maximum intra-team gap | 2.23 | 1.88 |
+| Intra-team gap above 1.0 | 8 | 7 |
 | Maximum consecutive rest | 2 | 1 |
 
-The result proves useful planning headroom. It does not yet prove production
-runtime suitability or a globally optimal social objective balance.
+The result proves useful planning headroom with a balanced social objective. It
+does not yet prove hosted Free-plan runtime or production integration safety.

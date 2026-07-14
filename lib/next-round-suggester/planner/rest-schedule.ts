@@ -15,10 +15,17 @@ export function minimumPossibleMaxRestStreak(playerCount: number, playingPerRoun
   return Math.ceil(restPerRound / playingPerRound)
 }
 
+export type RestScheduleContinuation = {
+  startingRound?: number
+  initialRestCounts?: ReadonlyMap<string, number>
+  initialRestStreaks?: ReadonlyMap<string, number>
+}
+
 export function buildBalancedRestSchedule(
   playerIds: string[],
   roundCount: number,
   restPerRound: number,
+  continuation: RestScheduleContinuation = {},
 ) {
   if (restPerRound < 0 || restPerRound >= playerIds.length) {
     throw new Error(`Invalid rest capacity: players=${playerIds.length} rest_per_round=${restPerRound}`)
@@ -28,12 +35,13 @@ export function buildBalancedRestSchedule(
   const playerCount = playerIds.length
   let stride = Math.max(1, Math.floor(playerCount * 0.618))
   while (greatestCommonDivisor(stride, playerCount) !== 1) stride += 1
-  const restCounts = new Map(playerIds.map(id => [id, 0]))
-  const restStreaks = new Map(playerIds.map(id => [id, 0]))
+  const startingRound = continuation.startingRound ?? 0
+  const restCounts = new Map(playerIds.map(id => [id, continuation.initialRestCounts?.get(id) ?? 0]))
+  const restStreaks = new Map(playerIds.map(id => [id, continuation.initialRestStreaks?.get(id) ?? 0]))
 
   return Array.from({ length: roundCount }, (_, roundNo) => {
     const tieOrder = new Map<string, number>()
-    const offset = (roundNo * restPerRound) % playerCount
+    const offset = ((startingRound + roundNo) * restPerRound) % playerCount
     for (let index = 0; index < playerCount; index += 1) {
       tieOrder.set(playerIds[(offset + index * stride) % playerCount], index)
     }

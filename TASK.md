@@ -69,17 +69,28 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   board; deterministic one-pass remains the current quality/runtime baseline.
 - [x] Extract shared deterministic rest scheduling and checkpointable pair-swap
   search under `lib/next-round-suggester/planner/`; focused tests pass 3/3.
-- [x] Re-run full unit gate: 163/164 pass; only the documented pre-existing
+- [x] Define a shared social objective with debt bands and a bounded opponent-
+  repeat budget; real-session shadow has no hard gap, no partner repeats, and
+  improves intra-team warnings from 8 actual to 7.
+- [x] Add shared planned-board validation/minimal repair for checked-out,
+  opted-rest, busy, reserved, missing, and duplicate players.
+- [x] Add deterministic continuation state. A no-mutation resume after round 3
+  changes 0 future lineups.
+- [x] Run the real-session mutation gate for checkout, opted rest, late arrival,
+  slow/out-of-order courts, cancellation, and manual replacement. No invalid or
+  double-booked lineup is emitted; real invalidation changes only the affected
+  nearest-visible match.
+- [x] Re-run full unit gate: 170/171 pass; only the documented pre-existing
   Cap-2 A1 2000ms-budget fixture remains red.
 
 ### Next steps
 - [x] Phase 0: split timing by planning stage and run quick/structural matrices.
-- [ ] Phase 1: extract and optimize a shared planner kernel without changing live-engine
-  outputs when the feature flag is off.
-- [ ] Phase 2: simulate mutations and hybrid replan before creating any DB table
-  or Edge function.
-- [ ] Phase 3+: add persistence/shadow Edge only after runtime and quality gates
-  pass.
+- [x] Phase 1: extract and optimize the shared planner kernel without changing
+  live-engine outputs.
+- [x] Phase 2: pass the first real-session mutation/hybrid-replan gate.
+- [ ] Phase 2 hardening: run the mutation gate across synthetic roster/court
+  combinations and report per-player quality tails.
+- [ ] Phase 3: design persistence only after the mutation matrix passes.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.

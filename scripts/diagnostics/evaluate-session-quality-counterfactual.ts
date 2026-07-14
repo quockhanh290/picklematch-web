@@ -37,7 +37,7 @@ type RawMatch = {
   team_b: Team
 }
 
-type BoardMatch = { team_a: Team; team_b: Team }
+export type BoardMatch = { team_a: Team; team_b: Team }
 type Variant = 'baseline' | 'lookahead' | 'quality_debt' | 'shadow_precomputed'
 
 type MatchMetrics = {
@@ -89,6 +89,8 @@ const LOCAL_SEARCH_PASSES = 3
 export type ShadowPlannerOptions = {
   localSearchPasses?: number
   maxRoundRuntimeMs?: number
+  startingRound?: number
+  initialDebt?: ReadonlyMap<string, number>
 }
 
 export type ShadowPlannerTimings = {
@@ -320,7 +322,7 @@ function repairDuplicateSlots(board: BoardMatch[], state: SessionState) {
   return duplicateSlots.length
 }
 
-function applyBoard(state: SessionState, board: BoardMatch[], roundNo: number) {
+export function projectPlannedBoard(state: SessionState, board: BoardMatch[], roundNo: number) {
   let nextState = { ...state, current_round: roundNo }
   const playedIds = new Set<string>()
   board.forEach((match, index) => {
@@ -346,7 +348,7 @@ function applyBoard(state: SessionState, board: BoardMatch[], roundNo: number) {
   return buildProjectedStateAfterCompletedLiveRound(nextState, playedIds)
 }
 
-function applyDebt(debt: Map<string, number>, board: BoardMatch[], state: SessionState) {
+export function projectQualityDebt(debt: ReadonlyMap<string, number>, board: BoardMatch[], state: SessionState) {
   const nextDebt = new Map(debt)
   for (const match of board) {
     const metrics = metricsForMatch(match, state)
@@ -381,8 +383,8 @@ function runVariant(
     const after = summarizeBoard(board, state, debt)
     result.rounds.push({ round: round.round + 1, duplicateSlotsRepaired, before, after })
     result.allMatches.push(...board)
-    debt = applyDebt(debt, board, state)
-    state = applyBoard(state, board, round.round)
+    debt = projectQualityDebt(debt, board, state)
+    state = projectPlannedBoard(state, board, round.round)
   }
   result.state = state
   result.debt = debt
@@ -397,8 +399,9 @@ export function buildShadowPrecomputedPlan(
 ) {
   const totalStartedAt = performance.now()
   const localSearchPasses = options.localSearchPasses ?? LOCAL_SEARCH_PASSES
+  const startingRound = options.startingRound ?? initialState.current_round
   const activePlayers = [...initialState.players.values()]
-    .filter(player => player.checked_out_at === null)
+    .filter(player => player.checked_out_at === null && !player.opted_rest)
     .sort((left, right) => {
       const pvnaDelta = pvna(initialState, left.player_id) - pvna(initialState, right.player_id)
       return pvnaDelta || left.player_id.localeCompare(right.player_id)
@@ -413,11 +416,22 @@ export function buildShadowPrecomputedPlan(
     activePlayers.map(player => player.player_id),
     roundCount,
     restPerRound,
+    {
+      startingRound,
+      initialRestCounts: new Map(activePlayers.map(player => [
+        player.player_id,
+        Math.max(0, player.rounds_available - player.matches_played),
+      ])),
+      initialRestStreaks: new Map(activePlayers.map(player => [
+        player.player_id,
+        player.consecutive_rest,
+      ])),
+    },
   )
   const restScheduleMs = performance.now() - restScheduleStartedAt
 
   let state = initialState
-  let debt = new Map([...state.players.keys()].map(id => [id, 0]))
+  let debt = new Map([...state.players.keys()].map(id => [id, options.initialDebt?.get(id) ?? 0]))
   const maxRestByPlayer = new Map([...state.players.keys()].map(id => [id, 0]))
   const result: VariantResult = {
     variant: 'shadow_precomputed',
@@ -430,6 +444,7 @@ export function buildShadowPrecomputedPlan(
   const roundTimings: ShadowPlannerTimings['rounds'] = []
 
   for (let roundNo = 0; roundNo < roundCount; roundNo += 1) {
+    const absoluteRound = startingRound + roundNo
     const roundStartedAt = performance.now()
     const resting = new Set(restSchedule[roundNo])
     const playing = activePlayers
@@ -459,10 +474,10 @@ export function buildShadowPrecomputedPlan(
     const optimizeMs = performance.now() - optimizeStartedAt
     const before = summarizeBoard(initialBoard, state, debt)
     const after = summarizeBoard(board, state, debt)
-    result.rounds.push({ round: roundNo + 1, duplicateSlotsRepaired: 0, before, after })
+    result.rounds.push({ round: absoluteRound + 1, duplicateSlotsRepaired: 0, before, after })
     result.allMatches.push(...board)
     schedule.push({
-      round: roundNo + 1,
+      round: absoluteRound + 1,
       resting: [...resting].sort(),
       matches: board.map(match => ({
         team_a: [...match.team_a] as Team,
@@ -470,8 +485,8 @@ export function buildShadowPrecomputedPlan(
       })),
     })
     const projectionStartedAt = performance.now()
-    debt = applyDebt(debt, board, state)
-    state = applyBoard(state, board, roundNo)
+    debt = projectQualityDebt(debt, board, state)
+    state = projectPlannedBoard(state, board, absoluteRound)
     for (const player of state.players.values()) {
       maxRestByPlayer.set(
         player.player_id,
@@ -480,7 +495,7 @@ export function buildShadowPrecomputedPlan(
     }
     const projectionMs = performance.now() - projectionStartedAt
     roundTimings.push({
-      round: roundNo + 1,
+      round: absoluteRound + 1,
       seed_ms: seedMs,
       optimize_ms: optimizeMs,
       projection_ms: projectionMs,
