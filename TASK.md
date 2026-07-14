@@ -34,6 +34,47 @@ Audit ledger: `docs/OPERATION_STABILIZATION_AUDIT.md`
 
 ---
 
+## Task: Precomputed session planner - one engine, hybrid execution
+Status: PLANNED; Phase 0 shadow proof complete
+
+Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
+
+### Decision
+- Keep `lib/next-round-suggester` as the only matchmaking engine and source of
+  scoring/invariant truth.
+- Build a resumable multi-round planner above the existing engine primitives;
+  do not fork scoring, fairness, state, or persistence behavior.
+- Keep live suggestion authoritative. A stale/invalid/unavailable plan falls
+  back immediately to the current live engine and must never block a court.
+- Do not run the current full search in one Supabase Free Edge request. Choose
+  single invocation, queued chunks, or host/external compute only after isolated
+  CPU benchmarks.
+
+### Completed
+- [x] Add real-session shadow planner diagnostic and commit as `4457408`.
+- [x] Produce 48/48 valid planned matches for the 32-player, 6-court, 8-round
+  session with match counts 6-6, no consecutive rest, and no partner/opponent
+  repeats.
+- [x] Document objective order, Free Plan decision gates, invalidation contract,
+  rollout phases, and rollback.
+
+### Next steps
+- [ ] Phase 0: split timing by planning stage and run the benchmark matrix.
+- [ ] Phase 1: extract a shared planner kernel without changing live-engine
+  outputs when the feature flag is off.
+- [ ] Phase 2: simulate mutations and hybrid replan before creating any DB table
+  or Edge function.
+- [ ] Phase 3+: add persistence/shadow Edge only after runtime and quality gates
+  pass.
+
+### Deployment discipline
+- No migration, Edge deploy, or client deploy is required for Phase 0-2.
+- Any future planner Edge function is shadow-only before advisory integration.
+- Planner failure must be equivalent to planner-disabled behavior.
+- Do not deploy Vercel without Kevin's explicit approval.
+
+---
+
 ## Task: Stabilization pass - live lane audit/replay
 Status: IN PROGRESS
 

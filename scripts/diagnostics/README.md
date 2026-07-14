@@ -78,6 +78,18 @@ npx tsx scripts/diagnostics/compare-next-round-synthetic.ts <session-id>
 npx tsx scripts/diagnostics/compare-actual-live-to-current-suggest.ts <session-id>
 ```
 
+## Offline precomputed-plan shadow
+
+Uses an exported session directory and the existing engine scoring/state
+projection. It writes `shadow-precomputed-plan.json` beside the export and does
+not call or mutate Supabase.
+
+```bash
+npx tsx scripts/diagnostics/evaluate-session-quality-counterfactual.ts <export-directory>
+```
+
+Architecture and rollout gates: `docs/PRECOMPUTED_SESSION_PLANNER.md`.
+
 ## Algorithm probes (live Supabase)
 
 ```bash
