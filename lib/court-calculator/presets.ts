@@ -1,4 +1,5 @@
-import type { CourtPreset } from './types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { CourtPreset } from './types.ts'
 
 export const PRESETS: Record<
   CourtPreset,

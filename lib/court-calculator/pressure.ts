@@ -1,4 +1,5 @@
-import type { CourtRepeatPressure, CourtRepeatRiskLevel } from './types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { CourtRepeatPressure, CourtRepeatRiskLevel } from './types.ts'
 
 const RISK_ORDER: CourtRepeatRiskLevel[] = ['low', 'medium', 'high', 'extreme']
 

@@ -1,4 +1,5 @@
-import type { Feasibility } from './types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { Feasibility } from './types.ts'
 
 export function checkFeasibility(
   courts: number,

@@ -11,9 +11,13 @@ import {
   buildPrecomputedSessionPlan,
   summarizeSessionPlan,
 } from '../../../lib/next-round-suggester/planner/session-plan.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { calculateOptimalCourts } from '../../../lib/court-calculator/calculator.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { CourtPreset } from '../../../lib/court-calculator/types.ts'
 import type { SessionState } from '../../../lib/next-round-suggester/types.ts'
 
-const ENGINE_VERSION = 'precomputed-v1-db54fb7'
+const ENGINE_VERSION = 'precomputed-v2-court-parity'
 const MAX_PLANNED_ROUNDS = 12
 
 function stableValue(value: unknown): unknown {
@@ -62,6 +66,15 @@ function positiveInteger(value: unknown) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
+function courtPreset(value: unknown): CourtPreset {
+  return value === 'play_more' || value === 'relaxed' ? value : 'balanced'
+}
+
+function finiteNumber(value: unknown, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
 Deno.serve(async (request) => {
   const corsResponse = handleCorsPreflight(request)
   if (corsResponse) return corsResponse
@@ -81,28 +94,68 @@ Deno.serve(async (request) => {
   let jobId: string | null = null
 
   try {
-    const [{ data: sessionRow, error: sessionError }, state] = await Promise.all([
+    const [
+      { data: sessionRow, error: sessionError },
+      { data: settingsRow, error: settingsError },
+      state,
+    ] = await Promise.all([
       auth.supabase
         .from('sessions')
         .select('live_state_version')
         .eq('id', sessionId)
         .single(),
+      auth.supabase
+        .from('session_next_round_settings')
+        .select('court_count_override, court_preset, court_duration_min, pvna_tolerance, target_rounds')
+        .eq('session_id', sessionId)
+        .maybeSingle(),
       loadSessionState(auth.supabase, sessionId),
     ])
     if (sessionError || !sessionRow) throw new Error(sessionError?.message ?? 'Session not found')
+    if (settingsError) throw new Error(settingsError.message)
 
-    const configuredRounds = positiveInteger(state.config.planned_total_rounds) ?? 8
+    const preset = courtPreset(settingsRow?.court_preset)
+    const durationMin = positiveInteger(settingsRow?.court_duration_min) ?? 120
+    const presentPlayerCount = [...state.players.values()]
+      .filter(player => player.checked_out_at === null)
+      .length
+    const courtRecommendation = calculateOptimalCourts({
+      n_players: presentPlayerCount,
+      session_duration_min: durationMin,
+      match_duration_min: 15,
+      preset,
+    })
+    const courtOverride = positiveInteger(settingsRow?.court_count_override)
+    const courts = courtOverride ?? courtRecommendation.recommended.courts
+    const configuredRounds = positiveInteger(settingsRow?.target_rounds)
+      ?? courtRecommendation.recommended.total_rounds
+      ?? 8
+    state.config = {
+      ...state.config,
+      courts,
+      pvna_tolerance: finiteNumber(settingsRow?.pvna_tolerance, 0.5),
+      planned_total_rounds: configuredRounds,
+      court_preset: preset,
+    }
     const requestedRounds = positiveInteger(body.planned_round_count) ?? configuredRounds
     if (requestedRounds > MAX_PLANNED_ROUNDS) {
       return jsonResponse({ ok: false, error: `planned_round_count must be <= ${MAX_PLANNED_ROUNDS}` }, 400, request)
     }
-    const courts = state.config.courts
     const liveStateVersion = Number(sessionRow.live_state_version)
     const inputPayload = {
       planner: {
         engine_version: ENGINE_VERSION,
         planned_round_count: requestedRounds,
         court_count: courts,
+        court_source: courtOverride === null ? 'court_suggester' : 'session_override',
+        court_suggester: {
+          player_count: presentPlayerCount,
+          session_duration_min: durationMin,
+          match_duration_min: 15,
+          preset,
+          recommended_courts: courtRecommendation.recommended.courts,
+          recommended_rounds: courtRecommendation.recommended.total_rounds,
+        },
         starting_round: state.current_round,
       },
       state: serializeState(state),
