@@ -126,23 +126,12 @@ function addLateArrival(state: SessionState, template: PlayerSessionState) {
   return playerId
 }
 
-function main() {
-  const directory = process.argv[2]
-  if (!directory) {
-    throw new Error('Usage: npx tsx scripts/diagnostics/simulate-precomputed-mutations.ts <session-data-directory>')
-  }
-  const players = JSON.parse(readFileSync(join(directory, 'players.json'), 'utf8')) as RawPlayer[]
-  const profiles = JSON.parse(readFileSync(join(directory, 'player_profiles.json'), 'utf8')) as RawProfile[]
-  const liveMatches = JSON.parse(readFileSync(join(directory, 'live_matches.json'), 'utf8')) as Array<{
-    status: string
-    court_idx?: number | null
-    cycle_no?: number | null
-    round_no?: number | null
-  }>
-  const completed = liveMatches.filter(match => match.status === 'completed')
-  const courts = Math.max(...completed.map(match => Number(match.court_idx ?? 0))) + 1
-  const roundCount = new Set(completed.map(match => Number(match.cycle_no ?? match.round_no ?? 0))).size
-  const initialState = buildInitialState(players, profiles, courts)
+export function runMutationSimulation(
+  initialState: SessionState,
+  roundCount: number,
+  courts: number,
+  inputLabel = 'in-memory',
+) {
   const base = buildShadowPrecomputedPlan(initialState, roundCount, courts, { localSearchPasses: 1 })
   const prefixLength = Math.min(3, roundCount - 1)
   const prefix = base.schedule.slice(0, prefixLength)
@@ -252,9 +241,23 @@ function main() {
   const replacementValidation = validatePlannedBoard({ matches: replacementBoard, players: projected.state.players })
   assert(replacementValidation.valid, 'Manual replacement produced an invalid board')
 
-  console.log(JSON.stringify({
-    input: { directory, players: players.length, courts, rounds: roundCount, prefix_rounds: prefixLength },
-    base: { summary: aggregate(base.result), invariants: base.invariants, runtime_ms: Math.round(base.timings.total_ms) },
+  const worstPlayerQuality = [...base.result.debt]
+    .map(([playerId, debt]) => ({
+      player_id: playerId,
+      quality_debt: Number(debt.toFixed(3)),
+      matches: base.result.state.players.get(playerId)?.matches_played ?? 0,
+    }))
+    .sort((left, right) => right.quality_debt - left.quality_debt || left.player_id.localeCompare(right.player_id))
+    .slice(0, 5)
+
+  return {
+    input: { source: inputLabel, players: initialState.players.size, courts, rounds: roundCount, prefix_rounds: prefixLength },
+    base: {
+      summary: aggregate(base.result),
+      worst_player_quality: worstPlayerQuality,
+      invariants: base.invariants,
+      runtime_ms: Math.round(base.timings.total_ms),
+    },
     scenarios: {
       no_mutation_resume: {
         changed_visible_matches: noMutationChurn,
@@ -303,7 +306,28 @@ function main() {
         valid: replacementValidation.valid,
       },
     },
-  }, null, 2))
+  }
 }
 
-main()
+function main() {
+  const directory = process.argv[2]
+  if (!directory) {
+    throw new Error('Usage: npx tsx scripts/diagnostics/simulate-precomputed-mutations.ts <session-data-directory>')
+  }
+  const players = JSON.parse(readFileSync(join(directory, 'players.json'), 'utf8')) as RawPlayer[]
+  const profiles = JSON.parse(readFileSync(join(directory, 'player_profiles.json'), 'utf8')) as RawProfile[]
+  const liveMatches = JSON.parse(readFileSync(join(directory, 'live_matches.json'), 'utf8')) as Array<{
+    status: string
+    court_idx?: number | null
+    cycle_no?: number | null
+    round_no?: number | null
+  }>
+  const completed = liveMatches.filter(match => match.status === 'completed')
+  const courts = Math.max(...completed.map(match => Number(match.court_idx ?? 0))) + 1
+  const roundCount = new Set(completed.map(match => Number(match.cycle_no ?? match.round_no ?? 0))).size
+  const initialState = buildInitialState(players, profiles, courts)
+  console.log(JSON.stringify(runMutationSimulation(initialState, roundCount, courts, directory), null, 2))
+}
+
+const invokedPath = process.argv[1]?.replaceAll('\\', '/') ?? ''
+if (invokedPath.endsWith('/simulate-precomputed-mutations.ts')) main()

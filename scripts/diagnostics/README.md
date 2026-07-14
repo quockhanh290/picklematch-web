@@ -92,6 +92,7 @@ npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --players=32 --court
 npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --passes=3 --round-budget-ms=400
 npx tsx scripts/diagnostics/benchmark-precomputed-shadow.ts --full --passes=3
 npx tsx scripts/diagnostics/simulate-precomputed-mutations.ts <export-directory>
+npx tsx scripts/diagnostics/benchmark-precomputed-mutations.ts
 ```
 
 Architecture and rollout gates: `docs/PRECOMPUTED_SESSION_PLANNER.md`.

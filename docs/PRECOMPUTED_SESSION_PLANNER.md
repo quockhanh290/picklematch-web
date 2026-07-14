@@ -245,6 +245,14 @@ The full 36-case structural matrix still passes after continuation support. The
 one-pass quick matrix keeps every round full, hard team/intra violations at zero,
 partner repeats at zero, and slowest-round time at `106-237ms`.
 
+The Phase 2 mutation matrix also passes for `24/4/6`, `28/6/6`, `32/6/8`, and
+`36/6/6` player/court/round configurations. Across all four: no-mutation churn
+is zero; checkout and opted rest select unavailable players zero times and alter
+one nearest-visible lineup; late arrival preserves the nearest lineup; slow and
+out-of-order courts emit zero busy-player double books; cancellation and manual
+replacement remain valid. Maximum per-player quality debt ranges from `0.41` to
+`0.92`, with no hard team/intra violations and no partner repeats.
+
 ### Phase 3 - Persistence contract
 
 - Add migrations for versioned planning jobs and plan results only after Phase 2

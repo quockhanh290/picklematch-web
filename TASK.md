@@ -80,6 +80,9 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   slow/out-of-order courts, cancellation, and manual replacement. No invalid or
   double-booked lineup is emitted; real invalidation changes only the affected
   nearest-visible match.
+- [x] Run the mutation matrix at 24/4, 28/6, 32/6, and 36/6. All configurations
+  preserve zero no-event churn, zero unavailable/busy selections, full boards,
+  hard quality invariants, and per-player quality-debt tails at or below 0.92.
 - [x] Re-run full unit gate: 170/171 pass; only the documented pre-existing
   Cap-2 A1 2000ms-budget fixture remains red.
 
@@ -88,9 +91,10 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
 - [x] Phase 1: extract and optimize the shared planner kernel without changing
   live-engine outputs.
 - [x] Phase 2: pass the first real-session mutation/hybrid-replan gate.
-- [ ] Phase 2 hardening: run the mutation gate across synthetic roster/court
+- [x] Phase 2 hardening: run mutation gates across synthetic roster/court
   combinations and report per-player quality tails.
-- [ ] Phase 3: design persistence only after the mutation matrix passes.
+- [ ] Phase 3: add the versioned, idempotent, owner-guarded shadow persistence
+  contract without touching live suggestions.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.
