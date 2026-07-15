@@ -97,10 +97,16 @@ describe('live preview request ownership', () => {
       auditPayload: { client_request_id: 'request-1' },
     })).resolves.toMatchObject({ match: { id: 'persisted-match-1', status: 'live' } })
 
-    expect(mockRpc).toHaveBeenCalledWith('replace_live_session_suggestions_versioned', expect.objectContaining({
+    expect(mockRpc).toHaveBeenCalledWith('replace_manual_live_session_suggestion_versioned', expect.objectContaining({
       p_expected_live_state_version: 7,
-      p_replace_court_idxs: [1],
+      p_match: expect.objectContaining({
+        court_idx: 1,
+        team_a: ['p1', 'p2'],
+        team_b: ['p3', 'p4'],
+      }),
     }))
+    expect(mockRpc.mock.calls[0][1]).not.toHaveProperty('p_matches')
+    expect(mockRpc.mock.calls[0][1]).not.toHaveProperty('p_replace_all')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
       expected_live_state_version: 8,

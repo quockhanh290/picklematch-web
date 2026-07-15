@@ -661,13 +661,11 @@ export async function persistAndStartLiveMatch(
     auditPayload: Record<string, unknown>
   },
 ) {
-  const { data, error } = await supabase.rpc('replace_live_session_suggestions_versioned', {
+  const { data, error } = await supabase.rpc('replace_manual_live_session_suggestion_versioned', {
     p_session_id: sessionId,
     p_expected_live_state_version: expectedLiveStateVersion,
-    p_matches: [match],
-    p_replace_court_idxs: match.court_idx === null ? [] : [match.court_idx],
-    p_replace_all: false,
-    p_audit_payload: { ...auditPayload, source: 'client-manual-lineup-persist' },
+    p_match: match,
+    p_audit_payload: auditPayload,
   })
   if (error) throw error
   const persistedMatch = Array.isArray(data?.matches) ? data.matches[0] : null
