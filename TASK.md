@@ -117,6 +117,12 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   32-player, 6-court, 8-round smoke completed all eight chunks without 546;
   maximum chunk compute was 1066ms, all 48 boards were published, and an
   identical retry reused job `9c79984b-...` and version `3bb1a9e4-...`.
+- [x] Harden roster mutation around checkpoints: plan only
+  `target_rounds-current_round`, correct projected round advancement, stale old
+  input jobs, and link deduplicated jobs to their immutable result version.
+  Real-roster checkout simulation replans only rounds 4-8 with zero unavailable
+  selections; pass three reduces opponent repeat events 12->8. Hosted v5 smoke
+  completed without 546 and idempotently reuses job `d6725c59-...`.
 - [ ] Phase 5 advisory integration remains gated. Do not connect shadow plans to
   `session-live-matches-suggest` until planned matches pass the live validator,
   stale/mutated plans fall back without blocking, and the feature flag rollback

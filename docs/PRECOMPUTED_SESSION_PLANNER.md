@@ -352,6 +352,37 @@ Pass three is therefore hosted-runtime viable only in checkpointed mode. The
 single-request default remains pass two; checkpoint output remains shadow data
 until the Phase 5 validation/fallback path is implemented and gated.
 
+Remaining-horizon and roster-mutation hardening on 2026-07-14:
+
+- Engine `precomputed-v5-mutation-horizon` now defaults to
+  `target_rounds - current_round`; an explicit requested horizon is still
+  supported for diagnostics or host-requested extra rounds. At or beyond the
+  target it returns `no_plan_required` instead of creating future rounds.
+- A projection bug that left three simulated completed rounds at
+  `current_round=2` was corrected in both the deployable planner and diagnostic
+  oracle. Replanning after round three now emits only rounds 4-8.
+- Starting a job with a different roster/horizon marks queued, running, or
+  checkpointed jobs for the old input stale. A compare-and-set checkpoint write
+  cannot revive a superseded job.
+- A read-only simulation on the real 32-player roster projected three completed
+  rounds, checked out one player, and replanned the five-round suffix. Both
+  passes filled all 30 boards, selected the checked-out player zero times,
+  emitted no duplicate, and kept maximum consecutive rest at one.
+- In that mutation simulation, pass three reduced actual opponent-repeat events
+  from 12 to 8 and maximum opponent burden from 3 to 2, while maximum quality
+  debt improved from 0.47 to 0.45. Average team/intra gap moved from
+  `0.264/0.715` to `0.276/0.750`; both retained zero team gaps above 0.5, zero
+  intra gaps above 2, and zero partner repeats. The result confirms a social
+  variety/debt improvement, not monotonic improvement of every soft average.
+- Migration `20260714000002_link_shadow_jobs_to_published_versions.sql` records
+  the immutable plan version published or reused by each job. This lets a new
+  engine job reuse identical plan content without violating the content-hash
+  uniqueness contract.
+- The hosted v5 rerun completed eight chunks without 546. Request wall time
+  totaled about 33.2s and the slowest new chunk used about 522ms planner compute.
+  The output matched the existing immutable v4 plan, reused version
+  `3bb1a9e4-...`, and an identical retry reused job `d6725c59-...` in 1.5s.
+
 ### Phase 5 - Advisory integration
 
 - Add a feature-flagged plan lookup to `session-live-matches-suggest`.
