@@ -5,6 +5,8 @@ import {
 
 function report(overrides: Partial<SessionQualityReport> = {}): SessionQualityReport {
   return {
+    rounds: 8,
+    matches: 48,
     hard_violations: 0,
     operation_errors: 0,
     avoidable_incomplete_boards: 0,
@@ -22,6 +24,8 @@ function report(overrides: Partial<SessionQualityReport> = {}): SessionQualityRe
     intra_gap_over_1: 5,
     opponent_repeat_overflow: 2,
     opponent_repeats: 20,
+    relaxation_warning_count: 5,
+    max_relaxation_severity: 0.4,
     avg_team_gap: 0.4,
     max_team_gap: 1.2,
     avg_intra_gap: 0.8,

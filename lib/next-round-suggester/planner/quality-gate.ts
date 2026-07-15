@@ -1,4 +1,6 @@
 export type SessionQualityReport = {
+  rounds: number
+  matches: number
   hard_violations: number
   operation_errors: number
   avoidable_incomplete_boards: number
@@ -16,6 +18,8 @@ export type SessionQualityReport = {
   intra_gap_over_1: number
   opponent_repeat_overflow: number
   opponent_repeats: number
+  relaxation_warning_count: number
+  max_relaxation_severity: number
   avg_team_gap: number
   max_team_gap: number
   avg_intra_gap: number
@@ -55,6 +59,8 @@ const OBJECTIVE_ORDER: SessionQualityMetric[] = [
   'team_gap_over_0_5',
   'intra_gap_over_1',
   'opponent_repeats',
+  'relaxation_warning_count',
+  'max_relaxation_severity',
   'player_quality_debt_p95',
   'avg_team_gap',
   'max_team_gap',
