@@ -215,7 +215,7 @@ Deno.serve(async (request) => {
         if (existingError || !existingJob) throw new Error(existingError?.message ?? 'Unable to load idempotent plan job')
         jobId = existingJob.id
         if (existingJob.status === 'completed') {
-          return jsonResponse({ ok: true, reused: true, job_id: jobId, input_hash: inputHash }, 200, request)
+          return jsonResponse({ ok: true, completed: true, reused: true, job_id: jobId, input_hash: inputHash }, 200, request)
         }
         if (chunked) {
           if (existingJob.status === 'stale' || existingJob.status === 'cancelled') {
@@ -281,6 +281,7 @@ Deno.serve(async (request) => {
 
     let plan: SessionPlan
     let runtimeSummary: Record<string, unknown>
+    let lastChunkRuntimeMs: number | null = null
     if (chunked) {
       if (!jobId) throw new Error('Chunked plan job identity is missing')
       const chunk = buildPrecomputedSessionPlanChunk(state, requestedRounds, courts, checkpoint, {
@@ -289,6 +290,7 @@ Deno.serve(async (request) => {
         startingRound: state.current_round,
       })
       const chunkComputeMs = previousChunkComputeMs + chunk.chunk_runtime_ms
+      lastChunkRuntimeMs = chunk.chunk_runtime_ms
       const maxChunkComputeMs = Math.max(previousMaxChunkComputeMs, chunk.chunk_runtime_ms)
       runtimeSummary = {
         execution_mode: 'round_checkpointed',
@@ -441,6 +443,7 @@ Deno.serve(async (request) => {
 
     return jsonResponse({
       ok: true,
+      completed: true,
       persisted: true,
       job_id: jobId,
       plan_version_id: version.id,
@@ -449,6 +452,7 @@ Deno.serve(async (request) => {
       engine_version: ENGINE_VERSION,
       invariants: plan.invariants,
       quality_summary: qualitySummary,
+      chunk_runtime_ms: lastChunkRuntimeMs,
       runtime_summary: runtimeSummary,
     }, 200, request)
   } catch (error) {
