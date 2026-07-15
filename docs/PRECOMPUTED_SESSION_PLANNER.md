@@ -464,6 +464,39 @@ rolling suffix can be planned while courts remain live, and busy planned rows
 are repaired or fall back without double-booking. None of these checks enables
 Phase 5B consumption.
 
+Hosted Phase 5A matrix on 2026-07-15:
+
+- A clean two-round v8 plan produced `usable=6`, `fallback=0`, with roster,
+  config, history, planning-version, and rolling-frontier identities all true.
+- Opting one available player out invalidated the old plan with
+  `roster_changed` plus `planning_version_changed`; the live engine still filled
+  6/6 courts. Clearing the rest request and rebuilding the suffix restored
+  `usable=6`, `fallback=0`.
+- Changing PVNA tolerance from `0.5` to `0.6` invalidated the old plan with
+  `config_changed` plus `planning_version_changed`; the live engine still filled
+  6/6. Restoring settings and rebuilding again restored `usable=6`.
+- A separate 32-player session with no completed v8 job returned a complete 6/6
+  live board and classified all advisory rows as `plan_missing` fallback.
+- With one court live, the rolling planner captured one fixed commitment and
+  four busy players. The five open courts remained full with all identities
+  true and zero fallback. Depending on the generated plan, two or three courts
+  were immediately usable and the remainder were `repair_required` for `busy`.
+  This proves Phase 5B must merge per court rather than accept or reject a whole
+  planned board.
+- Setting `SESSION_PLAN_ADVISORY_SHADOW=0` left a 6/6 production board unchanged
+  and emitted zero advisory events. Restoring the flag to `1` restored audit
+  writes on the next 6/6 request.
+- All roster/config mutations were restored in `finally`, live probe matches
+  were canceled in `finally`, and a clean two-round suffix was rebuilt after
+  cleanup. The final rebuild used about `186ms` active planner compute.
+
+The matrix also exposes the remaining Phase 5B orchestration requirement. The
+hosted probe explicitly invoked `session-plan-shadow` after each invalidation;
+production does not yet schedule that replan automatically. Consumption must
+therefore remain off until stale/missing advisory state triggers one idempotent
+background suffix job, and only `usable` court rows replace live-engine output.
+`repair_required` and `fallback` courts continue through the current engine.
+
 ### Phase 5 - Advisory integration
 
 - Add a feature-flagged plan lookup to `session-live-matches-suggest`.

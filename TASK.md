@@ -157,11 +157,20 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   with all six advisory decisions rejected as `frontier_changed`. A fresh
   two-round plan at the new frontier completed in 276ms active compute and was
   then accepted as `usable=6`, `fallback=0`, with all identity checks true.
+- [x] Complete the hosted Phase 5A matrix. Opted-rest and PVNA mutations each
+  invalidated all six old plan rows with the expected roster/config reason,
+  while the live engine still filled 6/6; restoring and replanning returned to
+  `usable=6`. A session with no v8 job filled 6/6 with `plan_missing`. Disabling
+  `SESSION_PLAN_ADVISORY_SHADOW` kept 6/6 output and wrote zero advisory events;
+  re-enabling it restored audit writes. With one court live, the other five
+  courts stayed full and identity checks passed, while busy validation split
+  the plan into per-court `usable` and `repair_required` rows with zero fallback.
 - [ ] Phase 5B advisory consumption remains gated. Do not let a shadow plan
-  change `session-live-matches-suggest` output until Phase 5A hosted evidence
-  covers identity match, roster/config mutation, busy courts, missing plans,
-  and feature-flag rollback. Six-court planner runtime and quality are proven;
-  live consumption is not enabled.
+  change `session-live-matches-suggest` output until it can consume only
+  per-court `usable` rows, leave `repair_required`/`fallback` courts to the live
+  engine, and automatically schedule one idempotent suffix replan after an
+  invalidation. Six-court runtime, quality, mutation safety, missing-plan safety,
+  and rollback are proven; live consumption is not enabled.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.
