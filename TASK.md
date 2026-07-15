@@ -182,6 +182,13 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   off under 546/resource pressure; manual `suggested` rows wait for Start or
   Cancel. Six-court runtime, quality, mutation safety, missing-plan safety, and
   rollback are proven; live consumption is not enabled.
+- [ ] Add the Phase 5B session-quality comparator before enabling consumption.
+  Replay identical session/mutation timelines through `live-only` and `hybrid`,
+  then report session fairness, board gaps/repeats/relaxations, and per-player
+  rest/diversity/quality-debt tails. Gate lexicographically: zero hard regression,
+  feasible match-count spread at most one, no avoidable two-round rest, no
+  regression in team-gap-over-1/intra-gap-over-2/partner repeats/max player debt,
+  and no hidden lower-priority trade-off without an explicit delta.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.

@@ -514,6 +514,53 @@ job, wait while a manual suggestion is pending, and use cooldown/backoff under
 546 during cleanup even though every isolated planner chunk stayed below the
 CPU gate; Phase 5B must not reproduce that request pattern in production.
 
+### Phase 5B quality gate
+
+Operational correctness alone is not sufficient for plan consumption. Every
+Phase 5B scenario must replay the same initial state and mutation timeline in
+two modes: current `live-only` production behavior and `hybrid` planned-plus-live
+fallback behavior. The report must cover the entire reconstructed session, not
+only the planned rows that were accepted.
+
+Measure three quality levels:
+
+1. Session fairness: completed/filled boards, match-count minimum/maximum and
+   spread, maximum consecutive eligible rest, avoidable versus unavoidable
+   rest violations, and the distribution of matches per player.
+2. Board/social quality: average and maximum team gap, counts above team-gap
+   `0.5` and `1.0`, average and maximum intra-team gap, counts above intra-team
+   `1.0` and `2.0`, partner repeats, opponent repeats, opponent-repeat overflow,
+   relaxation-warning counts, and the worst relaxation level used.
+3. Per-player quality: matches and rests, maximum rest streak, partner/opponent
+   diversity, repeated-partner/opponent exposure, warning-level match exposure,
+   and exact/P95/maximum quality debt. Report the worst player as well as session
+   averages so a good mean cannot hide one repeatedly disadvantaged player.
+
+Also measure planner effect: planned courts consumed, repaired, and fallen back;
+lineup churn with and without a real mutation; plan age at consumption; and
+quality split by planned versus live-engine courts.
+
+The promotion gate is lexicographic, matching the engine objective order:
+
+- Hybrid must introduce zero new hard-invariant violations, duplicate players,
+  busy/unavailable selections, incomplete avoidable boards, or operation errors.
+- Match-count spread must remain at most one when feasible and rest streak must
+  stay within the mathematical bound; avoidable two-round rests are a failure.
+- Hybrid must be no worse than live-only on team-gap-over-1, intra-gap-over-2,
+  partner repeats, and maximum per-player quality debt before lower-priority
+  averages or opponent variety are considered.
+- A lower-priority regression is accepted only when a higher-priority objective
+  improves, and its exact delta must be printed rather than hidden in one score.
+- Across the hosted rollout set, median session quality must improve and P95/
+  worst-player quality must not regress beyond the objective's existing `0.5`
+  debt band. Any regression outside that band keeps consumption disabled.
+
+Required reports include clean full sessions, rolling/out-of-order courts,
+checkout, late arrival, opted rest, config/PVNA mutation, manual repartition,
+manual player replacement, cancellation, missing/stale plan, partial fallback,
+concurrent suggest, and 546/backoff. A scenario passes only when both operation
+and quality gates pass.
+
 ### Phase 5 - Advisory integration
 
 - Add a feature-flagged plan lookup to `session-live-matches-suggest`.
