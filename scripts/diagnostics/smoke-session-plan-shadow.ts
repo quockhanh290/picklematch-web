@@ -55,20 +55,22 @@ async function invokePlan(
 async function loadPersistedSummary(
   client: ReturnType<typeof createClient>,
   jobId: string,
+  responsePlanVersionId?: string | null,
 ) {
-  const [{ data: job, error: jobError }, { data: version, error: versionError }] = await Promise.all([
-    client
-      .from('session_plan_jobs')
-      .select('court_count, planned_round_count, input_payload')
-      .eq('id', jobId)
-      .single(),
-    client
-      .from('session_plan_versions')
-      .select('id, quality_summary, runtime_summary')
-      .eq('job_id', jobId)
-      .single(),
-  ])
+  const { data: job, error: jobError } = await client
+    .from('session_plan_jobs')
+    .select('court_count, planned_round_count, input_payload, result_plan_version_id')
+    .eq('id', jobId)
+    .single()
   if (jobError || !job) throw new Error(jobError?.message ?? 'Unable to load persisted plan job')
+  const planVersionId = responsePlanVersionId ?? job.result_plan_version_id
+  let versionQuery = client
+    .from('session_plan_versions')
+    .select('id, quality_summary, runtime_summary')
+  versionQuery = planVersionId
+    ? versionQuery.eq('id', planVersionId)
+    : versionQuery.eq('job_id', jobId)
+  const { data: version, error: versionError } = await versionQuery.single()
   if (versionError || !version) throw new Error(versionError?.message ?? 'Unable to load persisted plan version')
 
   const { data: rounds, error: roundsError } = await client
@@ -177,7 +179,7 @@ async function main() {
     throw new Error(`Chunked shadow smoke did not complete after ${chunkResults.length} requests`)
   }
   const persistedSummary = persisted?.data?.job_id
-    ? await loadPersistedSummary(client, persisted.data.job_id)
+    ? await loadPersistedSummary(client, persisted.data.job_id, persisted.data.plan_version_id)
     : null
 
   console.log(JSON.stringify({

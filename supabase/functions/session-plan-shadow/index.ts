@@ -237,7 +237,7 @@ Deno.serve(async (request) => {
       if (insertError?.code === '23505') {
         const { data: existingJob, error: existingError } = await auth.supabase
           .from('session_plan_jobs')
-          .select('id, status, checkpoint, runtime_summary, updated_at')
+          .select('id, status, checkpoint, runtime_summary, updated_at, result_plan_version_id')
           .eq('session_id', sessionId)
           .eq('live_state_version', liveStateVersion)
           .eq('input_hash', inputHash)
@@ -245,8 +245,15 @@ Deno.serve(async (request) => {
           .single()
         if (existingError || !existingJob) throw new Error(existingError?.message ?? 'Unable to load idempotent plan job')
         jobId = existingJob.id
-        if (existingJob.status === 'completed') {
-          return jsonResponse({ ok: true, completed: true, reused: true, job_id: jobId, input_hash: inputHash }, 200, request)
+        if (existingJob.status === 'completed' && existingJob.result_plan_version_id) {
+          return jsonResponse({
+            ok: true,
+            completed: true,
+            reused: true,
+            job_id: jobId,
+            plan_version_id: existingJob.result_plan_version_id,
+            input_hash: inputHash,
+          }, 200, request)
         }
         if (chunked) {
           if (existingJob.status === 'stale' || existingJob.status === 'cancelled') {
@@ -274,6 +281,7 @@ Deno.serve(async (request) => {
               status: 'running',
               error_detail: null,
               completed_at: null,
+              result_plan_version_id: null,
               updated_at: claimAt,
             })
             .eq('id', jobId)
@@ -298,6 +306,7 @@ Deno.serve(async (request) => {
               error_detail: null,
               started_at: new Date().toISOString(),
               completed_at: null,
+              result_plan_version_id: null,
               updated_at: new Date().toISOString(),
             })
             .eq('id', jobId)
@@ -493,6 +502,7 @@ Deno.serve(async (request) => {
         status: 'completed',
         runtime_summary: runtimeSummary,
         checkpoint: null,
+        result_plan_version_id: version.id,
         completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
