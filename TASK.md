@@ -146,10 +146,17 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   frontier fingerprint instead of raw `live_state_version`. The fingerprint is
   stable when the same lineup moves from `live` to completed history, but a new,
   canceled, replaced, or materially changed commitment supersedes the job.
-- [ ] Apply the planning-mutation migration, deploy planner v8 plus the
-  read-only live advisory reader, and run the hosted manual-repartition matrix.
-  Cap-2 A1 now returns a full six-court board in about 0.5s; hosted rolling
-  mutation evidence is still required before deployment or consumption.
+- [x] Apply the planning-mutation migration and deploy planner v8 plus the
+  read-only live advisory reader. Cap-2 A1 returns a full six-court board in
+  about 0.5s. Hosted rolling smoke planned two suffix rounds while one match
+  remained live (`fixed_commitment_count=1`, `busy_player_count=4`) and cleaned
+  the test match afterward; manual repartition increments the planning version
+  and falls back to the live engine.
+- [x] Lock advisory consumption to the current rolling frontier. After the live
+  commitment was canceled, the old job returned a full 6/6 live-engine board
+  with all six advisory decisions rejected as `frontier_changed`. A fresh
+  two-round plan at the new frontier completed in 276ms active compute and was
+  then accepted as `usable=6`, `fallback=0`, with all identity checks true.
 - [ ] Phase 5B advisory consumption remains gated. Do not let a shadow plan
   change `session-live-matches-suggest` output until Phase 5A hosted evidence
   covers identity match, roster/config mutation, busy courts, missing plans,
