@@ -443,11 +443,14 @@ avoid-pair changes increment the same version through database triggers.
 Each shadow job captures that version. A version mismatch or manual metadata on
 an authoritative `suggested`/`live` row makes the advisory result fallback; it
 cannot alter live output. Replanning does not wait for a global-idle moment,
-which rolling courts may never reach. Instead, active and manual-persisted
-lineups form a planning frontier: they are projected as immutable commitments
-into a cloned state before only the remaining horizon is planned. Busy-player
-validation still decides which planned matches can be consumed as individual
-courts become free, with the live engine as the uninterrupted fallback.
+which rolling courts may never reach. Started (`live`) lineups form the planning
+frontier and are projected as immutable commitments into a cloned state before
+only the remaining horizon is planned. A manual `suggested` lineup is host intent,
+not played history: replanning returns `manual_suggestion_pending` until that row
+is started or canceled, and no match, rest, partner, or opponent counter is
+advanced before Start. Busy-player validation still decides which planned
+matches can be consumed as individual courts become free, with the live engine
+as the uninterrupted fallback.
 
 Checkpoint compare-and-set uses `planning_mutation_version` and a canonical
 frontier fingerprint rather than raw `live_state_version`. The fingerprint
@@ -489,6 +492,15 @@ Hosted Phase 5A matrix on 2026-07-15:
 - All roster/config mutations were restored in `finally`, live probe matches
   were canceled in `finally`, and a clean two-round suffix was rebuilt after
   cleanup. The final rebuild used about `186ms` active planner compute.
+- Hosted manual-quality probes covered both same-four team repartition and one
+  player replacement. Before Start, all player match counters were unchanged and
+  `session-plan-shadow` deferred with `manual_suggestion_pending`. After Start,
+  each edited lineup became one live commitment and the two-round suffix kept
+  zero partner repeats, zero team gaps above `1.0`, and zero intra-team gaps
+  above `2.0`. The final match-count spread was `1-2`, which is optimal for 32
+  players sharing 52 commitment-plus-suffix slots. Carrying signed commitment
+  debt removed the earlier avoidable `1-3` spread. Planner active compute was
+  about `179-190ms` across the two rounds.
 
 The matrix also exposes the remaining Phase 5B orchestration requirement. The
 hosted probe explicitly invoked `session-plan-shadow` after each invalidation;
@@ -496,6 +508,11 @@ production does not yet schedule that replan automatically. Consumption must
 therefore remain off until stale/missing advisory state triggers one idempotent
 background suffix job, and only `usable` court rows replace live-engine output.
 `repair_required` and `fallback` courts continue through the current engine.
+That scheduler must coalesce concurrent invalidations into one single-flight
+job, wait while a manual suggestion is pending, and use cooldown/backoff under
+546/resource pressure. A deliberately dense hosted diagnostic burst reached a
+546 during cleanup even though every isolated planner chunk stayed below the
+CPU gate; Phase 5B must not reproduce that request pattern in production.
 
 ### Phase 5 - Advisory integration
 

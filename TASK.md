@@ -139,9 +139,10 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   same-four repartitions separately from player replacements, and invalidate
   advisory plans while the edited row is either `suggested` or `live`.
 - [x] Replace the overly broad global-idle replan guard with a rolling planning
-  frontier. Active and manual-persisted lineups are immutable commitments in a
-  planner clone; their players/history are projected before the remaining
-  suffix is built, while live validation still blocks busy consumption.
+  frontier. Only started (`live`) lineups are immutable commitments projected
+  into the planner clone. A host-edited `suggested` lineup defers replanning
+  until Start or Cancel, so a pre-start edit never increments match/rest/repeat
+  history. Live validation still blocks busy consumption.
 - [x] Checkpoint shadow jobs against `planning_mutation_version` plus a canonical
   frontier fingerprint instead of raw `live_state_version`. The fingerprint is
   stable when the same lineup moves from `live` to completed history, but a new,
@@ -165,12 +166,22 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   re-enabling it restored audit writes. With one court live, the other five
   courts stayed full and identity checks passed, while busy validation split
   the plan into per-court `usable` and `repair_required` rows with zero fallback.
+- [x] Lock manual pre-start semantics and suffix quality. Hosted same-four
+  repartition and player-replacement probes left every `matches_played` counter
+  unchanged before Start and returned `manual_suggestion_pending` instead of
+  planning through host intent. After Start, each lineup became one fixed live
+  commitment; two-round suffixes had zero partner repeats, zero team gaps above
+  1.0, zero intra-team gaps above 2.0, and the optimal 1-2 match-count spread
+  for 32 players across 52 total commitment-plus-suffix slots. Carrying signed
+  live commitment debt removed the prior avoidable 1-3 spread.
 - [ ] Phase 5B advisory consumption remains gated. Do not let a shadow plan
   change `session-live-matches-suggest` output until it can consume only
   per-court `usable` rows, leave `repair_required`/`fallback` courts to the live
   engine, and automatically schedule one idempotent suffix replan after an
-  invalidation. Six-court runtime, quality, mutation safety, missing-plan safety,
-  and rollback are proven; live consumption is not enabled.
+  invalidation. Replan scheduling must be single-flight, coalesced, and backed
+  off under 546/resource pressure; manual `suggested` rows wait for Start or
+  Cancel. Six-court runtime, quality, mutation safety, missing-plan safety, and
+  rollback are proven; live consumption is not enabled.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.
