@@ -12,6 +12,9 @@ export type PlanAdvisoryReason =
   | 'roster_changed'
   | 'config_changed'
   | 'history_diverged'
+  | 'planning_version_changed'
+  | 'manual_lineup_changed'
+  | 'manual_team_repartition'
   | PlannedMatchViolation['reason']
 
 export type PlannedMatchAdvisory = {
@@ -38,11 +41,20 @@ export function resolvePlannedMatchAdvisory(options: {
   rosterIdentityMatches?: boolean
   configIdentityMatches?: boolean
   historyMatches?: boolean
+  planningVersionMatches?: boolean
+  activeManualMutationKind?: string | null
 }): PlannedMatchAdvisory {
   const identityReasons: PlanAdvisoryReason[] = []
   if (options.rosterIdentityMatches === false) identityReasons.push('roster_changed')
   if (options.configIdentityMatches === false) identityReasons.push('config_changed')
   if (options.historyMatches === false) identityReasons.push('history_diverged')
+  if (options.activeManualMutationKind === 'manual_team_repartition') {
+    identityReasons.push('manual_team_repartition')
+  } else if (options.activeManualMutationKind) {
+    identityReasons.push('manual_lineup_changed')
+  } else if (options.planningVersionMatches === false) {
+    identityReasons.push('planning_version_changed')
+  }
   if (identityReasons.length > 0) {
     return { status: 'fallback', reasons: identityReasons, violations: [] }
   }

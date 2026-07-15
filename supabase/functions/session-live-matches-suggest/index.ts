@@ -39,7 +39,7 @@ function optionalNumber(value: unknown): number | undefined {
 const REPLAY_SCHEMA_VERSION = 2
 const EDGE_FUNCTION_NAME = 'session-live-matches-suggest'
 const SLOW_SUGGEST_THRESHOLD_MS = 3_000
-const PLAN_ADVISORY_ENGINE_VERSION = 'precomputed-v6-stable-identity'
+const PLAN_ADVISORY_ENGINE_VERSION = 'precomputed-v7-planning-mutation-version'
 
 type SuggestTimingStage =
   | 'auth'
@@ -78,19 +78,31 @@ async function writePlanAdvisoryShadow(options: {
     team_b?: string[]
   }>
   liveBusyIds: ReadonlySet<string>
+  activeManualMutationKind?: string | null
 }) {
   try {
-    const { data: job, error: jobError } = await options.supabase
-      .from('session_plan_jobs')
-      .select('id, result_plan_version_id, roster_fingerprint, config_fingerprint, engine_version, input_payload')
-      .eq('session_id', options.sessionId)
-      .eq('status', 'completed')
-      .eq('engine_version', PLAN_ADVISORY_ENGINE_VERSION)
-      .not('result_plan_version_id', 'is', null)
-      .order('completed_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    const [
+      { data: job, error: jobError },
+      { data: sessionVersion, error: sessionVersionError },
+    ] = await Promise.all([
+      options.supabase
+        .from('session_plan_jobs')
+        .select('id, result_plan_version_id, roster_fingerprint, config_fingerprint, engine_version, input_payload, planning_mutation_version')
+        .eq('session_id', options.sessionId)
+        .eq('status', 'completed')
+        .eq('engine_version', PLAN_ADVISORY_ENGINE_VERSION)
+        .not('result_plan_version_id', 'is', null)
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      options.supabase
+        .from('sessions')
+        .select('planning_mutation_version')
+        .eq('id', options.sessionId)
+        .single(),
+    ])
     if (jobError) throw new Error(jobError.message)
+    if (sessionVersionError) throw new Error(sessionVersionError.message)
 
     const [rosterFingerprint, configFingerprint] = await Promise.all([
       plannerIdentityHash(buildPlanningRosterIdentity(options.state)),
@@ -98,6 +110,8 @@ async function writePlanAdvisoryShadow(options: {
     ])
     const rosterIdentityMatches = Boolean(job && job.roster_fingerprint === rosterFingerprint)
     const configIdentityMatches = Boolean(job && job.config_fingerprint === configFingerprint)
+    const planningVersionMatches = Boolean(job
+      && Number(job.planning_mutation_version) === Number(sessionVersion.planning_mutation_version))
     const liveByCourt = new Map(options.finalPreviewBoard
       .map(match => [Number(match.court_idx), match] as const)
       .filter(([courtIdx]) => Number.isFinite(courtIdx)))
@@ -157,6 +171,8 @@ async function writePlanAdvisoryShadow(options: {
         rosterIdentityMatches: job ? rosterIdentityMatches : undefined,
         configIdentityMatches: job ? configIdentityMatches : undefined,
         historyMatches: job ? historyMatches : undefined,
+        planningVersionMatches: job ? planningVersionMatches : undefined,
+        activeManualMutationKind: options.activeManualMutationKind,
       })
       return {
         court_idx: courtIdx,
@@ -186,6 +202,7 @@ async function writePlanAdvisoryShadow(options: {
         roster_identity_matches: job ? rosterIdentityMatches : null,
         config_identity_matches: job ? configIdentityMatches : null,
         history_matches: job ? historyMatches : null,
+        planning_version_matches: job ? planningVersionMatches : null,
         counts: {
           usable: decisions.filter(decision => decision.status === 'usable').length,
           repair_required: decisions.filter(decision => decision.status === 'repair_required').length,
@@ -1207,6 +1224,10 @@ Deno.serve(async (request) => {
             : [...finalFilledCourtIdxs],
           finalPreviewBoard,
           liveBusyIds,
+          activeManualMutationKind: liveMatchRows
+            .filter(match => match.status === 'live' && match.suggestion_metadata?.manual_override === true)
+            .map(match => String(match.suggestion_metadata?.manual_mutation_kind ?? 'manual_lineup_changed'))
+            .at(-1) ?? null,
         })
       : null
     const edgeRuntime = (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime

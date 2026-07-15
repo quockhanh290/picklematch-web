@@ -136,6 +136,23 @@ describe('precomputed planner primitives', () => {
       historyMatches: false,
     })).toMatchObject({ status: 'fallback', reasons: ['history_diverged'] })
     expect(resolvePlannedMatchAdvisory({
+      plannedMatch: planned,
+      state,
+      planningVersionMatches: false,
+    })).toMatchObject({ status: 'fallback', reasons: ['planning_version_changed'] })
+    expect(resolvePlannedMatchAdvisory({
+      plannedMatch: planned,
+      state,
+      planningVersionMatches: false,
+      activeManualMutationKind: 'manual_team_repartition',
+    })).toMatchObject({ status: 'fallback', reasons: ['manual_team_repartition'] })
+    expect(resolvePlannedMatchAdvisory({
+      plannedMatch: planned,
+      state,
+      planningVersionMatches: false,
+      activeManualMutationKind: 'manual_player_replacement',
+    })).toMatchObject({ status: 'fallback', reasons: ['manual_lineup_changed'] })
+    expect(resolvePlannedMatchAdvisory({
       plannedMatch: { team_a: ['p1', 'p1'], team_b: ['p3', 'p4'] },
       state,
     })).toMatchObject({ status: 'fallback', reasons: ['duplicate_player'] })

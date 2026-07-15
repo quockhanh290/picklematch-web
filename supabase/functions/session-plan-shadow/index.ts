@@ -26,7 +26,7 @@ import {
   stablePlannerJson,
 } from '../../../lib/next-round-suggester/planner/identity.ts'
 
-const ENGINE_VERSION = 'precomputed-v6-stable-identity'
+const ENGINE_VERSION = 'precomputed-v7-planning-mutation-version'
 const MAX_PLANNED_ROUNDS = 12
 const MAX_LOCAL_SEARCH_PASSES = 3
 
@@ -102,11 +102,12 @@ Deno.serve(async (request) => {
     const [
       { data: sessionRow, error: sessionError },
       { data: settingsRow, error: settingsError },
+      { count: liveMatchCount, error: liveMatchCountError },
       state,
     ] = await Promise.all([
       auth.supabase
         .from('sessions')
-        .select('live_state_version')
+        .select('live_state_version, planning_mutation_version')
         .eq('id', sessionId)
         .single(),
       auth.supabase
@@ -114,10 +115,23 @@ Deno.serve(async (request) => {
         .select('court_count_override, court_preset, court_duration_min, pvna_tolerance, target_rounds')
         .eq('session_id', sessionId)
         .maybeSingle(),
+      auth.supabase
+        .from('session_live_matches')
+        .select('id', { count: 'exact', head: true })
+        .eq('session_id', sessionId)
+        .eq('status', 'live'),
       loadSessionState(auth.supabase, sessionId),
     ])
     if (sessionError || !sessionRow) throw new Error(sessionError?.message ?? 'Session not found')
     if (settingsError) throw new Error(settingsError.message)
+    if (liveMatchCountError) throw new Error(liveMatchCountError.message)
+    if ((liveMatchCount ?? 0) > 0) {
+      return jsonResponse({
+        ok: false,
+        safe_checkpoint_required: true,
+        error: 'Cannot build a session plan while live matches are active',
+      }, 409, request)
+    }
 
     const preset = courtPreset(settingsRow?.court_preset)
     const durationMin = positiveInteger(settingsRow?.court_duration_min) ?? 120
@@ -163,6 +177,7 @@ Deno.serve(async (request) => {
       }, 200, request)
     }
     const liveStateVersion = Number(sessionRow.live_state_version)
+    const planningMutationVersion = Number(sessionRow.planning_mutation_version ?? 0)
     const inputPayload = {
       planner: {
         engine_version: ENGINE_VERSION,
@@ -181,6 +196,7 @@ Deno.serve(async (request) => {
           recommended_rounds: courtRecommendation.recommended.total_rounds,
         },
         starting_round: state.current_round,
+        planning_mutation_version: planningMutationVersion,
       },
       state: serializeState(state),
     }
@@ -210,6 +226,7 @@ Deno.serve(async (request) => {
           session_id: sessionId,
           requested_by: auth.userId,
           live_state_version: liveStateVersion,
+          planning_mutation_version: planningMutationVersion,
           input_hash: inputHash,
           engine_version: ENGINE_VERSION,
           roster_fingerprint: rosterFingerprint,
@@ -334,13 +351,14 @@ Deno.serve(async (request) => {
       if (!chunk.completed || !chunk.plan) {
         const { data: currentSession, error: currentSessionError } = await auth.supabase
           .from('sessions')
-          .select('live_state_version')
+          .select('live_state_version, planning_mutation_version')
           .eq('id', sessionId)
           .single()
         if (currentSessionError || !currentSession) {
           throw new Error(currentSessionError?.message ?? 'Unable to recheck session version')
         }
-        if (Number(currentSession.live_state_version) !== liveStateVersion) {
+        if (Number(currentSession.live_state_version) !== liveStateVersion
+          || Number(currentSession.planning_mutation_version ?? 0) !== planningMutationVersion) {
           await auth.supabase
             .from('session_plan_jobs')
             .update({ status: 'stale', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -429,11 +447,12 @@ Deno.serve(async (request) => {
 
     const { data: currentSession, error: currentSessionError } = await auth.supabase
       .from('sessions')
-      .select('live_state_version')
+      .select('live_state_version, planning_mutation_version')
       .eq('id', sessionId)
       .single()
     if (currentSessionError || !currentSession) throw new Error(currentSessionError?.message ?? 'Unable to recheck session version')
-    if (Number(currentSession.live_state_version) !== liveStateVersion) {
+    if (Number(currentSession.live_state_version) !== liveStateVersion
+      || Number(currentSession.planning_mutation_version ?? 0) !== planningMutationVersion) {
       await auth.supabase
         .from('session_plan_jobs')
         .update({ status: 'stale', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })

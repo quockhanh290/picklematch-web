@@ -26,13 +26,13 @@ async function main() {
       .select('id, court_count, input_payload, result_plan_version_id')
       .eq('session_id', sessionId)
       .eq('status', 'completed')
-      .eq('engine_version', 'precomputed-v6-stable-identity')
+      .eq('engine_version', 'precomputed-v7-planning-mutation-version')
       .order('completed_at', { ascending: false })
       .limit(1)
       .single(),
   ])
   if (snapshotError) throw snapshotError
-  if (jobError || !job) throw new Error(jobError?.message ?? 'No completed v6 plan job')
+  if (jobError || !job) throw new Error(jobError?.message ?? 'No completed v7 plan job')
 
   const state = job.input_payload?.state ?? {}
   const planner = job.input_payload?.planner ?? {}
