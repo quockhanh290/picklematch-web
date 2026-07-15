@@ -13,6 +13,12 @@ import {
   type SocialPlannerMetrics,
 } from '@/lib/next-round-suggester/planner/objective'
 import { repairUnavailablePlannedBoard, validatePlannedBoard } from '@/lib/next-round-suggester/planner/validation'
+import { plannedMatchEqualsLiveMatch, resolvePlannedMatchAdvisory } from '@/lib/next-round-suggester/planner/advisory'
+import {
+  buildPlanningConfigIdentity,
+  buildPlanningRosterIdentity,
+  stablePlannerJson,
+} from '@/lib/next-round-suggester/planner/identity'
 import {
   buildPrecomputedSessionPlan,
   buildPrecomputedSessionPlanChunk,
@@ -46,6 +52,97 @@ function restMetrics(playerIds: string[], schedule: string[][]) {
 }
 
 describe('precomputed planner primitives', () => {
+  it('keeps planning identity stable across ordinary round progress and busy state', () => {
+    const state = createState({
+      players: [
+        createPlayer('p1', { pvna: 3.5, effective_pvna: 3.7 }),
+        createPlayer('p2', { pvna: 4 }),
+        createPlayer('p3', { pvna: 4.2 }),
+        createPlayer('p4', { pvna: 4.4 }),
+      ],
+    })
+    const rosterIdentity = stablePlannerJson(buildPlanningRosterIdentity(state))
+    const configIdentity = stablePlannerJson(buildPlanningConfigIdentity(state))
+
+    state.current_round = 4
+    const p1 = state.players.get('p1')!
+    p1.matches_played = 4
+    p1.last_played_round = 3
+    p1.consecutive_play = 2
+    p1.consecutive_rest = 0
+    p1.rounds_available = 4
+    p1.partner_counts.set('p2', 2)
+    p1.opponent_counts.set('p3', 3)
+    state.rounds.push({
+      session_id: state.session_id,
+      round_no: 3,
+      status: 'completed',
+      matches: [],
+      resting: [],
+      started_at: null,
+      ended_at: null,
+    })
+
+    expect(stablePlannerJson(buildPlanningRosterIdentity(state))).toBe(rosterIdentity)
+    expect(stablePlannerJson(buildPlanningConfigIdentity(state))).toBe(configIdentity)
+  })
+
+  it('invalidates planning identity for roster, preference, and config mutations', () => {
+    const state = createState({ players: [createPlayer('p1'), createPlayer('p2')] })
+    const rosterIdentity = stablePlannerJson(buildPlanningRosterIdentity(state))
+    const configIdentity = stablePlannerJson(buildPlanningConfigIdentity(state))
+
+    state.players.get('p1')!.opted_rest = true
+    expect(stablePlannerJson(buildPlanningRosterIdentity(state))).not.toBe(rosterIdentity)
+    state.players.get('p1')!.opted_rest = false
+    state.players.get('p1')!.partner_gender_pref = 'F'
+    expect(stablePlannerJson(buildPlanningRosterIdentity(state))).not.toBe(rosterIdentity)
+
+    state.config.pvna_tolerance = 0.75
+    expect(stablePlannerJson(buildPlanningConfigIdentity(state))).not.toBe(configIdentity)
+  })
+
+  it('classifies planned matches without changing the live lineup', () => {
+    const players = ['p1', 'p2', 'p3', 'p4'].map(id => createPlayer(id))
+    const state = createState({ players })
+    const planned = { team_a: ['p1', 'p2'], team_b: ['p3', 'p4'] } as const
+
+    expect(resolvePlannedMatchAdvisory({ plannedMatch: planned, state })).toMatchObject({
+      status: 'usable',
+      reasons: [],
+    })
+    expect(resolvePlannedMatchAdvisory({
+      plannedMatch: planned,
+      state,
+      busyIds: new Set(['p1']),
+    })).toMatchObject({ status: 'repair_required', reasons: ['busy'] })
+    expect(resolvePlannedMatchAdvisory({
+      plannedMatch: planned,
+      state,
+      rosterIdentityMatches: false,
+    })).toMatchObject({ status: 'fallback', reasons: ['roster_changed'] })
+    expect(resolvePlannedMatchAdvisory({
+      plannedMatch: { team_a: ['p1', 'p1'], team_b: ['p3', 'p4'] },
+      state,
+    })).toMatchObject({ status: 'fallback', reasons: ['duplicate_player'] })
+    expect(resolvePlannedMatchAdvisory({ state })).toMatchObject({
+      status: 'fallback',
+      reasons: ['plan_missing'],
+    })
+  })
+
+  it('compares planned and live lineups independent of team orientation', () => {
+    const planned = { team_a: ['p1', 'p2'], team_b: ['p3', 'p4'] } as const
+    expect(plannedMatchEqualsLiveMatch(planned, {
+      team_a: ['p4', 'p3'],
+      team_b: ['p2', 'p1'],
+    })).toBe(true)
+    expect(plannedMatchEqualsLiveMatch(planned, {
+      team_a: ['p1', 'p3'],
+      team_b: ['p2', 'p4'],
+    })).toBe(false)
+  })
+
   it('plans only the unplayed target-round suffix unless an explicit horizon is requested', () => {
     expect(resolveSessionPlanRoundCount(0, 8)).toBe(8)
     expect(resolveSessionPlanRoundCount(3, 8)).toBe(5)

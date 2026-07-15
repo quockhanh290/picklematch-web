@@ -20,29 +20,18 @@ import { calculateOptimalCourts } from '../../../lib/court-calculator/calculator
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import type { CourtPreset } from '../../../lib/court-calculator/types.ts'
 import type { SessionState } from '../../../lib/next-round-suggester/types.ts'
+import {
+  buildPlanningConfigIdentity,
+  buildPlanningRosterIdentity,
+  stablePlannerJson,
+} from '../../../lib/next-round-suggester/planner/identity.ts'
 
-const ENGINE_VERSION = 'precomputed-v5-mutation-horizon'
+const ENGINE_VERSION = 'precomputed-v6-stable-identity'
 const MAX_PLANNED_ROUNDS = 12
 const MAX_LOCAL_SEARCH_PASSES = 3
 
-function stableValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableValue)
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, nested]) => [key, stableValue(nested)]),
-    )
-  }
-  return value
-}
-
-function stableJson(value: unknown) {
-  return JSON.stringify(stableValue(value))
-}
-
 async function sha256(value: unknown) {
-  const bytes = new TextEncoder().encode(stableJson(value))
+  const bytes = new TextEncoder().encode(stablePlannerJson(value))
   const digest = await crypto.subtle.digest('SHA-256', bytes)
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }
@@ -197,8 +186,8 @@ Deno.serve(async (request) => {
     }
     const [inputHash, rosterFingerprint, configFingerprint] = await Promise.all([
       sha256(inputPayload),
-      sha256(inputPayload.state.players),
-      sha256(inputPayload.state.config),
+      sha256(buildPlanningRosterIdentity(state)),
+      sha256(buildPlanningConfigIdentity(state)),
     ])
 
     if (persist) {
