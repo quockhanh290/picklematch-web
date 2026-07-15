@@ -1,4 +1,4 @@
-import { reconstructLiveRounds } from '../../../lib/next-round-suggester/live-rounds'
+import { getNextLiveRoundByCourt, reconstructLiveRounds } from '../../../lib/next-round-suggester/live-rounds'
 import type { SessionLiveMatchRow } from '../../../lib/next-round-suggester/types'
 
 function liveMatch(
@@ -86,5 +86,26 @@ describe('reconstructLiveRounds', () => {
 
     expect(result.matches.map(match => match.id)).toEqual(['m1', 'm2', 'm3'])
     expect([...result.roundByMatchId.values()]).toEqual([0, 0, 1])
+  })
+})
+
+describe('getNextLiveRoundByCourt', () => {
+  it('targets each rolling court immediately after its own latest completion', () => {
+    const rows = [
+      liveMatch('a', 0, 0, 0, 'completed', 0),
+      liveMatch('b', 1, 0, 1, 'completed', 0),
+      liveMatch('c', 2, 1, 0, 'completed', 1),
+    ]
+    expect(Object.fromEntries(getNextLiveRoundByCourt(rows, 2, [0, 1]))).toEqual({
+      0: 2,
+      1: 1,
+    })
+  })
+
+  it('uses the projected round for a court without completed history', () => {
+    expect(Object.fromEntries(getNextLiveRoundByCourt([], 2, [0, 1]))).toEqual({
+      0: 0,
+      1: 0,
+    })
   })
 })

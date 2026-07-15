@@ -71,3 +71,39 @@ export function reconstructLiveRounds(
 
   return { matches, roundByMatchId, canonicalCycleNoAvailable, persistedRoundNoReliable }
 }
+
+export function getNextLiveRoundByCourt(
+  inputMatches: SessionLiveMatchRow[],
+  courtCount: number,
+  courtIdxs: readonly number[],
+) {
+  const safeCourtCount = Math.max(1, Math.floor(courtCount || 1))
+  const reconstructed = reconstructLiveRounds(inputMatches, safeCourtCount)
+  const roundCounts = new Map<number, number>()
+  const lastCompletedRoundByCourt = new Map<number, number>()
+
+  for (const match of reconstructed.matches) {
+    const roundNo = reconstructed.roundByMatchId.get(match.id) ?? 0
+    roundCounts.set(roundNo, (roundCounts.get(roundNo) ?? 0) + 1)
+    if (match.status !== 'completed' || match.court_idx == null) continue
+    const courtIdx = Number(match.court_idx)
+    if (!Number.isFinite(courtIdx)) continue
+    lastCompletedRoundByCourt.set(
+      courtIdx,
+      Math.max(lastCompletedRoundByCourt.get(courtIdx) ?? -1, roundNo),
+    )
+  }
+
+  let projectedRound = 0
+  if (roundCounts.size > 0) {
+    const maxRound = Math.max(...roundCounts.keys())
+    projectedRound = (roundCounts.get(maxRound) ?? 0) >= safeCourtCount
+      ? maxRound + 1
+      : maxRound
+  }
+
+  return new Map(courtIdxs.map(courtIdx => [
+    courtIdx,
+    (lastCompletedRoundByCourt.get(courtIdx) ?? (projectedRound - 1)) + 1,
+  ]))
+}

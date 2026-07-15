@@ -28,6 +28,12 @@ import {
   buildPlanningFrontierIdentity,
   getPlanningCommitments,
 } from '../../../lib/next-round-suggester/planner/frontier.ts'
+import { getNextLiveRoundByCourt } from '../../../lib/next-round-suggester/live-rounds.ts'
+import {
+  selectConsumablePlannedCourts,
+  type PlannedCourtConsumptionDecision,
+} from '../../../lib/next-round-suggester/planner/consumption.ts'
+import { validatePlannedBoard } from '../../../lib/next-round-suggester/planner/validation.ts'
 import type {
   SessionState,
   SessionLiveMatchRow,
@@ -64,6 +70,174 @@ async function plannerIdentityHash(value: unknown) {
   const bytes = new TextEncoder().encode(stablePlannerJson(value))
   const digest = await crypto.subtle.digest('SHA-256', bytes)
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+type PlanConsumptionContext = {
+  enabled: boolean
+  job_id: string | null
+  plan_version_id: string | null
+  planning_mutation_version: number | null
+  accepted: Array<{
+    court_idx: number
+    live_round_no: number
+    planned_round_no: number
+    team_a: [string, string]
+    team_b: [string, string]
+    resting: string[]
+  }>
+  decisions: PlannedCourtConsumptionDecision[]
+}
+
+async function loadPlanConsumption(options: {
+  supabase: { from: (table: string) => any }
+  sessionId: string
+  state: SessionState
+  authoritativeLiveMatchRows: SessionLiveMatchRow[]
+  courtCount: number
+  targetCourtIdxs: number[]
+  busyIds: ReadonlySet<string>
+  replaceAllSuggestions: boolean
+  activeManualMutationKind?: string | null
+}): Promise<PlanConsumptionContext> {
+  const disabled: PlanConsumptionContext = {
+    enabled: false,
+    job_id: null,
+    plan_version_id: null,
+    planning_mutation_version: null,
+    accepted: [],
+    decisions: [],
+  }
+  if (Deno.env.get('SESSION_PLAN_CONSUMPTION') !== '1' || options.targetCourtIdxs.length === 0) {
+    return disabled
+  }
+
+  try {
+    const [{ data: job, error: jobError }, { data: sessionVersion, error: sessionVersionError }] = await Promise.all([
+      options.supabase
+        .from('session_plan_jobs')
+        .select('id, result_plan_version_id, roster_fingerprint, config_fingerprint, input_payload, planning_mutation_version')
+        .eq('session_id', options.sessionId)
+        .eq('status', 'completed')
+        .eq('engine_version', PLAN_ADVISORY_ENGINE_VERSION)
+        .not('result_plan_version_id', 'is', null)
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      options.supabase
+        .from('sessions')
+        .select('planning_mutation_version')
+        .eq('id', options.sessionId)
+        .single(),
+    ])
+    if (jobError || sessionVersionError || !sessionVersion) return disabled
+
+    const commitments = getPlanningCommitments(options.authoritativeLiveMatchRows)
+    const [rosterFingerprint, configFingerprint, frontierFingerprint] = await Promise.all([
+      plannerIdentityHash(buildPlanningRosterIdentity(options.state)),
+      plannerIdentityHash(buildPlanningConfigIdentity(options.state)),
+      plannerIdentityHash(buildPlanningFrontierIdentity(options.state, commitments)),
+    ])
+    const planningMutationVersion = Number(sessionVersion.planning_mutation_version ?? 0)
+    const rosterIdentityMatches = job ? job.roster_fingerprint === rosterFingerprint : undefined
+    const configIdentityMatches = job ? job.config_fingerprint === configFingerprint : undefined
+    const planningVersionMatches = job
+      ? Number(job.planning_mutation_version) === planningMutationVersion
+      : undefined
+    const frontierMatches = job
+      ? job.input_payload?.planner?.frontier_fingerprint === frontierFingerprint
+      : undefined
+
+    const roundSourceRows = options.replaceAllSuggestions
+      ? options.authoritativeLiveMatchRows.filter(match => match.status !== 'suggested')
+      : options.authoritativeLiveMatchRows
+    const liveRoundByCourt = getNextLiveRoundByCourt(
+      roundSourceRows,
+      options.courtCount,
+      options.targetCourtIdxs,
+    )
+    const targetPlanRoundNos = [...new Set([...liveRoundByCourt.values()].map(roundNo => roundNo + 1))]
+    const startingRound = Number(job?.input_payload?.planner?.starting_round)
+    const completedHistory = Number.isFinite(startingRound)
+      ? options.state.rounds.filter(round =>
+          round.status === 'completed'
+          && round.round_no + 1 > startingRound
+          && round.round_no + 1 <= options.state.current_round
+        )
+      : []
+    const requestedPlanRoundNos = [...new Set([
+      ...targetPlanRoundNos,
+      ...completedHistory.map(round => round.round_no + 1),
+    ])]
+    let roundRows: Array<{ round_no: number; matches: unknown; resting_ids: string[] }> = []
+    if (job?.result_plan_version_id && requestedPlanRoundNos.length > 0) {
+      const { data, error } = await options.supabase
+        .from('session_plan_rounds')
+        .select('round_no, matches, resting_ids')
+        .eq('plan_version_id', job.result_plan_version_id)
+        .in('round_no', requestedPlanRoundNos)
+      if (error) return disabled
+      roundRows = data ?? []
+    }
+    const plannedByRound = new Map(roundRows.map(row => [Number(row.round_no), {
+      matches: Array.isArray(row.matches) ? row.matches : [],
+      resting: Array.isArray(row.resting_ids) ? row.resting_ids.map(String) : [],
+    }]))
+    const historyMatches = job ? completedHistory.every(round => {
+      const planned = plannedByRound.get(round.round_no + 1)?.matches
+      return Array.isArray(planned) && plannedBoardEqualsLiveBoard(planned as any, round.matches)
+    }) : undefined
+    const targetCourtSet = new Set(options.targetCourtIdxs)
+    const retainedSuggestedPlayerIds = new Set(options.authoritativeLiveMatchRows
+      .filter(match => match.status === 'suggested' && !targetCourtSet.has(Number(match.court_idx)))
+      .flatMap(match => [...match.team_a, ...match.team_b]))
+    const candidates = options.targetCourtIdxs.map(courtIdx => {
+      const liveRoundNo = liveRoundByCourt.get(courtIdx) ?? options.state.current_round
+      const plannedRoundNo = liveRoundNo + 1
+      const plannedRound = plannedByRound.get(plannedRoundNo)
+      const match = plannedRound?.matches[courtIdx]
+      return {
+        court_idx: courtIdx,
+        live_round_no: liveRoundNo,
+        planned_round_no: plannedRoundNo,
+        match: match && typeof match === 'object'
+          ? match as { team_a: [string, string]; team_b: [string, string] }
+          : null,
+      }
+    })
+    const selected = selectConsumablePlannedCourts({
+      candidates,
+      state: options.state,
+      busyIds: options.busyIds,
+      reservedIds: retainedSuggestedPlayerIds,
+      rosterIdentityMatches,
+      configIdentityMatches,
+      historyMatches,
+      planningVersionMatches,
+      frontierMatches,
+      activeManualMutationKind: options.activeManualMutationKind,
+    })
+    return {
+      enabled: true,
+      job_id: job?.id ?? null,
+      plan_version_id: job?.result_plan_version_id ?? null,
+      planning_mutation_version: planningMutationVersion,
+      accepted: selected.accepted.flatMap(candidate => candidate.match ? [{
+        court_idx: candidate.court_idx,
+        live_round_no: candidate.live_round_no,
+        planned_round_no: candidate.planned_round_no,
+        team_a: candidate.match.team_a,
+        team_b: candidate.match.team_b,
+        resting: plannedByRound.get(candidate.planned_round_no)?.resting ?? [],
+      }] : []),
+      decisions: selected.decisions,
+    }
+  } catch (error) {
+    console.warn('[suggest] plan consumption lookup failed; using live engine', {
+      session_id: options.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return disabled
+  }
 }
 
 async function writePlanAdvisoryShadow(options: {
@@ -645,8 +819,55 @@ Deno.serve(async (request) => {
       }
     }
 
+    const liveBusyIds = new Set<string>(
+      liveMatchRows
+        .filter((match: any) => match.status === 'live' && !completingLiveMatchIds.has(match.id))
+        .flatMap((match: any) => [...(match.team_a ?? []), ...(match.team_b ?? [])])
+    )
+    const occupiedCourtIdxs = new Set(
+      liveMatchRows
+        .filter((match: any) =>
+          match?.status === 'live'
+          && !completingLiveMatchIds.has(match.id)
+          && match?.court_idx !== null
+          && match?.court_idx !== undefined
+        )
+        .map((match: any) => Number(match.court_idx))
+        .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
+    )
+    const openCourtIdxs = Array.from({ length: courtCount }, (_, idx) => idx)
+      .filter(idx => !occupiedCourtIdxs.has(idx))
+    const explicitTargetCourtIdxs = (courtIdxs ?? [])
+      .filter(idx => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
+    const partialFullBoardRequest = mode === 'full_board'
+      && explicitTargetCourtIdxs.length === 0
+      && count < openCourtIdxs.length
+    const targetCourtIdxs = mode === 'replace_courts'
+      ? explicitTargetCourtIdxs
+      : partialFullBoardRequest
+        ? []
+        : openCourtIdxs
+    const replaceAllSuggestions = mode === 'full_board' && explicitTargetCourtIdxs.length === 0
+    const activeManualMutationKind = authoritativeLiveMatchRows
+      .filter(match => (
+        match.status === 'suggested' || match.status === 'live'
+      ) && match.suggestion_metadata?.manual_override === true)
+      .map(match => String(match.suggestion_metadata?.manual_mutation_kind ?? 'manual_lineup_changed'))
+      .at(-1) ?? null
+
     // 4. Run suggestion algorithm
     const serviceClient = createServiceClient()
+    const planConsumption = await loadPlanConsumption({
+      supabase: serviceClient,
+      sessionId,
+      state,
+      authoritativeLiveMatchRows,
+      courtCount,
+      targetCourtIdxs: preferAvailablePool ? [] : targetCourtIdxs,
+      busyIds: liveBusyIds,
+      replaceAllSuggestions,
+      activeManualMutationKind,
+    })
     const backgroundWrites: Promise<unknown>[] = []
     const verifyDumpEnabled = Deno.env.get('VERIFY_DUMP') === '1'
     const decisionSource = preferAvailablePool ? 'host_replacement' : 'engine_auto'
@@ -678,27 +899,104 @@ Deno.serve(async (request) => {
     }
     const selectionDebug: any[] = []
     stageStartedAt = performance.now()
-    let payloads = buildSuggestedMatchPayloads({
-      count,
-      sessionId,
-      courtCount,
-      state,
-      rows: { liveMatchRows, liveStateVersion },
-      completingLiveMatchIds,
-      fairnessAdjustment: adjustment,
-      fairnessWarnings: warnings,
-      playersById,
-      pvnaTolerance,
-      options: {
-        ...(courtIdxs && courtIdxs.length > 0 ? { courtIdxs } : {}),
-        ignoreCapacityLock: !preferAvailablePool,
-        deferExtremeTightPool: true,
-        tightPoolQualityDeferUntilByCourt,
-        onIncompleteDump,
-        onInstrumentEvent,
-      },
-      debugOut: selectionDebug,
+    const runEngine = (
+      engineCount: number,
+      engineCourtIdxs: number[] | undefined,
+      engineLiveMatchRows: SessionLiveMatchRow[],
+    ) => engineCount > 0
+      ? buildSuggestedMatchPayloads({
+          count: engineCount,
+          sessionId,
+          courtCount,
+          state,
+          rows: { liveMatchRows: engineLiveMatchRows, liveStateVersion },
+          completingLiveMatchIds,
+          fairnessAdjustment: adjustment,
+          fairnessWarnings: warnings,
+          playersById,
+          pvnaTolerance,
+          options: {
+            ...(engineCourtIdxs && engineCourtIdxs.length > 0 ? { courtIdxs: engineCourtIdxs } : {}),
+            ignoreCapacityLock: !preferAvailablePool,
+            deferExtremeTightPool: true,
+            tightPoolQualityDeferUntilByCourt,
+            onIncompleteDump,
+            onInstrumentEvent,
+          },
+          debugOut: selectionDebug,
+        })
+      : []
+    let consumedPlanCourts = [...planConsumption.accepted]
+    const consumedCourtSet = new Set(consumedPlanCourts.map(item => item.court_idx))
+    const unresolvedCourtIdxs = targetCourtIdxs.filter(courtIdx => !consumedCourtSet.has(courtIdx))
+    const maxExistingSequence = liveMatchRows.reduce(
+      (max, match) => Math.max(max, Number(match.sequence_no ?? -1)),
+      -1,
+    )
+    const plannedPayloads = consumedPlanCourts.map((planned, index) => {
+      const pvna = (playerId: string) => {
+        const player = state.players.get(playerId)
+        return Number(player?.effective_pvna ?? player?.pvna ?? 0)
+      }
+      const teamGap = Math.abs(
+        pvna(planned.team_a[0]) + pvna(planned.team_a[1])
+        - pvna(planned.team_b[0]) - pvna(planned.team_b[1]),
+      )
+      const overBy = Math.max(0, teamGap - pvnaTolerance)
+      return {
+        court_idx: planned.court_idx,
+        team_a: planned.team_a,
+        team_b: planned.team_b,
+        resting: planned.resting,
+        round_no: planned.live_round_no,
+        warnings: overBy > 0 ? ['PVNA_TOLERANCE_RELAXED'] : [],
+        tradeoffs: overBy > 0 ? [{ type: 'pvna_tolerance_relaxed' as const, severity: overBy, over_by: overBy }] : [],
+        approval_required: overBy > 0,
+        configured_pvna_tolerance: pvnaTolerance,
+        effective_pvna_tolerance: Math.max(pvnaTolerance, teamGap),
+        fairness_reasons: [],
+        fairness_reason_details: [],
+        preview_source: 'session_plan',
+        plan_job_id: planConsumption.job_id,
+        plan_version_id: planConsumption.plan_version_id,
+        planned_round_no: planned.planned_round_no,
+        sequence_no: maxExistingSequence + index + 1,
+      }
     })
+    const targetCourtSetForHybrid = new Set(targetCourtIdxs)
+    const plannedLockRows: SessionLiveMatchRow[] = plannedPayloads.map((payload, index) => ({
+      id: `session-plan-lock-${payload.court_idx}-${index}`,
+      session_id: sessionId,
+      sequence_no: Number(payload.sequence_no),
+      round_no: Number(payload.round_no),
+      cycle_no: Number(payload.round_no),
+      court_idx: Number(payload.court_idx),
+      status: 'suggested',
+      team_a: payload.team_a,
+      team_b: payload.team_b,
+      resting: payload.resting,
+      score_a: 0,
+      score_b: 0,
+      suggested_at: new Date().toISOString(),
+      started_at: null,
+      ended_at: null,
+      suggestion_metadata: { preview_source: 'session_plan' },
+    }))
+    const hybridEngineRows = consumedPlanCourts.length > 0
+      ? [
+          ...liveMatchRows.filter(match => !(
+            match.status === 'suggested'
+            && targetCourtSetForHybrid.has(Number(match.court_idx))
+          )),
+          ...plannedLockRows,
+        ]
+      : liveMatchRows
+    const enginePayloads = consumedPlanCourts.length > 0
+      ? runEngine(unresolvedCourtIdxs.length, unresolvedCourtIdxs, hybridEngineRows)
+      : runEngine(count, courtIdxs, liveMatchRows)
+    let payloads = consumedPlanCourts.length > 0
+      ? [...plannedPayloads, ...enginePayloads]
+      : enginePayloads
     let board = buildFinalPreviewBoard({
       mode,
       payloads,
@@ -706,6 +1004,32 @@ Deno.serve(async (request) => {
       replacementCourtIdxs: courtIdxs,
       courtCount,
     })
+    if (consumedPlanCourts.length > 0) {
+      const mergedTargetMatches = board.final_preview_board
+        .filter(match => targetCourtSetForHybrid.has(Number(match.court_idx)))
+      const mergedFilledCourts = new Set(mergedTargetMatches.map(match => Number(match.court_idx)))
+      const retainedPlayerIds = new Set(authoritativeLiveMatchRows
+        .filter(match => match.status === 'suggested' && !targetCourtSetForHybrid.has(Number(match.court_idx)))
+        .flatMap(match => [...match.team_a, ...match.team_b]))
+      const mergedValidation = validatePlannedBoard({
+        matches: mergedTargetMatches.map(match => ({ team_a: match.team_a, team_b: match.team_b })),
+        players: state.players,
+        busyIds: liveBusyIds,
+        reservedIds: retainedPlayerIds,
+      })
+      const hybridComplete = targetCourtIdxs.every(courtIdx => mergedFilledCourts.has(courtIdx))
+      if (!mergedValidation.valid || !hybridComplete) {
+        consumedPlanCourts = []
+        payloads = runEngine(count, courtIdxs, liveMatchRows)
+        board = buildFinalPreviewBoard({
+          mode,
+          payloads,
+          currentPreviewBoard,
+          replacementCourtIdxs: courtIdxs,
+          courtCount,
+        })
+      }
+    }
     let qualityRescueUsed = false
     const replacementBoardIncomplete = mode === 'replace_courts'
       && !hasFulfilledPreviewBoardReplacements(board, courtIdxs)
@@ -714,7 +1038,8 @@ Deno.serve(async (request) => {
     const allowReplacementFullBoardRescue = mode === 'replace_courts'
       && body.allow_full_board_rescue === true
     if (
-      allowReplacementFullBoardRescue
+      consumedPlanCourts.length === 0
+      && allowReplacementFullBoardRescue
       && (replacementBoardIncomplete || needsQualityRescue)
     ) {
       const liveRowsWithoutRetainedPreviews = liveMatchRows.filter((match: any) => match?.status !== 'suggested')
@@ -764,11 +1089,6 @@ Deno.serve(async (request) => {
         maxSequenceNo: currentMaxSequenceNo,
       }))
       .filter(isNonNullPreviewMatch)
-    const liveBusyIds = new Set<string>(
-      liveMatchRows
-        .filter((m: any) => m.status === 'live' && !completingLiveMatchIds.has(m.id))
-        .flatMap((m: any) => [...(m.team_a ?? []), ...(m.team_b ?? [])])
-    )
     const suggestedBusyIds = new Set<string>(
       liveMatchRows
         .filter((m: any) => m.status === 'suggested')
@@ -785,17 +1105,6 @@ Deno.serve(async (request) => {
     const maxCourtsWithEveryone = Math.floor((freeCount + liveBusyIds.size) / 4)
     const tempLimitedCourts = Math.min(playerLimitedCourts, Math.max(0, maxCourtsWithEveryone - payloads.length))
     const realLimitedCourts = playerLimitedCourts - tempLimitedCourts
-    const occupiedCourtIdxs = new Set(
-      liveMatchRows
-        .filter((match: any) =>
-          match?.status === 'live'
-          && !completingLiveMatchIds.has(match.id)
-          && match?.court_idx !== null
-          && match?.court_idx !== undefined
-        )
-        .map((match: any) => Number(match.court_idx))
-        .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
-    )
     const finalFilledCourtIdxs = new Set(
       finalPreviewBoard
         .map((payload: any) => Number(payload.court_idx))
@@ -803,18 +1112,6 @@ Deno.serve(async (request) => {
     )
     const finalMissingOpenCourts = Array.from({ length: courtCount }, (_, idx) => idx)
       .filter(idx => !occupiedCourtIdxs.has(idx) && !finalFilledCourtIdxs.has(idx))
-    const openCourtIdxs = Array.from({ length: courtCount }, (_, idx) => idx)
-      .filter(idx => !occupiedCourtIdxs.has(idx))
-    const explicitTargetCourtIdxs = (courtIdxs ?? [])
-      .filter(idx => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
-    const partialFullBoardRequest = mode === 'full_board'
-      && explicitTargetCourtIdxs.length === 0
-      && count < openCourtIdxs.length
-    const targetCourtIdxs = mode === 'replace_courts'
-      ? explicitTargetCourtIdxs
-      : partialFullBoardRequest
-        ? []
-        : openCourtIdxs
     const missingTargetCourts = targetCourtIdxs.filter(idx => !finalFilledCourtIdxs.has(idx))
     const filledTargetCount = targetCourtIdxs.length > 0
       ? targetCourtIdxs.filter(idx => finalFilledCourtIdxs.has(idx)).length
@@ -847,15 +1144,12 @@ Deno.serve(async (request) => {
         : finalPreviewBoard
             .map((payload: any) => Number(payload.court_idx))
             .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
-      const replaceAllSuggestions = mode === 'full_board' && explicitTargetCourtIdxs.length === 0
       const matchesToPersist = getPreviewMatchesToPersist({
         mode,
         finalPreviewBoard,
         replacementCourtIdxs: replaceCourtIdxs,
       })
-      const { data: persistedPreviewData, error: persistedPreviewError } = await auth.supabase.rpc(
-        'replace_live_session_suggestions_versioned',
-        {
+      const persistencePayload = {
           p_session_id: sessionId,
           p_expected_live_state_version: requestLiveStateVersion,
           p_matches: matchesToPersist,
@@ -872,15 +1166,38 @@ Deno.serve(async (request) => {
             target_court_idxs: targetCourtIdxs,
             missing_target_courts: missingTargetCourts,
             target_count_shortfall: targetCountShortfall,
+            plan_consumption: consumedPlanCourts.length > 0 ? {
+              plan_job_id: planConsumption.job_id,
+              plan_version_id: planConsumption.plan_version_id,
+              consumed_court_idxs: consumedPlanCourts.map(item => item.court_idx),
+              decisions: planConsumption.decisions.map(decision => ({
+                court_idx: decision.court_idx,
+                status: decision.status,
+                reasons: decision.reasons,
+              })),
+            } : null,
           },
-        },
+        }
+      const persistenceRpc = consumedPlanCourts.length > 0
+        ? 'replace_planned_live_session_suggestions_versioned'
+        : 'replace_live_session_suggestions_versioned'
+      const { data: persistedPreviewData, error: persistedPreviewError } = await auth.supabase.rpc(
+        persistenceRpc,
+        consumedPlanCourts.length > 0
+          ? {
+              ...persistencePayload,
+              p_expected_planning_mutation_version: planConsumption.planning_mutation_version,
+            }
+          : persistencePayload,
       )
       if (persistedPreviewError) {
-        if (persistedPreviewError.message?.includes('Session changed')) {
+        if (persistedPreviewError.message?.includes('Session changed')
+          || persistedPreviewError.message?.includes('Session planning changed')) {
           return jsonResponse({
             ok: false,
             error: 'PREVIEW_STATE_CHANGED',
             state_changed: true,
+            planning_state_changed: persistedPreviewError.message?.includes('Session planning changed'),
             request_live_state_version: requestLiveStateVersion,
           }, 409)
         }
@@ -913,6 +1230,24 @@ Deno.serve(async (request) => {
     const totalTimingMs = roundedDuration(requestStartedAt)
     const slowRequest = totalTimingMs >= SLOW_SUGGEST_THRESHOLD_MS
     const slowDiagnostic = slowRequest ? classifySlowSuggest(timingMs) : null
+    const planConsumptionSummary = {
+      enabled: planConsumption.enabled,
+      plan_job_id: planConsumption.job_id,
+      plan_version_id: planConsumption.plan_version_id,
+      consumed_court_idxs: consumedPlanCourts.map(item => item.court_idx),
+      counts: {
+        usable: planConsumption.decisions.filter(decision => decision.status === 'usable').length,
+        repair_required: planConsumption.decisions.filter(decision => decision.status === 'repair_required').length,
+        fallback: planConsumption.decisions.filter(decision => decision.status === 'fallback').length,
+        consumed: consumedPlanCourts.length,
+      },
+      decisions: planConsumption.decisions.map(decision => ({
+        court_idx: decision.court_idx,
+        planned_round_no: decision.planned_round_no,
+        status: decision.status,
+        reasons: decision.reasons,
+      })),
+    }
 
     if (verifyDumpEnabled) {
       const latestDump = verifyDumps.at(-1)
@@ -1064,6 +1399,7 @@ Deno.serve(async (request) => {
           real_limited_courts: realLimitedCourts,
           max_courts_with_free_players: Math.floor(freeCount / 4),
           max_courts_with_free_plus_live_busy_players: maxCourtsWithEveryone,
+          plan_consumption: planConsumptionSummary,
         },
         timing_ms: {
           ...timingMs,
@@ -1195,6 +1531,7 @@ Deno.serve(async (request) => {
       timing_ms: { ...timingMs, total: totalTimingMs },
       slow_request: slowRequest,
       slow_diagnostic: slowDiagnostic,
+      plan_consumption: planConsumptionSummary,
     })
 
     const auditWrite = writeSessionAuditEvent(serviceClient, {
@@ -1245,6 +1582,7 @@ Deno.serve(async (request) => {
         timing_ms: { ...timingMs, total: totalTimingMs },
         slow_request: slowRequest,
         slow_diagnostic: slowDiagnostic,
+        plan_consumption: planConsumptionSummary,
       },
       detail: {
         decision_source: decisionSource,
@@ -1272,12 +1610,7 @@ Deno.serve(async (request) => {
             : [...finalFilledCourtIdxs],
           finalPreviewBoard,
           liveBusyIds,
-          activeManualMutationKind: authoritativeLiveMatchRows
-            .filter(match => (
-              match.status === 'suggested' || match.status === 'live'
-            ) && match.suggestion_metadata?.manual_override === true)
-            .map(match => String(match.suggestion_metadata?.manual_mutation_kind ?? 'manual_lineup_changed'))
-            .at(-1) ?? null,
+          activeManualMutationKind,
           authoritativeLiveMatchRows,
           authorization: request.headers.get('Authorization'),
         })
@@ -1321,6 +1654,7 @@ Deno.serve(async (request) => {
       player_limited_courts: playerLimitedCourts,
       temp_limited_courts: tempLimitedCourts,
       real_limited_courts: realLimitedCourts,
+      plan_consumption: planConsumptionSummary,
       debug: {
         authoritative_snapshot: true,
         playerCount: state.players.size,
