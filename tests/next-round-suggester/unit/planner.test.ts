@@ -123,6 +123,11 @@ describe('precomputed planner primitives', () => {
     expect(resolvePlannedMatchAdvisory({
       plannedMatch: planned,
       state,
+      reservedIds: new Set(['p2']),
+    })).toMatchObject({ status: 'repair_required', reasons: ['reserved'] })
+    expect(resolvePlannedMatchAdvisory({
+      plannedMatch: planned,
+      state,
       rosterIdentityMatches: false,
     })).toMatchObject({ status: 'fallback', reasons: ['roster_changed'] })
     expect(resolvePlannedMatchAdvisory({

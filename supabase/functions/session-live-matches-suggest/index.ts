@@ -137,10 +137,10 @@ async function writePlanAdvisoryShadow(options: {
       const planned = plannedByRound.get(round.round_no + 1)
       return Array.isArray(planned) && plannedBoardEqualsLiveBoard(planned as any, round.matches)
     })
-    const allFinalPlayerIds = new Set(options.finalPreviewBoard.flatMap(match => [
-      ...(match.team_a ?? []),
-      ...(match.team_b ?? []),
-    ]))
+    const targetCourtSet = new Set(requestedCourts)
+    const lockedPlayerIds = new Set(options.finalPreviewBoard
+      .filter(match => !targetCourtSet.has(Number(match.court_idx)))
+      .flatMap(match => [...(match.team_a ?? []), ...(match.team_b ?? [])]))
     const decisions = requestedCourts.map(courtIdx => {
       const live = liveByCourt.get(courtIdx)
       const liveRoundNo = Number(live?.round_no)
@@ -149,13 +149,11 @@ async function writePlanAdvisoryShadow(options: {
       const planned = plannedMatches[courtIdx] && typeof plannedMatches[courtIdx] === 'object'
         ? plannedMatches[courtIdx] as { team_a: [string, string]; team_b: [string, string] }
         : null
-      const ownLiveIds = new Set([...(live?.team_a ?? []), ...(live?.team_b ?? [])])
-      const reservedIds = new Set([...allFinalPlayerIds].filter(playerId => !ownLiveIds.has(playerId)))
       const advisory = resolvePlannedMatchAdvisory({
         plannedMatch: planned,
         state: options.state,
         busyIds: options.liveBusyIds,
-        reservedIds,
+        reservedIds: lockedPlayerIds,
         rosterIdentityMatches: job ? rosterIdentityMatches : undefined,
         configIdentityMatches: job ? configIdentityMatches : undefined,
         historyMatches: job ? historyMatches : undefined,

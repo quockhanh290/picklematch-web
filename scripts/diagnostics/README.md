@@ -96,6 +96,7 @@ npx tsx scripts/diagnostics/simulate-precomputed-mutations.ts <export-directory>
 npx tsx scripts/diagnostics/benchmark-precomputed-mutations.ts
 npx tsx scripts/diagnostics/smoke-session-plan-shadow.ts [--session-id=<id>] [--rounds=<count>] [--passes=1|2|3] [--persist]
 npx tsx scripts/diagnostics/smoke-session-plan-shadow.ts --session-id=<id> --rounds=8 --passes=3 --chunked
+npx tsx scripts/diagnostics/probe-session-plan-advisory.ts --session-id=<id>
 npx tsx scripts/diagnostics/evaluate-session-plan-shadow.ts --session-id=<id> [--passes=1,2,3,5] [--round-budget-ms=<ms>]
 npx tsx scripts/diagnostics/evaluate-session-plan-shadow.ts --session-id=<id> --passes=2,3 --played-rounds=3 --mutation=checkout
 ```
