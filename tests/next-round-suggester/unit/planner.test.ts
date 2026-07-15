@@ -24,6 +24,11 @@ import {
   stablePlannerJson,
 } from '@/lib/next-round-suggester/planner/identity'
 import {
+  buildPlanningFrontier,
+  buildPlanningFrontierIdentity,
+  getPlanningCommitments,
+} from '@/lib/next-round-suggester/planner/frontier'
+import {
   buildPrecomputedSessionPlan,
   buildPrecomputedSessionPlanChunk,
   resolveSessionPlanRoundCount,
@@ -31,7 +36,7 @@ import {
   summarizeSessionPlanBoard,
   type SessionPlanChunkCheckpoint,
 } from '@/lib/next-round-suggester/planner/session-plan'
-import type { PlayerSessionState } from '@/lib/next-round-suggester/types'
+import type { PlayerSessionState, SessionLiveMatchRow } from '@/lib/next-round-suggester/types'
 import {
   aggregate,
   buildInitialState,
@@ -56,6 +61,131 @@ function restMetrics(playerIds: string[], schedule: string[][]) {
 }
 
 describe('precomputed planner primitives', () => {
+  const liveRow = (overrides: Partial<SessionLiveMatchRow> = {}): SessionLiveMatchRow => ({
+    id: 'live-1',
+    session_id: 'session-test',
+    sequence_no: 1,
+    round_no: 2,
+    court_idx: 0,
+    status: 'live',
+    team_a: ['p1', 'p2'],
+    team_b: ['p3', 'p4'],
+    resting: [],
+    score_a: 0,
+    score_b: 0,
+    suggested_at: new Date(0).toISOString(),
+    started_at: new Date(0).toISOString(),
+    ended_at: null,
+    ...overrides,
+  })
+
+  it('projects active commitments without mutating the authoritative state', () => {
+    const state = createState({
+      players: ['p1', 'p2', 'p3', 'p4', 'p5'].map(id => createPlayer(id)),
+      currentRound: 2,
+    })
+    const frontier = buildPlanningFrontier(state, [liveRow()])
+
+    expect(state.players.get('p1')?.matches_played).toBe(0)
+    expect(frontier.state.players.get('p1')?.matches_played).toBe(1)
+    expect(frontier.state.players.get('p1')?.partner_counts.get('p2')).toBe(1)
+    expect(frontier.state.players.get('p1')?.opponent_counts.get('p3')).toBe(1)
+    expect(frontier.state.players.get('p5')?.consecutive_rest).toBe(0)
+    expect(frontier.busy_ids).toEqual(['p1', 'p2', 'p3', 'p4'])
+  })
+
+  it('keeps frontier identity stable when a live commitment becomes completed history', () => {
+    const state = createState({
+      players: ['p1', 'p2', 'p3', 'p4'].map(id => createPlayer(id)),
+      currentRound: 2,
+    })
+    const row = liveRow()
+    const liveIdentity = stablePlannerJson(buildPlanningFrontierIdentity(state, [row]))
+    const completedState = buildPlanningFrontier(state, [row]).state
+    const completedIdentity = stablePlannerJson(buildPlanningFrontierIdentity(completedState, []))
+
+    expect(completedIdentity).toBe(liveIdentity)
+  })
+
+  it('changes frontier identity for a new, canceled, or repartitioned commitment', () => {
+    const state = createState({
+      players: ['p1', 'p2', 'p3', 'p4'].map(id => createPlayer(id)),
+      currentRound: 2,
+    })
+    const row = liveRow()
+    const empty = stablePlannerJson(buildPlanningFrontierIdentity(state, []))
+    const active = stablePlannerJson(buildPlanningFrontierIdentity(state, [row]))
+    const repartitioned = stablePlannerJson(buildPlanningFrontierIdentity(state, [liveRow({
+      team_a: ['p1', 'p3'],
+      team_b: ['p2', 'p4'],
+    })]))
+
+    expect(active).not.toBe(empty)
+    expect(repartitioned).not.toBe(active)
+    expect(stablePlannerJson(buildPlanningFrontierIdentity(state, []))).toBe(empty)
+  })
+
+  it('locks manual suggested lineups but ignores ordinary suggestions', () => {
+    expect(getPlanningCommitments([
+      liveRow({ id: 'ordinary', status: 'suggested' }),
+      liveRow({
+        id: 'manual',
+        status: 'suggested',
+        suggestion_metadata: { manual_override: true },
+      }),
+    ]).map(row => row.id)).toEqual(['manual'])
+  })
+
+  it('plans a rolling suffix while courts are live and keeps busy consumption safe', () => {
+    const players = Array.from({ length: 28 }, (_, index) => createPlayer(
+      `p${String(index + 1).padStart(2, '0')}`,
+      { pvna: 2.5 + index * 0.08 },
+    ))
+    const state = createState({ players, currentRound: 3, courts: 6 })
+    const commitments = [
+      liveRow({
+        id: 'live-court-1',
+        round_no: 3,
+        court_idx: 0,
+        team_a: ['p01', 'p02'],
+        team_b: ['p03', 'p04'],
+      }),
+      liveRow({
+        id: 'live-court-2',
+        sequence_no: 2,
+        round_no: 3,
+        court_idx: 1,
+        team_a: ['p05', 'p06'],
+        team_b: ['p07', 'p08'],
+      }),
+    ]
+    const frontier = buildPlanningFrontier(state, commitments)
+    const plan = buildPrecomputedSessionPlan(frontier.state, 2, 6, {
+      localSearchPasses: 1,
+      startingRound: state.current_round,
+    })
+
+    expect(plan.invariants).toMatchObject({
+      duplicate_player_rounds: 0,
+      full_rounds: 2,
+      expected_rounds: 2,
+    })
+    expect(plan.rounds.map(round => round.round)).toEqual([4, 5])
+    const firstValidation = validatePlannedBoard({
+      matches: plan.rounds[0].matches,
+      players: state.players,
+      busyIds: new Set(frontier.busy_ids),
+    })
+    const consumable = plan.rounds[0].matches.filter((_, index) => (
+      !firstValidation.invalidMatchIndexes.includes(index)
+    ))
+    expect(validatePlannedBoard({
+      matches: consumable,
+      players: state.players,
+      busyIds: new Set(frontier.busy_ids),
+    }).valid).toBe(true)
+  })
+
   it('keeps planning identity stable across ordinary round progress and busy state', () => {
     const state = createState({
       players: [

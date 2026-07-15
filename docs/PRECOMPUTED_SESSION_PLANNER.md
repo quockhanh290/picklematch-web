@@ -442,17 +442,27 @@ avoid-pair changes increment the same version through database triggers.
 
 Each shadow job captures that version. A version mismatch or manual metadata on
 an authoritative `suggested`/`live` row makes the advisory result fallback; it
-cannot alter live output. Shadow planning refuses to start while any live match
-exists, because that is not a reproducible session checkpoint. Once all courts
-are idle, a new job may plan only the remaining horizon from the new version.
-This avoids generating eight fresh rounds after a mid-session mutation and
-keeps the current live engine as the uninterrupted fallback.
+cannot alter live output. Replanning does not wait for a global-idle moment,
+which rolling courts may never reach. Instead, active and manual-persisted
+lineups form a planning frontier: they are projected as immutable commitments
+into a cloned state before only the remaining horizon is planned. Busy-player
+validation still decides which planned matches can be consumed as individual
+courts become free, with the live engine as the uninterrupted fallback.
+
+Checkpoint compare-and-set uses `planning_mutation_version` and a canonical
+frontier fingerprint rather than raw `live_state_version`. The fingerprint
+combines completed history with active commitments and is intentionally stable
+when the same lineup transitions from `live` to completed. A genuinely new,
+canceled, replaced, or changed commitment supersedes the old job. This avoids
+both waiting for all courts and restarting an eight-chunk plan for unrelated
+preview-version writes.
 
 The hosted gate must prove: unchanged retries are no-ops, same-four team swaps
 produce `manual_team_repartition`, player swaps produce
-`manual_player_replacement`, old jobs become advisory fallback immediately,
-planning is rejected while a live row exists, and a globally idle suffix replan
-restores usable advisory rows. None of these checks enables Phase 5B consumption.
+`manual_player_replacement`, old jobs become advisory fallback immediately, a
+rolling suffix can be planned while courts remain live, and busy planned rows
+are repaired or fall back without double-booking. None of these checks enables
+Phase 5B consumption.
 
 ### Phase 5 - Advisory integration
 

@@ -39,7 +39,7 @@ function optionalNumber(value: unknown): number | undefined {
 const REPLAY_SCHEMA_VERSION = 2
 const EDGE_FUNCTION_NAME = 'session-live-matches-suggest'
 const SLOW_SUGGEST_THRESHOLD_MS = 3_000
-const PLAN_ADVISORY_ENGINE_VERSION = 'precomputed-v7-planning-mutation-version'
+const PLAN_ADVISORY_ENGINE_VERSION = 'precomputed-v8-rolling-frontier'
 
 type SuggestTimingStage =
   | 'auth'

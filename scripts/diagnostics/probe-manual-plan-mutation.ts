@@ -46,14 +46,14 @@ async function main() {
       .select('id, court_count, input_payload, result_plan_version_id')
       .eq('session_id', sessionId)
       .eq('status', 'completed')
-      .eq('engine_version', 'precomputed-v7-planning-mutation-version')
+      .eq('engine_version', 'precomputed-v8-rolling-frontier')
       .order('completed_at', { ascending: false })
       .limit(1)
       .single(),
   ])
   if (snapshotError) throw snapshotError
   if (sessionError || !session) throw new Error(sessionError?.message ?? 'Unable to load planning version')
-  if (jobError || !job) throw new Error(jobError?.message ?? 'No completed v7 plan job')
+  if (jobError || !job) throw new Error(jobError?.message ?? 'No completed v8 plan job')
 
   const courtIdx = requestedCourt === undefined ? null : Number(requestedCourt)
   const suggestedRows = (before?.live_match_rows ?? []).filter((row: any) => row.status === 'suggested')

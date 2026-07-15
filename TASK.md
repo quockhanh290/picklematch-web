@@ -138,13 +138,18 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   dedicated owner-guarded RPC, increment `planning_mutation_version`, classify
   same-four repartitions separately from player replacements, and invalidate
   advisory plans while the edited row is either `suggested` or `live`.
-- [x] Reject shadow replanning while any live match exists. After a roster,
-  configuration, avoid-pair, or manual-lineup mutation, live suggestion remains
-  authoritative until the next globally idle checkpoint can publish a suffix
-  plan from the new mutation version.
-- [ ] Apply the planning-mutation migration, deploy planner v7 plus the
+- [x] Replace the overly broad global-idle replan guard with a rolling planning
+  frontier. Active and manual-persisted lineups are immutable commitments in a
+  planner clone; their players/history are projected before the remaining
+  suffix is built, while live validation still blocks busy consumption.
+- [x] Checkpoint shadow jobs against `planning_mutation_version` plus a canonical
+  frontier fingerprint instead of raw `live_state_version`. The fingerprint is
+  stable when the same lineup moves from `live` to completed history, but a new,
+  canceled, replaced, or materially changed commitment supersedes the job.
+- [ ] Apply the planning-mutation migration, deploy planner v8 plus the
   read-only live advisory reader, and run the hosted manual-repartition matrix.
-  Local deployment remains blocked by the pre-existing Cap-2 A1 2000ms gate.
+  Cap-2 A1 now returns a full six-court board in about 0.5s; hosted rolling
+  mutation evidence is still required before deployment or consumption.
 - [ ] Phase 5B advisory consumption remains gated. Do not let a shadow plan
   change `session-live-matches-suggest` output until Phase 5A hosted evidence
   covers identity match, roster/config mutation, busy courts, missing plans,

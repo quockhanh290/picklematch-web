@@ -25,8 +25,14 @@ import {
   buildPlanningRosterIdentity,
   stablePlannerJson,
 } from '../../../lib/next-round-suggester/planner/identity.ts'
+import {
+  buildPlanningFrontier,
+  buildPlanningFrontierIdentity,
+  getPlanningCommitments,
+} from '../../../lib/next-round-suggester/planner/frontier.ts'
+import type { SessionLiveMatchRow } from '../../../lib/next-round-suggester/types.ts'
 
-const ENGINE_VERSION = 'precomputed-v7-planning-mutation-version'
+const ENGINE_VERSION = 'precomputed-v8-rolling-frontier'
 const MAX_PLANNED_ROUNDS = 12
 const MAX_LOCAL_SEARCH_PASSES = 3
 
@@ -102,8 +108,8 @@ Deno.serve(async (request) => {
     const [
       { data: sessionRow, error: sessionError },
       { data: settingsRow, error: settingsError },
-      { count: liveMatchCount, error: liveMatchCountError },
-      state,
+      { data: liveMatchRows, error: liveMatchRowsError },
+      loadedState,
     ] = await Promise.all([
       auth.supabase
         .from('sessions')
@@ -117,25 +123,18 @@ Deno.serve(async (request) => {
         .maybeSingle(),
       auth.supabase
         .from('session_live_matches')
-        .select('id', { count: 'exact', head: true })
+        .select('id, session_id, sequence_no, round_no, cycle_no, court_idx, status, team_a, team_b, resting, score_a, score_b, suggested_at, started_at, ended_at, suggestion_metadata')
         .eq('session_id', sessionId)
-        .eq('status', 'live'),
+        .in('status', ['suggested', 'live']),
       loadSessionState(auth.supabase, sessionId),
     ])
     if (sessionError || !sessionRow) throw new Error(sessionError?.message ?? 'Session not found')
     if (settingsError) throw new Error(settingsError.message)
-    if (liveMatchCountError) throw new Error(liveMatchCountError.message)
-    if ((liveMatchCount ?? 0) > 0) {
-      return jsonResponse({
-        ok: false,
-        safe_checkpoint_required: true,
-        error: 'Cannot build a session plan while live matches are active',
-      }, 409, request)
-    }
+    if (liveMatchRowsError) throw new Error(liveMatchRowsError.message)
 
     const preset = courtPreset(settingsRow?.court_preset)
     const durationMin = positiveInteger(settingsRow?.court_duration_min) ?? 120
-    const presentPlayerCount = [...state.players.values()]
+    const presentPlayerCount = [...loadedState.players.values()]
       .filter(player => player.checked_out_at === null)
       .length
     const courtRecommendation = calculateOptimalCourts({
@@ -149,13 +148,18 @@ Deno.serve(async (request) => {
     const configuredRounds = positiveInteger(settingsRow?.target_rounds)
       ?? courtRecommendation.recommended.total_rounds
       ?? 8
-    state.config = {
-      ...state.config,
+    loadedState.config = {
+      ...loadedState.config,
       courts,
       pvna_tolerance: finiteNumber(settingsRow?.pvna_tolerance, 0.5),
       planned_total_rounds: configuredRounds,
       court_preset: preset,
     }
+    const frontier = buildPlanningFrontier(
+      loadedState,
+      (liveMatchRows ?? []) as SessionLiveMatchRow[],
+    )
+    const state = frontier.state
     const requestedRoundOverride = positiveInteger(body.planned_round_count)
     const requestedRounds = resolveSessionPlanRoundCount(
       state.current_round,
@@ -178,6 +182,11 @@ Deno.serve(async (request) => {
     }
     const liveStateVersion = Number(sessionRow.live_state_version)
     const planningMutationVersion = Number(sessionRow.planning_mutation_version ?? 0)
+    const [rosterFingerprint, configFingerprint, frontierFingerprint] = await Promise.all([
+      sha256(buildPlanningRosterIdentity(loadedState)),
+      sha256(buildPlanningConfigIdentity(loadedState)),
+      sha256(frontier.identity),
+    ])
     const inputPayload = {
       planner: {
         engine_version: ENGINE_VERSION,
@@ -197,14 +206,59 @@ Deno.serve(async (request) => {
         },
         starting_round: state.current_round,
         planning_mutation_version: planningMutationVersion,
+        frontier_fingerprint: frontierFingerprint,
       },
       state: serializeState(state),
+      frontier: {
+        fixed_commitment_count: frontier.commitments.length,
+        busy_player_count: frontier.busy_ids.length,
+      },
+      fixed_commitments: frontier.commitments.map(match => ({
+        id: match.id,
+        status: match.status,
+        round_no: match.round_no,
+        court_idx: match.court_idx,
+        team_a: match.team_a,
+        team_b: match.team_b,
+        manual_override: match.suggestion_metadata?.manual_override === true,
+      })),
     }
-    const [inputHash, rosterFingerprint, configFingerprint] = await Promise.all([
-      sha256(inputPayload),
-      sha256(buildPlanningRosterIdentity(state)),
-      sha256(buildPlanningConfigIdentity(state)),
-    ])
+    const inputHash = await sha256({
+      planner: inputPayload.planner,
+      roster_fingerprint: rosterFingerprint,
+      config_fingerprint: configFingerprint,
+      frontier_fingerprint: frontierFingerprint,
+    })
+    const recheckPlanningFrontier = async () => {
+      const [
+        { data: currentSession, error: currentSessionError },
+        { data: currentLiveRows, error: currentLiveRowsError },
+        currentState,
+      ] = await Promise.all([
+        auth.supabase
+          .from('sessions')
+          .select('planning_mutation_version')
+          .eq('id', sessionId)
+          .single(),
+        auth.supabase
+          .from('session_live_matches')
+          .select('id, session_id, sequence_no, round_no, cycle_no, court_idx, status, team_a, team_b, resting, score_a, score_b, suggested_at, started_at, ended_at, suggestion_metadata')
+          .eq('session_id', sessionId)
+          .in('status', ['suggested', 'live']),
+        loadSessionState(auth.supabase, sessionId),
+      ])
+      if (currentSessionError || !currentSession) {
+        throw new Error(currentSessionError?.message ?? 'Unable to recheck planning mutation version')
+      }
+      if (currentLiveRowsError) throw new Error(currentLiveRowsError.message)
+      const currentCommitments = getPlanningCommitments(
+        (currentLiveRows ?? []) as SessionLiveMatchRow[],
+      )
+      return {
+        planningMutationVersion: Number(currentSession.planning_mutation_version ?? 0),
+        frontierFingerprint: await sha256(buildPlanningFrontierIdentity(currentState, currentCommitments)),
+      }
+    }
 
     if (persist) {
       const { error: supersedeError } = await auth.supabase
@@ -349,21 +403,14 @@ Deno.serve(async (request) => {
       }
 
       if (!chunk.completed || !chunk.plan) {
-        const { data: currentSession, error: currentSessionError } = await auth.supabase
-          .from('sessions')
-          .select('live_state_version, planning_mutation_version')
-          .eq('id', sessionId)
-          .single()
-        if (currentSessionError || !currentSession) {
-          throw new Error(currentSessionError?.message ?? 'Unable to recheck session version')
-        }
-        if (Number(currentSession.live_state_version) !== liveStateVersion
-          || Number(currentSession.planning_mutation_version ?? 0) !== planningMutationVersion) {
+        const currentFrontier = await recheckPlanningFrontier()
+        if (currentFrontier.planningMutationVersion !== planningMutationVersion
+          || currentFrontier.frontierFingerprint !== frontierFingerprint) {
           await auth.supabase
             .from('session_plan_jobs')
             .update({ status: 'stale', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
             .eq('id', jobId)
-          return jsonResponse({ ok: false, stale: true, job_id: jobId, error: 'Session changed while planning' }, 409, request)
+          return jsonResponse({ ok: false, stale: true, job_id: jobId, error: 'Planning frontier changed while planning' }, 409, request)
         }
         const { data: checkpointedJob, error: checkpointError } = await auth.supabase
           .from('session_plan_jobs')
@@ -445,19 +492,14 @@ Deno.serve(async (request) => {
     }
     if (!jobId) throw new Error('Plan job identity is missing')
 
-    const { data: currentSession, error: currentSessionError } = await auth.supabase
-      .from('sessions')
-      .select('live_state_version, planning_mutation_version')
-      .eq('id', sessionId)
-      .single()
-    if (currentSessionError || !currentSession) throw new Error(currentSessionError?.message ?? 'Unable to recheck session version')
-    if (Number(currentSession.live_state_version) !== liveStateVersion
-      || Number(currentSession.planning_mutation_version ?? 0) !== planningMutationVersion) {
+    const currentFrontier = await recheckPlanningFrontier()
+    if (currentFrontier.planningMutationVersion !== planningMutationVersion
+      || currentFrontier.frontierFingerprint !== frontierFingerprint) {
       await auth.supabase
         .from('session_plan_jobs')
         .update({ status: 'stale', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', jobId)
-      return jsonResponse({ ok: false, stale: true, job_id: jobId, error: 'Session changed while planning' }, 409, request)
+      return jsonResponse({ ok: false, stale: true, job_id: jobId, error: 'Planning frontier changed while planning' }, 409, request)
     }
 
     const { data: publishedVersion, error: versionError } = await auth.supabase
