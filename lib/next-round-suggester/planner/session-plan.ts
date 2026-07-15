@@ -85,6 +85,15 @@ export type SessionPlanChunkResult = {
 
 const DEFAULT_LOCAL_SEARCH_PASSES = 1
 
+export function resolveSessionPlanRoundCount(
+  currentRound: number,
+  targetRounds: number,
+  requestedRounds?: number | null,
+) {
+  if (requestedRounds !== undefined && requestedRounds !== null) return Math.max(0, Math.floor(requestedRounds))
+  return Math.max(0, Math.floor(targetRounds) - Math.max(0, Math.floor(currentRound)))
+}
+
 function effectivePvna(state: SessionState, playerId: string) {
   const player = state.players.get(playerId)
   return Number(player?.effective_pvna ?? player?.pvna ?? 0)
@@ -337,7 +346,10 @@ export function projectSessionPlanBoard(state: SessionState, board: SessionPlanM
       ended_at: new Date(0).toISOString(),
     }, roundNo)
   })
-  return buildProjectedStateAfterCompletedLiveRound(nextState, playedIds)
+  return {
+    ...buildProjectedStateAfterCompletedLiveRound(nextState, playedIds),
+    current_round: roundNo + 1,
+  }
 }
 
 export function projectSessionPlanDebt(

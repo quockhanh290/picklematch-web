@@ -10,6 +10,7 @@ import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
 import {
   buildPrecomputedSessionPlan,
   buildPrecomputedSessionPlanChunk,
+  resolveSessionPlanRoundCount,
   summarizeSessionPlan,
   type SessionPlan,
   type SessionPlanChunkCheckpoint,
@@ -20,7 +21,7 @@ import { calculateOptimalCourts } from '../../../lib/court-calculator/calculator
 import type { CourtPreset } from '../../../lib/court-calculator/types.ts'
 import type { SessionState } from '../../../lib/next-round-suggester/types.ts'
 
-const ENGINE_VERSION = 'precomputed-v4-round-checkpoints'
+const ENGINE_VERSION = 'precomputed-v5-mutation-horizon'
 const MAX_PLANNED_ROUNDS = 12
 const MAX_LOCAL_SEARCH_PASSES = 3
 
@@ -152,15 +153,32 @@ Deno.serve(async (request) => {
       planned_total_rounds: configuredRounds,
       court_preset: preset,
     }
-    const requestedRounds = positiveInteger(body.planned_round_count) ?? configuredRounds
+    const requestedRoundOverride = positiveInteger(body.planned_round_count)
+    const requestedRounds = resolveSessionPlanRoundCount(
+      state.current_round,
+      configuredRounds,
+      requestedRoundOverride,
+    )
     if (requestedRounds > MAX_PLANNED_ROUNDS) {
       return jsonResponse({ ok: false, error: `planned_round_count must be <= ${MAX_PLANNED_ROUNDS}` }, 400, request)
+    }
+    if (requestedRounds === 0) {
+      return jsonResponse({
+        ok: true,
+        completed: true,
+        persisted: false,
+        no_plan_required: true,
+        starting_round: state.current_round,
+        target_rounds: configuredRounds,
+        planned_round_count: 0,
+      }, 200, request)
     }
     const liveStateVersion = Number(sessionRow.live_state_version)
     const inputPayload = {
       planner: {
         engine_version: ENGINE_VERSION,
         planned_round_count: requestedRounds,
+        target_rounds: configuredRounds,
         local_search_passes: localSearchPasses,
         execution_mode: chunked ? 'round_checkpointed' : 'single_request',
         court_count: courts,
@@ -184,6 +202,19 @@ Deno.serve(async (request) => {
     ])
 
     if (persist) {
+      const { error: supersedeError } = await auth.supabase
+        .from('session_plan_jobs')
+        .update({
+          status: 'stale',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          error_detail: { message: 'Superseded by a newer roster or planning horizon' },
+        })
+        .eq('session_id', sessionId)
+        .in('status', ['queued', 'running', 'checkpointed'])
+        .neq('input_hash', inputHash)
+      if (supersedeError) throw new Error(supersedeError.message)
+
       const { data: insertedJob, error: insertError } = await auth.supabase
         .from('session_plan_jobs')
         .insert({
@@ -318,7 +349,7 @@ Deno.serve(async (request) => {
             .eq('id', jobId)
           return jsonResponse({ ok: false, stale: true, job_id: jobId, error: 'Session changed while planning' }, 409, request)
         }
-        const { error: checkpointError } = await auth.supabase
+        const { data: checkpointedJob, error: checkpointError } = await auth.supabase
           .from('session_plan_jobs')
           .update({
             status: 'checkpointed',
@@ -328,7 +359,17 @@ Deno.serve(async (request) => {
           })
           .eq('id', jobId)
           .eq('status', 'running')
+          .select('id')
+          .maybeSingle()
         if (checkpointError) throw new Error(checkpointError.message)
+        if (!checkpointedJob) {
+          return jsonResponse({
+            ok: false,
+            stale: true,
+            job_id: jobId,
+            error: 'Plan job was superseded while checkpointing',
+          }, 409, request)
+        }
         return jsonResponse({
           ok: true,
           persisted: true,

@@ -345,7 +345,10 @@ export function projectPlannedBoard(state: SessionState, board: BoardMatch[], ro
       ended_at: new Date(0).toISOString(),
     }, roundNo)
   })
-  return buildProjectedStateAfterCompletedLiveRound(nextState, playedIds)
+  return {
+    ...buildProjectedStateAfterCompletedLiveRound(nextState, playedIds),
+    current_round: roundNo + 1,
+  }
 }
 
 export function projectQualityDebt(debt: ReadonlyMap<string, number>, board: BoardMatch[], state: SessionState) {

@@ -6,6 +6,7 @@ import WebSocket from 'ws'
 
 import {
   buildPrecomputedSessionPlan,
+  resolveSessionPlanRoundCount,
   summarizeSessionPlan,
   type SessionPlan,
 } from '../../lib/next-round-suggester/planner/session-plan'
@@ -159,6 +160,14 @@ async function main() {
   if (roundBudgetMs !== undefined && (!Number.isFinite(roundBudgetMs) || roundBudgetMs <= 0)) {
     throw new Error('--round-budget-ms must be a positive number')
   }
+  const playedRounds = Number(argument('--played-rounds') ?? 0)
+  if (!Number.isInteger(playedRounds) || playedRounds < 0) {
+    throw new Error('--played-rounds must be a non-negative integer')
+  }
+  const mutation = argument('--mutation') ?? 'none'
+  if (mutation !== 'none' && mutation !== 'checkout') {
+    throw new Error('--mutation must be none or checkout')
+  }
 
   const client = createClient(supabaseUrl!, anonKey!, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -177,15 +186,50 @@ async function main() {
     .single()
   if (jobError || !job) throw new Error(jobError?.message ?? 'Completed shadow plan not found')
 
-  const state = hydrateState(job.input_payload.state)
+  const initialState = hydrateState(job.input_payload.state)
+  if (playedRounds >= job.planned_round_count) {
+    throw new Error('--played-rounds must be lower than the target round count')
+  }
+  const prefix = playedRounds > 0
+    ? buildPrecomputedSessionPlan(initialState, playedRounds, job.court_count, {
+      localSearchPasses: 2,
+      startingRound: initialState.current_round,
+    })
+    : null
+  const state = prefix?.state ?? initialState
+  const initialDebt = prefix?.debt
+  let mutatedPlayerId: string | null = null
+  if (mutation === 'checkout') {
+    mutatedPlayerId = prefix?.rounds.at(-1)?.matches[0]?.team_a[0]
+      ?? [...state.players.keys()].sort()[0]
+      ?? null
+    if (!mutatedPlayerId) throw new Error('Unable to select a checkout mutation player')
+    state.players.set(mutatedPlayerId, {
+      ...state.players.get(mutatedPlayerId)!,
+      checked_out_at: new Date('2026-07-14T12:00:00.000Z'),
+    })
+  }
+  const remainingRounds = resolveSessionPlanRoundCount(
+    state.current_round,
+    job.planned_round_count,
+  )
   const results = passes.map(passCount => {
     const startedAt = performance.now()
-    const plan = buildPrecomputedSessionPlan(state, job.planned_round_count, job.court_count, {
+    const plan = buildPrecomputedSessionPlan(state, remainingRounds, job.court_count, {
       localSearchPasses: passCount,
       maxRoundRuntimeMs: roundBudgetMs,
       startingRound: state.current_round,
+      initialDebt,
     })
-    return compactResult(plan, passCount, performance.now() - startedAt, roundBudgetMs)
+    const selectedIds = plan.rounds.flatMap(round => round.matches)
+      .flatMap(match => [...match.team_a, ...match.team_b])
+    return {
+      ...compactResult(plan, passCount, performance.now() - startedAt, roundBudgetMs),
+      round_numbers: plan.rounds.map(round => round.round),
+      mutated_player_selections: mutatedPlayerId
+        ? selectedIds.filter(id => id === mutatedPlayerId).length
+        : 0,
+    }
   })
 
   console.log(JSON.stringify({
@@ -193,8 +237,15 @@ async function main() {
     source_job_id: job.id,
     engine_version: job.engine_version,
     players: state.players.size,
+    active_players: [...state.players.values()].filter(player => player.checked_out_at === null && !player.opted_rest).length,
     courts: job.court_count,
-    rounds: job.planned_round_count,
+    target_rounds: job.planned_round_count,
+    completed_rounds: state.current_round,
+    remaining_rounds: remainingRounds,
+    mutation: {
+      type: mutation,
+      player_id: mutatedPlayerId,
+    },
     results,
   }, null, 2))
 }

@@ -16,6 +16,7 @@ import { repairUnavailablePlannedBoard, validatePlannedBoard } from '@/lib/next-
 import {
   buildPrecomputedSessionPlan,
   buildPrecomputedSessionPlanChunk,
+  resolveSessionPlanRoundCount,
   summarizeSessionPlan,
   summarizeSessionPlanBoard,
   type SessionPlanChunkCheckpoint,
@@ -45,6 +46,14 @@ function restMetrics(playerIds: string[], schedule: string[][]) {
 }
 
 describe('precomputed planner primitives', () => {
+  it('plans only the unplayed target-round suffix unless an explicit horizon is requested', () => {
+    expect(resolveSessionPlanRoundCount(0, 8)).toBe(8)
+    expect(resolveSessionPlanRoundCount(3, 8)).toBe(5)
+    expect(resolveSessionPlanRoundCount(8, 8)).toBe(0)
+    expect(resolveSessionPlanRoundCount(9, 8)).toBe(0)
+    expect(resolveSessionPlanRoundCount(3, 8, 2)).toBe(2)
+  })
+
   const metrics = (overrides: Partial<SocialPlannerMetrics> = {}): SocialPlannerMetrics => ({
     matches: 6,
     interOverOne: 0,
@@ -266,6 +275,49 @@ describe('precomputed planner primitives', () => {
     expect(result.plan!.rounds).toEqual(full.rounds)
     expect(result.plan!.invariants).toEqual(full.invariants)
     expect(summarizeSessionPlan(result.plan!)).toEqual(summarizeSessionPlan(full))
+  })
+
+  it('replans only rounds four through eight after a round-three checkout mutation', () => {
+    const players = Array.from({ length: 24 }, (_, index) => createPlayer(`p${index + 1}`, {
+      effective_pvna: 2.5 + ((index * 37) % 101) / 100 * 3,
+    }))
+    const initial = createState({ players, courts: 4, currentRound: 0 })
+    const prefix = buildPrecomputedSessionPlan(initial, 3, 4, { localSearchPasses: 2 })
+    const mutated = prefix.state
+    const checkedOutId = prefix.rounds[2].matches[0].team_a[0]
+    mutated.players.set(checkedOutId, {
+      ...mutated.players.get(checkedOutId)!,
+      checked_out_at: new Date('2026-07-14T12:00:00.000Z'),
+    })
+    const remainingRounds = resolveSessionPlanRoundCount(mutated.current_round, 8)
+    const fullTail = buildPrecomputedSessionPlan(mutated, remainingRounds, 4, {
+      localSearchPasses: 3,
+      startingRound: mutated.current_round,
+      initialDebt: prefix.debt,
+    })
+    let checkpoint: SessionPlanChunkCheckpoint | null = null
+    let chunk = buildPrecomputedSessionPlanChunk(mutated, remainingRounds, 4, checkpoint, {
+      localSearchPasses: 3,
+      startingRound: mutated.current_round,
+      initialDebt: prefix.debt,
+    })
+    while (!chunk.completed) {
+      checkpoint = JSON.parse(JSON.stringify(chunk.checkpoint)) as SessionPlanChunkCheckpoint
+      chunk = buildPrecomputedSessionPlanChunk(mutated, remainingRounds, 4, checkpoint, {
+        localSearchPasses: 3,
+        startingRound: mutated.current_round,
+        initialDebt: prefix.debt,
+      })
+    }
+
+    expect(mutated.current_round).toBe(3)
+    expect(remainingRounds).toBe(5)
+    expect(fullTail.rounds.map(round => round.round)).toEqual([4, 5, 6, 7, 8])
+    expect(fullTail.rounds.flatMap(round => round.matches)
+      .flatMap(match => [...match.team_a, ...match.team_b])).not.toContain(checkedOutId)
+    expect(fullTail.invariants.full_rounds).toBe(5)
+    expect(chunk.plan!.rounds).toEqual(fullTail.rounds)
+    expect(summarizeSessionPlan(chunk.plan!)).toEqual(summarizeSessionPlan(fullTail))
   })
 
   it('resumes deterministic pair-swap checkpoints to the same final board', () => {

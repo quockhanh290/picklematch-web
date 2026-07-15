@@ -97,6 +97,7 @@ npx tsx scripts/diagnostics/benchmark-precomputed-mutations.ts
 npx tsx scripts/diagnostics/smoke-session-plan-shadow.ts [--session-id=<id>] [--rounds=<count>] [--passes=1|2|3] [--persist]
 npx tsx scripts/diagnostics/smoke-session-plan-shadow.ts --session-id=<id> --rounds=8 --passes=3 --chunked
 npx tsx scripts/diagnostics/evaluate-session-plan-shadow.ts --session-id=<id> [--passes=1,2,3,5] [--round-budget-ms=<ms>]
+npx tsx scripts/diagnostics/evaluate-session-plan-shadow.ts --session-id=<id> --passes=2,3 --played-rounds=3 --mutation=checkout
 ```
 
 `--chunked` persists one optimized round per Edge invocation and resumes the
