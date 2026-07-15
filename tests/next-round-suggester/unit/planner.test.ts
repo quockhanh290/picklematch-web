@@ -126,14 +126,25 @@ describe('precomputed planner primitives', () => {
   })
 
   it('locks manual suggested lineups but ignores ordinary suggestions', () => {
+    const manual = liveRow({
+      id: 'manual',
+      status: 'suggested',
+      suggestion_metadata: { manual_override: true },
+    })
     expect(getPlanningCommitments([
       liveRow({ id: 'ordinary', status: 'suggested' }),
-      liveRow({
-        id: 'manual',
-        status: 'suggested',
-        suggestion_metadata: { manual_override: true },
-      }),
+      manual,
     ]).map(row => row.id)).toEqual(['manual'])
+
+    const state = createState({
+      players: ['p1', 'p2', 'p3', 'p4'].map(id => createPlayer(id)),
+      currentRound: 2,
+    })
+    const frontier = buildPlanningFrontier(state, [manual])
+    expect(frontier.pending_manual_suggestions.map(row => row.id)).toEqual(['manual'])
+    expect(frontier.state.players.get('p1')?.matches_played).toBe(0)
+    expect(frontier.state.players.get('p1')?.partner_counts.get('p2') ?? 0).toBe(0)
+    expect(frontier.busy_ids).toEqual([])
   })
 
   it('plans a rolling suffix while courts are live and keeps busy consumption safe', () => {

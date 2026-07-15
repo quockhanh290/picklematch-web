@@ -66,9 +66,11 @@ export function buildPlanningFrontier(
   rows: readonly SessionLiveMatchRow[],
 ) {
   const commitments = getPlanningCommitments(rows)
+  const liveCommitments = commitments.filter(commitment => commitment.status === 'live')
+  const pendingManualSuggestions = commitments.filter(commitment => commitment.status === 'suggested')
   const existing = historyKeys(state)
   let projectedState = state
-  for (const commitment of commitments) {
+  for (const commitment of liveCommitments) {
     const roundNo = commitmentRound(commitment)
     const key = `${roundNo}|${canonicalLineup(commitment)}`
     if (existing.has(key)) continue
@@ -78,6 +80,7 @@ export function buildPlanningFrontier(
   return {
     state: projectedState,
     commitments,
+    pending_manual_suggestions: pendingManualSuggestions,
     busy_ids: [...new Set(commitments
       .filter(match => match.status === 'live')
       .flatMap(match => [...match.team_a, ...match.team_b]))].sort(),

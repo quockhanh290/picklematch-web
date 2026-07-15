@@ -159,6 +159,15 @@ Deno.serve(async (request) => {
       loadedState,
       (liveMatchRows ?? []) as SessionLiveMatchRow[],
     )
+    if (frontier.pending_manual_suggestions.length > 0) {
+      return jsonResponse({
+        ok: false,
+        replan_deferred: true,
+        reason: 'manual_suggestion_pending',
+        pending_manual_match_ids: frontier.pending_manual_suggestions.map(match => match.id),
+        error: 'Start or cancel the manual suggestion before replanning',
+      }, 409, request)
+    }
     const state = frontier.state
     const requestedRoundOverride = positiveInteger(body.planned_round_count)
     const requestedRounds = resolveSessionPlanRoundCount(
