@@ -129,6 +129,11 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   background `session_plan_advisory_shadow` audit event only when
   `SESSION_PLAN_ADVISORY_SHADOW=1`. The live engine remains the sole source of
   returned and persisted suggestions; planner lookup failures are swallowed.
+- [x] Hosted Phase 5A usable-path probe: v6 job `0f77c10e-...` completed eight
+  pass-three checkpoints without 546 and reused immutable version
+  `3bb1a9e4-...`. A six-court live-suggest probe recorded roster/config/history
+  identity match with `usable=6`, `repair_required=0`, `fallback=0`; the live
+  engine remained authoritative and chose six different lineups.
 - [ ] Phase 5B advisory consumption remains gated. Do not let a shadow plan
   change `session-live-matches-suggest` output until Phase 5A hosted evidence
   covers identity match, roster/config mutation, busy courts, missing plans,

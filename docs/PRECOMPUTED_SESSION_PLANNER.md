@@ -405,6 +405,25 @@ live-suggest Edge functions, and `git diff --check` pass. Hosted rollout still
 requires deploying `session-plan-shadow` v6, generating a v6 plan, deploying
 `session-live-matches-suggest`, enabling only the shadow flag, and collecting
 the mutation/fallback matrix before Phase 5B is considered.
+
+Hosted Phase 5A evidence on 2026-07-14:
+
+- `session-plan-shadow` and `session-live-matches-suggest` were deployed; no DB
+  migration, client build, or Vercel deploy was required.
+- V6 job `0f77c10e-...` completed all eight six-court pass-three checkpoints
+  without 546 and reused immutable plan version `3bb1a9e4-...` because its plan
+  content matched the proven earlier output.
+- The first telemetry probe exposed and then fixed an observational bug where
+  newly generated target courts reserved each other. Reservations now contain
+  only locked courts outside the target set.
+- The post-fix full-board probe returned 6/6 live suggestions and recorded
+  roster/config/history identity matches with `usable=6`,
+  `repair_required=0`, and `fallback=0`. `exact_match=0` confirms observation
+  only: the live engine still chose and persisted all six lineups.
+- The slow probe spent `3.94s` in auth, `2.06s` in snapshot load, `2.95s` in
+  persistence, and `0.90s` in engine search. Advisory lookup runs after the
+  response under `EdgeRuntime.waitUntil`, so it is absent from live request
+  timing and cannot delay the response.
 - The hosted v5 rerun completed eight chunks without 546. Request wall time
   totaled about 33.2s and the slowest new chunk used about 522ms planner compute.
   The output matched the existing immutable v4 plan, reused version
