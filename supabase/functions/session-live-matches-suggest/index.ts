@@ -51,6 +51,15 @@ const EDGE_FUNCTION_NAME = 'session-live-matches-suggest'
 const SLOW_SUGGEST_THRESHOLD_MS = 3_000
 const PLAN_ADVISORY_ENGINE_VERSION = 'precomputed-v8-rolling-frontier'
 
+function planRolloutEnabled(flag: string, sessionId: string) {
+  if (Deno.env.get(flag) !== '1') return false
+  const allowlist = (Deno.env.get('SESSION_PLAN_ROLLOUT_SESSION_IDS') ?? '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean)
+  return allowlist.includes('*') || allowlist.includes(sessionId)
+}
+
 type SuggestTimingStage =
   | 'auth'
   | 'request_parse'
@@ -107,7 +116,7 @@ async function loadPlanConsumption(options: {
     accepted: [],
     decisions: [],
   }
-  if (Deno.env.get('SESSION_PLAN_CONSUMPTION') !== '1' || options.targetCourtIdxs.length === 0) {
+  if (!planRolloutEnabled('SESSION_PLAN_CONSUMPTION', options.sessionId) || options.targetCourtIdxs.length === 0) {
     return disabled
   }
 
@@ -410,7 +419,7 @@ async function writePlanAdvisoryShadow(options: {
       || Boolean(options.activeManualMutationKind)
     if (shouldRequestReplan
       && options.authorization
-      && Deno.env.get('SESSION_PLAN_AUTO_REPLAN') === '1') {
+      && planRolloutEnabled('SESSION_PLAN_AUTO_REPLAN', options.sessionId)) {
       const supabaseUrl = Deno.env.get('SUPABASE_URL')
       const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
       if (supabaseUrl && anonKey) {
