@@ -443,7 +443,7 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, stale: true, job_id: jobId, error: 'Session changed while planning' }, 409, request)
     }
 
-    const { data: version, error: versionError } = await auth.supabase
+    const { data: publishedVersion, error: versionError } = await auth.supabase
       .from('session_plan_versions')
       .upsert({
         job_id: jobId,
@@ -457,7 +457,24 @@ Deno.serve(async (request) => {
       }, { onConflict: 'job_id' })
       .select('id')
       .single()
-    if (versionError || !version) throw new Error(versionError?.message ?? 'Unable to publish plan version')
+    let version = publishedVersion
+    let reusedPlanVersion = false
+    if (versionError?.code === '23505') {
+      const { data: existingVersion, error: existingVersionError } = await auth.supabase
+        .from('session_plan_versions')
+        .select('id')
+        .eq('session_id', sessionId)
+        .eq('live_state_version', liveStateVersion)
+        .eq('plan_hash', planHash)
+        .single()
+      if (existingVersionError || !existingVersion) {
+        throw new Error(existingVersionError?.message ?? 'Unable to load deduplicated plan version')
+      }
+      version = existingVersion
+      reusedPlanVersion = true
+    } else if (versionError || !version) {
+      throw new Error(versionError?.message ?? 'Unable to publish plan version')
+    }
 
     const roundRows = await Promise.all(compactRounds.map(async round => ({
       plan_version_id: version.id,
@@ -488,6 +505,7 @@ Deno.serve(async (request) => {
       persisted: true,
       job_id: jobId,
       plan_version_id: version.id,
+      reused_plan_version: reusedPlanVersion,
       input_hash: inputHash,
       plan_hash: planHash,
       engine_version: ENGINE_VERSION,

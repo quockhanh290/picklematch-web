@@ -171,7 +171,7 @@ async function main() {
     persisted = await invokePlan(client, selectedSessionId, plannedRoundCount, localSearchPasses, true)
   }
   if (persisted && !persisted.data?.ok) {
-    throw new Error(`Persisted shadow smoke failed: ${persisted.data?.error ?? persisted.error}`)
+    throw new Error(`Persisted shadow smoke failed: ${JSON.stringify(persisted.data?.error ?? persisted.error)}`)
   }
   if (chunked && persisted?.data?.completed === false) {
     throw new Error(`Chunked shadow smoke did not complete after ${chunkResults.length} requests`)
