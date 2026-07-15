@@ -24,6 +24,10 @@ import {
   buildPlanningRosterIdentity,
   stablePlannerJson,
 } from '../../../lib/next-round-suggester/planner/identity.ts'
+import {
+  buildPlanningFrontierIdentity,
+  getPlanningCommitments,
+} from '../../../lib/next-round-suggester/planner/frontier.ts'
 import type {
   SessionState,
   SessionLiveMatchRow,
@@ -79,6 +83,7 @@ async function writePlanAdvisoryShadow(options: {
   }>
   liveBusyIds: ReadonlySet<string>
   activeManualMutationKind?: string | null
+  authoritativeLiveMatchRows: SessionLiveMatchRow[]
 }) {
   try {
     const [
@@ -104,14 +109,20 @@ async function writePlanAdvisoryShadow(options: {
     if (jobError) throw new Error(jobError.message)
     if (sessionVersionError) throw new Error(sessionVersionError.message)
 
-    const [rosterFingerprint, configFingerprint] = await Promise.all([
+    const [rosterFingerprint, configFingerprint, frontierFingerprint] = await Promise.all([
       plannerIdentityHash(buildPlanningRosterIdentity(options.state)),
       plannerIdentityHash(buildPlanningConfigIdentity(options.state)),
+      plannerIdentityHash(buildPlanningFrontierIdentity(
+        options.state,
+        getPlanningCommitments(options.authoritativeLiveMatchRows),
+      )),
     ])
     const rosterIdentityMatches = Boolean(job && job.roster_fingerprint === rosterFingerprint)
     const configIdentityMatches = Boolean(job && job.config_fingerprint === configFingerprint)
     const planningVersionMatches = Boolean(job
       && Number(job.planning_mutation_version) === Number(sessionVersion.planning_mutation_version))
+    const frontierMatches = Boolean(job
+      && job.input_payload?.planner?.frontier_fingerprint === frontierFingerprint)
     const liveByCourt = new Map(options.finalPreviewBoard
       .map(match => [Number(match.court_idx), match] as const)
       .filter(([courtIdx]) => Number.isFinite(courtIdx)))
@@ -172,6 +183,7 @@ async function writePlanAdvisoryShadow(options: {
         configIdentityMatches: job ? configIdentityMatches : undefined,
         historyMatches: job ? historyMatches : undefined,
         planningVersionMatches: job ? planningVersionMatches : undefined,
+        frontierMatches: job ? frontierMatches : undefined,
         activeManualMutationKind: options.activeManualMutationKind,
       })
       return {
@@ -203,6 +215,7 @@ async function writePlanAdvisoryShadow(options: {
         config_identity_matches: job ? configIdentityMatches : null,
         history_matches: job ? historyMatches : null,
         planning_version_matches: job ? planningVersionMatches : null,
+        frontier_matches: job ? frontierMatches : null,
         counts: {
           usable: decisions.filter(decision => decision.status === 'usable').length,
           repair_required: decisions.filter(decision => decision.status === 'repair_required').length,
@@ -1230,6 +1243,7 @@ Deno.serve(async (request) => {
             ) && match.suggestion_metadata?.manual_override === true)
             .map(match => String(match.suggestion_metadata?.manual_mutation_kind ?? 'manual_lineup_changed'))
             .at(-1) ?? null,
+          authoritativeLiveMatchRows,
         })
       : null
     const edgeRuntime = (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime

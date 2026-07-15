@@ -273,6 +273,11 @@ describe('precomputed planner primitives', () => {
     expect(resolvePlannedMatchAdvisory({
       plannedMatch: planned,
       state,
+      frontierMatches: false,
+    })).toMatchObject({ status: 'fallback', reasons: ['frontier_changed'] })
+    expect(resolvePlannedMatchAdvisory({
+      plannedMatch: planned,
+      state,
       planningVersionMatches: false,
       activeManualMutationKind: 'manual_team_repartition',
     })).toMatchObject({ status: 'fallback', reasons: ['manual_team_repartition'] })

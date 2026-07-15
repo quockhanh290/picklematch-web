@@ -13,6 +13,7 @@ export type PlanAdvisoryReason =
   | 'config_changed'
   | 'history_diverged'
   | 'planning_version_changed'
+  | 'frontier_changed'
   | 'manual_lineup_changed'
   | 'manual_team_repartition'
   | PlannedMatchViolation['reason']
@@ -42,12 +43,14 @@ export function resolvePlannedMatchAdvisory(options: {
   configIdentityMatches?: boolean
   historyMatches?: boolean
   planningVersionMatches?: boolean
+  frontierMatches?: boolean
   activeManualMutationKind?: string | null
 }): PlannedMatchAdvisory {
   const identityReasons: PlanAdvisoryReason[] = []
   if (options.rosterIdentityMatches === false) identityReasons.push('roster_changed')
   if (options.configIdentityMatches === false) identityReasons.push('config_changed')
   if (options.historyMatches === false) identityReasons.push('history_diverged')
+  if (options.frontierMatches === false) identityReasons.push('frontier_changed')
   if (options.activeManualMutationKind === 'manual_team_repartition') {
     identityReasons.push('manual_team_repartition')
   } else if (options.activeManualMutationKind) {
