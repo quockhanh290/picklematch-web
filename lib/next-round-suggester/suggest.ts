@@ -268,6 +268,7 @@ const MAX_CANDIDATES_PER_STRATEGY = 60
 const MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY = 8
 export const DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS = 1000
 const RUNTIME_DEADLINE_GUARD_MS = 50
+const DEADLINE_RESCUE_CANDIDATE_BUDGET_MS = 400
 const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
 const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
 const PVNA_TRADEOFF_WEIGHT = 10
@@ -435,6 +436,7 @@ function makeAlternative(
   seedSalt?: string,
   thresholds?: { mustRestAt?: number; partnerRepeatCap?: number; opponentRepeatCap?: number },
   maxRuntimeMs?: number,
+  deadlineRescue = false,
 ): SuggestionAlternative | null {
   const partition = bestPartitioning(selected, state, {
     diagnostics,
@@ -447,6 +449,7 @@ function makeAlternative(
     partnerRepeatCap: thresholds?.partnerRepeatCap,
     opponentRepeatCap: thresholds?.opponentRepeatCap,
     maxRuntimeMs,
+    deadlineRescue,
   })
   if (!partition) return null
   const tradeoffs = buildTradeoffs(partition, state)
@@ -670,7 +673,10 @@ export function suggestNextRound(
           false,
           options.preview_seed,
           thresholds,
-          remainingRuntimeMs(force),
+          force
+            ? Math.min(remainingRuntimeMs(true), DEADLINE_RESCUE_CANDIDATE_BUDGET_MS)
+            : remainingRuntimeMs(false),
+          force,
         )
         if (!alternative) continue
 

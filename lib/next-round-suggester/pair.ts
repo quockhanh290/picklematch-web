@@ -641,6 +641,7 @@ export function bestPartitioning(
     partnerRepeatCap?: number
     opponentRepeatCap?: number
     maxRuntimeMs?: number
+    deadlineRescue?: boolean
   } = {},
 ): PartitioningResult | null {
   if (players.length < 4 || players.length % 4 !== 0) return null
@@ -779,6 +780,27 @@ export function bestPartitioning(
   const canRelaxIntraTeamGap = options.allowIntraTeamGapOverflow !== false
   const shouldTryMedium = mediumTolerance > state.config.pvna_tolerance
   const shouldTrySoftTolerance = softTolerance > state.config.pvna_tolerance
+
+  // Near a caller deadline, secure a valid result before spending time on stricter stages.
+  if (options.deadlineRescue) {
+    const rescue = runSearch({
+      tolerance: Number.POSITIVE_INFINITY,
+      relaxedTolerance: true,
+      pvnaRelaxationLevel: 'open',
+      allowIntraTeamGapOverflow: true,
+    })
+    options.diagnostics?.({
+      player_count: normalizedPlayers.length,
+      max_iterations: maxIterations,
+      partition_count: partitionCount,
+      exhaustive: canSearchExhaustively,
+      strict_iterations: 0,
+      relaxed_iterations: rescue.iterations,
+      found: Boolean(rescue.result),
+      relaxed_tolerance: Boolean(rescue.result),
+    })
+    return rescue.result
+  }
 
   // Stage 1: strict PVNA + preferred intra (≤0.75)
   const s1 = runSearch()

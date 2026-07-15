@@ -12,6 +12,7 @@ import {
 } from '../../../lib/next-round-suggester/live-preview'
 import type { SuggestedMatchPayload } from '../../../lib/next-round-suggester/live-preview'
 import { suggestNextRound } from '../../../lib/next-round-suggester/suggest'
+import type { EngineInstrumentEvent, SuggestionDiagnostic } from '../../../lib/next-round-suggester/suggest'
 import type {
   PlayerSessionState,
   ScoringWeights,
@@ -161,14 +162,31 @@ describe('A: board fill — 40-player / 6-court pool', () => {
 
   it('A1: suggestNextRound fills full 6-court board when given 2000ms budget (no NO_VALID_MATCH)', () => {
     // Lock both board quality and the operational wall-clock gate.
+    const diagnostics: SuggestionDiagnostic = {
+      strategies: {},
+      partition_count: 0,
+      max_iterations: 0,
+      exhaustive: false,
+    }
+    const instrumentEvents: EngineInstrumentEvent[] = []
     const startedAt = performance.now()
-    const result = suggestNextRound(stressedState, { max_runtime_ms: 2000 })
+    const result = suggestNextRound(stressedState, {
+      max_runtime_ms: 2000,
+      diagnostics,
+      onInstrumentEvent: event => instrumentEvents.push(event),
+    })
     const elapsedMs = performance.now() - startedAt
+
+    if (result.alternatives.length === 0) {
+      console.info('[cap2-a1-diagnostics]', JSON.stringify({ elapsedMs, diagnostics, instrumentEvents }, null, 2))
+    }
 
     expect(result.alternatives.length).toBeGreaterThan(0)
 
     const top = result.alternatives[0]
     expect(top.matches.length).toBe(COURTS)
+    const selectedIds = top.matches.flatMap(match => [...match.team_a, ...match.team_b])
+    expect(new Set(selectedIds).size).toBe(selectedIds.length)
     expect(top.warnings ?? []).not.toContain('NO_VALID_MATCH')
     expect(elapsedMs).toBeLessThan(2000)
   })
