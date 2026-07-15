@@ -123,15 +123,24 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   Real-roster checkout simulation replans only rounds 4-8 with zero unavailable
   selections; pass three reduces opponent repeat events 12->8. Hosted v5 smoke
   completed without 546 and idempotently reuses job `d6725c59-...`.
-- [ ] Phase 5 advisory integration remains gated. Do not connect shadow plans to
-  `session-live-matches-suggest` until planned matches pass the live validator,
-  stale/mutated plans fall back without blocking, and the feature flag rollback
-  is covered end to end. Six-court hosted runtime and quality are now proven.
+- [x] Phase 5A read-only advisory probe: use a stable planning identity that
+  ignores ordinary round progress, classify each planned court as `usable`,
+  `repair_required`, or `fallback` with the existing live validator, and emit a
+  background `session_plan_advisory_shadow` audit event only when
+  `SESSION_PLAN_ADVISORY_SHADOW=1`. The live engine remains the sole source of
+  returned and persisted suggestions; planner lookup failures are swallowed.
+- [ ] Phase 5B advisory consumption remains gated. Do not let a shadow plan
+  change `session-live-matches-suggest` output until Phase 5A hosted evidence
+  covers identity match, roster/config mutation, busy courts, missing plans,
+  and feature-flag rollback. Six-court planner runtime and quality are proven;
+  live consumption is not enabled.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.
 - Any future planner Edge function is shadow-only before advisory integration.
 - Planner failure must be equivalent to planner-disabled behavior.
+- Phase 5A rollback is `SESSION_PLAN_ADVISORY_SHADOW=0`; it requires no DB or
+  client rollback because the probe runs after live persistence via `waitUntil`.
 - Do not deploy Vercel without Kevin's explicit approval.
 
 ---

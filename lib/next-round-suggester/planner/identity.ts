@@ -1,4 +1,5 @@
-import type { SessionState } from '../types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { SessionState } from '../types.ts'
 
 function stableValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableValue)

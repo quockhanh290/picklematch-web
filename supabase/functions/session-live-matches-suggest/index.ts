@@ -14,7 +14,18 @@ import {
   LIVE_PREVIEW_ALGORITHM_VERSION,
 } from '../../../lib/next-round-suggester/live-preview.ts'
 import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state.ts'
+import {
+  plannedBoardEqualsLiveBoard,
+  plannedMatchEqualsLiveMatch,
+  resolvePlannedMatchAdvisory,
+} from '../../../lib/next-round-suggester/planner/advisory.ts'
+import {
+  buildPlanningConfigIdentity,
+  buildPlanningRosterIdentity,
+  stablePlannerJson,
+} from '../../../lib/next-round-suggester/planner/identity.ts'
 import type {
+  SessionState,
   SessionLiveMatchRow,
   SessionPairHistoryRow,
   SessionPlayerStateRow,
@@ -28,6 +39,7 @@ function optionalNumber(value: unknown): number | undefined {
 const REPLAY_SCHEMA_VERSION = 2
 const EDGE_FUNCTION_NAME = 'session-live-matches-suggest'
 const SLOW_SUGGEST_THRESHOLD_MS = 3_000
+const PLAN_ADVISORY_ENGINE_VERSION = 'precomputed-v6-stable-identity'
 
 type SuggestTimingStage =
   | 'auth'
@@ -42,6 +54,156 @@ type SuggestTimingStage =
 
 function roundedDuration(startedAt: number) {
   return Math.round((performance.now() - startedAt) * 10) / 10
+}
+
+async function plannerIdentityHash(value: unknown) {
+  const bytes = new TextEncoder().encode(stablePlannerJson(value))
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function writePlanAdvisoryShadow(options: {
+  supabase: { from: (table: string) => any }
+  sessionId: string
+  actorId: string
+  requestId: string
+  clientRequestId: string | null
+  state: SessionState
+  liveStateVersion: number
+  targetCourtIdxs: number[]
+  finalPreviewBoard: Array<{
+    court_idx?: number | null
+    round_no?: number | null
+    team_a?: string[]
+    team_b?: string[]
+  }>
+  liveBusyIds: ReadonlySet<string>
+}) {
+  try {
+    const { data: job, error: jobError } = await options.supabase
+      .from('session_plan_jobs')
+      .select('id, result_plan_version_id, roster_fingerprint, config_fingerprint, engine_version, input_payload')
+      .eq('session_id', options.sessionId)
+      .eq('status', 'completed')
+      .eq('engine_version', PLAN_ADVISORY_ENGINE_VERSION)
+      .not('result_plan_version_id', 'is', null)
+      .order('completed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (jobError) throw new Error(jobError.message)
+
+    const [rosterFingerprint, configFingerprint] = await Promise.all([
+      plannerIdentityHash(buildPlanningRosterIdentity(options.state)),
+      plannerIdentityHash(buildPlanningConfigIdentity(options.state)),
+    ])
+    const rosterIdentityMatches = Boolean(job && job.roster_fingerprint === rosterFingerprint)
+    const configIdentityMatches = Boolean(job && job.config_fingerprint === configFingerprint)
+    const liveByCourt = new Map(options.finalPreviewBoard
+      .map(match => [Number(match.court_idx), match] as const)
+      .filter(([courtIdx]) => Number.isFinite(courtIdx)))
+    const requestedCourts = [...new Set([
+      ...options.targetCourtIdxs,
+      ...liveByCourt.keys(),
+    ])].sort((left, right) => left - right)
+    const targetRoundNos = requestedCourts.map(courtIdx => {
+      const liveRoundNo = Number(liveByCourt.get(courtIdx)?.round_no)
+      return Number.isFinite(liveRoundNo) ? liveRoundNo + 1 : options.state.current_round + 1
+    })
+    const startingRound = Number(job?.input_payload?.planner?.starting_round)
+    const completedHistory = Number.isFinite(startingRound)
+      ? options.state.rounds.filter(round =>
+          round.status === 'completed'
+          && round.round_no + 1 > startingRound
+          && round.round_no + 1 <= options.state.current_round
+        )
+      : []
+    const roundNos = [...new Set([
+      ...targetRoundNos,
+      ...completedHistory.map(round => round.round_no + 1),
+    ])]
+
+    let roundRows: Array<{ round_no: number; matches: unknown }> = []
+    if (job?.result_plan_version_id && roundNos.length > 0) {
+      const { data, error } = await options.supabase
+        .from('session_plan_rounds')
+        .select('round_no, matches')
+        .eq('plan_version_id', job.result_plan_version_id)
+        .in('round_no', roundNos)
+      if (error) throw new Error(error.message)
+      roundRows = data ?? []
+    }
+    const plannedByRound = new Map(roundRows.map(row => [Number(row.round_no), Array.isArray(row.matches) ? row.matches : []]))
+    const historyMatches = completedHistory.every(round => {
+      const planned = plannedByRound.get(round.round_no + 1)
+      return Array.isArray(planned) && plannedBoardEqualsLiveBoard(planned as any, round.matches)
+    })
+    const allFinalPlayerIds = new Set(options.finalPreviewBoard.flatMap(match => [
+      ...(match.team_a ?? []),
+      ...(match.team_b ?? []),
+    ]))
+    const decisions = requestedCourts.map(courtIdx => {
+      const live = liveByCourt.get(courtIdx)
+      const liveRoundNo = Number(live?.round_no)
+      const plannedRoundNo = Number.isFinite(liveRoundNo) ? liveRoundNo + 1 : options.state.current_round + 1
+      const plannedMatches = plannedByRound.get(plannedRoundNo) ?? []
+      const planned = plannedMatches[courtIdx] && typeof plannedMatches[courtIdx] === 'object'
+        ? plannedMatches[courtIdx] as { team_a: [string, string]; team_b: [string, string] }
+        : null
+      const ownLiveIds = new Set([...(live?.team_a ?? []), ...(live?.team_b ?? [])])
+      const reservedIds = new Set([...allFinalPlayerIds].filter(playerId => !ownLiveIds.has(playerId)))
+      const advisory = resolvePlannedMatchAdvisory({
+        plannedMatch: planned,
+        state: options.state,
+        busyIds: options.liveBusyIds,
+        reservedIds,
+        rosterIdentityMatches: job ? rosterIdentityMatches : undefined,
+        configIdentityMatches: job ? configIdentityMatches : undefined,
+        historyMatches: job ? historyMatches : undefined,
+      })
+      return {
+        court_idx: courtIdx,
+        planned_round_no: plannedRoundNo,
+        status: advisory.status,
+        reasons: advisory.reasons,
+        planned_match: planned,
+        live_match: live ? { team_a: live.team_a ?? [], team_b: live.team_b ?? [] } : null,
+        exact_match: plannedMatchEqualsLiveMatch(planned, live as any),
+      }
+    })
+
+    await writeSessionAuditEvent(options.supabase, {
+      sessionId: options.sessionId,
+      eventType: 'session_plan_advisory_shadow',
+      edgeFunction: EDGE_FUNCTION_NAME,
+      requestId: options.requestId,
+      clientRequestId: options.clientRequestId,
+      actorId: options.actorId,
+      requestPayload: {
+        live_state_version: options.liveStateVersion,
+        target_court_idxs: requestedCourts,
+      },
+      responsePayload: {
+        plan_job_id: job?.id ?? null,
+        plan_version_id: job?.result_plan_version_id ?? null,
+        roster_identity_matches: job ? rosterIdentityMatches : null,
+        config_identity_matches: job ? configIdentityMatches : null,
+        history_matches: job ? historyMatches : null,
+        counts: {
+          usable: decisions.filter(decision => decision.status === 'usable').length,
+          repair_required: decisions.filter(decision => decision.status === 'repair_required').length,
+          fallback: decisions.filter(decision => decision.status === 'fallback').length,
+          exact_match: decisions.filter(decision => decision.exact_match).length,
+        },
+      },
+      detail: { decisions },
+    })
+  } catch (error) {
+    console.warn('[suggest] session plan advisory shadow failed', {
+      suggestion_request_id: options.requestId,
+      session_id: options.sessionId,
+      error: error instanceof Error ? error.message : String(error ?? 'Unknown advisory error'),
+    })
+  }
 }
 
 function classifySlowSuggest(timingMs: Record<SuggestTimingStage, number>) {
@@ -1033,17 +1195,35 @@ Deno.serve(async (request) => {
         error: error instanceof Error ? error.message : String(error ?? 'Unknown audit error'),
       })
     })
+    const planAdvisoryWrite = Deno.env.get('SESSION_PLAN_ADVISORY_SHADOW') === '1'
+      ? writePlanAdvisoryShadow({
+          supabase: serviceClient,
+          sessionId,
+          actorId: auth.userId,
+          requestId: suggestionRequestId,
+          clientRequestId,
+          state,
+          liveStateVersion: persistedPreviewVersion,
+          targetCourtIdxs: targetCourtIdxs.length > 0
+            ? targetCourtIdxs
+            : [...finalFilledCourtIdxs],
+          finalPreviewBoard,
+          liveBusyIds,
+        })
+      : null
     const edgeRuntime = (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime
     if (edgeRuntime?.waitUntil) {
       for (const backgroundWrite of backgroundWrites) {
         edgeRuntime.waitUntil(backgroundWrite)
       }
       edgeRuntime.waitUntil(auditWrite)
+      if (planAdvisoryWrite) edgeRuntime.waitUntil(planAdvisoryWrite)
     } else {
       for (const backgroundWrite of backgroundWrites) {
         void backgroundWrite
       }
       void auditWrite
+      if (planAdvisoryWrite) void planAdvisoryWrite
     }
 
     return jsonResponse({

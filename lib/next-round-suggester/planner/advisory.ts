@@ -1,6 +1,9 @@
-import type { SessionPlanMatch } from './session-plan'
-import { validatePlannedBoard, type PlannedMatchViolation } from './validation'
-import type { SessionState } from '../types'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { SessionPlanMatch } from './session-plan.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { validatePlannedBoard, type PlannedMatchViolation } from './validation.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { SessionState } from '../types.ts'
 
 export type PlanAdvisoryStatus = 'usable' | 'repair_required' | 'fallback'
 
@@ -8,6 +11,7 @@ export type PlanAdvisoryReason =
   | 'plan_missing'
   | 'roster_changed'
   | 'config_changed'
+  | 'history_diverged'
   | PlannedMatchViolation['reason']
 
 export type PlannedMatchAdvisory = {
@@ -33,10 +37,12 @@ export function resolvePlannedMatchAdvisory(options: {
   reservedIds?: ReadonlySet<string>
   rosterIdentityMatches?: boolean
   configIdentityMatches?: boolean
+  historyMatches?: boolean
 }): PlannedMatchAdvisory {
   const identityReasons: PlanAdvisoryReason[] = []
   if (options.rosterIdentityMatches === false) identityReasons.push('roster_changed')
   if (options.configIdentityMatches === false) identityReasons.push('config_changed')
+  if (options.historyMatches === false) identityReasons.push('history_diverged')
   if (identityReasons.length > 0) {
     return { status: 'fallback', reasons: identityReasons, violations: [] }
   }
@@ -73,4 +79,17 @@ export function plannedMatchEqualsLiveMatch(
   const plannedTeams = [canonicalTeam(planned.team_a), canonicalTeam(planned.team_b)].sort()
   const liveTeams = [canonicalTeam(live.team_a), canonicalTeam(live.team_b)].sort()
   return plannedTeams[0] === liveTeams[0] && plannedTeams[1] === liveTeams[1]
+}
+
+export function plannedBoardEqualsLiveBoard(
+  planned: ReadonlyArray<Pick<SessionPlanMatch, 'team_a' | 'team_b'>>,
+  live: ReadonlyArray<Pick<SessionPlanMatch, 'team_a' | 'team_b'>>,
+) {
+  if (planned.length !== live.length) return false
+  const boardKey = (matches: ReadonlyArray<Pick<SessionPlanMatch, 'team_a' | 'team_b'>>) => matches
+    .map(match => [canonicalTeam(match.team_a), canonicalTeam(match.team_b)].sort().join('::'))
+    .sort()
+  const plannedKeys = boardKey(planned)
+  const liveKeys = boardKey(live)
+  return plannedKeys.every((key, index) => key === liveKeys[index])
 }

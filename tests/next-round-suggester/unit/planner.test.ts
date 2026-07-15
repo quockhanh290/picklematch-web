@@ -13,7 +13,11 @@ import {
   type SocialPlannerMetrics,
 } from '@/lib/next-round-suggester/planner/objective'
 import { repairUnavailablePlannedBoard, validatePlannedBoard } from '@/lib/next-round-suggester/planner/validation'
-import { plannedMatchEqualsLiveMatch, resolvePlannedMatchAdvisory } from '@/lib/next-round-suggester/planner/advisory'
+import {
+  plannedBoardEqualsLiveBoard,
+  plannedMatchEqualsLiveMatch,
+  resolvePlannedMatchAdvisory,
+} from '@/lib/next-round-suggester/planner/advisory'
 import {
   buildPlanningConfigIdentity,
   buildPlanningRosterIdentity,
@@ -122,6 +126,11 @@ describe('precomputed planner primitives', () => {
       rosterIdentityMatches: false,
     })).toMatchObject({ status: 'fallback', reasons: ['roster_changed'] })
     expect(resolvePlannedMatchAdvisory({
+      plannedMatch: planned,
+      state,
+      historyMatches: false,
+    })).toMatchObject({ status: 'fallback', reasons: ['history_diverged'] })
+    expect(resolvePlannedMatchAdvisory({
       plannedMatch: { team_a: ['p1', 'p1'], team_b: ['p3', 'p4'] },
       state,
     })).toMatchObject({ status: 'fallback', reasons: ['duplicate_player'] })
@@ -141,6 +150,13 @@ describe('precomputed planner primitives', () => {
       team_a: ['p1', 'p3'],
       team_b: ['p2', 'p4'],
     })).toBe(false)
+    expect(plannedBoardEqualsLiveBoard([
+      planned,
+      { team_a: ['p5', 'p6'], team_b: ['p7', 'p8'] },
+    ], [
+      { team_a: ['p8', 'p7'], team_b: ['p6', 'p5'] },
+      { team_a: ['p4', 'p3'], team_b: ['p2', 'p1'] },
+    ])).toBe(true)
   })
 
   it('plans only the unplayed target-round suffix unless an explicit horizon is requested', () => {

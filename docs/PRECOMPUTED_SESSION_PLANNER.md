@@ -327,8 +327,9 @@ Remote rollout evidence on 2026-07-14:
   session currently exposes one configured court and existing history, so its
   match quality is not used as a six-court quality benchmark.
 
-This deployment still cannot influence live suggestions. Phase 5 advisory
-lookup remains intentionally unimplemented.
+This deployment still cannot influence live suggestions. Phase 5A read-only
+lookup is now implemented locally behind a disabled feature flag; it has not
+yet been deployed or enabled on the hosted project.
 
 Six-court checkpoint evidence on 2026-07-14:
 
@@ -378,6 +379,32 @@ Remaining-horizon and roster-mutation hardening on 2026-07-14:
   the immutable plan version published or reused by each job. This lets a new
   engine job reuse identical plan content without violating the content-hash
   uniqueness contract.
+
+### Phase 5A - read-only advisory probe
+
+The first advisory step remains observational. Engine
+`precomputed-v6-stable-identity` persists roster and config fingerprints that
+change for check-in/check-out, opted rest, PVNA/preference, court, tolerance,
+target-round, weight, or avoid-pair mutations, but remain stable across normal
+round progress, match counters, pair history, and temporary busy state.
+
+`session-live-matches-suggest` can read the newest compatible immutable plan in
+background work when `SESSION_PLAN_ADVISORY_SHADOW=1`. For every requested court
+it maps the zero-based live round to the one-based plan round, reuses
+`validatePlannedBoard`, and records `usable`, `repair_required`, or `fallback`
+plus exact-lineup agreement in `session_audit_events`. Completed rounds after
+the plan's starting checkpoint are also compared as court-order-independent
+boards; a different played history produces `history_diverged` and forces the
+observational result to `fallback`. Missing plans, identity mismatch, malformed
+lineups, unavailable players, and database errors cannot alter or block the
+live response. The live engine still computes, persists, and returns every
+suggestion.
+
+Local gates: planner unit regression `19/19`, Deno check for both planner and
+live-suggest Edge functions, and `git diff --check` pass. Hosted rollout still
+requires deploying `session-plan-shadow` v6, generating a v6 plan, deploying
+`session-live-matches-suggest`, enabling only the shadow flag, and collecting
+the mutation/fallback matrix before Phase 5B is considered.
 - The hosted v5 rerun completed eight chunks without 546. Request wall time
   totaled about 33.2s and the slowest new chunk used about 522ms planner compute.
   The output matched the existing immutable v4 plan, reused version
