@@ -84,6 +84,7 @@ async function writePlanAdvisoryShadow(options: {
   liveBusyIds: ReadonlySet<string>
   activeManualMutationKind?: string | null
   authoritativeLiveMatchRows: SessionLiveMatchRow[]
+  authorization?: string | null
 }) {
   try {
     const [
@@ -225,6 +226,40 @@ async function writePlanAdvisoryShadow(options: {
       },
       detail: { decisions },
     })
+
+    const shouldRequestReplan = !job
+      || !rosterIdentityMatches
+      || !configIdentityMatches
+      || !historyMatches
+      || !planningVersionMatches
+      || !frontierMatches
+      || Boolean(options.activeManualMutationKind)
+    if (shouldRequestReplan
+      && options.authorization
+      && Deno.env.get('SESSION_PLAN_AUTO_REPLAN') === '1') {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')
+      const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+      if (supabaseUrl && anonKey) {
+        const response = await fetch(`${supabaseUrl}/functions/v1/session-plan-replan?session_id=${options.sessionId}`, {
+          method: 'POST',
+          headers: {
+            Authorization: options.authorization,
+            apikey: anonKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            session_id: options.sessionId,
+            frontier_fingerprint: frontierFingerprint,
+          }),
+        })
+        if (!response.ok && response.status !== 202) {
+          console.warn('[suggest] session plan replan request failed', {
+            session_id: options.sessionId,
+            status: response.status,
+          })
+        }
+      }
+    }
   } catch (error) {
     console.warn('[suggest] session plan advisory shadow failed', {
       suggestion_request_id: options.requestId,
@@ -1244,6 +1279,7 @@ Deno.serve(async (request) => {
             .map(match => String(match.suggestion_metadata?.manual_mutation_kind ?? 'manual_lineup_changed'))
             .at(-1) ?? null,
           authoritativeLiveMatchRows,
+          authorization: request.headers.get('Authorization'),
         })
       : null
     const edgeRuntime = (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime
