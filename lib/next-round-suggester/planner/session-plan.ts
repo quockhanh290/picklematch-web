@@ -401,7 +401,7 @@ export function buildPrecomputedSessionPlan(
       startingRound,
       initialRestCounts: new Map(activePlayers.map(player => [
         player.player_id,
-        Math.max(0, player.rounds_available - player.matches_played),
+        (player.rounds_available ?? 0) - player.matches_played,
       ])),
       initialRestStreaks: new Map(activePlayers.map(player => [player.player_id, player.consecutive_rest])),
     },
@@ -528,7 +528,7 @@ export function buildPrecomputedSessionPlanChunk(
       startingRound,
       initialRestCounts: new Map(activePlayers.map(player => [
         player.player_id,
-        Math.max(0, player.rounds_available - player.matches_played),
+        (player.rounds_available ?? 0) - player.matches_played,
       ])),
       initialRestStreaks: new Map(activePlayers.map(player => [player.player_id, player.consecutive_rest])),
     },

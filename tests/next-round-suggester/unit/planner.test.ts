@@ -182,6 +182,18 @@ describe('precomputed planner primitives', () => {
       expected_rounds: 2,
     })
     expect(plan.rounds.map(round => round.round)).toEqual([4, 5])
+    const suffixCounts = new Map(players.map(player => [player.player_id, 0]))
+    plan.rounds.forEach(round => round.matches.forEach(match => {
+      ;[...match.team_a, ...match.team_b].forEach(playerId => (
+        suffixCounts.set(playerId, (suffixCounts.get(playerId) ?? 0) + 1)
+      ))
+    }))
+    const committedIds = new Set(commitments.flatMap(match => [...match.team_a, ...match.team_b]))
+    expect([...committedIds].map(playerId => suffixCounts.get(playerId))).toEqual(Array(8).fill(1))
+    expect(summarizeSessionPlan(plan)).toMatchObject({
+      match_count_min: 2,
+      match_count_max: 2,
+    })
     const firstValidation = validatePlannedBoard({
       matches: plan.rounds[0].matches,
       players: state.players,
