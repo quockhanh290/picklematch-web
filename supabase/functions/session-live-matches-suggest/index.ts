@@ -1224,8 +1224,10 @@ Deno.serve(async (request) => {
             : [...finalFilledCourtIdxs],
           finalPreviewBoard,
           liveBusyIds,
-          activeManualMutationKind: liveMatchRows
-            .filter(match => match.status === 'live' && match.suggestion_metadata?.manual_override === true)
+          activeManualMutationKind: authoritativeLiveMatchRows
+            .filter(match => (
+              match.status === 'suggested' || match.status === 'live'
+            ) && match.suggestion_metadata?.manual_override === true)
             .map(match => String(match.suggestion_metadata?.manual_mutation_kind ?? 'manual_lineup_changed'))
             .at(-1) ?? null,
         })

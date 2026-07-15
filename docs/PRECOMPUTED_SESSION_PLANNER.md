@@ -429,6 +429,31 @@ Hosted Phase 5A evidence on 2026-07-14:
   The output matched the existing immutable v4 plan, reused version
   `3bb1a9e4-...`, and an identical retry reused job `d6725c59-...` in 1.5s.
 
+### Manual host mutation gate before Phase 5B
+
+Host-edited lineups are planning mutations even when the same four players are
+only repartitioned between teams. The client therefore persists manual lineups
+through `replace_manual_live_session_suggestion_versioned`. The RPC delegates to
+the existing versioned replacement guard, stamps server-owned manual metadata,
+classifies `manual_team_repartition` versus `manual_player_replacement`, and
+increments the session's monotonic `planning_mutation_version` only for a real
+change. Roster availability/PVNA/group changes, relevant session settings, and
+avoid-pair changes increment the same version through database triggers.
+
+Each shadow job captures that version. A version mismatch or manual metadata on
+an authoritative `suggested`/`live` row makes the advisory result fallback; it
+cannot alter live output. Shadow planning refuses to start while any live match
+exists, because that is not a reproducible session checkpoint. Once all courts
+are idle, a new job may plan only the remaining horizon from the new version.
+This avoids generating eight fresh rounds after a mid-session mutation and
+keeps the current live engine as the uninterrupted fallback.
+
+The hosted gate must prove: unchanged retries are no-ops, same-four team swaps
+produce `manual_team_repartition`, player swaps produce
+`manual_player_replacement`, old jobs become advisory fallback immediately,
+planning is rejected while a live row exists, and a globally idle suffix replan
+restores usable advisory rows. None of these checks enables Phase 5B consumption.
+
 ### Phase 5 - Advisory integration
 
 - Add a feature-flagged plan lookup to `session-live-matches-suggest`.

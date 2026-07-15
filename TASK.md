@@ -134,6 +134,17 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   `3bb1a9e4-...`. A six-court live-suggest probe recorded roster/config/history
   identity match with `usable=6`, `repair_required=0`, `fallback=0`; the live
   engine remained authoritative and chose six different lineups.
+- [x] Phase 5A manual-mutation hardening: persist host-edited lineups through a
+  dedicated owner-guarded RPC, increment `planning_mutation_version`, classify
+  same-four repartitions separately from player replacements, and invalidate
+  advisory plans while the edited row is either `suggested` or `live`.
+- [x] Reject shadow replanning while any live match exists. After a roster,
+  configuration, avoid-pair, or manual-lineup mutation, live suggestion remains
+  authoritative until the next globally idle checkpoint can publish a suffix
+  plan from the new mutation version.
+- [ ] Apply the planning-mutation migration, deploy planner v7 plus the
+  read-only live advisory reader, and run the hosted manual-repartition matrix.
+  Local deployment remains blocked by the pre-existing Cap-2 A1 2000ms gate.
 - [ ] Phase 5B advisory consumption remains gated. Do not let a shadow plan
   change `session-live-matches-suggest` output until Phase 5A hosted evidence
   covers identity match, roster/config mutation, busy courts, missing plans,
