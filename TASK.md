@@ -93,7 +93,7 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
 - [x] Phase 2: pass the first real-session mutation/hybrid-replan gate.
 - [x] Phase 2 hardening: run mutation gates across synthetic roster/court
   combinations and report per-player quality tails.
-- [ ] Phase 3: add the versioned, idempotent, owner-guarded shadow persistence
+- [x] Phase 3: add the versioned, idempotent, owner-guarded shadow persistence
   contract without touching live suggestions.
 - [x] Stage the Phase 3 shadow schema migration: host-read/service-write RLS,
   idempotent job/version keys, composite session ownership FKs, compact rounds,
@@ -113,9 +113,14 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   pass, and repeating the same input reuses job `4fb2d0ae-...`. Function is
   ACTIVE v2, DB is up to date, and planner active compute is about 3.5ms for the
   two-round one-court smoke.
+- [x] Add deterministic round-checkpoint execution for pass three. The hosted
+  32-player, 6-court, 8-round smoke completed all eight chunks without 546;
+  maximum chunk compute was 1066ms, all 48 boards were published, and an
+  identical retry reused job `9c79984b-...` and version `3bb1a9e4-...`.
 - [ ] Phase 5 advisory integration remains gated. Do not connect shadow plans to
-  `session-live-matches-suggest` until a fresh six-court pre-session shadow run
-  confirms hosted runtime/quality and stale-plan fallback behavior.
+  `session-live-matches-suggest` until planned matches pass the live validator,
+  stale/mutated plans fall back without blocking, and the feature flag rollback
+  is covered end to end. Six-court hosted runtime and quality are now proven.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.

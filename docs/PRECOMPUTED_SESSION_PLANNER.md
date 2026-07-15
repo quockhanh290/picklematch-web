@@ -330,6 +330,28 @@ Remote rollout evidence on 2026-07-14:
 This deployment still cannot influence live suggestions. Phase 5 advisory
 lookup remains intentionally unimplemented.
 
+Six-court checkpoint evidence on 2026-07-14:
+
+- Commit `7080381` added deterministic one-round checkpoints and deployed only
+  `session-plan-shadow`; no migration, live function, or client was deployed.
+- Session `940399e0-...` completed a 32-player, 6-court, 8-round pass-three plan
+  through eight Edge invocations. Every round produced six matches, every
+  player received six matches, maximum consecutive rest was one, and no 546 or
+  timeout occurred.
+- The slowest chunk used `1066ms` active compute, below the `2000ms` per-request
+  Edge limit. Planner compute totaled `3303ms`; network/auth/database overhead
+  made the eight-request wall time about `47s`, which is acceptable for an
+  asynchronous pre-session shadow job but not an inline live request.
+- Published quality was average/max team gap `0.160/0.470`, average/max
+  intra-team gap `0.638/1.310`, zero partner repeats, 29 weighted opponent
+  repeats, and maximum player quality debt `0.310`.
+- Repeating the request reused job `9c79984b-...` and plan version
+  `3bb1a9e4-...` without recomputing the plan.
+
+Pass three is therefore hosted-runtime viable only in checkpointed mode. The
+single-request default remains pass two; checkpoint output remains shadow data
+until the Phase 5 validation/fallback path is implemented and gated.
+
 ### Phase 5 - Advisory integration
 
 - Add a feature-flagged plan lookup to `session-live-matches-suggest`.
