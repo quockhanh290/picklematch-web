@@ -61,6 +61,7 @@ const FORCE_RESCUE_TOTAL_MS = 1500
 export const LIVE_PREVIEW_ALGORITHM_VERSION = 12
 
 const BEAM_K = 3
+const ROLLING_BEAM_MAX_K = 5
 const BEAM_ACTIVE_PLAYER_LIMIT = 50
 const BEAM_PER_CANDIDATE_MAX_MS = 100
 
@@ -2843,6 +2844,12 @@ function pickRollingBeamAlternative(
   })
 }
 
+function rollingBeamCandidateLimit(liveCommitmentCount: number) {
+  if (liveCommitmentCount <= 2) return ROLLING_BEAM_MAX_K
+  if (liveCommitmentCount <= 4) return 4
+  return BEAM_K
+}
+
 function legacyBeamMatchScore(
   teamA: [string, string],
   teamB: [string, string],
@@ -3749,6 +3756,7 @@ export function buildSuggestedMatchPayloads({
     const beamPlayerCount = [...suggestionStateForCourt.players.values()]
       .filter(p => p.checked_out_at === null && !p.opted_rest).length
     if (rollingCommitments.length > 0 && finalAlternatives.length > 1 && beamPlayerCount <= BEAM_ACTIVE_PLAYER_LIMIT) {
+      const rollingCandidateLimit = rollingBeamCandidateLimit(rollingCommitments.length)
       const beamBudgetMs = Math.min(
         getRemainingCourtBudgetMs(BEAM_PER_CANDIDATE_MAX_MS * BEAM_K),
         BEAM_PER_CANDIDATE_MAX_MS * BEAM_K,
@@ -3758,7 +3766,7 @@ export function buildSuggestedMatchPayloads({
         ...[...courtRoundBusyIds].filter(id => !liveLockedPlayerIds.has(id)),
       ])
       const beamAlt = pickRollingBeamAlternative(
-        finalAlternatives.slice(0, BEAM_K),
+        finalAlternatives.slice(0, rollingCandidateLimit),
         suggestionStateForCourt,
         beamBaseSimBusy,
         rollingCommitments,
@@ -3773,8 +3781,13 @@ export function buildSuggestedMatchPayloads({
             detail: [
               `court=${courtIdx}`,
               `candidates=${beamAlt.diagnostics.candidate_count}`,
+              `evaluated=${beamAlt.diagnostics.evaluated_candidate_count}`,
               `orders=${beamAlt.diagnostics.completion_orders}`,
               `depth=${beamAlt.diagnostics.horizon_events}`,
+              `calls=${beamAlt.diagnostics.future_search_calls}`,
+              `cache=${beamAlt.diagnostics.future_cache_hits}`,
+              `exhausted=${beamAlt.diagnostics.budget_exhausted ? 1 : 0}`,
+              `elapsed=${beamAlt.diagnostics.elapsed_ms.toFixed(1)}`,
               `flex=${beamAlt.diagnostics.selected_flexibility_cost.toFixed(2)}`,
               `score=${beamAlt.diagnostics.selected_score.toFixed(2)}`,
               `worst=${beamAlt.diagnostics.selected_worst_path_score.toFixed(2)}`,

@@ -5,8 +5,13 @@ import type { SessionLiveMatchRow, SessionState, SuggestionAlternative } from '.
 
 export type RollingHorizonDiagnostics = {
   candidate_count: number
+  evaluated_candidate_count: number
   completion_orders: number
   horizon_events: number
+  future_search_calls: number
+  future_cache_hits: number
+  budget_exhausted: boolean
+  elapsed_ms: number
   selected_flexibility_cost: number
   selected_score: number
   selected_worst_path_score: number
@@ -289,8 +294,10 @@ function completionOrders(commitments: SessionLiveMatchRow[]) {
     Date.parse(left.started_at ?? left.suggested_at ?? '') - Date.parse(right.started_at ?? right.suggested_at ?? '')
     || Number(left.court_idx ?? 0) - Number(right.court_idx ?? 0)
   ))
-  const courtFirst = [...rows].sort((left, right) => Number(left.court_idx ?? 0) - Number(right.court_idx ?? 0))
-  const candidates = [oldestFirst, [...oldestFirst].reverse(), courtFirst]
+  const candidates = rows.map(first => [
+    first,
+    ...oldestFirst.filter(row => row.id !== first.id),
+  ])
   const seen = new Set<string>()
   return candidates.filter(order => {
     const key = order.map(row => row.id).join('|')
@@ -298,6 +305,32 @@ function completionOrders(commitments: SessionLiveMatchRow[]) {
     seen.add(key)
     return true
   })
+}
+
+function futureCacheKey(state: SessionState, busyIds: ReadonlySet<string>) {
+  const countsKey = (counts: ReadonlyMap<string, number>) => [...counts]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([id, count]) => `${id}:${count}`)
+    .join(',')
+  const playerState = [...state.players.values()]
+    .sort((left, right) => left.player_id.localeCompare(right.player_id))
+    .map(player => [
+      player.player_id,
+      player.matches_played,
+      player.consecutive_play,
+      player.consecutive_rest,
+      countsKey(player.partner_counts),
+      countsKey(player.opponent_counts),
+    ].join(':'))
+    .join('|')
+  const matchHistory = state.rounds
+    .flatMap(round => round.matches.map(match => [
+      ...match.team_a,
+      ...match.team_b,
+    ].sort().join(',')))
+    .sort()
+    .join('|')
+  return `${[...busyIds].sort().join(',')}#${playerState}#${matchHistory}`
 }
 
 export function chooseRollingHorizonAlternative(options: {
@@ -310,7 +343,13 @@ export function chooseRollingHorizonAlternative(options: {
   projectMatch: ProjectMatch
   horizonEvents?: number
   planTarget?: RollingPlanTarget | null
+  now?: () => number
 }): RollingHorizonChoice | null {
+  const clock = options.now ?? (() => (
+    typeof performance !== 'undefined' ? performance.now() : Date.now()
+  ))
+  const startedAt = clock()
+  const deadline = startedAt + Math.max(1, options.budgetMs)
   const candidates = options.candidates.filter(candidate => candidate.matches.length > 0)
   if (candidates.length <= 1) return null
   const orders = completionOrders(options.liveCommitments)
@@ -322,17 +361,31 @@ export function chooseRollingHorizonAlternative(options: {
   const pathCount = Math.max(1, candidates.length * orders.length * horizonEvents)
   const perStepBudgetMs = Math.max(12, Math.floor(options.budgetMs / pathCount))
   const flexibilityCosts = buildCandidateFlexibilityCosts(candidates)
+  const futureCache = new Map<string, SuggestionAlternative | null>()
+  let evaluatedCandidateCount = 0
+  let futureSearchCalls = 0
+  let futureCacheHits = 0
+  let budgetExhausted = false
   let best: (RollingHorizonChoice & { score: number }) | null = null
 
   for (const candidate of candidates) {
+    if (clock() >= deadline && evaluatedCandidateCount > 0) {
+      budgetExhausted = true
+      break
+    }
     const candidateMatch = asLiveMatch(candidate, options.state, 'rolling-horizon-candidate')
     if (!candidateMatch) continue
+    evaluatedCandidateCount += 1
     const candidateIds = playerIds(candidate)
     const flexibilityCost = flexibilityCosts.get(candidate) ?? 0
     const pathScores: number[] = []
     let pathsWithoutFutureMatch = 0
 
     for (const order of orders) {
+      if (clock() >= deadline && pathScores.length > 0) {
+        budgetExhausted = true
+        break
+      }
       let simState = options.projectMatch(options.state, candidateMatch)
       const simBusy = new Set([...options.baseBusyIds, ...candidateIds])
       let pathScore = matchQualityCost(candidate, options.state, options.planTarget)
@@ -347,11 +400,24 @@ export function chooseRollingHorizonAlternative(options: {
           && !player.opted_rest
           && !simBusy.has(player.player_id)
         )).length
-        const future = options.suggestFuture({
-          state: simState,
-          busyIds: new Set(simBusy),
-          maxRuntimeMs: perStepBudgetMs,
-        })
+        const remainingMs = Math.floor(deadline - clock())
+        if (remainingMs <= 0) {
+          budgetExhausted = true
+          break
+        }
+        const cacheKey = futureCacheKey(simState, simBusy)
+        let future = futureCache.get(cacheKey)
+        if (futureCache.has(cacheKey)) {
+          futureCacheHits += 1
+        } else {
+          futureSearchCalls += 1
+          future = options.suggestFuture({
+            state: simState,
+            busyIds: new Set(simBusy),
+            maxRuntimeMs: Math.max(4, Math.min(perStepBudgetMs, remainingMs)),
+          })
+          futureCache.set(cacheKey, future)
+        }
         if (!future) {
           if (playableCount >= 4) {
             pathScore += NO_FEASIBLE_FUTURE_PENALTY
@@ -369,6 +435,8 @@ export function chooseRollingHorizonAlternative(options: {
       pathScores.push(pathScore)
     }
 
+    if (pathScores.length === 0) continue
+
     const average = pathScores.reduce((sum, score) => sum + score, 0) / pathScores.length
     const worst = Math.max(...pathScores)
     const score = average + worst * 0.5
@@ -378,8 +446,13 @@ export function chooseRollingHorizonAlternative(options: {
         score,
         diagnostics: {
           candidate_count: candidates.length,
+          evaluated_candidate_count: evaluatedCandidateCount,
           completion_orders: orders.length,
           horizon_events: horizonEvents,
+          future_search_calls: futureSearchCalls,
+          future_cache_hits: futureCacheHits,
+          budget_exhausted: budgetExhausted,
+          elapsed_ms: clock() - startedAt,
           selected_flexibility_cost: flexibilityCost,
           selected_score: score,
           selected_worst_path_score: worst,
@@ -389,5 +462,11 @@ export function chooseRollingHorizonAlternative(options: {
     }
   }
 
-  return best ? { alternative: best.alternative, diagnostics: best.diagnostics } : null
+  if (!best) return null
+  best.diagnostics.evaluated_candidate_count = evaluatedCandidateCount
+  best.diagnostics.future_search_calls = futureSearchCalls
+  best.diagnostics.future_cache_hits = futureCacheHits
+  best.diagnostics.budget_exhausted = budgetExhausted
+  best.diagnostics.elapsed_ms = clock() - startedAt
+  return { alternative: best.alternative, diagnostics: best.diagnostics }
 }

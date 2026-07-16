@@ -262,8 +262,12 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   cost, while actual future infeasibility remains owned by real lookahead. An
   initially stronger heuristic regressed suffix participation and was rejected
   by the rolling matrix before commit.
-- [ ] Add bounded worst-case search and counterfactual diagnostics behind the
-  existing planner allowlist.
+- [x] Upgrade rolling lookahead to bounded worst-case search. Every live court
+  is represented as the possible next completion without factorial order
+  expansion; candidate width adapts from three to five as the live frontier
+  shrinks. A strict anytime deadline returns best-so-far, and projected
+  state/busy-set caching removes repeated future engine calls.
+- [ ] Add counterfactual diagnostics behind the existing planner allowlist.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.

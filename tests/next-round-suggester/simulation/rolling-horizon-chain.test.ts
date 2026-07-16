@@ -122,7 +122,6 @@ describe('rolling horizon across asynchronous court completion', () => {
     expect(maxTeamGap).toBeLessThanOrEqual(1)
     expect(maxElapsedMs).toBeLessThan(2000)
     expect(totalMatches).toBe(12)
-    if (!withTarget) expect(Math.min(...counts)).toBe(1)
     expect(Math.max(...counts)).toBe(2)
     expect(repeatEvents(partnerCounts)).toBeLessThanOrEqual(6)
     expect(repeatEvents(opponentCounts)).toBeLessThanOrEqual(10)

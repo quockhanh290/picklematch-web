@@ -88,6 +88,7 @@ describe('rolling court-lane horizon', () => {
     expect(choice?.diagnostics.completion_orders).toBe(2)
     expect(choice?.diagnostics.horizon_events).toBe(2)
     expect(choice?.diagnostics.paths_without_future_match).toBe(0)
+    expect(choice?.diagnostics.future_cache_hits).toBeGreaterThan(0)
     expect(observedBusy).toContain('p09')
     expect(observedBusy).toContain('p13')
   })
@@ -196,6 +197,61 @@ describe('rolling court-lane horizon', () => {
 
     expect(choice?.alternative).toBe(scarceLineup)
     expect(choice?.diagnostics.selected_flexibility_cost).toBeLessThan(2)
+  })
+
+  it('returns the best completed candidate when the anytime budget expires', () => {
+    const players = createPlayers(12)
+    players.forEach(player => { player.pvna = 3 })
+    const state = createState({ players, courts: 2 })
+    const first = alternative(['p01', 'p02'], ['p03', 'p04'], 0)
+    const second = alternative(['p05', 'p06'], ['p07', 'p08'], 0)
+    const commitment = liveRow('live-1', 1, ['p09', 'p10'], ['p11', 'p12'], '2026-07-16T12:00:00.000Z')
+    let now = 0
+
+    const choice = chooseRollingHorizonAlternative({
+      candidates: [first, second],
+      state,
+      baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
+      liveCommitments: [commitment],
+      budgetMs: 15,
+      projectMatch: buildProjectedStateAfterLiveMatch,
+      suggestFuture: () => null,
+      now: () => {
+        now += 5
+        return now
+      },
+    })
+
+    expect(choice?.alternative).toBe(first)
+    expect(choice?.diagnostics.budget_exhausted).toBe(true)
+    expect(choice?.diagnostics.evaluated_candidate_count).toBe(1)
+  })
+
+  it('branches on every possible next court without enumerating factorial orders', () => {
+    const players = createPlayers(20)
+    players.forEach(player => { player.pvna = 3 })
+    const state = createState({ players, courts: 4 })
+    const commitments = [
+      liveRow('live-1', 1, ['p09', 'p10'], ['p11', 'p12'], '2026-07-16T12:00:00.000Z'),
+      liveRow('live-2', 2, ['p13', 'p14'], ['p15', 'p16'], '2026-07-16T12:01:00.000Z'),
+      liveRow('live-3', 3, ['p17', 'p18'], ['p19', 'p20'], '2026-07-16T12:02:00.000Z'),
+    ]
+
+    const choice = chooseRollingHorizonAlternative({
+      candidates: [
+        alternative(['p01', 'p02'], ['p03', 'p04'], 0),
+        alternative(['p05', 'p06'], ['p07', 'p08'], 0),
+      ],
+      state,
+      baseBusyIds: new Set(commitments.flatMap(row => [...row.team_a, ...row.team_b])),
+      liveCommitments: commitments,
+      budgetMs: 300,
+      projectMatch: buildProjectedStateAfterLiveMatch,
+      suggestFuture: () => null,
+    })
+
+    expect(choice?.diagnostics.completion_orders).toBe(3)
+    expect(choice?.diagnostics.completion_orders).toBeLessThan(6)
   })
 })
 
