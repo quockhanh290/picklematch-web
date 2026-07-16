@@ -20,6 +20,7 @@ import {
 } from '@/lib/next-round-suggester/planner/advisory'
 import {
   buildPlanningConfigIdentity,
+  buildPlanningReplanIdentity,
   buildPlanningRosterIdentity,
   stablePlannerJson,
 } from '@/lib/next-round-suggester/planner/identity'
@@ -257,6 +258,28 @@ describe('precomputed planner primitives', () => {
 
     state.config.pvna_tolerance = 0.75
     expect(stablePlannerJson(buildPlanningConfigIdentity(state))).not.toBe(configIdentity)
+  })
+
+  it('supersedes coalesced replans for roster, config, frontier, and manual mutations', () => {
+    const baseline = buildPlanningReplanIdentity({
+      roster_fingerprint: 'roster-1',
+      config_fingerprint: 'config-1',
+      frontier_fingerprint: 'frontier-1',
+      planning_mutation_version: 1,
+    })
+
+    expect(stablePlannerJson(buildPlanningReplanIdentity({
+      ...baseline,
+      planning_mutation_version: 2,
+    }))).not.toBe(stablePlannerJson(baseline))
+    expect(stablePlannerJson(buildPlanningReplanIdentity({
+      ...baseline,
+      active_manual_mutation_kind: 'lineup_override',
+    }))).not.toBe(stablePlannerJson(baseline))
+    expect(stablePlannerJson(buildPlanningReplanIdentity({
+      ...baseline,
+      frontier_fingerprint: 'frontier-2',
+    }))).not.toBe(stablePlannerJson(baseline))
   })
 
   it('classifies planned matches without changing the live lineup', () => {

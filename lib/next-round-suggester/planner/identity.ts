@@ -62,3 +62,19 @@ export function buildPlanningConfigIdentity(state: SessionState) {
       ),
   }
 }
+
+export function buildPlanningReplanIdentity(input: {
+  roster_fingerprint: string
+  config_fingerprint: string
+  frontier_fingerprint: string
+  planning_mutation_version: number
+  active_manual_mutation_kind?: string | null
+}) {
+  return {
+    roster_fingerprint: input.roster_fingerprint,
+    config_fingerprint: input.config_fingerprint,
+    frontier_fingerprint: input.frontier_fingerprint,
+    planning_mutation_version: input.planning_mutation_version,
+    active_manual_mutation_kind: input.active_manual_mutation_kind ?? null,
+  }
+}

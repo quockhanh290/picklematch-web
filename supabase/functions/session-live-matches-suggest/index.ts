@@ -21,6 +21,7 @@ import {
 } from '../../../lib/next-round-suggester/planner/advisory.ts'
 import {
   buildPlanningConfigIdentity,
+  buildPlanningReplanIdentity,
   buildPlanningRosterIdentity,
   stablePlannerJson,
 } from '../../../lib/next-round-suggester/planner/identity.ts'
@@ -423,6 +424,13 @@ async function writePlanAdvisoryShadow(options: {
       const supabaseUrl = Deno.env.get('SUPABASE_URL')
       const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
       if (supabaseUrl && anonKey) {
+        const replanFingerprint = await plannerIdentityHash(buildPlanningReplanIdentity({
+          roster_fingerprint: rosterFingerprint,
+          config_fingerprint: configFingerprint,
+          frontier_fingerprint: frontierFingerprint,
+          planning_mutation_version: Number(sessionVersion.planning_mutation_version ?? 0),
+          active_manual_mutation_kind: options.activeManualMutationKind,
+        }))
         const response = await fetch(`${supabaseUrl}/functions/v1/session-plan-replan?session_id=${options.sessionId}`, {
           method: 'POST',
           headers: {
@@ -432,7 +440,7 @@ async function writePlanAdvisoryShadow(options: {
           },
           body: JSON.stringify({
             session_id: options.sessionId,
-            frontier_fingerprint: frontierFingerprint,
+            frontier_fingerprint: replanFingerprint,
           }),
         })
         if (!response.ok && response.status !== 202) {

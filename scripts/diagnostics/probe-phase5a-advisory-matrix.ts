@@ -19,7 +19,7 @@ const mode = argument('--mode') ?? 'full'
 
 if (!supabaseUrl || !anonKey || !managementToken) throw new Error('Missing Supabase environment')
 if (!sessionId || (mode === 'full' && !missingPlanSessionId)) {
-  throw new Error('Usage: npx tsx scripts/diagnostics/probe-phase5a-advisory-matrix.ts --session-id=<id> [--missing-plan-session-id=<id>] [--mode=full|manual-quality]')
+  throw new Error('Usage: npx tsx scripts/diagnostics/probe-phase5a-advisory-matrix.ts --session-id=<id> [--missing-plan-session-id=<id>] [--mode=full|manual-quality|auto-replan]')
 }
 
 const projectRef = new URL(supabaseUrl).hostname.split('.')[0]
@@ -78,6 +78,56 @@ async function loadAudit(clientRequestId: string): Promise<AdvisoryAudit> {
     await sleep(500)
   }
   throw new Error(`Advisory audit not found for ${clientRequestId}`)
+}
+
+async function loadLiveSuggestAudit(clientRequestId: string) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const rows = await managementQuery<{ response_payload?: any }>(`
+      select response_payload
+      from public.session_audit_events
+      where client_request_id = '${clientRequestId}'
+        and event_type = 'live_match_suggest'
+      order by created_at desc
+      limit 1
+    `)
+    if (rows[0]) return rows[0].response_payload ?? {}
+    await sleep(500)
+  }
+  throw new Error(`Live suggest audit not found for ${clientRequestId}`)
+}
+
+async function waitForCoordinatorIdle(
+  client: ReturnType<typeof createClient>,
+  targetSessionId: string,
+  generationAfter: number,
+) {
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    const { data, error } = await client
+      .from('session_plan_replan_state')
+      .select('generation, status, attempt_count, requested_at, completed_at, last_error')
+      .eq('session_id', targetSessionId)
+      .maybeSingle()
+    if (error) throw error
+    if (data
+      && Number(data.generation) > generationAfter
+      && data.status === 'idle'
+      && data.completed_at) return data
+    await sleep(1_000)
+  }
+  throw new Error('Timed out waiting for automatic session replan')
+}
+
+async function loadCoordinatorGeneration(
+  client: ReturnType<typeof createClient>,
+  targetSessionId: string,
+) {
+  const { data, error } = await client
+    .from('session_plan_replan_state')
+    .select('generation')
+    .eq('session_id', targetSessionId)
+    .maybeSingle()
+  if (error) throw error
+  return Number(data?.generation ?? 0)
 }
 
 async function invokeFunction(token: string, targetSessionId: string, functionName: string, body: Record<string, unknown>) {
@@ -169,6 +219,17 @@ async function invokeSuggest(client: ReturnType<typeof createClient>, token: str
     payload_count: body.payloads?.length ?? 0,
     final_preview_board_count: body.final_preview_board?.length ?? 0,
     missing_target_courts: body.missing_target_courts ?? [],
+    final_preview_board: body.final_preview_board ?? [],
+  }
+}
+
+function summarizeSuggest(suggest: Awaited<ReturnType<typeof invokeSuggest>>) {
+  return {
+    client_request_id: suggest.client_request_id,
+    status: suggest.status,
+    payload_count: suggest.payload_count,
+    final_preview_board_count: suggest.final_preview_board_count,
+    missing_target_courts: suggest.missing_target_courts,
   }
 }
 
@@ -487,6 +548,65 @@ async function main() {
   if (authError || !auth.session || !auth.user) throw new Error(authError?.message ?? 'Unable to sign in')
   const token = auth.session.access_token
   const matrix: Record<string, unknown> = {}
+
+  if (mode === 'auto-replan') {
+    const baseline = await invokeSuggestWithBackoff(client, token, sessionId!)
+    assertFullBoard(baseline, 'auto replan baseline')
+    const baselineAudit = await loadLiveSuggestAudit(baseline.client_request_id)
+    await loadAudit(baseline.client_request_id)
+    const baselineGeneration = await loadCoordinatorGeneration(client, sessionId!)
+    const { data: snapshot, error: snapshotError } = await client.rpc(
+      'get_live_session_snapshot_versioned',
+      { p_session_id: sessionId },
+    )
+    if (snapshotError) throw snapshotError
+    const player = (snapshot?.player_rows ?? []).find((row: any) => row.checked_out_at == null && !row.opted_rest)
+    if (!player?.player_id) throw new Error('No active player available for auto replan probe')
+    let cleanup: unknown = null
+    try {
+      await invokeFunction(token, sessionId!, 'session-request-rest', {
+        player_id: player.player_id,
+        opted_rest: true,
+      })
+      const fallback = await invokeSuggestWithBackoff(client, token, sessionId!)
+      assertFullBoard(fallback, 'auto replan fallback')
+      const fallbackAudit = await loadLiveSuggestAudit(fallback.client_request_id)
+      if (Number(fallbackAudit?.plan_consumption?.counts?.consumed ?? 0) !== 0) {
+        throw new Error(`Stale plan was consumed: ${JSON.stringify(fallbackAudit.plan_consumption)}`)
+      }
+      const coordinator = await waitForCoordinatorIdle(client, sessionId!, baselineGeneration)
+      const recovered = await invokeSuggestWithBackoff(client, token, sessionId!)
+      assertFullBoard(recovered, 'auto replan recovered')
+      const recoveredAudit = await loadLiveSuggestAudit(recovered.client_request_id)
+      if (Number(recoveredAudit?.plan_consumption?.counts?.consumed ?? 0) < 1) {
+        throw new Error(`Recovered plan was not consumed: ${JSON.stringify(recoveredAudit.plan_consumption)}`)
+      }
+      if (recovered.final_preview_board.some((match: any) => (
+        [...(match.team_a ?? []), ...(match.team_b ?? [])].includes(player.player_id)
+      ))) {
+        throw new Error('Recovered plan selected the opted-rest player')
+      }
+      matrix.auto_replan = {
+        player_id: player.player_id,
+        baseline: { suggest: summarizeSuggest(baseline), consumption: baselineAudit.plan_consumption },
+        stale_fallback: { suggest: summarizeSuggest(fallback), consumption: fallbackAudit.plan_consumption },
+        coordinator,
+        recovered: { suggest: summarizeSuggest(recovered), consumption: recoveredAudit.plan_consumption },
+      }
+    } finally {
+      await invokeFunction(token, sessionId!, 'session-request-rest', {
+        player_id: player.player_id,
+        opted_rest: false,
+      })
+      const cleanupGeneration = await loadCoordinatorGeneration(client, sessionId!)
+      const cleanupSuggest = await invokeSuggestWithBackoff(client, token, sessionId!)
+      const cleanupCoordinator = await waitForCoordinatorIdle(client, sessionId!, cleanupGeneration)
+      cleanup = { suggest: summarizeSuggest(cleanupSuggest), coordinator: cleanupCoordinator }
+    }
+    ;(matrix.auto_replan as any).cleanup = cleanup
+    console.log(JSON.stringify({ ok: true, mode, session_id: sessionId, matrix }, null, 2))
+    return
+  }
 
   if (mode === 'manual-quality') {
     const initialSuggest = await invokeSuggestWithBackoff(client, token, sessionId!)
