@@ -234,9 +234,16 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   Commit only the current lane and recompute from authoritative state at the
   next completion. Keep the eight-round plan as a quality target/benchmark,
   not an immutable lineup schedule.
-- [ ] Deploy the rolling policy only to the planner session allowlist, then run
+- [x] Deploy the rolling policy only to the planner session allowlist, then run
   a hosted asynchronous-lane canary and compare its dump quality/runtime with
-  the fixed-round advisory baseline before widening exposure.
+  the fixed-round advisory baseline before widening exposure. Session
+  `940399e0-...` loaded the fresh suffix target, returned the requested lane
+  without a missing court, and completed bounded rolling search in 26.2ms
+  (3.765s end-to-end hosted request). The probe restored 6/6 suggestions and
+  left no live canary match. During the gate, `session-plan-shadow` was also
+  fixed to load `session_avoid_pairs`; the probe now sends the same court preset
+  and avoid-pair config as the production client, preventing false
+  `config_changed` fallback.
 - [x] Feed a soft full-session target envelope into rolling decisions. The
   envelope carries absolute per-player match targets plus planned p95 team and
   intra-team gaps. It may rank feasible candidates but cannot reject one;
