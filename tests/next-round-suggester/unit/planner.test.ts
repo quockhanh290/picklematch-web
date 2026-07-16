@@ -13,7 +13,10 @@ import {
   type SocialPlannerMetrics,
 } from '@/lib/next-round-suggester/planner/objective'
 import { repairUnavailablePlannedBoard, validatePlannedBoard } from '@/lib/next-round-suggester/planner/validation'
-import { selectConsumablePlannedRoundPool } from '@/lib/next-round-suggester/planner/consumption'
+import {
+  selectConsumablePlannedRoundPool,
+  shouldExpandPlanAdoption,
+} from '@/lib/next-round-suggester/planner/consumption'
 import {
   plannedBoardEqualsLiveBoard,
   plannedMatchEqualsLiveMatch,
@@ -446,6 +449,29 @@ describe('precomputed planner primitives', () => {
     expect(selected.accepted).toHaveLength(1)
     expect(selected.accepted[0]).toMatchObject({ court_idx: 0, planned_match_idx: 1 })
     expect(selected.decisions[1]).toMatchObject({ status: 'fallback', reasons: ['plan_missing'] })
+  })
+
+  it('adopts a new plan across all open lanes when retained suggestions are from another source', () => {
+    expect(shouldExpandPlanAdoption({
+      planVersionId: 'plan-new',
+      targetCourtIdxs: [5],
+      openCourtIdxs: [0, 1, 2, 3, 4, 5],
+      rows: [{
+        status: 'suggested',
+        court_idx: 0,
+        suggestion_metadata: { preview_source: 'edge_committed' },
+      }],
+    })).toBe(true)
+    expect(shouldExpandPlanAdoption({
+      planVersionId: 'plan-new',
+      targetCourtIdxs: [5],
+      openCourtIdxs: [0, 1, 2, 3, 4, 5],
+      rows: [{
+        status: 'suggested',
+        court_idx: 0,
+        suggestion_metadata: { preview_source: 'session_plan', plan_version_id: 'plan-new' },
+      }],
+    })).toBe(false)
   })
 
   it('compares planned and live lineups independent of team orientation', () => {

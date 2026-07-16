@@ -32,6 +32,7 @@ import {
 import { getNextLiveRoundByCourt } from '../../../lib/next-round-suggester/live-rounds.ts'
 import {
   selectConsumablePlannedRoundPool,
+  shouldExpandPlanAdoption,
   type PlannedCourtConsumptionDecision,
 } from '../../../lib/next-round-suggester/planner/consumption.ts'
 import { validatePlannedBoard } from '../../../lib/next-round-suggester/planner/validation.ts'
@@ -935,7 +936,7 @@ Deno.serve(async (request) => {
     const partialFullBoardRequest = mode === 'full_board'
       && explicitTargetCourtIdxs.length === 0
       && count < openCourtIdxs.length
-    const targetCourtIdxs = mode === 'replace_courts'
+    let targetCourtIdxs = mode === 'replace_courts'
       ? explicitTargetCourtIdxs
       : partialFullBoardRequest
         ? []
@@ -950,7 +951,7 @@ Deno.serve(async (request) => {
 
     // 4. Run suggestion algorithm
     const serviceClient = createServiceClient()
-    const planConsumption = await loadPlanConsumption({
+    let planConsumption = await loadPlanConsumption({
       supabase: serviceClient,
       sessionId,
       state,
@@ -961,6 +962,25 @@ Deno.serve(async (request) => {
       replaceAllSuggestions,
       activeManualMutationKind,
     })
+    if (shouldExpandPlanAdoption({
+      planVersionId: planConsumption.plan_version_id,
+      targetCourtIdxs,
+      openCourtIdxs,
+      rows: authoritativeLiveMatchRows,
+    })) {
+      targetCourtIdxs = [...openCourtIdxs]
+      planConsumption = await loadPlanConsumption({
+        supabase: serviceClient,
+        sessionId,
+        state,
+        authoritativeLiveMatchRows,
+        courtCount,
+        targetCourtIdxs,
+        busyIds: liveBusyIds,
+        replaceAllSuggestions: true,
+        activeManualMutationKind,
+      })
+    }
     const backgroundWrites: Promise<unknown>[] = []
     const verifyDumpEnabled = Deno.env.get('VERIFY_DUMP') === '1'
     const decisionSource = preferAvailablePool ? 'host_replacement' : 'engine_auto'

@@ -5,7 +5,7 @@ import { validatePlannedBoard } from './validation.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import type { SessionPlanMatch } from './session-plan.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import type { SessionState } from '../types.ts'
+import type { SessionLiveMatchRow, SessionState } from '../types.ts'
 
 export type PlannedCourtCandidate = {
   court_idx: number
@@ -27,6 +27,21 @@ export type PlannedRoundPoolCandidate = Omit<PlannedCourtCandidate, 'match'> & {
 export type AssignedPlannedCourt = PlannedCourtCandidate & {
   match: SessionPlanMatch
   planned_match_idx: number
+}
+
+export function shouldExpandPlanAdoption(options: {
+  planVersionId: string | null
+  targetCourtIdxs: readonly number[]
+  openCourtIdxs: readonly number[]
+  rows: readonly Pick<SessionLiveMatchRow, 'status' | 'court_idx' | 'suggestion_metadata'>[]
+}) {
+  if (!options.planVersionId || options.targetCourtIdxs.length >= options.openCourtIdxs.length) return false
+  const openCourts = new Set(options.openCourtIdxs)
+  return options.rows.some(row => (
+    row.status === 'suggested'
+    && openCourts.has(Number(row.court_idx))
+    && row.suggestion_metadata?.plan_version_id !== options.planVersionId
+  ))
 }
 
 export function selectConsumablePlannedRoundPool(options: {
