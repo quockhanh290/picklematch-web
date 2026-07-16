@@ -202,6 +202,18 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   intra gap 2.57->1.31, and maximum player debt 1.57->0.31. The explicit
   lower-priority trade-off was opponent repeats 19->29, still with zero opponent
   repeat overflow under the configured budget.
+- [x] Fix the first live Phase 5B canary findings from session `c61b9d49-...`.
+  Every idle physical court is now a required preview lane, so a six-court board
+  cannot stop at five persisted suggestions. The planner now builds state from
+  `get_live_session_snapshot_versioned` instead of legacy `session_rounds`, and
+  advances its suffix past live and partially completed rows. Starting or
+  completing a lineup produced by the active plan is accepted as monotonic plan
+  progress instead of triggering frontier churn. Planned matches are consumed
+  as a per-round pool: an idle physical court may take any unused feasible
+  lineup from that round, while busy/unavailable lineups remain protected by
+  repair/live-engine fallback. Targeted planner, preview, TypeScript, and web
+  build gates pass. A combined full-suite timing run was invalidated by two
+  duplicate Jest processes competing for CPU; no matching-engine module changed.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.
@@ -212,6 +224,10 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
 - Phase 5B rollback is `SESSION_PLAN_CONSUMPTION=0` and
   `SESSION_PLAN_AUTO_REPLAN=0`. Current hosted exposure is additionally bounded
   by `SESSION_PLAN_ROLLOUT_SESSION_IDS=940399e0-...`.
+- The canary follow-up requires Edge deploys for `session-plan-shadow` and
+  `session-live-matches-suggest`; it has no DB migration. The idle-lane fix is a
+  client change and reaches localhost through Metro, but production still needs
+  the normal client release path.
 - Do not deploy Vercel without Kevin's explicit approval.
 
 ---
