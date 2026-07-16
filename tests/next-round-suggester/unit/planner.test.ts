@@ -92,7 +92,22 @@ describe('precomputed planner primitives', () => {
     expect(frontier.state.players.get('p1')?.partner_counts.get('p2')).toBe(1)
     expect(frontier.state.players.get('p1')?.opponent_counts.get('p3')).toBe(1)
     expect(frontier.state.players.get('p5')?.consecutive_rest).toBe(0)
+    expect(frontier.state.current_round).toBe(3)
     expect(frontier.busy_ids).toEqual(['p1', 'p2', 'p3', 'p4'])
+  })
+
+  it('advances the planning suffix past partially completed live rows', () => {
+    const state = createState({
+      players: ['p1', 'p2', 'p3', 'p4'].map(id => createPlayer(id)),
+      currentRound: 1,
+    })
+    const completed = liveRow({ status: 'completed', round_no: 1, ended_at: new Date(1).toISOString() })
+    const frontier = buildPlanningFrontier(state, [completed])
+
+    expect(frontier.state.current_round).toBe(2)
+    expect(frontier.state.players.get('p1')?.matches_played).toBe(0)
+    expect(frontier.identity.current_round).toBe(2)
+    expect(frontier.identity.matches).toEqual([{ round_no: 1, lineup: 'p1|p2::p3|p4' }])
   })
 
   it('keeps frontier identity stable when a live commitment becomes completed history', () => {
@@ -174,7 +189,7 @@ describe('precomputed planner primitives', () => {
     const frontier = buildPlanningFrontier(state, commitments)
     const plan = buildPrecomputedSessionPlan(frontier.state, 2, 6, {
       localSearchPasses: 1,
-      startingRound: state.current_round,
+      startingRound: frontier.state.current_round,
     })
 
     expect(plan.invariants).toMatchObject({
@@ -182,7 +197,7 @@ describe('precomputed planner primitives', () => {
       full_rounds: 2,
       expected_rounds: 2,
     })
-    expect(plan.rounds.map(round => round.round)).toEqual([4, 5])
+    expect(plan.rounds.map(round => round.round)).toEqual([5, 6])
     const suffixCounts = new Map(players.map(player => [player.player_id, 0]))
     plan.rounds.forEach(round => round.matches.forEach(match => {
       ;[...match.team_a, ...match.team_b].forEach(playerId => (

@@ -17,6 +17,12 @@ function commitmentRound(match: Pick<SessionLiveMatchRow, 'round_no' | 'sequence
   return Number.isFinite(Number(match.round_no)) ? Number(match.round_no) : Number(match.sequence_no)
 }
 
+function planningCurrentRound(state: SessionState, rows: readonly SessionLiveMatchRow[]) {
+  return rows.reduce((currentRound, row) => (
+    Math.max(currentRound, commitmentRound(row) + 1)
+  ), state.current_round)
+}
+
 function historyKeys(state: SessionState) {
   return new Set(state.rounds.flatMap(round => round.matches.map(match => (
     `${round.round_no}|${canonicalLineup(match)}`
@@ -54,7 +60,7 @@ export function buildPlanningFrontierIdentity(
     matches.set(key, { round_no: roundNo, lineup: canonicalLineup(match) })
   })
   return {
-    current_round: state.current_round,
+    current_round: planningCurrentRound(state, commitments),
     matches: [...matches.values()].sort((left, right) => (
       left.round_no - right.round_no || left.lineup.localeCompare(right.lineup)
     )),
@@ -69,6 +75,11 @@ export function buildPlanningFrontier(
   const liveCommitments = commitments.filter(commitment => commitment.status === 'live')
   const pendingManualSuggestions = commitments.filter(commitment => commitment.status === 'suggested')
   const existing = historyKeys(state)
+  const completedProgress = rows.filter(row => {
+    if (row.status !== 'completed') return false
+    const key = `${commitmentRound(row)}|${canonicalLineup(row)}`
+    return !existing.has(key)
+  })
   let projectedState = state
   for (const commitment of liveCommitments) {
     const roundNo = commitmentRound(commitment)
@@ -77,6 +88,13 @@ export function buildPlanningFrontier(
     projectedState = buildProjectedStateAfterLiveMatch(projectedState, commitment, roundNo)
     existing.add(key)
   }
+  projectedState = {
+    ...projectedState,
+    current_round: planningCurrentRound(projectedState, [
+      ...completedProgress,
+      ...commitments,
+    ]),
+  }
   return {
     state: projectedState,
     commitments,
@@ -84,6 +102,9 @@ export function buildPlanningFrontier(
     busy_ids: [...new Set(commitments
       .filter(match => match.status === 'live')
       .flatMap(match => [...match.team_a, ...match.team_b]))].sort(),
-    identity: buildPlanningFrontierIdentity(state, commitments),
+    identity: buildPlanningFrontierIdentity(state, [
+      ...completedProgress,
+      ...commitments,
+    ]),
   }
 }

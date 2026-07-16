@@ -6,7 +6,7 @@ import {
   readJson,
   requireHost,
 } from '../_shared/live-session.ts'
-import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
+import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state.ts'
 import {
   buildPrecomputedSessionPlan,
   buildPrecomputedSessionPlanChunk,
@@ -19,7 +19,13 @@ import {
 import { calculateOptimalCourts } from '../../../lib/court-calculator/calculator.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import type { CourtPreset } from '../../../lib/court-calculator/types.ts'
-import type { SessionState } from '../../../lib/next-round-suggester/types.ts'
+import type {
+  SessionPairHistoryRow,
+  SessionPlayerPreferenceRow,
+  SessionPlayerStateRow,
+  SessionRoundRow,
+  SessionState,
+} from '../../../lib/next-round-suggester/types.ts'
 import {
   buildPlanningConfigIdentity,
   buildPlanningRosterIdentity,
@@ -27,14 +33,33 @@ import {
 } from '../../../lib/next-round-suggester/planner/identity.ts'
 import {
   buildPlanningFrontier,
-  buildPlanningFrontierIdentity,
-  getPlanningCommitments,
 } from '../../../lib/next-round-suggester/planner/frontier.ts'
 import type { SessionLiveMatchRow } from '../../../lib/next-round-suggester/types.ts'
 
 const ENGINE_VERSION = 'precomputed-v8-rolling-frontier'
 const MAX_PLANNED_ROUNDS = 12
 const MAX_LOCAL_SEARCH_PASSES = 3
+
+type AuthoritativePlanningSnapshot = {
+  live_state_version?: unknown
+  player_rows?: unknown[]
+  registered_player_rows?: unknown[]
+  pair_rows?: unknown[]
+  round_rows?: unknown[]
+  live_match_rows?: unknown[]
+}
+
+function stateFromSnapshot(sessionId: string, snapshot: AuthoritativePlanningSnapshot) {
+  return mapRowsToSessionState({
+    sessionId,
+    playerRows: (Array.isArray(snapshot.player_rows) ? snapshot.player_rows : []) as SessionPlayerStateRow[],
+    pairRows: (Array.isArray(snapshot.pair_rows) ? snapshot.pair_rows : []) as SessionPairHistoryRow[],
+    roundRows: (Array.isArray(snapshot.round_rows) ? snapshot.round_rows : []) as SessionRoundRow[],
+    preferenceRows: (Array.isArray(snapshot.registered_player_rows)
+      ? snapshot.registered_player_rows
+      : []) as SessionPlayerPreferenceRow[],
+  })
+}
 
 async function sha256(value: unknown) {
   const bytes = new TextEncoder().encode(stablePlannerJson(value))
@@ -108,8 +133,7 @@ Deno.serve(async (request) => {
     const [
       { data: sessionRow, error: sessionError },
       { data: settingsRow, error: settingsError },
-      { data: liveMatchRows, error: liveMatchRowsError },
-      loadedState,
+      { data: snapshotData, error: snapshotError },
     ] = await Promise.all([
       auth.supabase
         .from('sessions')
@@ -122,15 +146,17 @@ Deno.serve(async (request) => {
         .eq('session_id', sessionId)
         .maybeSingle(),
       auth.supabase
-        .from('session_live_matches')
-        .select('id, session_id, sequence_no, round_no, cycle_no, court_idx, status, team_a, team_b, resting, score_a, score_b, suggested_at, started_at, ended_at, suggestion_metadata')
-        .eq('session_id', sessionId)
-        .in('status', ['suggested', 'live']),
-      loadSessionState(auth.supabase, sessionId),
+        .rpc('get_live_session_snapshot_versioned', { p_session_id: sessionId }),
     ])
     if (sessionError || !sessionRow) throw new Error(sessionError?.message ?? 'Session not found')
     if (settingsError) throw new Error(settingsError.message)
-    if (liveMatchRowsError) throw new Error(liveMatchRowsError.message)
+    if (snapshotError) throw new Error(snapshotError.message)
+
+    const snapshot = (snapshotData ?? {}) as AuthoritativePlanningSnapshot
+    const loadedState = stateFromSnapshot(sessionId, snapshot)
+    const liveMatchRows = (Array.isArray(snapshot.live_match_rows)
+      ? snapshot.live_match_rows
+      : []) as SessionLiveMatchRow[]
 
     const preset = courtPreset(settingsRow?.court_preset)
     const durationMin = positiveInteger(settingsRow?.court_duration_min) ?? 120
@@ -189,7 +215,7 @@ Deno.serve(async (request) => {
         planned_round_count: 0,
       }, 200, request)
     }
-    const liveStateVersion = Number(sessionRow.live_state_version)
+    const liveStateVersion = Number(snapshot.live_state_version ?? sessionRow.live_state_version)
     const planningMutationVersion = Number(sessionRow.planning_mutation_version ?? 0)
     const [rosterFingerprint, configFingerprint, frontierFingerprint] = await Promise.all([
       sha256(buildPlanningRosterIdentity(loadedState)),
@@ -241,8 +267,7 @@ Deno.serve(async (request) => {
     const recheckPlanningFrontier = async () => {
       const [
         { data: currentSession, error: currentSessionError },
-        { data: currentLiveRows, error: currentLiveRowsError },
-        currentState,
+        { data: currentSnapshotData, error: currentSnapshotError },
       ] = await Promise.all([
         auth.supabase
           .from('sessions')
@@ -250,22 +275,21 @@ Deno.serve(async (request) => {
           .eq('id', sessionId)
           .single(),
         auth.supabase
-          .from('session_live_matches')
-          .select('id, session_id, sequence_no, round_no, cycle_no, court_idx, status, team_a, team_b, resting, score_a, score_b, suggested_at, started_at, ended_at, suggestion_metadata')
-          .eq('session_id', sessionId)
-          .in('status', ['suggested', 'live']),
-        loadSessionState(auth.supabase, sessionId),
+          .rpc('get_live_session_snapshot_versioned', { p_session_id: sessionId }),
       ])
       if (currentSessionError || !currentSession) {
         throw new Error(currentSessionError?.message ?? 'Unable to recheck planning mutation version')
       }
-      if (currentLiveRowsError) throw new Error(currentLiveRowsError.message)
-      const currentCommitments = getPlanningCommitments(
-        (currentLiveRows ?? []) as SessionLiveMatchRow[],
-      )
+      if (currentSnapshotError) throw new Error(currentSnapshotError.message)
+      const currentSnapshot = (currentSnapshotData ?? {}) as AuthoritativePlanningSnapshot
+      const currentState = stateFromSnapshot(sessionId, currentSnapshot)
+      const currentLiveRows = (Array.isArray(currentSnapshot.live_match_rows)
+        ? currentSnapshot.live_match_rows
+        : []) as SessionLiveMatchRow[]
+      const currentFrontier = buildPlanningFrontier(currentState, currentLiveRows)
       return {
         planningMutationVersion: Number(currentSession.planning_mutation_version ?? 0),
-        frontierFingerprint: await sha256(buildPlanningFrontierIdentity(currentState, currentCommitments)),
+        frontierFingerprint: await sha256(currentFrontier.identity),
       }
     }
 
