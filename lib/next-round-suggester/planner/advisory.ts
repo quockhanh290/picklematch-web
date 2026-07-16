@@ -3,7 +3,7 @@ import type { SessionPlanMatch } from './session-plan.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { validatePlannedBoard, type PlannedMatchViolation } from './validation.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import type { SessionState } from '../types.ts'
+import type { SessionLiveMatchRow, SessionState } from '../types.ts'
 
 export type PlanAdvisoryStatus = 'usable' | 'repair_required' | 'fallback'
 
@@ -107,4 +107,53 @@ export function plannedBoardEqualsLiveBoard(
   const plannedKeys = boardKey(planned)
   const liveKeys = boardKey(live)
   return plannedKeys.every((key, index) => key === liveKeys[index])
+}
+
+export function plannedProgressMatches(options: {
+  rows: readonly SessionLiveMatchRow[]
+  baselineCommitments?: ReadonlyArray<{
+    id?: unknown
+    team_a?: unknown
+    team_b?: unknown
+  }>
+  startingRound: number
+  planVersionId: string
+  plannedByRound: ReadonlyMap<number, ReadonlyArray<SessionPlanMatch>>
+}) {
+  const rowsById = new Map(options.rows.map(row => [row.id, row]))
+  for (const baseline of options.baselineCommitments ?? []) {
+    const id = typeof baseline.id === 'string' ? baseline.id : null
+    const row = id ? rowsById.get(id) : null
+    if (!row || row.status === 'cancelled') return false
+    if (!Array.isArray(baseline.team_a) || !Array.isArray(baseline.team_b)) return false
+    if (!plannedMatchEqualsLiveMatch({
+      team_a: baseline.team_a as [string, string],
+      team_b: baseline.team_b as [string, string],
+    }, row)) return false
+  }
+
+  const baselineIds = new Set((options.baselineCommitments ?? [])
+    .map(commitment => commitment.id)
+    .filter((id): id is string => typeof id === 'string'))
+  const usedByRound = new Map<number, Set<number>>()
+  const progressRows = options.rows.filter(row => (
+    (row.status === 'live' || row.status === 'completed')
+    && !baselineIds.has(row.id)
+    && Number(row.round_no) + 1 > options.startingRound
+  ))
+
+  for (const row of progressRows) {
+    const plannedRoundNo = Number(row.round_no) + 1
+    if (row.suggestion_metadata?.plan_version_id !== options.planVersionId) return false
+    if (Number(row.suggestion_metadata?.planned_round_no) !== plannedRoundNo) return false
+    const planned = options.plannedByRound.get(plannedRoundNo) ?? []
+    const used = usedByRound.get(plannedRoundNo) ?? new Set<number>()
+    const matchIndex = planned.findIndex((match, index) => (
+      !used.has(index) && plannedMatchEqualsLiveMatch(match, row)
+    ))
+    if (matchIndex < 0) return false
+    used.add(matchIndex)
+    usedByRound.set(plannedRoundNo, used)
+  }
+  return true
 }

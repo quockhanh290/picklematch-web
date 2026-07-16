@@ -17,6 +17,7 @@ import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state.t
 import {
   plannedBoardEqualsLiveBoard,
   plannedMatchEqualsLiveMatch,
+  plannedProgressMatches,
   resolvePlannedMatchAdvisory,
 } from '../../../lib/next-round-suggester/planner/advisory.ts'
 import {
@@ -26,8 +27,7 @@ import {
   stablePlannerJson,
 } from '../../../lib/next-round-suggester/planner/identity.ts'
 import {
-  buildPlanningFrontierIdentity,
-  getPlanningCommitments,
+  buildPlanningFrontier,
 } from '../../../lib/next-round-suggester/planner/frontier.ts'
 import { getNextLiveRoundByCourt } from '../../../lib/next-round-suggester/live-rounds.ts'
 import {
@@ -141,11 +141,11 @@ async function loadPlanConsumption(options: {
     ])
     if (jobError || sessionVersionError || !sessionVersion) return disabled
 
-    const commitments = getPlanningCommitments(options.authoritativeLiveMatchRows)
+    const frontier = buildPlanningFrontier(options.state, options.authoritativeLiveMatchRows)
     const [rosterFingerprint, configFingerprint, frontierFingerprint] = await Promise.all([
       plannerIdentityHash(buildPlanningRosterIdentity(options.state)),
       plannerIdentityHash(buildPlanningConfigIdentity(options.state)),
-      plannerIdentityHash(buildPlanningFrontierIdentity(options.state, commitments)),
+      plannerIdentityHash(frontier.identity),
     ])
     const planningMutationVersion = Number(sessionVersion.planning_mutation_version ?? 0)
     const rosterIdentityMatches = job ? job.roster_fingerprint === rosterFingerprint : undefined
@@ -167,6 +167,21 @@ async function loadPlanConsumption(options: {
     )
     const targetPlanRoundNos = [...new Set([...liveRoundByCourt.values()].map(roundNo => roundNo + 1))]
     const startingRound = Number(job?.input_payload?.planner?.starting_round)
+    const baselineCommitments = Array.isArray(job?.input_payload?.fixed_commitments)
+      ? job.input_payload.fixed_commitments
+      : []
+    const baselineCommitmentIds = new Set(baselineCommitments
+      .map((commitment: any) => commitment?.id)
+      .filter((id: unknown): id is string => typeof id === 'string'))
+    const progressPlanRoundNos = Number.isFinite(startingRound)
+      ? options.authoritativeLiveMatchRows
+          .filter(match => (
+            (match.status === 'live' || match.status === 'completed')
+            && !baselineCommitmentIds.has(match.id)
+            && Number(match.round_no) + 1 > startingRound
+          ))
+          .map(match => Number(match.round_no) + 1)
+      : []
     const completedHistory = Number.isFinite(startingRound)
       ? options.state.rounds.filter(round =>
           round.status === 'completed'
@@ -177,6 +192,7 @@ async function loadPlanConsumption(options: {
     const requestedPlanRoundNos = [...new Set([
       ...targetPlanRoundNos,
       ...completedHistory.map(round => round.round_no + 1),
+      ...progressPlanRoundNos,
     ])]
     let roundRows: Array<{ round_no: number; matches: unknown; resting_ids: string[] }> = []
     if (job?.result_plan_version_id && requestedPlanRoundNos.length > 0) {
@@ -196,6 +212,19 @@ async function loadPlanConsumption(options: {
       const planned = plannedByRound.get(round.round_no + 1)?.matches
       return Array.isArray(planned) && plannedBoardEqualsLiveBoard(planned as any, round.matches)
     }) : undefined
+    const progressMatches = job?.result_plan_version_id && Number.isFinite(startingRound)
+      ? plannedProgressMatches({
+          rows: options.authoritativeLiveMatchRows,
+          baselineCommitments,
+          startingRound,
+          planVersionId: job.result_plan_version_id,
+          plannedByRound: new Map([...plannedByRound].map(([roundNo, round]) => [
+            roundNo,
+            round.matches as Array<{ team_a: [string, string]; team_b: [string, string] }>,
+          ])),
+        })
+      : undefined
+    const effectiveFrontierMatches = frontierMatches === true || progressMatches === true
     const targetCourtSet = new Set(options.targetCourtIdxs)
     const retainedSuggestedPlayerIds = new Set(options.authoritativeLiveMatchRows
       .filter(match => match.status === 'suggested' && !targetCourtSet.has(Number(match.court_idx)))
@@ -223,7 +252,7 @@ async function loadPlanConsumption(options: {
       configIdentityMatches,
       historyMatches,
       planningVersionMatches,
-      frontierMatches,
+      frontierMatches: job ? effectiveFrontierMatches : undefined,
       activeManualMutationKind: options.activeManualMutationKind,
     })
     return {
@@ -294,13 +323,11 @@ async function writePlanAdvisoryShadow(options: {
     if (jobError) throw new Error(jobError.message)
     if (sessionVersionError) throw new Error(sessionVersionError.message)
 
+    const advisoryFrontier = buildPlanningFrontier(options.state, options.authoritativeLiveMatchRows)
     const [rosterFingerprint, configFingerprint, frontierFingerprint] = await Promise.all([
       plannerIdentityHash(buildPlanningRosterIdentity(options.state)),
       plannerIdentityHash(buildPlanningConfigIdentity(options.state)),
-      plannerIdentityHash(buildPlanningFrontierIdentity(
-        options.state,
-        getPlanningCommitments(options.authoritativeLiveMatchRows),
-      )),
+      plannerIdentityHash(advisoryFrontier.identity),
     ])
     const rosterIdentityMatches = Boolean(job && job.roster_fingerprint === rosterFingerprint)
     const configIdentityMatches = Boolean(job && job.config_fingerprint === configFingerprint)
@@ -320,6 +347,21 @@ async function writePlanAdvisoryShadow(options: {
       return Number.isFinite(liveRoundNo) ? liveRoundNo + 1 : options.state.current_round + 1
     })
     const startingRound = Number(job?.input_payload?.planner?.starting_round)
+    const baselineCommitments = Array.isArray(job?.input_payload?.fixed_commitments)
+      ? job.input_payload.fixed_commitments
+      : []
+    const baselineCommitmentIds = new Set(baselineCommitments
+      .map((commitment: any) => commitment?.id)
+      .filter((id: unknown): id is string => typeof id === 'string'))
+    const progressPlanRoundNos = Number.isFinite(startingRound)
+      ? options.authoritativeLiveMatchRows
+          .filter(match => (
+            (match.status === 'live' || match.status === 'completed')
+            && !baselineCommitmentIds.has(match.id)
+            && Number(match.round_no) + 1 > startingRound
+          ))
+          .map(match => Number(match.round_no) + 1)
+      : []
     const completedHistory = Number.isFinite(startingRound)
       ? options.state.rounds.filter(round =>
           round.status === 'completed'
@@ -330,6 +372,7 @@ async function writePlanAdvisoryShadow(options: {
     const roundNos = [...new Set([
       ...targetRoundNos,
       ...completedHistory.map(round => round.round_no + 1),
+      ...progressPlanRoundNos,
     ])]
 
     let roundRows: Array<{ round_no: number; matches: unknown }> = []
@@ -347,6 +390,16 @@ async function writePlanAdvisoryShadow(options: {
       const planned = plannedByRound.get(round.round_no + 1)
       return Array.isArray(planned) && plannedBoardEqualsLiveBoard(planned as any, round.matches)
     })
+    const progressMatches = job?.result_plan_version_id && Number.isFinite(startingRound)
+      ? plannedProgressMatches({
+          rows: options.authoritativeLiveMatchRows,
+          baselineCommitments,
+          startingRound,
+          planVersionId: job.result_plan_version_id,
+          plannedByRound: plannedByRound as Map<number, Array<{ team_a: [string, string]; team_b: [string, string] }>>,
+        })
+      : undefined
+    const effectiveFrontierMatches = frontierMatches || progressMatches === true
     const targetCourtSet = new Set(requestedCourts)
     const lockedPlayerIds = new Set(options.finalPreviewBoard
       .filter(match => !targetCourtSet.has(Number(match.court_idx)))
@@ -368,7 +421,7 @@ async function writePlanAdvisoryShadow(options: {
         configIdentityMatches: job ? configIdentityMatches : undefined,
         historyMatches: job ? historyMatches : undefined,
         planningVersionMatches: job ? planningVersionMatches : undefined,
-        frontierMatches: job ? frontierMatches : undefined,
+        frontierMatches: job ? effectiveFrontierMatches : undefined,
         activeManualMutationKind: options.activeManualMutationKind,
       })
       return {
@@ -401,6 +454,8 @@ async function writePlanAdvisoryShadow(options: {
         history_matches: job ? historyMatches : null,
         planning_version_matches: job ? planningVersionMatches : null,
         frontier_matches: job ? frontierMatches : null,
+        plan_progress_matches: job ? progressMatches ?? null : null,
+        effective_frontier_matches: job ? effectiveFrontierMatches : null,
         counts: {
           usable: decisions.filter(decision => decision.status === 'usable').length,
           repair_required: decisions.filter(decision => decision.status === 'repair_required').length,
@@ -416,7 +471,7 @@ async function writePlanAdvisoryShadow(options: {
       || !configIdentityMatches
       || !historyMatches
       || !planningVersionMatches
-      || !frontierMatches
+      || !effectiveFrontierMatches
       || Boolean(options.activeManualMutationKind)
     if (shouldRequestReplan
       && options.authorization

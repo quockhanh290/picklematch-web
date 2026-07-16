@@ -16,6 +16,7 @@ import { repairUnavailablePlannedBoard, validatePlannedBoard } from '@/lib/next-
 import {
   plannedBoardEqualsLiveBoard,
   plannedMatchEqualsLiveMatch,
+  plannedProgressMatches,
   resolvePlannedMatchAdvisory,
 } from '@/lib/next-round-suggester/planner/advisory'
 import {
@@ -139,6 +140,51 @@ describe('precomputed planner primitives', () => {
     expect(active).not.toBe(empty)
     expect(repartitioned).not.toBe(active)
     expect(stablePlannerJson(buildPlanningFrontierIdentity(state, []))).toBe(empty)
+  })
+
+  it('keeps a plan valid across its own rolling start and completion progress', () => {
+    const plannedByRound = new Map([[2, [{
+      team_a: ['p1', 'p2'] as [string, string],
+      team_b: ['p3', 'p4'] as [string, string],
+    }]]])
+    const plannedRow = liveRow({
+      round_no: 1,
+      suggestion_metadata: {
+        preview_source: 'session_plan',
+        plan_version_id: 'plan-1',
+        planned_round_no: 2,
+      },
+    })
+
+    expect(plannedProgressMatches({
+      rows: [plannedRow],
+      startingRound: 1,
+      planVersionId: 'plan-1',
+      plannedByRound,
+    })).toBe(true)
+    expect(plannedProgressMatches({
+      rows: [{ ...plannedRow, status: 'completed' }],
+      startingRound: 1,
+      planVersionId: 'plan-1',
+      plannedByRound,
+    })).toBe(true)
+    expect(plannedProgressMatches({
+      rows: [{ ...plannedRow, suggestion_metadata: { preview_source: 'edge_committed' } }],
+      startingRound: 1,
+      planVersionId: 'plan-1',
+      plannedByRound,
+    })).toBe(false)
+  })
+
+  it('invalidates a plan when a baseline commitment is cancelled', () => {
+    const baseline = liveRow({ id: 'baseline' })
+    expect(plannedProgressMatches({
+      rows: [{ ...baseline, status: 'cancelled' }],
+      baselineCommitments: [baseline],
+      startingRound: 3,
+      planVersionId: 'plan-1',
+      plannedByRound: new Map(),
+    })).toBe(false)
   })
 
   it('locks manual suggested lineups but ignores ordinary suggestions', () => {
