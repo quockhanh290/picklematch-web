@@ -135,12 +135,19 @@ export function isCommittedPreviewMatch({
   committedLaneMatchId?: string | null
   persistedSuggestedMatchId?: string | null
 }) {
+  if (previewSource === 'session_plan') {
+    return persistedSuggestedMatchId === matchId
+  }
   return previewSource === 'edge_committed'
     && (
       committedBatchMatchIds.includes(matchId)
       || committedLaneMatchId === matchId
       || persistedSuggestedMatchId === matchId
     )
+}
+
+export function isServerPersistedPreviewSource(previewSource?: string | null) {
+  return previewSource === 'edge_committed' || previewSource === 'session_plan'
 }
 
 export function isStartablePreviewRow(match: {

@@ -381,7 +381,7 @@ type BuildSuggestedMatchOptions = {
 }
 
 type SuggestedLiveMatchRow = SessionLiveMatchRow & {
-  preview_source?: 'edge_committed' | 'edge_partial' | 'local_fallback' | 'manual_available_pool'
+  preview_source?: 'edge_committed' | 'session_plan' | 'edge_partial' | 'local_fallback' | 'manual_available_pool'
   preview_request_key?: string
   preview_request_serial?: number
   preview_live_state_version?: number | null

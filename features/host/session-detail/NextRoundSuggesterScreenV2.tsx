@@ -53,7 +53,7 @@ import { createClientTraceId, fetchLiveMatchesPreview, fetchLiveSessionVersion, 
 import { LIVE_VERSION_POLL_INTERVAL_MS, shouldRefetchForExternalVersion } from './next-round-v2/version-poll'
 import { getMissingPreviewCourtIdxs, getRequestedReplacementCourtIdxs, isPreviewBoardComplete } from './next-round-v2/court-lanes'
 import { hasReachedCompletedLiveCycleTarget } from './next-round-v2/live-cycle-rows'
-import { getLiveRowsForPreviewMode, getSuggestedPreviewQueueCount, hasMissingRestPriorityPlayer, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isStartablePreviewRow, mergePreviewLaneCandidates } from './next-round-v2/preview-consistency'
+import { getLiveRowsForPreviewMode, getSuggestedPreviewQueueCount, hasMissingRestPriorityPlayer, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isServerPersistedPreviewSource, isStartablePreviewRow, mergePreviewLaneCandidates } from './next-round-v2/preview-consistency'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -463,7 +463,7 @@ type BuildSuggestedMatchOptions = {
 }
 
 type SuggestedLiveMatchRow = SessionLiveMatchRow & {
-  preview_source?: 'edge_committed' | 'edge_partial' | 'local_fallback' | 'manual_available_pool'
+  preview_source?: 'edge_committed' | 'session_plan' | 'edge_partial' | 'local_fallback' | 'manual_available_pool'
   preview_request_key?: string
   preview_request_serial?: number
   preview_live_state_version?: number | null
@@ -1193,7 +1193,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       setError('Gợi ý vừa cũ hoặc chưa được xác nhận từ server. Đang tạo lại gợi ý an toàn hơn.')
     }
     const isManualAvailablePoolStart = match.preview_source === 'manual_available_pool' && match.available_pool_only === true
-    const usePersistedMatchStart = match.preview_source === 'edge_committed' && !isManualAvailablePoolStart
+    const usePersistedMatchStart = isServerPersistedPreviewSource(match.preview_source) && !isManualAvailablePoolStart
     const committedBatch = suggestedPreviewBatchRef.current
     const committedLane = startedCourtIdx === null ? null : suggestedLaneCacheRef.current.get(startedCourtIdx)
     const isCommittedEdgeStart = isCommittedPreviewMatch({

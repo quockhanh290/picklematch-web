@@ -5,6 +5,7 @@ import {
   isPreviewBatchCacheCurrent,
   isCommittedPreviewMatch,
   isPreviewResponseCurrent,
+  isServerPersistedPreviewSource,
   isStartablePreviewRow,
   mergePreviewLaneCandidates,
   mergePersistedSuggestionMetadata,
@@ -193,6 +194,27 @@ describe('preview consistency', () => {
       committedLaneMatchId: null,
       persistedSuggestedMatchId: 'persisted-court-2',
     })).toBe(true)
+  })
+
+  it('allows a persisted session-plan suggestion to start', () => {
+    expect(isServerPersistedPreviewSource('session_plan')).toBe(true)
+    expect(isCommittedPreviewMatch({
+      previewSource: 'session_plan',
+      matchId: 'planned-court-2',
+      committedBatchMatchIds: [],
+      committedLaneMatchId: null,
+      persistedSuggestedMatchId: 'planned-court-2',
+    })).toBe(true)
+  })
+
+  it('does not trust a session-plan suggestion that exists only in client cache', () => {
+    expect(isCommittedPreviewMatch({
+      previewSource: 'session_plan',
+      matchId: 'planned-court-2',
+      committedBatchMatchIds: ['planned-court-2'],
+      committedLaneMatchId: 'planned-court-2',
+      persistedSuggestedMatchId: null,
+    })).toBe(false)
   })
 
   it('does not trust a persisted id when the preview source is local', () => {
