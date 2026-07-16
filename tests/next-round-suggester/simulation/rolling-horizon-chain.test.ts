@@ -15,7 +15,14 @@ describe('rolling horizon across asynchronous court completion', () => {
     let sequence = snapshot.liveMatchRows.length
     const selectedCounts = new Map<string, number>()
     const partnerCounts = new Map<string, number>()
+    const opponentCounts = new Map<string, number>()
     let maxTeamGap = 0
+    let totalTeamGap = 0
+    let maxIntraGap = 0
+    let totalIntraGap = 0
+    let warningMatchCount = 0
+    let maxElapsedMs = 0
+    let totalMatches = 0
 
     for (let cycle = 0; cycle < 2; cycle += 1) {
       for (const courtIdx of courtOrder) {
@@ -37,6 +44,7 @@ describe('rolling horizon across asynchronous court completion', () => {
           },
         })
         expect(result.elapsedMs).toBeLessThan(2000)
+        maxElapsedMs = Math.max(maxElapsedMs, result.elapsedMs)
         if (result.payloads.length !== 1) {
           throw new Error(`missing rolling payload cycle=${cycle} court=${courtIdx} elapsed=${result.elapsedMs.toFixed(1)}ms events=${events.join('|')} dumps=${JSON.stringify(dumps)}`)
         }
@@ -47,11 +55,25 @@ describe('rolling horizon across asynchronous court completion', () => {
           const key = [...team].sort().join('|')
           partnerCounts.set(key, (partnerCounts.get(key) ?? 0) + 1)
         }
+        for (const playerA of payload.team_a) for (const playerB of payload.team_b) {
+          const key = [playerA, playerB].sort().join('|')
+          opponentCounts.set(key, (opponentCounts.get(key) ?? 0) + 1)
+        }
         const pvna = (playerId: string) => result.state.players.get(playerId)?.pvna ?? 0
-        maxTeamGap = Math.max(maxTeamGap, Math.abs(
+        const teamGap = Math.abs(
           pvna(payload.team_a[0]) + pvna(payload.team_a[1])
             - pvna(payload.team_b[0]) - pvna(payload.team_b[1]),
-        ))
+        )
+        const intraGap = Math.max(
+          Math.abs(pvna(payload.team_a[0]) - pvna(payload.team_a[1])),
+          Math.abs(pvna(payload.team_b[0]) - pvna(payload.team_b[1])),
+        )
+        maxTeamGap = Math.max(maxTeamGap, teamGap)
+        totalTeamGap += teamGap
+        maxIntraGap = Math.max(maxIntraGap, intraGap)
+        totalIntraGap += intraGap
+        warningMatchCount += (payload.warnings?.length ?? 0) > 0 || (payload.tradeoffs?.length ?? 0) > 0 ? 1 : 0
+        totalMatches += 1
         const otherBusy = new Set(snapshot.liveMatchRows
           .filter(row => row.status === 'live' && row.id !== completing!.id)
           .flatMap(row => [...row.team_a, ...row.team_b]))
@@ -84,8 +106,27 @@ describe('rolling horizon across asynchronous court completion', () => {
     expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(2)
     expect(Math.max(0, ...partnerCounts.values())).toBeLessThanOrEqual(2)
     expect(maxTeamGap).toBeLessThanOrEqual(1)
+    expect(maxElapsedMs).toBeLessThan(2000)
+    expect(totalMatches).toBe(12)
+    expect(Math.min(...counts)).toBe(1)
+    expect(Math.max(...counts)).toBe(2)
+    expect(repeatEvents(partnerCounts)).toBeLessThanOrEqual(6)
+    expect(repeatEvents(opponentCounts)).toBeLessThanOrEqual(10)
+    expect(warningMatchCount).toBeLessThanOrEqual(totalMatches)
+    expect(rounded(totalTeamGap / totalMatches)).toBeLessThanOrEqual(0.15)
+    expect(rounded(maxTeamGap)).toBeLessThanOrEqual(1)
+    expect(rounded(totalIntraGap / totalMatches)).toBeLessThanOrEqual(1.2)
+    expect(rounded(maxIntraGap)).toBeLessThanOrEqual(3)
   }, 90_000)
 })
+
+function repeatEvents(counts: ReadonlyMap<string, number>) {
+  return [...counts.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0)
+}
+
+function rounded(value: number) {
+  return Number(value.toFixed(3))
+}
 
 function buildSnapshot(): AuthoritativeLiveSnapshot {
   const players = createPlayers(33).map((player, index) => ({

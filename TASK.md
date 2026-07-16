@@ -243,6 +243,16 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   stale roster/config/planning identity or pending manual mutation removes the
   target and falls back to production rolling ranking. Ordinary live progress
   may diverge from exact planned lineups without invalidating the envelope.
+- [x] Freeze the pre-enhancement rolling quality baseline across court-order,
+  reverse-order, and slow-middle completion timelines. Stable quality ceilings
+  cover match-count spread, partner/opponent repeats, warning exposure, and
+  average/maximum team and intra-team gaps while retaining the per-request
+  two-second operation gate. The measured reverse-order run exposed the current
+  tail risk directly: max intra-team gap 2.24 and five warning matches.
+- [ ] Enrich the rolling target with checkpoint match/rest debt, per-player
+  quality debt, diversity/repeat budgets, and consecutive play/rest limits.
+- [ ] Add lineup scarcity scoring, then bounded worst-case search and
+  counterfactual diagnostics behind the existing planner allowlist.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.
