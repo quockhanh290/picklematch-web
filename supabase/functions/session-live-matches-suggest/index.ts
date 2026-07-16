@@ -31,7 +31,7 @@ import {
 } from '../../../lib/next-round-suggester/planner/frontier.ts'
 import { getNextLiveRoundByCourt } from '../../../lib/next-round-suggester/live-rounds.ts'
 import {
-  selectConsumablePlannedCourts,
+  selectConsumablePlannedRoundPool,
   type PlannedCourtConsumptionDecision,
 } from '../../../lib/next-round-suggester/planner/consumption.ts'
 import { validatePlannedBoard } from '../../../lib/next-round-suggester/planner/validation.ts'
@@ -91,6 +91,7 @@ type PlanConsumptionContext = {
     court_idx: number
     live_round_no: number
     planned_round_no: number
+    planned_match_idx: number
     team_a: [string, string]
     team_b: [string, string]
     resting: string[]
@@ -229,22 +230,41 @@ async function loadPlanConsumption(options: {
     const retainedSuggestedPlayerIds = new Set(options.authoritativeLiveMatchRows
       .filter(match => match.status === 'suggested' && !targetCourtSet.has(Number(match.court_idx)))
       .flatMap(match => [...match.team_a, ...match.team_b]))
+    const consumedMatchIndexesByRound = new Map<number, Set<number>>()
+    if (job?.result_plan_version_id) {
+      for (const row of options.authoritativeLiveMatchRows) {
+        if (row.status === 'cancelled') continue
+        if (row.status === 'suggested' && targetCourtSet.has(Number(row.court_idx))) continue
+        if (row.suggestion_metadata?.plan_version_id !== job.result_plan_version_id) continue
+        const plannedRoundNo = Number(row.suggestion_metadata?.planned_round_no)
+        if (!Number.isFinite(plannedRoundNo)) continue
+        const matches = plannedByRound.get(plannedRoundNo)?.matches ?? []
+        const used = consumedMatchIndexesByRound.get(plannedRoundNo) ?? new Set<number>()
+        const matchIndex = matches.findIndex((match: any, index: number) => (
+          !used.has(index) && plannedMatchEqualsLiveMatch(match, row)
+        ))
+        if (matchIndex < 0) continue
+        used.add(matchIndex)
+        consumedMatchIndexesByRound.set(plannedRoundNo, used)
+      }
+    }
     const candidates = options.targetCourtIdxs.map(courtIdx => {
       const liveRoundNo = liveRoundByCourt.get(courtIdx) ?? options.state.current_round
       const plannedRoundNo = liveRoundNo + 1
       const plannedRound = plannedByRound.get(plannedRoundNo)
-      const match = plannedRound?.matches[courtIdx]
       return {
         court_idx: courtIdx,
         live_round_no: liveRoundNo,
         planned_round_no: plannedRoundNo,
-        match: match && typeof match === 'object'
-          ? match as { team_a: [string, string]; team_b: [string, string] }
-          : null,
+        matches: (plannedRound?.matches ?? []) as Array<{
+          team_a: [string, string]
+          team_b: [string, string]
+        }>,
       }
     })
-    const selected = selectConsumablePlannedCourts({
+    const selected = selectConsumablePlannedRoundPool({
       candidates,
+      consumedMatchIndexesByRound,
       state: options.state,
       busyIds: options.busyIds,
       reservedIds: retainedSuggestedPlayerIds,
@@ -264,6 +284,7 @@ async function loadPlanConsumption(options: {
         court_idx: candidate.court_idx,
         live_round_no: candidate.live_round_no,
         planned_round_no: candidate.planned_round_no,
+        planned_match_idx: candidate.planned_match_idx,
         team_a: candidate.match.team_a,
         team_b: candidate.match.team_b,
         resting: plannedByRound.get(candidate.planned_round_no)?.resting ?? [],
@@ -1032,6 +1053,7 @@ Deno.serve(async (request) => {
         plan_job_id: planConsumption.job_id,
         plan_version_id: planConsumption.plan_version_id,
         planned_round_no: planned.planned_round_no,
+        planned_match_idx: planned.planned_match_idx,
         sequence_no: maxExistingSequence + index + 1,
       }
     })
@@ -1316,6 +1338,7 @@ Deno.serve(async (request) => {
       decisions: planConsumption.decisions.map(decision => ({
         court_idx: decision.court_idx,
         planned_round_no: decision.planned_round_no,
+        planned_match_idx: decision.planned_match_idx ?? null,
         status: decision.status,
         reasons: decision.reasons,
       })),

@@ -13,6 +13,7 @@ import {
   type SocialPlannerMetrics,
 } from '@/lib/next-round-suggester/planner/objective'
 import { repairUnavailablePlannedBoard, validatePlannedBoard } from '@/lib/next-round-suggester/planner/validation'
+import { selectConsumablePlannedRoundPool } from '@/lib/next-round-suggester/planner/consumption'
 import {
   plannedBoardEqualsLiveBoard,
   plannedMatchEqualsLiveMatch,
@@ -402,6 +403,49 @@ describe('precomputed planner primitives', () => {
       status: 'fallback',
       reasons: ['plan_missing'],
     })
+  })
+
+  it('assigns another feasible planned lineup when the same-index lineup is busy', () => {
+    const state = createState({
+      players: Array.from({ length: 8 }, (_, index) => createPlayer(`p${index + 1}`)),
+      currentRound: 1,
+    })
+    const matches = [
+      { team_a: ['p1', 'p2'] as [string, string], team_b: ['p3', 'p4'] as [string, string] },
+      { team_a: ['p5', 'p6'] as [string, string], team_b: ['p7', 'p8'] as [string, string] },
+    ]
+    const selected = selectConsumablePlannedRoundPool({
+      candidates: [{ court_idx: 0, live_round_no: 1, planned_round_no: 2, matches }],
+      state,
+      busyIds: new Set(['p1']),
+    })
+
+    expect(selected.accepted).toHaveLength(1)
+    expect(selected.accepted[0]).toMatchObject({ court_idx: 0, planned_match_idx: 1, match: matches[1] })
+    expect(selected.decisions[0]).toMatchObject({ status: 'usable', planned_match_idx: 1 })
+  })
+
+  it('does not consume the same planned lineup twice across rolling courts', () => {
+    const state = createState({
+      players: Array.from({ length: 8 }, (_, index) => createPlayer(`p${index + 1}`)),
+      currentRound: 1,
+    })
+    const matches = [
+      { team_a: ['p1', 'p2'] as [string, string], team_b: ['p3', 'p4'] as [string, string] },
+      { team_a: ['p5', 'p6'] as [string, string], team_b: ['p7', 'p8'] as [string, string] },
+    ]
+    const selected = selectConsumablePlannedRoundPool({
+      candidates: [
+        { court_idx: 0, live_round_no: 1, planned_round_no: 2, matches },
+        { court_idx: 1, live_round_no: 1, planned_round_no: 2, matches },
+      ],
+      consumedMatchIndexesByRound: new Map([[2, new Set([0])]]),
+      state,
+    })
+
+    expect(selected.accepted).toHaveLength(1)
+    expect(selected.accepted[0]).toMatchObject({ court_idx: 0, planned_match_idx: 1 })
+    expect(selected.decisions[1]).toMatchObject({ status: 'fallback', reasons: ['plan_missing'] })
   })
 
   it('compares planned and live lineups independent of team orientation', () => {
