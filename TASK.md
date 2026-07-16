@@ -267,7 +267,12 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   expansion; candidate width adapts from three to five as the live frontier
   shrinks. A strict anytime deadline returns best-so-far, and projected
   state/busy-set caching removes repeated future engine calls.
-- [ ] Add counterfactual diagnostics behind the existing planner allowlist.
+- [x] Add compact counterfactual diagnostics behind the existing planner
+  allowlist. Each rolling event records the selected candidate's immediate
+  quality/fairness/flexibility costs, average/worst lookahead result, the best
+  rejected candidate and score delta, cache/search pressure, and deadline
+  exhaustion. Session replay analysis aggregates these alongside the existing
+  session-quality comparator without duplicating full dump payloads.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.

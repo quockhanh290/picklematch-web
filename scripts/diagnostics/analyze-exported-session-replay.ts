@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
+import { summarizeRollingHorizonDetails } from '../../lib/next-round-suggester/planner/rolling-diagnostics'
 
 type AnyRow = Record<string, any>
 
@@ -193,6 +194,9 @@ async function main() {
 
   const instrCounts = countBy(instr, (row) => row.event ?? 'unknown')
   const instrDetails = countBy(instr, (row) => `${row.event ?? 'unknown'}:${row.detail ?? ''}`)
+  const rollingHorizonSummary = summarizeRollingHorizonDetails(instr
+    .filter(row => row.event === 'rolling_horizon' && typeof row.detail === 'string')
+    .map(row => row.detail))
 
   const liveStatus = countBy(liveMatches, (row) => row.status ?? 'unknown')
   const liveRound = countBy(liveMatches, (row) => String(row.round_no ?? 'unknown'))
@@ -293,6 +297,7 @@ async function main() {
     engine_instrumentation_summary: {
       by_event: instrCounts,
       by_event_detail_top: Object.fromEntries(Object.entries(instrDetails).slice(0, 40)),
+      rolling_horizon: rollingHorizonSummary,
     },
     warnings,
     worst_missing: worstMissing,

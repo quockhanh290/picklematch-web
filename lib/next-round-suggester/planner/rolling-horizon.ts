@@ -12,10 +12,17 @@ export type RollingHorizonDiagnostics = {
   future_cache_hits: number
   budget_exhausted: boolean
   elapsed_ms: number
+  selected_candidate_index: number
+  selected_immediate_quality_cost: number
+  selected_projected_fairness_cost: number
   selected_flexibility_cost: number
   selected_score: number
   selected_worst_path_score: number
   paths_without_future_match: number
+  best_rejected_candidate_index: number | null
+  best_rejected_score: number | null
+  best_rejected_delta: number | null
+  best_rejected_worst_path_score: number | null
 }
 
 export type RollingHorizonChoice = {
@@ -366,9 +373,18 @@ export function chooseRollingHorizonAlternative(options: {
   let futureSearchCalls = 0
   let futureCacheHits = 0
   let budgetExhausted = false
+  const evaluated: Array<{
+    alternative: SuggestionAlternative
+    candidateIndex: number
+    immediateQualityCost: number
+    projectedFairnessCost: number
+    flexibilityCost: number
+    score: number
+    worst: number
+  }> = []
   let best: (RollingHorizonChoice & { score: number }) | null = null
 
-  for (const candidate of candidates) {
+  for (const [candidateIndex, candidate] of candidates.entries()) {
     if (clock() >= deadline && evaluatedCandidateCount > 0) {
       budgetExhausted = true
       break
@@ -378,6 +394,9 @@ export function chooseRollingHorizonAlternative(options: {
     evaluatedCandidateCount += 1
     const candidateIds = playerIds(candidate)
     const flexibilityCost = flexibilityCosts.get(candidate) ?? 0
+    const immediateQualityCost = matchQualityCost(candidate, options.state, options.planTarget)
+    const projectedCandidateState = options.projectMatch(options.state, candidateMatch)
+    const projectedFairnessCost = fairnessDebtCost(projectedCandidateState, options.planTarget)
     const pathScores: number[] = []
     let pathsWithoutFutureMatch = 0
 
@@ -386,11 +405,11 @@ export function chooseRollingHorizonAlternative(options: {
         budgetExhausted = true
         break
       }
-      let simState = options.projectMatch(options.state, candidateMatch)
+      let simState = projectedCandidateState
       const simBusy = new Set([...options.baseBusyIds, ...candidateIds])
-      let pathScore = matchQualityCost(candidate, options.state, options.planTarget)
+      let pathScore = immediateQualityCost
         + flexibilityCost
-        + fairnessDebtCost(simState, options.planTarget)
+        + projectedFairnessCost
 
       for (const completion of order.slice(0, horizonEvents)) {
         simState = options.projectMatch(simState, completion)
@@ -440,6 +459,15 @@ export function chooseRollingHorizonAlternative(options: {
     const average = pathScores.reduce((sum, score) => sum + score, 0) / pathScores.length
     const worst = Math.max(...pathScores)
     const score = average + worst * 0.5
+    evaluated.push({
+      alternative: candidate,
+      candidateIndex,
+      immediateQualityCost,
+      projectedFairnessCost,
+      flexibilityCost,
+      score,
+      worst,
+    })
     if (!best || score < best.score - 1e-9 || (Math.abs(score - best.score) <= 1e-9 && candidate.score < best.alternative.score)) {
       best = {
         alternative: candidate,
@@ -453,10 +481,17 @@ export function chooseRollingHorizonAlternative(options: {
           future_cache_hits: futureCacheHits,
           budget_exhausted: budgetExhausted,
           elapsed_ms: clock() - startedAt,
+          selected_candidate_index: candidateIndex,
+          selected_immediate_quality_cost: immediateQualityCost,
+          selected_projected_fairness_cost: projectedFairnessCost,
           selected_flexibility_cost: flexibilityCost,
           selected_score: score,
           selected_worst_path_score: worst,
           paths_without_future_match: pathsWithoutFutureMatch,
+          best_rejected_candidate_index: null,
+          best_rejected_score: null,
+          best_rejected_delta: null,
+          best_rejected_worst_path_score: null,
         },
       }
     }
@@ -468,5 +503,14 @@ export function chooseRollingHorizonAlternative(options: {
   best.diagnostics.future_cache_hits = futureCacheHits
   best.diagnostics.budget_exhausted = budgetExhausted
   best.diagnostics.elapsed_ms = clock() - startedAt
+  const rejected = evaluated
+    .filter(item => item.alternative !== best.alternative)
+    .sort((left, right) => left.score - right.score)[0]
+  if (rejected) {
+    best.diagnostics.best_rejected_candidate_index = rejected.candidateIndex
+    best.diagnostics.best_rejected_score = rejected.score
+    best.diagnostics.best_rejected_delta = rejected.score - best.score
+    best.diagnostics.best_rejected_worst_path_score = rejected.worst
+  }
   return { alternative: best.alternative, diagnostics: best.diagnostics }
 }
