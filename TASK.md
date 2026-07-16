@@ -214,6 +214,12 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   repair/live-engine fallback. Targeted planner, preview, TypeScript, and web
   build gates pass. A combined full-suite timing run was invalidated by two
   duplicate Jest processes competing for CPU; no matching-engine module changed.
+- [x] Make plan adoption durable across active and newly loaded clients. Publishing
+  a plan now atomically marks persisted suggestions with the target plan version
+  and advances `live_state_version`; the client bypasses lane caches and requests
+  a full-board replacement until Edge persists the plan rows. The canary returned
+  6/6 courts in about 1.9s, all six persisted rows use the same `session_plan`
+  version with match indexes 0-5, and the adoption marker cleared automatically.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.
@@ -224,10 +230,11 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
 - Phase 5B rollback is `SESSION_PLAN_CONSUMPTION=0` and
   `SESSION_PLAN_AUTO_REPLAN=0`. Current hosted exposure is additionally bounded
   by `SESSION_PLAN_ROLLOUT_SESSION_IDS=940399e0-...`.
-- The canary follow-up requires Edge deploys for `session-plan-shadow` and
-  `session-live-matches-suggest`; it has no DB migration. The idle-lane fix is a
-  client change and reaches localhost through Metro, but production still needs
-  the normal client release path.
+- Durable canary adoption requires migration
+  `20260716000001_publish_session_plan_adoption_signal.sql` and an Edge deploy of
+  `session-plan-shadow`. `session-live-matches-suggest` already contains the
+  full-board plan adoption path. The client guard reaches localhost through
+  Metro, but production still needs the normal client release path.
 - Do not deploy Vercel without Kevin's explicit approval.
 
 ---
