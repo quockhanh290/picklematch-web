@@ -7,6 +7,7 @@ export type RollingHorizonDiagnostics = {
   candidate_count: number
   completion_orders: number
   horizon_events: number
+  selected_flexibility_cost: number
   selected_score: number
   selected_worst_path_score: number
   paths_without_future_match: number
@@ -58,10 +59,28 @@ type ProjectMatch = (
 
 const NO_FEASIBLE_FUTURE_PENALTY = 5_000
 const DEFAULT_HORIZON_EVENTS = 2
+const FLEXIBILITY_CONSUMPTION_WEIGHT = 1
 
 function playerIds(alternative: SuggestionAlternative) {
   const match = alternative.matches[0]
   return match ? [...match.team_a, ...match.team_b] : []
+}
+
+export function buildCandidateFlexibilityCosts(candidates: SuggestionAlternative[]) {
+  const frequencies = new Map<string, number>()
+  const candidatePlayers = candidates.map(candidate => new Set(playerIds(candidate)))
+  for (const ids of candidatePlayers) for (const playerId of ids) {
+    frequencies.set(playerId, (frequencies.get(playerId) ?? 0) + 1)
+  }
+  const candidateCount = Math.max(1, candidates.length)
+  return new Map(candidates.map((candidate, index) => {
+    const ids = candidatePlayers[index]
+    const connectorCost = [...ids].reduce((sum, playerId) => {
+      const frequency = (frequencies.get(playerId) ?? 0) / candidateCount
+      return sum + frequency * frequency * FLEXIBILITY_CONSUMPTION_WEIGHT
+    }, 0)
+    return [candidate, connectorCost]
+  }))
 }
 
 function asLiveMatch(
@@ -302,12 +321,14 @@ export function chooseRollingHorizonAlternative(options: {
   ))
   const pathCount = Math.max(1, candidates.length * orders.length * horizonEvents)
   const perStepBudgetMs = Math.max(12, Math.floor(options.budgetMs / pathCount))
+  const flexibilityCosts = buildCandidateFlexibilityCosts(candidates)
   let best: (RollingHorizonChoice & { score: number }) | null = null
 
   for (const candidate of candidates) {
     const candidateMatch = asLiveMatch(candidate, options.state, 'rolling-horizon-candidate')
     if (!candidateMatch) continue
     const candidateIds = playerIds(candidate)
+    const flexibilityCost = flexibilityCosts.get(candidate) ?? 0
     const pathScores: number[] = []
     let pathsWithoutFutureMatch = 0
 
@@ -315,6 +336,7 @@ export function chooseRollingHorizonAlternative(options: {
       let simState = options.projectMatch(options.state, candidateMatch)
       const simBusy = new Set([...options.baseBusyIds, ...candidateIds])
       let pathScore = matchQualityCost(candidate, options.state, options.planTarget)
+        + flexibilityCost
         + fairnessDebtCost(simState, options.planTarget)
 
       for (const completion of order.slice(0, horizonEvents)) {
@@ -358,6 +380,7 @@ export function chooseRollingHorizonAlternative(options: {
           candidate_count: candidates.length,
           completion_orders: orders.length,
           horizon_events: horizonEvents,
+          selected_flexibility_cost: flexibilityCost,
           selected_score: score,
           selected_worst_path_score: worst,
           paths_without_future_match: pathsWithoutFutureMatch,

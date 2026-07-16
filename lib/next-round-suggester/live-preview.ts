@@ -3775,6 +3775,7 @@ export function buildSuggestedMatchPayloads({
               `candidates=${beamAlt.diagnostics.candidate_count}`,
               `orders=${beamAlt.diagnostics.completion_orders}`,
               `depth=${beamAlt.diagnostics.horizon_events}`,
+              `flex=${beamAlt.diagnostics.selected_flexibility_cost.toFixed(2)}`,
               `score=${beamAlt.diagnostics.selected_score.toFixed(2)}`,
               `worst=${beamAlt.diagnostics.selected_worst_path_score.toFixed(2)}`,
               `no_future=${beamAlt.diagnostics.paths_without_future_match}`,

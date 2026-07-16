@@ -107,12 +107,22 @@ describe('rolling horizon across asynchronous court completion', () => {
     const counts = [...snapshot.playerRows]
       .filter(row => row.checked_out_at === null && !row.opted_rest)
       .map(row => selectedCounts.get(row.player_id) ?? 0)
+    const initialCounts = new Map<string, number>()
+    buildSnapshot().liveMatchRows.forEach(row => {
+      [...row.team_a, ...row.team_b].forEach(playerId => {
+        initialCounts.set(playerId, (initialCounts.get(playerId) ?? 0) + 1)
+      })
+    })
+    const sessionCounts = [...snapshot.playerRows]
+      .filter(row => row.checked_out_at === null && !row.opted_rest)
+      .map(row => (selectedCounts.get(row.player_id) ?? 0) + (initialCounts.get(row.player_id) ?? 0))
     expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(2)
+    expect(Math.max(...sessionCounts) - Math.min(...sessionCounts)).toBeLessThanOrEqual(2)
     expect(Math.max(0, ...partnerCounts.values())).toBeLessThanOrEqual(2)
     expect(maxTeamGap).toBeLessThanOrEqual(1)
     expect(maxElapsedMs).toBeLessThan(2000)
     expect(totalMatches).toBe(12)
-    expect(Math.min(...counts)).toBe(1)
+    if (!withTarget) expect(Math.min(...counts)).toBe(1)
     expect(Math.max(...counts)).toBe(2)
     expect(repeatEvents(partnerCounts)).toBeLessThanOrEqual(6)
     expect(repeatEvents(opponentCounts)).toBeLessThanOrEqual(10)
@@ -133,8 +143,9 @@ function rounded(value: number) {
 }
 
 function buildEnrichedTarget(snapshot: AuthoritativeLiveSnapshot): RollingPlanTarget {
+  const targetMatches = (playerId: string) => playerId <= 'p06' ? 3 : 2
   const players = Object.fromEntries(snapshot.playerRows.map(row => [row.player_id, {
-    matches: 2,
+    matches: targetMatches(row.player_id),
     rests: 1,
     quality_debt: 2,
     partner_diversity: 2,
@@ -146,7 +157,10 @@ function buildEnrichedTarget(snapshot: AuthoritativeLiveSnapshot): RollingPlanTa
   }]))
   return {
     plan_version_id: 'enriched-target-test',
-    target_matches_by_player: Object.fromEntries(snapshot.playerRows.map(row => [row.player_id, 2])),
+    target_matches_by_player: Object.fromEntries(snapshot.playerRows.map(row => [
+      row.player_id,
+      targetMatches(row.player_id),
+    ])),
     preferred_team_gap: 0.5,
     preferred_intra_team_gap: 1.5,
     players,

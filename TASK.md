@@ -256,8 +256,14 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   old behavior, missing availability counters cannot produce NaN scores, and
   the enriched path passes four asynchronous completion timelines with every
   lane request below two seconds.
-- [ ] Add lineup scarcity scoring, then bounded worst-case search and
-  counterfactual diagnostics behind the existing planner allowlist.
+- [x] Add lineup flexibility/scarcity scoring as a bounded tie-breaker over the
+  engine's own feasible candidates. Players appearing in many alternatives are
+  treated as flexible connectors; consuming several at once carries a small
+  cost, while actual future infeasibility remains owned by real lookahead. An
+  initially stronger heuristic regressed suffix participation and was rejected
+  by the rolling matrix before commit.
+- [ ] Add bounded worst-case search and counterfactual diagnostics behind the
+  existing planner allowlist.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.

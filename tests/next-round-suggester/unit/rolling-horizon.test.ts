@@ -174,6 +174,29 @@ describe('rolling court-lane horizon', () => {
 
     expect(choice?.alternative).toBe(checkpointGroup)
   })
+
+  it('preserves flexible connector players when a less-flexible feasible lineup exists', () => {
+    const players = createPlayers(16)
+    players.forEach(player => { player.pvna = 3 })
+    const state = createState({ players, courts: 2 })
+    const connectorLineup = alternative(['p01', 'p02'], ['p03', 'p04'], 0)
+    const scarceLineup = alternative(['p05', 'p06'], ['p07', 'p08'], 0)
+    const connectorVariant = alternative(['p01', 'p03'], ['p02', 'p04'], 0)
+    const commitment = liveRow('live-1', 1, ['p13', 'p14'], ['p15', 'p16'], '2026-07-16T12:00:00.000Z')
+
+    const choice = chooseRollingHorizonAlternative({
+      candidates: [connectorLineup, scarceLineup, connectorVariant],
+      state,
+      baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
+      liveCommitments: [commitment],
+      budgetMs: 300,
+      projectMatch: buildProjectedStateAfterLiveMatch,
+      suggestFuture: () => alternative(['p09', 'p10'], ['p11', 'p12'], 0),
+    })
+
+    expect(choice?.alternative).toBe(scarceLineup)
+    expect(choice?.diagnostics.selected_flexibility_cost).toBeLessThan(2)
+  })
 })
 
 function playerTarget(matches: number) {
