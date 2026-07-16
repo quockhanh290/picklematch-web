@@ -24,6 +24,16 @@ export type PlannedRoundPoolCandidate = Omit<PlannedCourtCandidate, 'match'> & {
   matches: SessionPlanMatch[]
 }
 
+export type PlannedRollingPoolCandidate = {
+  court_idx: number
+  live_round_no: number
+  preferred_planned_round_no: number
+  rounds: Array<{
+    planned_round_no: number
+    matches: SessionPlanMatch[]
+  }>
+}
+
 export type AssignedPlannedCourt = PlannedCourtCandidate & {
   match: SessionPlanMatch
   planned_match_idx: number
@@ -135,6 +145,132 @@ export function selectConsumablePlannedRoundPool(options: {
       planned_round_no: candidate.planned_round_no,
       match: representative?.match ?? null,
       planned_match_idx: representative?.index ?? null,
+      status: advisory.status,
+      reasons: advisory.reasons,
+    })
+  }
+
+  const validation = validatePlannedBoard({
+    matches: accepted.map(candidate => candidate.match),
+    players: options.state.players,
+    busyIds: options.busyIds,
+    reservedIds: options.reservedIds,
+  })
+  return {
+    accepted: validation.valid ? accepted : [],
+    decisions: validation.valid
+      ? decisions
+      : decisions.map(decision => ({
+          ...decision,
+          status: 'fallback' as const,
+          reasons: [...new Set<PlanAdvisoryReason>([...decision.reasons, 'duplicate_player'])],
+        })),
+    reserved_player_ids: validation.valid ? reserved : new Set(options.reservedIds ?? []),
+    validation,
+  }
+}
+
+export function selectConsumablePlannedRollingPool(options: {
+  candidates: PlannedRollingPoolCandidate[]
+  consumedMatchIndexesByRound?: ReadonlyMap<number, ReadonlySet<number>>
+  state: SessionState
+  busyIds?: ReadonlySet<string>
+  reservedIds?: ReadonlySet<string>
+  identityMatches?: boolean
+  rosterIdentityMatches?: boolean
+  configIdentityMatches?: boolean
+  historyMatches?: boolean
+  planningVersionMatches?: boolean
+  frontierMatches?: boolean
+  activeManualMutationKind?: string | null
+}) {
+  const accepted: AssignedPlannedCourt[] = []
+  const decisions: PlannedCourtConsumptionDecision[] = []
+  const reserved = new Set(options.reservedIds ?? [])
+  const usedByRound = new Map<number, Set<number>>()
+  options.consumedMatchIndexesByRound?.forEach((indexes, roundNo) => {
+    usedByRound.set(roundNo, new Set(indexes))
+  })
+
+  const restPriorityCoverage = (match: SessionPlanMatch) => [...match.team_a, ...match.team_b]
+    .filter(playerId => (options.state.players.get(playerId)?.consecutive_rest ?? 0) >= 1)
+    .length
+
+  for (const candidate of [...options.candidates].sort((left, right) => left.court_idx - right.court_idx)) {
+    const evaluated = candidate.rounds
+      .filter(round => round.planned_round_no >= candidate.preferred_planned_round_no)
+      .flatMap(round => {
+        const used = usedByRound.get(round.planned_round_no) ?? new Set<number>()
+        return round.matches
+          .map((match, index) => ({ match, index }))
+          .filter(item => !used.has(item.index))
+          .map(item => ({
+            ...item,
+            planned_round_no: round.planned_round_no,
+            rest_priority_coverage: restPriorityCoverage(item.match),
+            advisory: resolvePlannedMatchAdvisory({
+              plannedMatch: item.match,
+              state: options.state,
+              busyIds: options.busyIds,
+              reservedIds: reserved,
+              rosterIdentityMatches: options.rosterIdentityMatches ?? options.identityMatches,
+              configIdentityMatches: options.configIdentityMatches ?? options.identityMatches,
+              historyMatches: options.historyMatches ?? options.identityMatches,
+              planningVersionMatches: options.planningVersionMatches ?? options.identityMatches,
+              frontierMatches: options.frontierMatches ?? options.identityMatches,
+              activeManualMutationKind: options.activeManualMutationKind,
+            }),
+          }))
+      })
+    const selected = evaluated
+      .filter(item => item.advisory.status === 'usable')
+      .sort((left, right) => (
+        left.planned_round_no - right.planned_round_no
+        || right.rest_priority_coverage - left.rest_priority_coverage
+        || Number(right.index === candidate.court_idx) - Number(left.index === candidate.court_idx)
+        || left.index - right.index
+      ))[0]
+
+    if (selected) {
+      const used = usedByRound.get(selected.planned_round_no) ?? new Set<number>()
+      used.add(selected.index)
+      usedByRound.set(selected.planned_round_no, used)
+      selected.match.team_a.forEach(playerId => reserved.add(playerId))
+      selected.match.team_b.forEach(playerId => reserved.add(playerId))
+      const assigned: AssignedPlannedCourt = {
+        court_idx: candidate.court_idx,
+        live_round_no: candidate.live_round_no,
+        planned_round_no: selected.planned_round_no,
+        planned_match_idx: selected.index,
+        match: selected.match,
+      }
+      accepted.push(assigned)
+      decisions.push({ ...assigned, status: 'usable', reasons: [] })
+      continue
+    }
+
+    const representative = evaluated
+      .sort((left, right) => (
+        left.planned_round_no - right.planned_round_no
+        || Number(right.index === candidate.court_idx) - Number(left.index === candidate.court_idx)
+        || left.index - right.index
+      ))[0]
+    const advisory = representative?.advisory ?? resolvePlannedMatchAdvisory({
+      plannedMatch: null,
+      state: options.state,
+      rosterIdentityMatches: options.rosterIdentityMatches ?? options.identityMatches,
+      configIdentityMatches: options.configIdentityMatches ?? options.identityMatches,
+      historyMatches: options.historyMatches ?? options.identityMatches,
+      planningVersionMatches: options.planningVersionMatches ?? options.identityMatches,
+      frontierMatches: options.frontierMatches ?? options.identityMatches,
+      activeManualMutationKind: options.activeManualMutationKind,
+    })
+    decisions.push({
+      court_idx: candidate.court_idx,
+      live_round_no: candidate.live_round_no,
+      planned_round_no: representative?.planned_round_no ?? candidate.preferred_planned_round_no,
+      planned_match_idx: representative?.index ?? null,
+      match: representative?.match ?? null,
       status: advisory.status,
       reasons: advisory.reasons,
     })

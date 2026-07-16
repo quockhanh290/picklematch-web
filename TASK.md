@@ -87,6 +87,13 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   Cap-2 A1 2000ms-budget fixture remains red.
 
 ### Next steps
+- [ ] Phase 5C rolling court-lane planner: replace synchronized-round-only
+  consumption with an availability-aware rolling horizon. At each idle-lane
+  checkpoint, consume the nearest feasible unconsumed planned lineup across the
+  remaining suffix, never wait for another court, and replan from authoritative
+  commitments after any out-of-order consumption. Gate across multiple lane
+  completion orders, roster/manual mutations, operation safety, session quality,
+  and Free Edge runtime before widening the rollout.
 - [x] Phase 0: split timing by planning stage and run quick/structural matrices.
 - [x] Phase 1: extract and optimize the shared planner kernel without changing
   live-engine outputs.

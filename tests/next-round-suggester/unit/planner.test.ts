@@ -14,6 +14,7 @@ import {
 } from '@/lib/next-round-suggester/planner/objective'
 import { repairUnavailablePlannedBoard, validatePlannedBoard } from '@/lib/next-round-suggester/planner/validation'
 import {
+  selectConsumablePlannedRollingPool,
   selectConsumablePlannedRoundPool,
   shouldExpandPlanAdoption,
 } from '@/lib/next-round-suggester/planner/consumption'
@@ -449,6 +450,96 @@ describe('precomputed planner primitives', () => {
     expect(selected.accepted).toHaveLength(1)
     expect(selected.accepted[0]).toMatchObject({ court_idx: 0, planned_match_idx: 1 })
     expect(selected.decisions[1]).toMatchObject({ status: 'fallback', reasons: ['plan_missing'] })
+  })
+
+  it('uses the nearest feasible future lineup when the next synchronized round is busy', () => {
+    const state = createState({
+      players: Array.from({ length: 12 }, (_, index) => createPlayer(`p${index + 1}`)),
+      currentRound: 1,
+    })
+    const round2 = [
+      { team_a: ['p1', 'p2'] as [string, string], team_b: ['p3', 'p4'] as [string, string] },
+    ]
+    const round3 = [
+      { team_a: ['p5', 'p6'] as [string, string], team_b: ['p7', 'p8'] as [string, string] },
+    ]
+    const selected = selectConsumablePlannedRollingPool({
+      candidates: [{
+        court_idx: 0,
+        live_round_no: 1,
+        preferred_planned_round_no: 2,
+        rounds: [
+          { planned_round_no: 2, matches: round2 },
+          { planned_round_no: 3, matches: round3 },
+        ],
+      }],
+      state,
+      busyIds: new Set(['p1']),
+    })
+
+    expect(selected.accepted).toHaveLength(1)
+    expect(selected.accepted[0]).toMatchObject({
+      planned_round_no: 3,
+      planned_match_idx: 0,
+      match: round3[0],
+    })
+  })
+
+  it('keeps rolling consumption unique across rounds and simultaneous idle lanes', () => {
+    const state = createState({
+      players: Array.from({ length: 12 }, (_, index) => createPlayer(`p${index + 1}`)),
+      currentRound: 1,
+    })
+    const round2 = [
+      { team_a: ['p1', 'p2'] as [string, string], team_b: ['p3', 'p4'] as [string, string] },
+      { team_a: ['p5', 'p6'] as [string, string], team_b: ['p7', 'p8'] as [string, string] },
+    ]
+    const round3 = [
+      { team_a: ['p9', 'p10'] as [string, string], team_b: ['p11', 'p12'] as [string, string] },
+    ]
+    const rounds = [
+      { planned_round_no: 2, matches: round2 },
+      { planned_round_no: 3, matches: round3 },
+    ]
+    const selected = selectConsumablePlannedRollingPool({
+      candidates: [
+        { court_idx: 0, live_round_no: 1, preferred_planned_round_no: 2, rounds },
+        { court_idx: 1, live_round_no: 1, preferred_planned_round_no: 2, rounds },
+      ],
+      consumedMatchIndexesByRound: new Map([[2, new Set([0])]]),
+      state,
+    })
+
+    expect(selected.accepted).toHaveLength(2)
+    expect(selected.accepted.map(item => [item.planned_round_no, item.planned_match_idx])).toEqual([
+      [2, 1],
+      [3, 0],
+    ])
+    const ids = selected.accepted.flatMap(item => [...item.match.team_a, ...item.match.team_b])
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('does not use future rolling lineups when planner identity is stale', () => {
+    const state = createState({
+      players: Array.from({ length: 8 }, (_, index) => createPlayer(`p${index + 1}`)),
+      currentRound: 1,
+    })
+    const selected = selectConsumablePlannedRollingPool({
+      candidates: [{
+        court_idx: 0,
+        live_round_no: 1,
+        preferred_planned_round_no: 2,
+        rounds: [{
+          planned_round_no: 3,
+          matches: [{ team_a: ['p1', 'p2'], team_b: ['p3', 'p4'] }],
+        }],
+      }],
+      state,
+      identityMatches: false,
+    })
+
+    expect(selected.accepted).toEqual([])
+    expect(selected.decisions[0].status).toBe('fallback')
   })
 
   it('adopts a new plan across all open lanes when retained suggestions are from another source', () => {
