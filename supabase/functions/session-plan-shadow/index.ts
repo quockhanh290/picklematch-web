@@ -579,6 +579,33 @@ Deno.serve(async (request) => {
       .upsert(roundRows, { onConflict: 'plan_version_id,round_no' })
     if (roundsError) throw new Error(roundsError.message)
 
+    const publishedLiveStateVersion = liveStateVersion + 1
+    const { data: bumpedSession, error: bumpError } = await auth.supabase
+      .from('sessions')
+      .update({ live_state_version: publishedLiveStateVersion })
+      .eq('id', sessionId)
+      .eq('live_state_version', liveStateVersion)
+      .select('id')
+      .maybeSingle()
+    if (bumpError) throw new Error(bumpError.message)
+    if (!bumpedSession) {
+      await auth.supabase
+        .from('session_plan_jobs')
+        .update({
+          status: 'stale',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          error_detail: { message: 'Live state changed before plan publication signal' },
+        })
+        .eq('id', jobId)
+      return jsonResponse({
+        ok: false,
+        stale: true,
+        job_id: jobId,
+        error: 'Live state changed before plan publication signal',
+      }, 409, request)
+    }
+
     const { error: completeError } = await auth.supabase
       .from('session_plan_jobs')
       .update({
@@ -598,6 +625,7 @@ Deno.serve(async (request) => {
       persisted: true,
       job_id: jobId,
       plan_version_id: version.id,
+      published_live_state_version: publishedLiveStateVersion,
       reused_plan_version: reusedPlanVersion,
       input_hash: inputHash,
       plan_hash: planHash,
