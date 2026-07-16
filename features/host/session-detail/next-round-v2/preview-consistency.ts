@@ -77,6 +77,17 @@ export function mergePersistedSuggestionMetadata<T extends { suggestion_metadata
   }
 }
 
+export function hasPendingPlanAdoption(rows: Array<{
+  plan_adoption_pending?: unknown
+  suggestion_metadata?: Record<string, unknown> | null
+}>) {
+  return rows.some(row => {
+    const pendingPlanVersion = row.plan_adoption_pending
+      ?? row.suggestion_metadata?.plan_adoption_pending
+    return typeof pendingPlanVersion === 'string' && pendingPlanVersion.length > 0
+  })
+}
+
 export function getLiveRowsForPreviewMode<T extends PreviewRow>(
   mode: 'full_board' | 'replace_courts',
   liveRows: T[],

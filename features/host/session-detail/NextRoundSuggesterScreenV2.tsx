@@ -53,7 +53,7 @@ import { createClientTraceId, fetchLiveMatchesPreview, fetchLiveSessionVersion, 
 import { LIVE_VERSION_POLL_INTERVAL_MS, shouldRefetchForExternalVersion } from './next-round-v2/version-poll'
 import { getMissingPreviewCourtIdxs, getRequestedReplacementCourtIdxs, isPreviewBoardComplete } from './next-round-v2/court-lanes'
 import { hasReachedCompletedLiveCycleTarget } from './next-round-v2/live-cycle-rows'
-import { getLiveRowsForPreviewMode, getSuggestedPreviewQueueCount, hasMissingRestPriorityPlayer, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isServerPersistedPreviewSource, isStartablePreviewRow, mergePreviewLaneCandidates } from './next-round-v2/preview-consistency'
+import { getLiveRowsForPreviewMode, getSuggestedPreviewQueueCount, hasMissingRestPriorityPlayer, hasPendingPlanAdoption, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isServerPersistedPreviewSource, isStartablePreviewRow, mergePreviewLaneCandidates } from './next-round-v2/preview-consistency'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -2321,6 +2321,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
 
     if (previewRequestInFlightRef.current) return
 
+    const pendingPlanAdoption = hasPendingPlanAdoption(effectiveLiveMatchRows)
+    if (pendingPlanAdoption) {
+      suggestedPreviewBatchRef.current = null
+      suggestedLaneCacheRef.current.clear()
+    }
+
     let cachedBatch = suggestedPreviewBatchRef.current
     if (cachedBatch !== null && !isPreviewBatchCacheCurrent(cachedBatch.key, previewLaneCacheKey)) {
       suggestedPreviewBatchRef.current = null
@@ -2422,7 +2428,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       && courtIdx < queueCourtCount
       && courtIdxs.indexOf(courtIdx) === index
     )
-    if (!hasHardReusableQualityViolation && !missingReplacementCourt && reusableMatches.length >= suggestedQueueCount) {
+    if (!pendingPlanAdoption && !hasHardReusableQualityViolation && !missingReplacementCourt && reusableMatches.length >= suggestedQueueCount) {
       const newMatches = reusableMatches.slice(0, suggestedQueueCount)
       suggestedPreviewBatchRef.current = { key: previewLaneCacheKey, matches: newMatches }
       setSuggestedLiveMatches(prev => {
@@ -2443,7 +2449,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       suggestedPreviewBatchRef.current = null
       return
     }
-    const shouldRequestFullBoardPreview = hasHardReusableQualityViolation
+    const shouldRequestFullBoardPreview = pendingPlanAdoption
+      || hasHardReusableQualityViolation
       || reusableMatches.length === 0
       || (shouldRecoverMissingPreviewCourts && missingPreviewCourtIdxsForRecovery.length > LIVE_PREVIEW_REPLACEMENT_MAX_COUNT)
     const previewEdgeMaxCount = shouldRequestFullBoardPreview

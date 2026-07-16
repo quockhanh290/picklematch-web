@@ -579,16 +579,15 @@ Deno.serve(async (request) => {
       .upsert(roundRows, { onConflict: 'plan_version_id,round_no' })
     if (roundsError) throw new Error(roundsError.message)
 
-    const publishedLiveStateVersion = liveStateVersion + 1
-    const { data: bumpedSession, error: bumpError } = await auth.supabase
-      .from('sessions')
-      .update({ live_state_version: publishedLiveStateVersion })
-      .eq('id', sessionId)
-      .eq('live_state_version', liveStateVersion)
-      .select('id')
-      .maybeSingle()
-    if (bumpError) throw new Error(bumpError.message)
-    if (!bumpedSession) {
+    const { data: publicationSignalData, error: publicationSignalError } = await auth.supabase.rpc(
+      'publish_session_plan_signal_versioned',
+      {
+        p_session_id: sessionId,
+        p_expected_live_state_version: liveStateVersion,
+        p_plan_version_id: version.id,
+      },
+    )
+    if (publicationSignalError?.message?.includes('Session changed')) {
       await auth.supabase
         .from('session_plan_jobs')
         .update({
@@ -604,6 +603,13 @@ Deno.serve(async (request) => {
         job_id: jobId,
         error: 'Live state changed before plan publication signal',
       }, 409, request)
+    }
+    if (publicationSignalError) throw new Error(publicationSignalError.message)
+    const publishedLiveStateVersion = Number(
+      (publicationSignalData as { live_state_version?: unknown } | null)?.live_state_version,
+    )
+    if (!Number.isFinite(publishedLiveStateVersion)) {
+      throw new Error('Plan publication signal returned an invalid live state version')
     }
 
     const { error: completeError } = await auth.supabase

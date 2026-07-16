@@ -1,6 +1,7 @@
 import {
   getLiveRowsForPreviewMode,
   getSuggestedPreviewQueueCount,
+  hasPendingPlanAdoption,
   hasMissingRestPriorityPlayer,
   isPreviewBatchCacheCurrent,
   isCommittedPreviewMatch,
@@ -163,6 +164,22 @@ describe('preview consistency', () => {
       warnings: ['PVNA_TOLERANCE_RELAXED'],
       approval_required: true,
     })
+  })
+
+  it('detects a durable pending plan adoption marker after metadata hydration', () => {
+    expect(hasPendingPlanAdoption([
+      { plan_adoption_pending: 'plan-v2' },
+    ])).toBe(true)
+  })
+
+  it('detects a pending plan adoption marker on a raw persisted row', () => {
+    expect(hasPendingPlanAdoption([
+      { suggestion_metadata: { plan_adoption_pending: 'plan-v2' } },
+    ])).toBe(true)
+    expect(hasPendingPlanAdoption([
+      { suggestion_metadata: {} },
+      { plan_adoption_pending: null },
+    ])).toBe(false)
   })
 
   it('allows an edge-committed partial lane to start without a complete batch', () => {
