@@ -26,6 +26,8 @@ import { bestPartitioning } from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { suggestNextMatch, type EngineInstrumentEvent, type ExhaustiveFallbackDiagnostic } from './suggest.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import { chooseRollingHorizonAlternative } from './planner/rolling-horizon.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { reconstructLiveRounds } from './live-rounds.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { getEffectivePvna } from './state.ts'
@@ -248,6 +250,7 @@ export type BuildSuggestedMatchOptions = {
   deferExtremeTightPool?: boolean
   tightPoolQualityDeferUntilByCourt?: Record<number, number>
   nowMs?: number
+  rollingHorizon?: boolean
   onIncompleteDump?: (dump: IncompleteDump) => void
   onInstrumentEvent?: (event: EngineInstrumentEvent) => void
 }
@@ -2810,47 +2813,68 @@ export type BuildSuggestedMatchPayloadsParams = {
   debugOut?: CourtSelectionDebug[]
 }
 
-function beamMatchScore(
+function pickRollingBeamAlternative(
+  candidates: SuggestionAlternative[],
+  state: SessionState,
+  baseSimBusy: Set<string>,
+  liveCommitments: SessionLiveMatchRow[],
+  budgetMs: number,
+): ReturnType<typeof chooseRollingHorizonAlternative> {
+  return chooseRollingHorizonAlternative({
+    candidates,
+    state,
+    baseBusyIds: baseSimBusy,
+    liveCommitments,
+    budgetMs,
+    suggestFuture: ({ state: futureState, busyIds, maxRuntimeMs }) => (
+      suggestNextMatch(futureState, {
+        busy_player_ids: busyIds,
+        max_alternatives: 1,
+        max_runtime_ms: maxRuntimeMs,
+      }).alternatives[0] ?? null
+    ),
+    projectMatch: buildProjectedStateAfterLiveMatch,
+  })
+}
+
+function legacyBeamMatchScore(
   teamA: [string, string],
   teamB: [string, string],
   state: SessionState,
-  interW: number,
-  intraW: number,
-): number {
+  interWeight: number,
+  intraWeight: number,
+) {
   const pvna = (id: string) => {
     const player = state.players.get(id)
     return player ? getEffectivePvna(player) : 0
   }
-  const inter = Math.abs((pvna(teamA[0]) + pvna(teamA[1])) - (pvna(teamB[0]) + pvna(teamB[1])))
+  const inter = Math.abs(pvna(teamA[0]) + pvna(teamA[1]) - pvna(teamB[0]) - pvna(teamB[1]))
   const intra = Math.max(
     Math.abs(pvna(teamA[0]) - pvna(teamA[1])),
     Math.abs(pvna(teamB[0]) - pvna(teamB[1])),
   )
   const partnerRepeat =
-    ((state.players.get(teamA[0])?.partner_counts.get(teamA[1]) ?? 0) > 0 ? 1 : 0) +
-    ((state.players.get(teamB[0])?.partner_counts.get(teamB[1]) ?? 0) > 0 ? 1 : 0)
-  const oppRepeat = [teamA[0], teamA[1]].flatMap(a =>
-    [teamB[0], teamB[1]].map(b =>
-      (state.players.get(a)?.opponent_counts.get(b) ?? 0) > 0 ? 1 : 0
-    )
-  ).reduce<number>((a, b) => a + b, 0)
-  return inter * interW + intra * intraW + partnerRepeat * 4 + oppRepeat * 2
+    ((state.players.get(teamA[0])?.partner_counts.get(teamA[1]) ?? 0) > 0 ? 1 : 0)
+    + ((state.players.get(teamB[0])?.partner_counts.get(teamB[1]) ?? 0) > 0 ? 1 : 0)
+  const opponentRepeat = teamA.flatMap(playerA => teamB.map(playerB => (
+    (state.players.get(playerA)?.opponent_counts.get(playerB) ?? 0) > 0 ? 1 : 0
+  ))).reduce((sum, repeat) => sum + repeat, 0)
+  return inter * interWeight + intra * intraWeight + partnerRepeat * 4 + opponentRepeat * 2
 }
 
-function beamHybridWeights(busyIds: Set<string>, state: SessionState): { interW: number; intraW: number } {
-  const activeCount = [...state.players.values()]
-    .filter(p => p.checked_out_at === null && !p.opted_rest).length
-  if (activeCount < 25) {
-    const pvnas = [...state.players.values()]
-      .filter(p => p.checked_out_at === null && !p.opted_rest && !busyIds.has(p.player_id))
-      .map(getEffectivePvna)
-    const spread = pvnas.length < 2 ? 0 : Math.max(...pvnas) - Math.min(...pvnas)
-    return { interW: 7 + spread * 3, intraW: Math.max(5, 7 - spread) }
-  }
-  return { interW: 7, intraW: 7 }
+function legacyBeamWeights(busyIds: Set<string>, state: SessionState) {
+  const active = [...state.players.values()].filter(player => (
+    player.checked_out_at === null && !player.opted_rest
+  ))
+  if (active.length >= 25) return { inter: 7, intra: 7 }
+  const availablePvnas = active
+    .filter(player => !busyIds.has(player.player_id))
+    .map(getEffectivePvna)
+  const spread = availablePvnas.length < 2 ? 0 : Math.max(...availablePvnas) - Math.min(...availablePvnas)
+  return { inter: 7 + spread * 3, intra: Math.max(5, 7 - spread) }
 }
 
-function pickBeamAlternative(
+function pickLegacyBeamAlternative(
   candidates: SuggestionAlternative[],
   futureCourtsCount: number,
   state: SessionState,
@@ -2859,7 +2883,7 @@ function pickBeamAlternative(
 ): SuggestionAlternative | null {
   const validCandidates = candidates.filter(alt => alt.matches.length > 0)
   if (validCandidates.length <= 1) return null
-  const { interW, intraW } = beamHybridWeights(baseSimBusy, state)
+  const weights = legacyBeamWeights(baseSimBusy, state)
   const perCandidateMs = Math.floor(budgetMs / validCandidates.length)
   let bestAlt: SuggestionAlternative | null = null
   let bestScore = Infinity
@@ -2867,51 +2891,37 @@ function pickBeamAlternative(
     const match = alt.matches[0]
     if (!match) continue
     const simBusy = new Set([...baseSimBusy, ...match.team_a, ...match.team_b])
-    let totalScore = beamMatchScore(match.team_a, match.team_b, state, interW, intraW)
+    let totalScore = legacyBeamMatchScore(match.team_a, match.team_b, state, weights.inter, weights.intra)
     const simStart = nowMs()
     let simState = buildProjectedStateAfterLiveMatch(state, {
-      id: 'beam-lookahead',
-      session_id: state.session_id,
-      sequence_no: 0,
-      round_no: state.current_round,
-      court_idx: 0,
-      status: 'completed' as const,
-      team_a: match.team_a,
-      team_b: match.team_b,
-      resting: [],
-      score_a: 0,
-      score_b: 0,
-      suggested_at: new Date().toISOString(),
-      started_at: null,
-      ended_at: null,
+      id: 'legacy-beam-lookahead', session_id: state.session_id, sequence_no: 0,
+      round_no: state.current_round, court_idx: 0, status: 'completed',
+      team_a: match.team_a, team_b: match.team_b, resting: [], score_a: 0, score_b: 0,
+      suggested_at: new Date().toISOString(), started_at: null, ended_at: null,
     })
-    for (let i = 0; i < futureCourtsCount; i++) {
+    for (let index = 0; index < futureCourtsCount; index += 1) {
       if (nowMs() - simStart >= perCandidateMs) break
-      const futureResult = suggestNextMatch(simState, {
+      const future = suggestNextMatch(simState, {
         busy_player_ids: simBusy,
         max_alternatives: 1,
         max_runtime_ms: Math.max(20, perCandidateMs - (nowMs() - simStart)),
-      })
-      const futureMatch = futureResult.alternatives[0]?.matches[0]
-      if (!futureMatch) break
-      totalScore += beamMatchScore(futureMatch.team_a, futureMatch.team_b, simState, interW, intraW)
+      }).alternatives[0]
+      const futureMatch = future?.matches[0]
+      if (!future || !futureMatch) break
+      totalScore += legacyBeamMatchScore(
+        futureMatch.team_a,
+        futureMatch.team_b,
+        simState,
+        weights.inter,
+        weights.intra,
+      )
       futureMatch.team_a.forEach(id => simBusy.add(id))
       futureMatch.team_b.forEach(id => simBusy.add(id))
       simState = buildProjectedStateAfterLiveMatch(simState, {
-        id: `beam-lookahead-${i}`,
-        session_id: simState.session_id,
-        sequence_no: i + 1,
-        round_no: simState.current_round,
-        court_idx: i + 1,
-        status: 'completed' as const,
-        team_a: futureMatch.team_a,
-        team_b: futureMatch.team_b,
-        resting: [],
-        score_a: 0,
-        score_b: 0,
-        suggested_at: new Date().toISOString(),
-        started_at: null,
-        ended_at: null,
+        id: `legacy-beam-lookahead-${index}`, session_id: state.session_id, sequence_no: index + 1,
+        round_no: state.current_round, court_idx: index + 1, status: 'completed',
+        team_a: futureMatch.team_a, team_b: futureMatch.team_b, resting: [], score_a: 0, score_b: 0,
+        suggested_at: new Date().toISOString(), started_at: null, ended_at: null,
       })
     }
     if (totalScore < bestScore) {
@@ -3211,6 +3221,9 @@ export function buildSuggestedMatchPayloads({
     p => p.checked_out_at === null && !p.opted_rest && !baseBusyIds.has(p.player_id),
   ).length
   const effectiveCount = Math.min(count, Math.floor(availableForBatch / 4))
+  const isRollingLaneRequest = options.rollingHorizon === true && count === 1 && liveMatchRows.some(match => (
+    match.status === 'live' && !completingLiveMatchIds.has(match.id)
+  ))
   const availabilityMetricsByState = new WeakMap<SessionState, AvailabilityMetrics>()
   const getAvailabilityMetricsForState = (stateForMetrics: SessionState) => {
     const cached = availabilityMetricsByState.get(stateForMetrics)
@@ -3269,11 +3282,14 @@ export function buildSuggestedMatchPayloads({
       ? courtLastCompletedRound + 1
       : projectedRoundNo
     const previewSeed = `${previewSeedBase}|court:${index}`
-    // Rolling courts can target an older logical round than the board's newest
-    // round. Selection invariants must follow this court's round, otherwise a
-    // lagging court can reuse players who already played in that same round.
+    // A logical round is a reporting label, not a synchronization barrier once
+    // courts are completing asynchronously. Live commitments remain absolute
+    // locks; completed players return to the pool and fairness debt determines
+    // whether they should be selected again.
     const courtRoundMatchCount = roundCounts.get(payloadRoundNo) ?? 0
-    const courtRoundBusyIds = new Set(playerIdsByRound.get(payloadRoundNo) ?? [])
+    const courtRoundBusyIds = isRollingLaneRequest
+      ? new Set<string>()
+      : new Set(playerIdsByRound.get(payloadRoundNo) ?? [])
     const remainingCourtsInRound = Math.max(1, courtCapacity - courtRoundMatchCount)
     const courtRoundRequiredIds = getRoundRequiredIds(
       payloadRoundNo,
@@ -3717,10 +3733,16 @@ export function buildSuggestedMatchPayloads({
       policy: options.liveQualityPolicy ?? 'current',
     })
     let alternative = finalGuardedAlternative ?? finalAlternatives[0]
-    const beamFutureCourts = count === 1 ? liveCourtIdxs.size : 0
+    const rollingCommitments = options.rollingHorizon === true && count === 1
+      ? liveMatchRows.filter(row => (
+          row.status === 'live'
+          && !completingLiveMatchIds.has(row.id)
+          && row.court_idx !== courtIdx
+        ))
+      : []
     const beamPlayerCount = [...suggestionStateForCourt.players.values()]
       .filter(p => p.checked_out_at === null && !p.opted_rest).length
-    if (beamFutureCourts > 0 && finalAlternatives.length > 1 && beamPlayerCount <= BEAM_ACTIVE_PLAYER_LIMIT) {
+    if (rollingCommitments.length > 0 && finalAlternatives.length > 1 && beamPlayerCount <= BEAM_ACTIVE_PLAYER_LIMIT) {
       const beamBudgetMs = Math.min(
         getRemainingCourtBudgetMs(BEAM_PER_CANDIDATE_MAX_MS * BEAM_K),
         BEAM_PER_CANDIDATE_MAX_MS * BEAM_K,
@@ -3729,14 +3751,53 @@ export function buildSuggestedMatchPayloads({
         ...batchBusyIds,
         ...[...courtRoundBusyIds].filter(id => !liveLockedPlayerIds.has(id)),
       ])
-      const beamAlt = pickBeamAlternative(
+      const beamAlt = pickRollingBeamAlternative(
         finalAlternatives.slice(0, BEAM_K),
-        beamFutureCourts,
         suggestionStateForCourt,
         beamBaseSimBusy,
+        rollingCommitments,
         beamBudgetMs,
       )
-      if (beamAlt) alternative = beamAlt
+      if (beamAlt) {
+        alternative = beamAlt.alternative
+        try {
+          options.onInstrumentEvent?.({
+            event: 'rolling_horizon',
+            detail: [
+              `court=${courtIdx}`,
+              `candidates=${beamAlt.diagnostics.candidate_count}`,
+              `orders=${beamAlt.diagnostics.completion_orders}`,
+              `depth=${beamAlt.diagnostics.horizon_events}`,
+              `score=${beamAlt.diagnostics.selected_score.toFixed(2)}`,
+              `worst=${beamAlt.diagnostics.selected_worst_path_score.toFixed(2)}`,
+              `no_future=${beamAlt.diagnostics.paths_without_future_match}`,
+            ].join(';'),
+            court_count: courtCount,
+            available: beamPlayerCount - beamBaseSimBusy.size,
+          })
+        } catch { /* noop */ }
+      }
+    } else if (
+      options.rollingHorizon !== true
+      && count === 1
+      && liveCourtIdxs.size > 0
+      && finalAlternatives.length > 1
+      && beamPlayerCount <= BEAM_ACTIVE_PLAYER_LIMIT
+    ) {
+      const legacyAlt = pickLegacyBeamAlternative(
+        finalAlternatives.slice(0, BEAM_K),
+        liveCourtIdxs.size,
+        suggestionStateForCourt,
+        new Set([
+          ...batchBusyIds,
+          ...[...courtRoundBusyIds].filter(id => !liveLockedPlayerIds.has(id)),
+        ]),
+        Math.min(
+          getRemainingCourtBudgetMs(BEAM_PER_CANDIDATE_MAX_MS * BEAM_K),
+          BEAM_PER_CANDIDATE_MAX_MS * BEAM_K,
+        ),
+      )
+      if (legacyAlt) alternative = legacyAlt
     }
     const match = alternative?.matches[0]
     if (!alternative || !match) continue

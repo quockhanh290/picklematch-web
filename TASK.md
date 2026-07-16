@@ -227,6 +227,16 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   a full-board replacement until Edge persists the plan rows. The canary returned
   6/6 courts in about 1.9s, all six persisted rows use the same `session_plan`
   version with match indexes 0-5, and the adoption marker cleared automatically.
+- [x] Replace synchronized-round plan consumption with a receding rolling-lane
+  policy. For each idle court, rank live-engine candidates across bounded
+  completion-order scenarios, including player release timing, future board
+  feasibility, match-count/rest debt, PVNA/intra-team quality, and repeats.
+  Commit only the current lane and recompute from authoritative state at the
+  next completion. Keep the eight-round plan as a quality target/benchmark,
+  not an immutable lineup schedule.
+- [ ] Deploy the rolling policy only to the planner session allowlist, then run
+  a hosted asynchronous-lane canary and compare its dump quality/runtime with
+  the fixed-round advisory baseline before widening exposure.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.

@@ -35,7 +35,7 @@ import {
 } from './score.ts'
 
 export type EngineInstrumentEvent = {
-  event: 'stage_resolved' | 'rescue' | 'repair' | 'forced_pass'
+  event: 'stage_resolved' | 'rescue' | 'repair' | 'forced_pass' | 'rolling_horizon'
   detail: string
   court_count?: number
   available?: number

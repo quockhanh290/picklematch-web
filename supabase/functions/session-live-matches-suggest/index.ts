@@ -942,6 +942,7 @@ Deno.serve(async (request) => {
         ? []
         : openCourtIdxs
     const replaceAllSuggestions = mode === 'full_board' && explicitTargetCourtIdxs.length === 0
+    const rollingPolicyEnabled = planRolloutEnabled('SESSION_PLAN_ROLLING_POLICY', sessionId)
     const activeManualMutationKind = authoritativeLiveMatchRows
       .filter(match => (
         match.status === 'suggested' || match.status === 'live'
@@ -1033,13 +1034,19 @@ Deno.serve(async (request) => {
             ignoreCapacityLock: !preferAvailablePool,
             deferExtremeTightPool: true,
             tightPoolQualityDeferUntilByCourt,
+            rollingHorizon: rollingPolicyEnabled,
             onIncompleteDump,
             onInstrumentEvent,
           },
           debugOut: selectionDebug,
         })
       : []
-    let consumedPlanCourts = [...planConsumption.accepted]
+    // A published plan is an exact first-board option. Once lanes are live,
+    // rolling sessions use it as an advisory quality target and let the live
+    // engine choose against current player availability/completion order.
+    let consumedPlanCourts = rollingPolicyEnabled && liveBusyIds.size > 0
+      ? []
+      : [...planConsumption.accepted]
     const consumedCourtSet = new Set(consumedPlanCourts.map(item => item.court_idx))
     const unresolvedCourtIdxs = targetCourtIdxs.filter(courtIdx => !consumedCourtSet.has(courtIdx))
     const maxExistingSequence = liveMatchRows.reduce(
@@ -1346,6 +1353,7 @@ Deno.serve(async (request) => {
     const slowDiagnostic = slowRequest ? classifySlowSuggest(timingMs) : null
     const planConsumptionSummary = {
       enabled: planConsumption.enabled,
+      rolling_policy_enabled: rollingPolicyEnabled,
       plan_job_id: planConsumption.job_id,
       plan_version_id: planConsumption.plan_version_id,
       consumed_court_idxs: consumedPlanCourts.map(item => item.court_idx),

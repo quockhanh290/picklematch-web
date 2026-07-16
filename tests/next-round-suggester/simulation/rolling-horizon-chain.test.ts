@@ -1,0 +1,129 @@
+import type { SessionLiveMatchRow } from '../../../lib/next-round-suggester/types'
+import { serializeStateToDbRows } from '../helpers/db-rows'
+import { createPlayers, createState } from '../helpers/factories'
+import { persistPreviewRows, runProductionLiveChain, type AuthoritativeLiveSnapshot } from '../helpers/production-live-chain'
+
+const SESSION_ID = 'rolling-horizon-chain-test'
+
+describe('rolling horizon across asynchronous court completion', () => {
+  it.each([
+    ['court order', [0, 1, 2, 3, 4, 5]],
+    ['reverse order', [5, 4, 3, 2, 1, 0]],
+    ['slow middle courts', [0, 5, 1, 4, 2, 3]],
+  ])('keeps every lane feasible under %s', (_label, courtOrder) => {
+    let snapshot = buildSnapshot()
+    let sequence = snapshot.liveMatchRows.length
+    const selectedCounts = new Map<string, number>()
+    const partnerCounts = new Map<string, number>()
+    let maxTeamGap = 0
+
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      for (const courtIdx of courtOrder) {
+        const completing = latestLiveOnCourt(snapshot.liveMatchRows, courtIdx)
+        expect(completing).toBeDefined()
+        const events: string[] = []
+        const dumps: Array<{ missing_courts: number[]; payload: unknown }> = []
+        const result = runProductionLiveChain({
+          snapshot,
+          count: 1,
+          completingLiveMatchIds: new Set([completing!.id]),
+          stripPersistedPreviews: true,
+          options: {
+            courtIdxs: [courtIdx],
+            ignoreCapacityLock: true,
+            rollingHorizon: true,
+            onInstrumentEvent: event => events.push(`${event.event}:${event.detail}`),
+            onIncompleteDump: dump => dumps.push({ missing_courts: dump.missing_courts, payload: dump.payload }),
+          },
+        })
+        expect(result.elapsedMs).toBeLessThan(2000)
+        if (result.payloads.length !== 1) {
+          throw new Error(`missing rolling payload cycle=${cycle} court=${courtIdx} elapsed=${result.elapsedMs.toFixed(1)}ms events=${events.join('|')} dumps=${JSON.stringify(dumps)}`)
+        }
+        const payload = result.payloads[0]
+        const selectedIds = [...payload.team_a, ...payload.team_b]
+        selectedIds.forEach(playerId => selectedCounts.set(playerId, (selectedCounts.get(playerId) ?? 0) + 1))
+        for (const team of [payload.team_a, payload.team_b]) {
+          const key = [...team].sort().join('|')
+          partnerCounts.set(key, (partnerCounts.get(key) ?? 0) + 1)
+        }
+        const pvna = (playerId: string) => result.state.players.get(playerId)?.pvna ?? 0
+        maxTeamGap = Math.max(maxTeamGap, Math.abs(
+          pvna(payload.team_a[0]) + pvna(payload.team_a[1])
+            - pvna(payload.team_b[0]) - pvna(payload.team_b[1]),
+        ))
+        const otherBusy = new Set(snapshot.liveMatchRows
+          .filter(row => row.status === 'live' && row.id !== completing!.id)
+          .flatMap(row => [...row.team_a, ...row.team_b]))
+        expect([...payload.team_a, ...payload.team_b].some(id => otherBusy.has(id))).toBe(false)
+
+        const completedAt = new Date(Date.parse(completing!.started_at ?? completing!.suggested_at) + 60_000).toISOString()
+        const replacement = persistPreviewRows({
+          payloads: result.payloads,
+          snapshot,
+          sequenceStart: sequence,
+          suggestedAt: completedAt,
+        })[0]
+        sequence += 1
+        snapshot = {
+          ...snapshot,
+          liveStateVersion: snapshot.liveStateVersion + 1,
+          liveMatchRows: [
+            ...snapshot.liveMatchRows.map(row => row.id === completing!.id
+              ? { ...row, status: 'completed' as const, ended_at: completedAt }
+              : row),
+            { ...replacement, status: 'live' as const, started_at: completedAt },
+          ],
+        }
+      }
+    }
+
+    const counts = [...snapshot.playerRows]
+      .filter(row => row.checked_out_at === null && !row.opted_rest)
+      .map(row => selectedCounts.get(row.player_id) ?? 0)
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(2)
+    expect(Math.max(0, ...partnerCounts.values())).toBeLessThanOrEqual(2)
+    expect(maxTeamGap).toBeLessThanOrEqual(1)
+  }, 90_000)
+})
+
+function buildSnapshot(): AuthoritativeLiveSnapshot {
+  const players = createPlayers(33).map((player, index) => ({
+    ...player,
+    pvna: Number((2 + (index % 11) * 0.28).toFixed(2)),
+  }))
+  const state = createState({ players, courts: 6, pvnaTolerance: 0.5 })
+  state.session_id = SESSION_ID
+  const rows = serializeStateToDbRows(state)
+  const startedAt = '2026-07-16T12:00:00.000Z'
+  const liveMatchRows = Array.from({ length: 6 }, (_, courtIdx): SessionLiveMatchRow => ({
+    id: `seed-live-${courtIdx}`,
+    session_id: SESSION_ID,
+    sequence_no: courtIdx,
+    round_no: 0,
+    court_idx: courtIdx,
+    status: 'live',
+    team_a: [`p${String(courtIdx * 4 + 1).padStart(2, '0')}`, `p${String(courtIdx * 4 + 2).padStart(2, '0')}`],
+    team_b: [`p${String(courtIdx * 4 + 3).padStart(2, '0')}`, `p${String(courtIdx * 4 + 4).padStart(2, '0')}`],
+    resting: [],
+    score_a: 0,
+    score_b: 0,
+    suggested_at: startedAt,
+    started_at: new Date(Date.parse(startedAt) + courtIdx * 10_000).toISOString(),
+    ended_at: null,
+  }))
+  return {
+    ...rows,
+    sessionId: SESSION_ID,
+    courtCount: 6,
+    pvnaTolerance: 0.5,
+    liveStateVersion: 1,
+    liveMatchRows,
+  }
+}
+
+function latestLiveOnCourt(rows: SessionLiveMatchRow[], courtIdx: number) {
+  return rows
+    .filter(row => row.status === 'live' && row.court_idx === courtIdx)
+    .sort((left, right) => right.sequence_no - left.sequence_no)[0]
+}
