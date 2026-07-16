@@ -67,17 +67,21 @@ export function useLiveSessionQuery(sessionId: string, playersById: Map<string, 
         registeredPlayerRows: (raw.registered_player_rows ?? []) as RegisteredSessionPlayerRow[],
         pairRows: (raw.pair_rows ?? []) as SessionPairHistoryRow[],
         roundRows: ((raw.round_rows ?? []) as RawRoundRow[]).map(normalizeRoundRow),
-        liveMatchRows: ((raw.live_match_rows ?? []) as SessionLiveMatchRow[]).map(rawRow => {
-          const row = mergePersistedSuggestionMetadata(rawRow) as SessionLiveMatchRow
-          return {
-            ...row,
-            team_a: row.team_a,
-            team_b: row.team_b,
-            resting: row.resting ?? [],
-            score_a: row.score_a ?? 0,
-            score_b: row.score_b ?? 0,
-          }
-        }),
+        liveMatchRows: ((raw.live_match_rows ?? []) as Array<SessionLiveMatchRow | null>)
+          .filter((rawRow): rawRow is SessionLiveMatchRow => (
+            rawRow !== null && typeof rawRow.id === 'string' && rawRow.id.length > 0
+          ))
+          .map(rawRow => {
+            const row = mergePersistedSuggestionMetadata(rawRow) as SessionLiveMatchRow
+            return {
+              ...row,
+              team_a: row.team_a,
+              team_b: row.team_b,
+              resting: row.resting ?? [],
+              score_a: row.score_a ?? 0,
+              score_b: row.score_b ?? 0,
+            }
+          }),
         liveStateVersion,
       }
       markNextRoundStage(sessionId, 'rows_loaded', {

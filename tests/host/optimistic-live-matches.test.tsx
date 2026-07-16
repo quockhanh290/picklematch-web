@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { renderHook, waitFor } from '@testing-library/react-native'
 
-import { pruneOptimisticLiveMatchesByServerId } from '@/features/host/session-detail/next-round-v2/optimisticLiveMatches'
+import {
+  mergeRowsById,
+  pruneOptimisticLiveMatchesByServerId,
+  withoutRowsById,
+} from '@/features/host/session-detail/next-round-v2/optimisticLiveMatches'
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
@@ -30,6 +34,20 @@ function useOptimisticCleanupHarness(serverRows: MatchRow[]) {
 }
 
 describe('optimistic live match cleanup', () => {
+  it('compacts null rows while merging a committed match', () => {
+    expect(mergeRowsById(
+      [{ id: 'old', status: 'suggested' }, null],
+      [{ id: 'old', status: 'live' }, undefined],
+    )).toEqual([{ id: 'old', status: 'live' }])
+  })
+
+  it('removes ids and malformed rows from stale client projections', () => {
+    expect(withoutRowsById(
+      [{ id: 'keep' }, null, { id: 'remove' }],
+      new Set(['remove']),
+    )).toEqual([{ id: 'keep' }])
+  })
+
   it('removes the optimistic entry once the server returns the same match id', async () => {
     const { result, rerender } = renderHook(
       ({ serverRows }: { serverRows: MatchRow[] }) => useOptimisticCleanupHarness(serverRows),

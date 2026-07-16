@@ -33,6 +33,7 @@ import { getLevelIdForElo } from '@/lib/eloSystem'
 import { markNextRoundStage } from './telemetry'
 import { buildCompletedLiveCycleRows } from './live-cycle-rows'
 import { mergePlayerStateRows } from './player-state-rows'
+import { mergeRowsById } from './optimisticLiveMatches'
 import { resolveNextRoundPhase } from './session-report'
 
 function cloneSuggestionAlternative(alternative: SuggestionAlternative | null): SuggestionAlternative | null {
@@ -663,14 +664,12 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     applyLiveMatches: useCallback((matches: SessionLiveMatchRow[], version?: number | null) => {
       queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), (current: LiveRows | undefined) => {
         if (!current) return current
-        const byId = new Map(current.liveMatchRows.map(m => [m.id, m]))
-        for (const m of matches) byId.set(m.id, m)
         const nextVersion = version != null
           ? Math.max(Number(current.liveStateVersion ?? 0), Number(version))
           : current.liveStateVersion
         return {
           ...current,
-          liveMatchRows: [...byId.values()],
+          liveMatchRows: mergeRowsById(current.liveMatchRows, matches),
           liveStateVersion: nextVersion,
         }
       })
@@ -688,14 +687,12 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
     applyCompletedLiveMatch: useCallback((match: SessionLiveMatchRow, playerState: SessionPlayerStateRow[], pairHistory: SessionPairHistoryRow[], version?: number | null) => {
       queryClient.setQueryData<LiveRows>(liveSessionQueryKeys.detail(sessionId), (current: LiveRows | undefined) => {
         if (!current) return current
-        const byId = new Map(current.liveMatchRows.map(m => [m.id, m]))
-        byId.set(match.id, match)
         const playerRows = mergePlayerStateRows(current.playerRows, playerState ?? [])
         const pairById = new Map(current.pairRows.map(p => [`${p.player_a}:${p.player_b}`, p]))
         for (const p of pairHistory ?? []) pairById.set(`${p.player_a}:${p.player_b}`, p)
         return {
           ...current,
-          liveMatchRows: [...byId.values()],
+          liveMatchRows: mergeRowsById(current.liveMatchRows, [match]),
           playerRows,
           pairRows: [...pairById.values()],
           liveStateVersion: version != null

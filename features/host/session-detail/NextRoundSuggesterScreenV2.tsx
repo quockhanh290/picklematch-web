@@ -151,7 +151,7 @@ import type { NextRoundSuggesterV2Props, LiveRows } from './next-round-v2/types'
 import { liveSessionQueryKeys } from './next-round-v2/queries'
 import { classifyPersistAssignmentConflict } from './next-round-v2/preview-conflict-recovery'
 import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
-import { pruneOptimisticLiveMatchesByServerId } from './next-round-v2/optimisticLiveMatches'
+import { pruneOptimisticLiveMatchesByServerId, withoutRowsById } from './next-round-v2/optimisticLiveMatches'
 import { useCheckInMutation, useCheckOutMutation, useStartMatchMutation, useCompleteMatchMutation } from './next-round-v2/mutations'
 import { getMatchPlayerIds, isSameCourtAndPlayers, shouldInvalidatePreviewAfterStartError } from './liveMatchGuards'
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
@@ -1297,9 +1297,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
               liveStateVersionRef.current = Math.max(liveStateVersionRef.current ?? 0, reconciledVersion)
             }
             setLiveMatchDisplayKeys(current => ({ ...current, [alreadyLive.id]: match.id }))
-            setSuggestedLiveMatches(prev => prev.filter(row => row.id !== match.id))
+            setSuggestedLiveMatches(prev => withoutRowsById(prev, new Set([match.id])))
             setOptimisticLiveMatches(current => [
-              ...current.filter(row => row.id !== match.id && row.id !== alreadyLive.id),
+              ...withoutRowsById(current, new Set([match.id, alreadyLive.id])),
               { ...alreadyLive, client_preview_id: match.id },
             ])
             applyLiveMatches([alreadyLive], cached?.liveStateVersion)
@@ -1356,9 +1356,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
               next.add(match.id)
               return next
             })
-            setSuggestedLiveMatches(prev => prev.filter(row => row.id !== match.id))
+            setSuggestedLiveMatches(prev => withoutRowsById(prev, new Set([match.id])))
             setOptimisticLiveMatches(current => [
-              ...current.filter(row => row.id !== match.id && row.id !== payload.match.id),
+              ...withoutRowsById(current, new Set([match.id, payload.match.id])),
               {
                 ...payload.match,
                 client_preview_id: match.id,
@@ -1438,9 +1438,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
           ...current,
           [committedMatch.id]: match.id,
         }))
-        setSuggestedLiveMatches(current => current.filter(row => row.id !== match.id))
+        setSuggestedLiveMatches(current => withoutRowsById(current, new Set([match.id])))
         setOptimisticLiveMatches(current => [
-          ...current.filter(row => row.id !== match.id && row.id !== committedMatch.id),
+          ...withoutRowsById(current, new Set([match.id, committedMatch.id])),
           {
             ...committedMatch,
             client_preview_id: match.id,
@@ -1461,10 +1461,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         next.delete(match.id)
         return next
       })
-      setOptimisticLiveMatches(current => current.filter(row => row.id !== match.id))
+      setOptimisticLiveMatches(current => withoutRowsById(current, new Set([match.id])))
       if (shouldInvalidatePreviewAfterStartError(err)) {
         if (startedCourtIdx !== null) suggestedLaneCacheRef.current.delete(startedCourtIdx)
-        setSuggestedLiveMatches(current => current.filter(row => row.id !== match.id))
+        setSuggestedLiveMatches(current => withoutRowsById(current, new Set([match.id])))
         suggestedPreviewBatchRef.current = null
         setPreviewRefreshNonce(value => value + 1)
         const safeMessage = toUserSafeActionError(err)
