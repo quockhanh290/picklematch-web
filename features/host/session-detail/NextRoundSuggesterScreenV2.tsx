@@ -160,7 +160,6 @@ const LIVE_SCORE_CARD_HEIGHT = LIVE_SCORE_CARD_WIDTH * 1.25
 const LIVE_SCORE_FONT_SIZE = SCREEN_WIDTH > 400 ? 56 : SCREEN_WIDTH > 360 ? 48 : 42
 const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
 const LIVE_PREVIEW_REPLACEMENT_MAX_COUNT = 2
-const LIVE_PREVIEW_AHEAD_LIMIT = 2
 const LIVE_PREVIEW_FULL_BOARD_MAX_COUNT = 6
 const LIVE_PREVIEW_SOFT_TIMEOUT_MS = 12000
 const LIVE_PREVIEW_INCOMPLETE_RETRY_MS = 900
@@ -2050,13 +2049,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
   const [suggestedLiveMatches, setSuggestedLiveMatches] = useState<SuggestedLiveMatchRow[]>([])
   const [edgeDebug, setEdgeDebug] = useState<any>(null)
   const queueCourtCount = Math.max(1, Math.floor(courtCount || 1))
-  const persistedSuggestedMatchCount = rows.liveMatchRows.filter(match => match.status === 'suggested').length
   const suggestedQueueCount = getSuggestedPreviewQueueCount({
     courtCount: queueCourtCount,
     capacityOccupyingMatchCount: capacityOccupyingLiveMatchCount,
-    completedMatchCount: completedLiveMatches.length,
-    persistedSuggestedMatchCount,
-    previewAheadLimit: LIVE_PREVIEW_AHEAD_LIMIT,
   })
   const persistedSuggestedMatchIds = useMemo(() => new Set(
     rows.liveMatchRows

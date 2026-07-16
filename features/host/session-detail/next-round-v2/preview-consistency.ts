@@ -39,25 +39,13 @@ export function mergePreviewLaneCandidates<T extends PreviewLaneRow>({
 export function getSuggestedPreviewQueueCount({
   courtCount,
   capacityOccupyingMatchCount,
-  completedMatchCount,
-  persistedSuggestedMatchCount,
-  previewAheadLimit,
 }: {
   courtCount: number
   capacityOccupyingMatchCount: number
-  completedMatchCount: number
-  persistedSuggestedMatchCount: number
-  previewAheadLimit: number
 }) {
-  const openCourtCount = Math.max(0, Math.floor(courtCount) - Math.max(0, capacityOccupyingMatchCount))
-  if (completedMatchCount === 0) return openCourtCount
-
-  // Let a larger bootstrap batch drain naturally. Reducing its target immediately would
-  // cancel still-visible suggestions and recreate the stale-id race this limit avoids.
-  return Math.min(
-    openCourtCount,
-    Math.max(Math.max(0, persistedSuggestedMatchCount), Math.max(0, previewAheadLimit)),
-  )
+  // Every idle physical lane needs a startable suggestion. A lane that just became
+  // idle is current work, not preview-ahead capacity.
+  return Math.max(0, Math.floor(courtCount) - Math.max(0, capacityOccupyingMatchCount))
 }
 
 export function hasMissingRestPriorityPlayer({

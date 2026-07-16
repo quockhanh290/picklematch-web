@@ -16,39 +16,27 @@ describe('preview consistency', () => {
     expect(getSuggestedPreviewQueueCount({
       courtCount: 6,
       capacityOccupyingMatchCount: 1,
-      completedMatchCount: 0,
-      persistedSuggestedMatchCount: 5,
-      previewAheadLimit: 2,
     })).toBe(5)
   })
 
-  it('limits preview-ahead to two after play has completed', () => {
+  it('keeps every idle lane startable after play has completed', () => {
     expect(getSuggestedPreviewQueueCount({
       courtCount: 6,
       capacityOccupyingMatchCount: 2,
-      completedMatchCount: 1,
-      persistedSuggestedMatchCount: 1,
-      previewAheadLimit: 2,
-    })).toBe(2)
+    })).toBe(4)
   })
 
-  it('lets a larger persisted bootstrap batch drain without cancelling it', () => {
+  it('recovers the sixth lane when five persisted suggestions remain', () => {
     expect(getSuggestedPreviewQueueCount({
       courtCount: 6,
-      capacityOccupyingMatchCount: 1,
-      completedMatchCount: 1,
-      persistedSuggestedMatchCount: 4,
-      previewAheadLimit: 2,
-    })).toBe(4)
+      capacityOccupyingMatchCount: 0,
+    })).toBe(6)
   })
 
   it('never requests more suggestions than open courts', () => {
     expect(getSuggestedPreviewQueueCount({
       courtCount: 6,
       capacityOccupyingMatchCount: 5,
-      completedMatchCount: 3,
-      persistedSuggestedMatchCount: 4,
-      previewAheadLimit: 2,
     })).toBe(1)
   })
 
