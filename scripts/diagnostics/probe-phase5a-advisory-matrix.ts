@@ -19,7 +19,7 @@ const mode = argument('--mode') ?? 'full'
 
 if (!supabaseUrl || !anonKey || !managementToken) throw new Error('Missing Supabase environment')
 if (!sessionId || (mode === 'full' && !missingPlanSessionId)) {
-  throw new Error('Usage: npx tsx scripts/diagnostics/probe-phase5a-advisory-matrix.ts --session-id=<id> [--missing-plan-session-id=<id>] [--mode=full|manual-quality|auto-replan]')
+  throw new Error('Usage: npx tsx scripts/diagnostics/probe-phase5a-advisory-matrix.ts --session-id=<id> [--missing-plan-session-id=<id>] [--mode=full|manual-quality|auto-replan|cas]')
 }
 
 const projectRef = new URL(supabaseUrl).hostname.split('.')[0]
@@ -548,6 +548,51 @@ async function main() {
   if (authError || !auth.session || !auth.user) throw new Error(authError?.message ?? 'Unable to sign in')
   const token = auth.session.access_token
   const matrix: Record<string, unknown> = {}
+
+  if (mode === 'cas') {
+    const { data: sessionVersion, error: sessionVersionError } = await client
+      .from('sessions')
+      .select('live_state_version, planning_mutation_version')
+      .eq('id', sessionId!)
+      .single()
+    if (sessionVersionError) throw sessionVersionError
+    const loadSuggestedIds = async () => {
+      const { data, error } = await client
+        .from('session_live_matches')
+        .select('id')
+        .eq('session_id', sessionId!)
+        .eq('status', 'suggested')
+        .order('id')
+      if (error) throw error
+      return (data ?? []).map(row => row.id)
+    }
+    const beforeIds = await loadSuggestedIds()
+    const { error } = await client.rpc('replace_planned_live_session_suggestions_versioned', {
+      p_session_id: sessionId!,
+      p_expected_live_state_version: Number(sessionVersion.live_state_version),
+      p_expected_planning_mutation_version: Number(sessionVersion.planning_mutation_version) - 1,
+      p_matches: [],
+      p_replace_court_idxs: [],
+      p_replace_all: false,
+      p_audit_payload: { probe: 'phase5b_cas_rejection' },
+    })
+    const afterIds = await loadSuggestedIds()
+    if (!error || !error.message.includes('Session planning changed')) {
+      throw new Error(`Expected planning CAS rejection, received: ${error?.message ?? 'success'}`)
+    }
+    if (JSON.stringify(afterIds) !== JSON.stringify(beforeIds)) {
+      throw new Error('Planning CAS rejection changed persisted suggestions')
+    }
+    console.log(JSON.stringify({
+      ok: true,
+      mode,
+      session_id: sessionId,
+      rejection: error.message,
+      suggested_rows_unchanged: true,
+      suggested_count: beforeIds.length,
+    }, null, 2))
+    return
+  }
 
   if (mode === 'auto-replan') {
     const baseline = await invokeSuggestWithBackoff(client, token, sessionId!)

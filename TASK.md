@@ -35,7 +35,7 @@ Audit ledger: `docs/OPERATION_STABILIZATION_AUDIT.md`
 ---
 
 ## Task: Precomputed session planner - one engine, hybrid execution
-Status: PLANNED; Phase 0 shadow proof complete
+Status: PHASE 5B ALLOWLIST GATE PASSED; global rollout remains off
 
 Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
 
@@ -174,21 +174,34 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   1.0, zero intra-team gaps above 2.0, and the optimal 1-2 match-count spread
   for 32 players across 52 total commitment-plus-suffix slots. Carrying signed
   live commitment debt removed the prior avoidable 1-3 spread.
-- [ ] Phase 5B advisory consumption remains gated. Do not let a shadow plan
-  change `session-live-matches-suggest` output until it can consume only
-  per-court `usable` rows, leave `repair_required`/`fallback` courts to the live
+- [x] Phase 5B advisory consumption is implemented behind a session allowlist.
+  It consumes only
+  per-court `usable` rows, leaves `repair_required`/`fallback` courts to the live
   engine, and automatically schedule one idempotent suffix replan after an
   invalidation. Replan scheduling must be single-flight, coalesced, and backed
   off under 546/resource pressure; manual `suggested` rows wait for Start or
   Cancel. Six-court runtime, quality, mutation safety, missing-plan safety, and
-  rollback are proven; live consumption is not enabled.
-- [ ] Add the Phase 5B session-quality comparator before enabling consumption.
+  rollback are proven. Hosted consumption is enabled only for test session
+  `940399e0-...`; global consumption remains off.
+- [x] Add the Phase 5B session-quality comparator before enabling consumption.
   Replay identical session/mutation timelines through `live-only` and `hybrid`,
   then report session fairness, board gaps/repeats/relaxations, and per-player
   rest/diversity/quality-debt tails. Gate lexicographically: zero hard regression,
   feasible match-count spread at most one, no avoidable two-round rest, no
   regression in team-gap-over-1/intra-gap-over-2/partner repeats/max player debt,
   and no hidden lower-priority trade-off without an explicit delta.
+- [x] Hosted auto-replan gate: an opted-rest mutation rejected all six stale
+  planned courts while the live engine still filled 6/6. Coordinator generation
+  2 rebuilt the eight-round plan in about 46s; the next request consumed 6/6
+  planned courts and excluded the resting player. Cleanup generation 3 completed
+  without error. Coalescing now keys on roster, config, frontier, planning
+  version, and manual-mutation identity, not frontier alone.
+- [x] Hosted full-session quality gate on the same 32-player/6-court/8-round
+  state: both modes produced 48/48 matches with zero hard/operation/rest/incomplete
+  violations. Hybrid improved match spread 2->0, intra-gap-over-2 1->0, maximum
+  intra gap 2.57->1.31, and maximum player debt 1.57->0.31. The explicit
+  lower-priority trade-off was opponent repeats 19->29, still with zero opponent
+  repeat overflow under the configured budget.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.
@@ -196,6 +209,9 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
 - Planner failure must be equivalent to planner-disabled behavior.
 - Phase 5A rollback is `SESSION_PLAN_ADVISORY_SHADOW=0`; it requires no DB or
   client rollback because the probe runs after live persistence via `waitUntil`.
+- Phase 5B rollback is `SESSION_PLAN_CONSUMPTION=0` and
+  `SESSION_PLAN_AUTO_REPLAN=0`. Current hosted exposure is additionally bounded
+  by `SESSION_PLAN_ROLLOUT_SESSION_IDS=940399e0-...`.
 - Do not deploy Vercel without Kevin's explicit approval.
 
 ---

@@ -561,6 +561,56 @@ manual player replacement, cancellation, missing/stale plan, partial fallback,
 concurrent suggest, and 546/backoff. A scenario passes only when both operation
 and quality gates pass.
 
+### Phase 5B allowlist evidence (2026-07-15)
+
+Phase 5B now has two independent server-side gates. `SESSION_PLAN_CONSUMPTION`
+enables per-court plan consumption and `SESSION_PLAN_AUTO_REPLAN` enables the
+background coordinator. Both also require the session ID in
+`SESSION_PLAN_ROLLOUT_SESSION_IDS`; the current allowlist contains only test
+session `940399e0-818b-4fc7-b0a8-98853e9e80c5`. Other sessions remain live-only.
+
+The hosted mutation probe consumed all six valid planned courts, then opted one
+available player out. The stale plan was rejected on all six courts with
+`roster_changed` and `planning_version_changed`, while the current live engine
+still returned a complete 6/6 board. Automatic replan generation 2 completed
+without error in about 46 seconds, after which all six courts consumed the new
+plan and the opted-rest player was absent. Clearing the mutation produced
+generation 3, which also completed without error and left zero opted-rest or
+live test rows. Planner latency is background latency: during either rebuild,
+the host continues receiving current-engine suggestions.
+
+The probe exposed and locked one orchestration bug before promotion. A frontier
+fingerprint alone does not change for opted rest, check-in/out, PVNA, or config
+mutations when match history is unchanged. Replan coalescing now hashes roster,
+config, frontier, monotonic planning version, and active manual-mutation kind.
+Thus a materially newer request supersedes an in-flight generation, while
+duplicate requests for the same planning identity remain single-flight.
+
+The full eight-round quality comparator replayed the same 32-player, six-court
+state through current live-only generation and the published pass-three plan:
+
+| Metric | Live-only | Phase 5B plan | Delta |
+| --- | ---: | ---: | ---: |
+| Matches / hard violations | 48 / 0 | 48 / 0 | 0 |
+| Incomplete boards / avoidable rests | 0 / 0 | 0 / 0 | 0 |
+| Match-count spread | 2 | 0 | -2 |
+| Maximum consecutive rest | 1 | 1 | 0 |
+| Intra-team gap above 2.0 | 1 | 0 | -1 |
+| Maximum intra-team gap | 2.57 | 1.31 | -1.26 |
+| Maximum player quality debt | 1.57 | 0.31 | -1.26 |
+| Relaxation-warning matches | 29 | 0 | -29 |
+| Partner repeats | 0 | 0 | 0 |
+| Opponent repeats | 19 | 29 | +10 |
+| Opponent-repeat overflow | 0 | 0 | 0 |
+
+The lexicographic gate passes because hard operation/fairness metrics do not
+regress and higher-priority match balance, severe intra-team gap, and worst
+player debt improve. The `+10` opponent-repeat trade-off is deliberately
+reported; it is lower priority and remains inside the engine's repeat budget.
+This is evidence for allowlist testing, not evidence for global rollout. Several
+fresh real sessions and mutation timelines are still required before widening
+the allowlist.
+
 ### Phase 5 - Advisory integration
 
 - Add a feature-flagged plan lookup to `session-live-matches-suggest`.
