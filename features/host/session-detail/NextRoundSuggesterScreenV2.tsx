@@ -1021,6 +1021,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
               server_live_state_version: serverVersion,
             },
           })
+          suggestedPreviewBatchRef.current = null
+          suggestedLaneCacheRef.current.clear()
           await loadLiveState()
         }
       } catch (pollError) {
