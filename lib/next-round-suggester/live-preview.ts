@@ -58,7 +58,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 12
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 13
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -2791,6 +2791,7 @@ export type CourtSelectionDebug = {
   court_idx: number
   busy_count: number
   required_for_court: string[]
+  outcome?: 'selected' | 'no_match'
   eligible_players: Array<{
     id: string
     pvna: number
@@ -3234,7 +3235,7 @@ export function buildSuggestedMatchPayloads({
     p => p.checked_out_at === null && !p.opted_rest && !baseBusyIds.has(p.player_id),
   ).length
   const effectiveCount = Math.min(count, Math.floor(availableForBatch / 4))
-  const isRollingLaneRequest = options.rollingHorizon === true && count === 1 && liveMatchRows.some(match => (
+  const isRollingLaneRequest = options.rollingHorizon === true && liveMatchRows.some(match => (
     match.status === 'live' && !completingLiveMatchIds.has(match.id)
   ))
   const availabilityMetricsByState = new WeakMap<SessionState, AvailabilityMetrics>()
@@ -3396,11 +3397,14 @@ export function buildSuggestedMatchPayloads({
       busyIds,
       nextMatchIndex: previewCountableMatchCount + index + 1,
     })
-    liveSelectionGuard.protectedIds.forEach(playerId => busyIds.add(playerId))
+    const applicableProtectedIds = (protectedIds: Set<string>) => new Set(
+      [...protectedIds].filter(playerId => !requiredForThisCourtIds.has(playerId)),
+    )
+    applicableProtectedIds(liveSelectionGuard.protectedIds).forEach(playerId => busyIds.add(playerId))
     const buildBusyIdsForProtected = (protectedIds: Set<string>) => new Set([
       ...batchBusyIds,
       ...courtRoundBusyIds,
-      ...protectedIds,
+      ...applicableProtectedIds(protectedIds),
     ])
     const buildRelaxedTierOverrides = () => {
       const relaxedTierOverrides = { ...tierOverrides }
@@ -3827,7 +3831,19 @@ export function buildSuggestedMatchPayloads({
       if (legacyAlt) alternative = legacyAlt
     }
     const match = alternative?.matches[0]
-    if (!alternative || !match) continue
+    if (!alternative || !match) {
+      if (debugOut && debugEligible) {
+        debugOut.push({
+          court_idx: courtIdx,
+          busy_count: busyIds.size,
+          required_for_court: requiredForThisCourt,
+          outcome: 'no_match',
+          eligible_players: debugEligible,
+          selected: [],
+        })
+      }
+      continue
+    }
     const effectivePvnaTolerance = suggestionState.config.pvna_tolerance
     const pvnaDiff = match.stats?.pvna_diff ?? 0
     const selectedIntraTeamGap = getAlternativeIntraTeamGap(alternative, suggestionStateForCourt)
@@ -3939,6 +3955,7 @@ export function buildSuggestedMatchPayloads({
         court_idx: courtIdx,
         busy_count: busyIds.size,
         required_for_court: requiredForThisCourt,
+        outcome: 'selected',
         eligible_players: debugEligible,
         selected: [
           ...match.team_a.map(id => {

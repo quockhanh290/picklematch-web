@@ -457,6 +457,8 @@ function main() {
       `team_gap=${item.result.metrics.maxTeamGap.toFixed(3)}`,
       `intra=${item.result.metrics.maxIntraGap.toFixed(3)}`,
       `eligible=${item.result.debug.map(debug => debug.eligible_players.length).join(',')}`,
+      `required=${item.result.debug.map(debug => debug.required_for_court.map(id => id.slice(0, 8)).join('|')).join(',')}`,
+      `tiers=${item.result.debug.map(debug => debug.eligible_players.map(player => `${player.id.slice(0, 8)}:${player.tier}`).join('|')).join(',')}`,
     ].join(' '))
     const historicalMetrics = measure(
       (item.row.chosen_matches ?? []).filter((match: JsonRecord) => !match.is_replacement),
