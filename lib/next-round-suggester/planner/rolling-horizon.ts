@@ -17,6 +17,13 @@ export type RollingHorizonChoice = {
   diagnostics: RollingHorizonDiagnostics
 }
 
+export type RollingPlanTarget = {
+  plan_version_id?: string | null
+  target_matches_by_player: Record<string, number>
+  preferred_team_gap?: number | null
+  preferred_intra_team_gap?: number | null
+}
+
 type FutureSuggestion = (options: {
   state: SessionState
   busyIds: Set<string>
@@ -61,7 +68,11 @@ function asLiveMatch(
   }
 }
 
-function matchQualityCost(alternative: SuggestionAlternative, state: SessionState) {
+function matchQualityCost(
+  alternative: SuggestionAlternative,
+  state: SessionState,
+  planTarget?: RollingPlanTarget | null,
+) {
   const match = alternative.matches[0]
   if (!match) return NO_FEASIBLE_FUTURE_PENALTY
   const pvna = (id: string) => {
@@ -87,15 +98,19 @@ function matchQualityCost(alternative: SuggestionAlternative, state: SessionStat
   ), 0)
   const pvnaOver = Math.max(0, inter - state.config.pvna_tolerance)
   const intraOver = Math.max(0, intra - 1)
+  const planTeamGapOver = Math.max(0, inter - Number(planTarget?.preferred_team_gap ?? inter))
+  const planIntraGapOver = Math.max(0, intra - Number(planTarget?.preferred_intra_team_gap ?? intra))
   return inter * 7
     + intra * 7
     + pvnaOver * 80
     + intraOver * 25
     + partnerRepeats * 35
     + opponentRepeats * 4
+    + planTeamGapOver * 12
+    + planIntraGapOver * 8
 }
 
-function fairnessDebtCost(state: SessionState) {
+function fairnessDebtCost(state: SessionState, planTarget?: RollingPlanTarget | null) {
   const active = [...state.players.values()]
     .filter(player => player.checked_out_at === null && !player.opted_rest)
   if (active.length === 0) return 0
@@ -108,11 +123,21 @@ function fairnessDebtCost(state: SessionState) {
     (sum, player) => sum + Math.max(0, player.consecutive_play - 2),
     0,
   )
+  const planDebt = planTarget
+    ? active.reduce((sum, player) => {
+        const target = planTarget.target_matches_by_player[player.player_id]
+        if (!Number.isFinite(target)) return sum
+        const remaining = Math.max(0, target - player.matches_played)
+        const over = Math.max(0, player.matches_played - target)
+        return sum + remaining * remaining * 12 + over * over * 120
+      }, 0)
+    : 0
   return spread * 30
     + Math.max(...debts) * 20
     + debts.reduce((sum, debt) => sum + debt * debt, 0) * 3
     + restRisk * 80
     + longPlayStreak * 8
+    + planDebt
 }
 
 function completionOrders(commitments: SessionLiveMatchRow[]) {
@@ -150,6 +175,7 @@ export function chooseRollingHorizonAlternative(options: {
   suggestFuture: FutureSuggestion
   projectMatch: ProjectMatch
   horizonEvents?: number
+  planTarget?: RollingPlanTarget | null
 }): RollingHorizonChoice | null {
   const candidates = options.candidates.filter(candidate => candidate.matches.length > 0)
   if (candidates.length <= 1) return null
@@ -173,7 +199,8 @@ export function chooseRollingHorizonAlternative(options: {
     for (const order of orders) {
       let simState = options.projectMatch(options.state, candidateMatch)
       const simBusy = new Set([...options.baseBusyIds, ...candidateIds])
-      let pathScore = matchQualityCost(candidate, options.state) + fairnessDebtCost(simState)
+      let pathScore = matchQualityCost(candidate, options.state, options.planTarget)
+        + fairnessDebtCost(simState, options.planTarget)
 
       for (const completion of order.slice(0, horizonEvents)) {
         simState = options.projectMatch(simState, completion)
@@ -195,12 +222,12 @@ export function chooseRollingHorizonAlternative(options: {
           }
           break
         }
-        pathScore += matchQualityCost(future, simState)
+        pathScore += matchQualityCost(future, simState, options.planTarget)
         const futureMatch = asLiveMatch(future, simState, `rolling-horizon-future-${pathScores.length}`)
         if (!futureMatch) break
         simState = options.projectMatch(simState, futureMatch)
         for (const playerId of playerIds(future)) simBusy.add(playerId)
-        pathScore += fairnessDebtCost(simState)
+        pathScore += fairnessDebtCost(simState, options.planTarget)
       }
       pathScores.push(pathScore)
     }

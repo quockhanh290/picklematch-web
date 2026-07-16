@@ -26,7 +26,10 @@ import { bestPartitioning } from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { suggestNextMatch, type EngineInstrumentEvent, type ExhaustiveFallbackDiagnostic } from './suggest.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { chooseRollingHorizonAlternative } from './planner/rolling-horizon.ts'
+import {
+  chooseRollingHorizonAlternative,
+  type RollingPlanTarget,
+} from './planner/rolling-horizon.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { reconstructLiveRounds } from './live-rounds.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
@@ -251,6 +254,7 @@ export type BuildSuggestedMatchOptions = {
   tightPoolQualityDeferUntilByCourt?: Record<number, number>
   nowMs?: number
   rollingHorizon?: boolean
+  rollingPlanTarget?: RollingPlanTarget | null
   onIncompleteDump?: (dump: IncompleteDump) => void
   onInstrumentEvent?: (event: EngineInstrumentEvent) => void
 }
@@ -2819,6 +2823,7 @@ function pickRollingBeamAlternative(
   baseSimBusy: Set<string>,
   liveCommitments: SessionLiveMatchRow[],
   budgetMs: number,
+  planTarget?: RollingPlanTarget | null,
 ): ReturnType<typeof chooseRollingHorizonAlternative> {
   return chooseRollingHorizonAlternative({
     candidates,
@@ -2834,6 +2839,7 @@ function pickRollingBeamAlternative(
       }).alternatives[0] ?? null
     ),
     projectMatch: buildProjectedStateAfterLiveMatch,
+    planTarget,
   })
 }
 
@@ -3757,6 +3763,7 @@ export function buildSuggestedMatchPayloads({
         beamBaseSimBusy,
         rollingCommitments,
         beamBudgetMs,
+        options.rollingPlanTarget,
       )
       if (beamAlt) {
         alternative = beamAlt.alternative

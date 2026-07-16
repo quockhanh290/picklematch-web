@@ -36,6 +36,7 @@ import {
   type PlannedCourtConsumptionDecision,
 } from '../../../lib/next-round-suggester/planner/consumption.ts'
 import { validatePlannedBoard } from '../../../lib/next-round-suggester/planner/validation.ts'
+import type { RollingPlanTarget } from '../../../lib/next-round-suggester/planner/rolling-horizon.ts'
 import type {
   SessionState,
   SessionLiveMatchRow,
@@ -98,6 +99,7 @@ type PlanConsumptionContext = {
     resting: string[]
   }>
   decisions: PlannedCourtConsumptionDecision[]
+  rolling_target: RollingPlanTarget | null
 }
 
 async function loadPlanConsumption(options: {
@@ -118,6 +120,7 @@ async function loadPlanConsumption(options: {
     planning_mutation_version: null,
     accepted: [],
     decisions: [],
+    rolling_target: null,
   }
   if (!planRolloutEnabled('SESSION_PLAN_CONSUMPTION', options.sessionId) || options.targetCourtIdxs.length === 0) {
     return disabled
@@ -202,7 +205,7 @@ async function loadPlanConsumption(options: {
         .from('session_plan_rounds')
         .select('round_no, matches, resting_ids')
         .eq('plan_version_id', job.result_plan_version_id)
-        .in('round_no', requestedPlanRoundNos)
+        .order('round_no')
       if (error) return disabled
       roundRows = data ?? []
     }
@@ -210,6 +213,49 @@ async function loadPlanConsumption(options: {
       matches: Array.isArray(row.matches) ? row.matches : [],
       resting: Array.isArray(row.resting_ids) ? row.resting_ids.map(String) : [],
     }]))
+    const baselinePlayers = Array.isArray(job?.input_payload?.state?.players)
+      ? job.input_payload.state.players
+      : []
+    const targetMatchesByPlayer = Object.fromEntries(baselinePlayers
+      .filter((player: any) => typeof player?.player_id === 'string')
+      .map((player: any) => [player.player_id, Number(player.matches_played ?? 0)])) as Record<string, number>
+    const plannedTeamGaps: number[] = []
+    const plannedIntraGaps: number[] = []
+    const targetPvna = (playerId: string) => {
+      const current = options.state.players.get(playerId)
+      const baseline = baselinePlayers.find((player: any) => player?.player_id === playerId)
+      return Number(current?.effective_pvna ?? current?.pvna ?? baseline?.effective_pvna ?? baseline?.pvna ?? 0)
+    }
+    for (const round of plannedByRound.values()) {
+      for (const match of round.matches as any[]) {
+        const ids = [...(match?.team_a ?? []), ...(match?.team_b ?? [])].map(String)
+        for (const playerId of ids) {
+          targetMatchesByPlayer[playerId] = (targetMatchesByPlayer[playerId] ?? 0) + 1
+        }
+        if (ids.length !== 4) continue
+        plannedTeamGaps.push(Math.abs(
+          targetPvna(ids[0]) + targetPvna(ids[1]) - targetPvna(ids[2]) - targetPvna(ids[3]),
+        ))
+        plannedIntraGaps.push(Math.max(
+          Math.abs(targetPvna(ids[0]) - targetPvna(ids[1])),
+          Math.abs(targetPvna(ids[2]) - targetPvna(ids[3])),
+        ))
+      }
+    }
+    const percentile = (values: number[], ratio: number) => {
+      if (values.length === 0) return null
+      const sorted = [...values].sort((left, right) => left - right)
+      return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio))]
+    }
+    const rollingTarget: RollingPlanTarget | null = job?.result_plan_version_id
+      && Object.keys(targetMatchesByPlayer).length > 0
+      ? {
+          plan_version_id: job.result_plan_version_id,
+          target_matches_by_player: targetMatchesByPlayer,
+          preferred_team_gap: percentile(plannedTeamGaps, 0.95),
+          preferred_intra_team_gap: percentile(plannedIntraGaps, 0.95),
+        }
+      : null
     const historyMatches = job ? completedHistory.every(round => {
       const planned = plannedByRound.get(round.round_no + 1)?.matches
       return Array.isArray(planned) && plannedBoardEqualsLiveBoard(planned as any, round.matches)
@@ -291,6 +337,12 @@ async function loadPlanConsumption(options: {
         resting: plannedByRound.get(candidate.planned_round_no)?.resting ?? [],
       }] : []),
       decisions: selected.decisions,
+      rolling_target: rosterIdentityMatches === true
+        && configIdentityMatches === true
+        && planningVersionMatches === true
+        && !options.activeManualMutationKind
+        ? rollingTarget
+        : null,
     }
   } catch (error) {
     console.warn('[suggest] plan consumption lookup failed; using live engine', {
@@ -1035,6 +1087,7 @@ Deno.serve(async (request) => {
             deferExtremeTightPool: true,
             tightPoolQualityDeferUntilByCourt,
             rollingHorizon: rollingPolicyEnabled,
+            rollingPlanTarget: rollingPolicyEnabled ? planConsumption.rolling_target : null,
             onIncompleteDump,
             onInstrumentEvent,
           },
@@ -1354,6 +1407,7 @@ Deno.serve(async (request) => {
     const planConsumptionSummary = {
       enabled: planConsumption.enabled,
       rolling_policy_enabled: rollingPolicyEnabled,
+      rolling_target_loaded: planConsumption.rolling_target !== null,
       plan_job_id: planConsumption.job_id,
       plan_version_id: planConsumption.plan_version_id,
       consumed_court_idxs: consumedPlanCourts.map(item => item.court_idx),

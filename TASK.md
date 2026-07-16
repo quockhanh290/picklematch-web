@@ -237,6 +237,12 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
 - [ ] Deploy the rolling policy only to the planner session allowlist, then run
   a hosted asynchronous-lane canary and compare its dump quality/runtime with
   the fixed-round advisory baseline before widening exposure.
+- [x] Feed a soft full-session target envelope into rolling decisions. The
+  envelope carries absolute per-player match targets plus planned p95 team and
+  intra-team gaps. It may rank feasible candidates but cannot reject one;
+  stale roster/config/planning identity or pending manual mutation removes the
+  target and falls back to production rolling ranking. Ordinary live progress
+  may diverge from exact planned lineups without invalidating the envelope.
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.

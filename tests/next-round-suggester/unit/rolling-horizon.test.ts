@@ -107,4 +107,35 @@ describe('rolling court-lane horizon', () => {
       suggestFuture: () => null,
     })).toBeNull()
   })
+
+  it('uses the session target to preserve scarce future opportunities without making it a hard constraint', () => {
+    const players = createPlayers(20)
+    players.slice(0, 4).forEach(player => { player.matches_played = 2 })
+    const state = createState({ players, courts: 3 })
+    const locallyBest = alternative(['p01', 'p02'], ['p03', 'p04'], 0)
+    const followsPlan = alternative(['p05', 'p06'], ['p07', 'p08'], 0.1)
+    const commitments = [
+      liveRow('live-1', 1, ['p09', 'p10'], ['p11', 'p12'], '2026-07-16T12:00:00.000Z'),
+    ]
+    const future = alternative(['p13', 'p14'], ['p15', 'p16'], 0.05)
+    const choice = chooseRollingHorizonAlternative({
+      candidates: [locallyBest, followsPlan],
+      state,
+      baseBusyIds: new Set(commitments.flatMap(row => [...row.team_a, ...row.team_b])),
+      liveCommitments: commitments,
+      budgetMs: 300,
+      projectMatch: buildProjectedStateAfterLiveMatch,
+      suggestFuture: () => future,
+      planTarget: {
+        target_matches_by_player: Object.fromEntries(players.map(player => [
+          player.player_id,
+          player.player_id <= 'p04' ? 2 : 4,
+        ])),
+        preferred_team_gap: 0.5,
+        preferred_intra_team_gap: 1,
+      },
+    })
+
+    expect(choice?.alternative).toBe(followsPlan)
+  })
 })
