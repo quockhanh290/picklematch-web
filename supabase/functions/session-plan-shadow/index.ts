@@ -133,6 +133,7 @@ Deno.serve(async (request) => {
     const [
       { data: sessionRow, error: sessionError },
       { data: settingsRow, error: settingsError },
+      { data: avoidPairRows, error: avoidPairsError },
       { data: snapshotData, error: snapshotError },
     ] = await Promise.all([
       auth.supabase
@@ -146,10 +147,15 @@ Deno.serve(async (request) => {
         .eq('session_id', sessionId)
         .maybeSingle(),
       auth.supabase
+        .from('session_avoid_pairs')
+        .select('player_a, player_b, reason')
+        .eq('session_id', sessionId),
+      auth.supabase
         .rpc('get_live_session_snapshot_versioned', { p_session_id: sessionId }),
     ])
     if (sessionError || !sessionRow) throw new Error(sessionError?.message ?? 'Session not found')
     if (settingsError) throw new Error(settingsError.message)
+    if (avoidPairsError) throw new Error(avoidPairsError.message)
     if (snapshotError) throw new Error(snapshotError.message)
 
     const snapshot = (snapshotData ?? {}) as AuthoritativePlanningSnapshot
@@ -180,6 +186,7 @@ Deno.serve(async (request) => {
       pvna_tolerance: finiteNumber(settingsRow?.pvna_tolerance, 0.5),
       planned_total_rounds: configuredRounds,
       court_preset: preset,
+      avoid_pairs: avoidPairRows ?? [],
     }
     const frontier = buildPlanningFrontier(
       loadedState,
