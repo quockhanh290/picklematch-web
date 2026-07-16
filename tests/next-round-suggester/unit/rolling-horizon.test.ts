@@ -138,4 +138,54 @@ describe('rolling court-lane horizon', () => {
 
     expect(choice?.alternative).toBe(followsPlan)
   })
+
+  it('uses the next checkpoint instead of deferring balance until the final target', () => {
+    const players = createPlayers(12)
+    players.forEach(player => { player.pvna = 3 })
+    const state = createState({ players, courts: 2 })
+    const earlyGroup = alternative(['p01', 'p02'], ['p03', 'p04'], 0)
+    const checkpointGroup = alternative(['p05', 'p06'], ['p07', 'p08'], 0)
+    const commitment = liveRow('live-1', 1, ['p09', 'p10'], ['p11', 'p12'], '2026-07-16T12:00:00.000Z')
+    const finalPlayers = Object.fromEntries(players.map(player => [player.player_id, playerTarget(2)]))
+    const checkpointPlayers = Object.fromEntries(players.map(player => [
+      player.player_id,
+      playerTarget(player.player_id >= 'p05' && player.player_id <= 'p08' ? 1 : 0),
+    ]))
+
+    const choice = chooseRollingHorizonAlternative({
+      candidates: [earlyGroup, checkpointGroup],
+      state,
+      baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
+      liveCommitments: [commitment],
+      budgetMs: 300,
+      projectMatch: buildProjectedStateAfterLiveMatch,
+      suggestFuture: () => alternative(['p01', 'p02'], ['p03', 'p04'], 0),
+      planTarget: {
+        target_matches_by_player: Object.fromEntries(players.map(player => [player.player_id, 2])),
+        players: finalPlayers,
+        checkpoints: [{
+          progress_ratio: 0.25,
+          completed_plan_rounds: 1,
+          target_total_appearances: 4,
+          players: checkpointPlayers,
+        }],
+      },
+    })
+
+    expect(choice?.alternative).toBe(checkpointGroup)
+  })
 })
+
+function playerTarget(matches: number) {
+  return {
+    matches,
+    rests: 0,
+    quality_debt: 0,
+    partner_diversity: 0,
+    opponent_diversity: 0,
+    partner_repeat_exposure: 0,
+    opponent_repeat_exposure: 0,
+    max_consecutive_rest: 1,
+    max_consecutive_play: 2,
+  }
+}

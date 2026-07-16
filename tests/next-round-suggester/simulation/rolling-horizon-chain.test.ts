@@ -1,4 +1,5 @@
 import type { SessionLiveMatchRow } from '../../../lib/next-round-suggester/types'
+import type { RollingPlanTarget } from '../../../lib/next-round-suggester/planner/rolling-horizon'
 import { serializeStateToDbRows } from '../helpers/db-rows'
 import { createPlayers, createState } from '../helpers/factories'
 import { persistPreviewRows, runProductionLiveChain, type AuthoritativeLiveSnapshot } from '../helpers/production-live-chain'
@@ -7,11 +8,13 @@ const SESSION_ID = 'rolling-horizon-chain-test'
 
 describe('rolling horizon across asynchronous court completion', () => {
   it.each([
-    ['court order', [0, 1, 2, 3, 4, 5]],
-    ['reverse order', [5, 4, 3, 2, 1, 0]],
-    ['slow middle courts', [0, 5, 1, 4, 2, 3]],
-  ])('keeps every lane feasible under %s', (_label, courtOrder) => {
+    ['court order', [0, 1, 2, 3, 4, 5], false],
+    ['reverse order', [5, 4, 3, 2, 1, 0], false],
+    ['slow middle courts', [0, 5, 1, 4, 2, 3], false],
+    ['court order with enriched target', [0, 1, 2, 3, 4, 5], true],
+  ])('keeps every lane feasible under %s', (_label, courtOrder, withTarget) => {
     let snapshot = buildSnapshot()
+    const rollingPlanTarget = withTarget ? buildEnrichedTarget(snapshot) : null
     let sequence = snapshot.liveMatchRows.length
     const selectedCounts = new Map<string, number>()
     const partnerCounts = new Map<string, number>()
@@ -39,6 +42,7 @@ describe('rolling horizon across asynchronous court completion', () => {
             courtIdxs: [courtIdx],
             ignoreCapacityLock: true,
             rollingHorizon: true,
+            rollingPlanTarget,
             onInstrumentEvent: event => events.push(`${event.event}:${event.detail}`),
             onIncompleteDump: dump => dumps.push({ missing_courts: dump.missing_courts, payload: dump.payload }),
           },
@@ -126,6 +130,27 @@ function repeatEvents(counts: ReadonlyMap<string, number>) {
 
 function rounded(value: number) {
   return Number(value.toFixed(3))
+}
+
+function buildEnrichedTarget(snapshot: AuthoritativeLiveSnapshot): RollingPlanTarget {
+  const players = Object.fromEntries(snapshot.playerRows.map(row => [row.player_id, {
+    matches: 2,
+    rests: 1,
+    quality_debt: 2,
+    partner_diversity: 2,
+    opponent_diversity: 6,
+    partner_repeat_exposure: 1,
+    opponent_repeat_exposure: 2,
+    max_consecutive_rest: 1,
+    max_consecutive_play: 3,
+  }]))
+  return {
+    plan_version_id: 'enriched-target-test',
+    target_matches_by_player: Object.fromEntries(snapshot.playerRows.map(row => [row.player_id, 2])),
+    preferred_team_gap: 0.5,
+    preferred_intra_team_gap: 1.5,
+    players,
+  }
 }
 
 function buildSnapshot(): AuthoritativeLiveSnapshot {

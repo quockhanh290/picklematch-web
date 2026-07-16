@@ -249,8 +249,13 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   average/maximum team and intra-team gaps while retaining the per-request
   two-second operation gate. The measured reverse-order run exposed the current
   tail risk directly: max intra-team gap 2.24 and five warning matches.
-- [ ] Enrich the rolling target with checkpoint match/rest debt, per-player
+- [x] Enrich the rolling target with checkpoint match/rest debt, per-player
   quality debt, diversity/repeat budgets, and consecutive play/rest limits.
+  The target is derived from the existing immutable planner payload and round
+  rows, so no schema change is required. Legacy match-only targets retain their
+  old behavior, missing availability counters cannot produce NaN scores, and
+  the enriched path passes four asynchronous completion timelines with every
+  lane request below two seconds.
 - [ ] Add lineup scarcity scoring, then bounded worst-case search and
   counterfactual diagnostics behind the existing planner allowlist.
 

@@ -36,6 +36,7 @@ import {
   type PlannedCourtConsumptionDecision,
 } from '../../../lib/next-round-suggester/planner/consumption.ts'
 import { validatePlannedBoard } from '../../../lib/next-round-suggester/planner/validation.ts'
+import { buildRollingPlanTarget } from '../../../lib/next-round-suggester/planner/rolling-target.ts'
 import type { RollingPlanTarget } from '../../../lib/next-round-suggester/planner/rolling-horizon.ts'
 import type {
   SessionState,
@@ -216,45 +217,24 @@ async function loadPlanConsumption(options: {
     const baselinePlayers = Array.isArray(job?.input_payload?.state?.players)
       ? job.input_payload.state.players
       : []
-    const targetMatchesByPlayer = Object.fromEntries(baselinePlayers
-      .filter((player: any) => typeof player?.player_id === 'string')
-      .map((player: any) => [player.player_id, Number(player.matches_played ?? 0)])) as Record<string, number>
-    const plannedTeamGaps: number[] = []
-    const plannedIntraGaps: number[] = []
-    const targetPvna = (playerId: string) => {
-      const current = options.state.players.get(playerId)
-      const baseline = baselinePlayers.find((player: any) => player?.player_id === playerId)
-      return Number(current?.effective_pvna ?? current?.pvna ?? baseline?.effective_pvna ?? baseline?.pvna ?? 0)
-    }
-    for (const round of plannedByRound.values()) {
-      for (const match of round.matches as any[]) {
-        const ids = [...(match?.team_a ?? []), ...(match?.team_b ?? [])].map(String)
-        for (const playerId of ids) {
-          targetMatchesByPlayer[playerId] = (targetMatchesByPlayer[playerId] ?? 0) + 1
-        }
-        if (ids.length !== 4) continue
-        plannedTeamGaps.push(Math.abs(
-          targetPvna(ids[0]) + targetPvna(ids[1]) - targetPvna(ids[2]) - targetPvna(ids[3]),
-        ))
-        plannedIntraGaps.push(Math.max(
-          Math.abs(targetPvna(ids[0]) - targetPvna(ids[1])),
-          Math.abs(targetPvna(ids[2]) - targetPvna(ids[3])),
-        ))
-      }
-    }
-    const percentile = (values: number[], ratio: number) => {
-      if (values.length === 0) return null
-      const sorted = [...values].sort((left, right) => left - right)
-      return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio))]
-    }
     const rollingTarget: RollingPlanTarget | null = job?.result_plan_version_id
-      && Object.keys(targetMatchesByPlayer).length > 0
-      ? {
-          plan_version_id: job.result_plan_version_id,
-          target_matches_by_player: targetMatchesByPlayer,
-          preferred_team_gap: percentile(plannedTeamGaps, 0.95),
-          preferred_intra_team_gap: percentile(plannedIntraGaps, 0.95),
-        }
+      ? buildRollingPlanTarget({
+          planVersionId: job.result_plan_version_id,
+          baselinePlayers,
+          baselineRounds: Array.isArray(job.input_payload?.state?.rounds)
+            ? job.input_payload.state.rounds
+            : [],
+          plannedRounds: [...plannedByRound].map(([roundNo, round]) => ({
+            round_no: roundNo,
+            matches: round.matches,
+            resting: round.resting,
+          })),
+          pvnaByPlayer: new Map([...options.state.players].map(([id, player]) => [
+            id,
+            Number(player.effective_pvna ?? player.pvna),
+          ])),
+          pvnaTolerance: options.state.config.pvna_tolerance,
+        })
       : null
     const historyMatches = job ? completedHistory.every(round => {
       const planned = plannedByRound.get(round.round_no + 1)?.matches

@@ -17,11 +17,32 @@ export type RollingHorizonChoice = {
   diagnostics: RollingHorizonDiagnostics
 }
 
+export type RollingPlanPlayerTarget = {
+  matches: number
+  rests: number
+  quality_debt: number
+  partner_diversity: number
+  opponent_diversity: number
+  partner_repeat_exposure: number
+  opponent_repeat_exposure: number
+  max_consecutive_rest: number
+  max_consecutive_play: number
+}
+
+export type RollingPlanCheckpoint = {
+  progress_ratio: number
+  completed_plan_rounds: number
+  target_total_appearances: number
+  players: Record<string, RollingPlanPlayerTarget>
+}
+
 export type RollingPlanTarget = {
   plan_version_id?: string | null
   target_matches_by_player: Record<string, number>
   preferred_team_gap?: number | null
   preferred_intra_team_gap?: number | null
+  players?: Record<string, RollingPlanPlayerTarget>
+  checkpoints?: RollingPlanCheckpoint[]
 }
 
 type FutureSuggestion = (options: {
@@ -110,6 +131,58 @@ function matchQualityCost(
     + planIntraGapOver * 8
 }
 
+function qualityDebtByPlayer(state: SessionState) {
+  const debt = new Map([...state.players.keys()].map(id => [id, 0]))
+  const pvna = (id: string) => {
+    const player = state.players.get(id)
+    return player ? getEffectivePvna(player) : 0
+  }
+  for (const round of state.rounds) for (const match of round.matches) {
+    const teamGap = Math.abs(
+      pvna(match.team_a[0]) + pvna(match.team_a[1])
+        - pvna(match.team_b[0]) - pvna(match.team_b[1]),
+    )
+    const intraA = Math.abs(pvna(match.team_a[0]) - pvna(match.team_a[1]))
+    const intraB = Math.abs(pvna(match.team_b[0]) - pvna(match.team_b[1]))
+    match.team_a.forEach(id => debt.set(
+      id,
+      (debt.get(id) ?? 0)
+        + Math.max(0, teamGap - state.config.pvna_tolerance) * 2
+        + Math.max(0, intraA - 1),
+    ))
+    match.team_b.forEach(id => debt.set(
+      id,
+      (debt.get(id) ?? 0)
+        + Math.max(0, teamGap - state.config.pvna_tolerance) * 2
+        + Math.max(0, intraB - 1),
+    ))
+  }
+  return debt
+}
+
+function repeatExposure(counts: ReadonlyMap<string, number>) {
+  return [...counts.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0)
+}
+
+function finiteOr(value: unknown, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function activePlanPlayerTargets(
+  state: SessionState,
+  planTarget?: RollingPlanTarget | null,
+): Record<string, Partial<RollingPlanPlayerTarget> & { matches: number }> | null {
+  if (!planTarget) return null
+  const currentAppearances = Object.keys(planTarget.target_matches_by_player)
+    .reduce((sum, playerId) => sum + (state.players.get(playerId)?.matches_played ?? 0), 0)
+  const checkpoint = planTarget.checkpoints
+    ?.find(item => item.target_total_appearances > currentAppearances)
+  return checkpoint?.players ?? planTarget.players ?? Object.fromEntries(
+    Object.entries(planTarget.target_matches_by_player).map(([id, matches]) => [id, { matches }]),
+  )
+}
+
 function fairnessDebtCost(state: SessionState, planTarget?: RollingPlanTarget | null) {
   const active = [...state.players.values()]
     .filter(player => player.checked_out_at === null && !player.opted_rest)
@@ -123,13 +196,55 @@ function fairnessDebtCost(state: SessionState, planTarget?: RollingPlanTarget | 
     (sum, player) => sum + Math.max(0, player.consecutive_play - 2),
     0,
   )
-  const planDebt = planTarget
+  const planPlayers = activePlanPlayerTargets(state, planTarget)
+  const qualityDebt = planPlayers ? qualityDebtByPlayer(state) : null
+  const planDebt = planPlayers
     ? active.reduce((sum, player) => {
-        const target = planTarget.target_matches_by_player[player.player_id]
-        if (!Number.isFinite(target)) return sum
-        const remaining = Math.max(0, target - player.matches_played)
-        const over = Math.max(0, player.matches_played - target)
-        return sum + remaining * remaining * 12 + over * over * 120
+        const target = planPlayers[player.player_id]
+        if (!target || !Number.isFinite(target.matches)) return sum
+        const remaining = Math.max(0, target.matches - player.matches_played)
+        const over = Math.max(0, player.matches_played - target.matches)
+        const rests = Math.max(0, finiteOr(player.rounds_available, player.matches_played) - player.matches_played)
+        const restOver = Math.max(0, rests - finiteOr(target.rests, rests))
+        const currentQualityDebt = qualityDebt?.get(player.player_id) ?? 0
+        const qualityOver = Math.max(0, currentQualityDebt - finiteOr(target.quality_debt, currentQualityDebt))
+        const partnerRepeatExposure = repeatExposure(player.partner_counts)
+        const partnerRepeatOver = Math.max(
+          0,
+          partnerRepeatExposure - finiteOr(target.partner_repeat_exposure, partnerRepeatExposure),
+        )
+        const opponentRepeatExposure = repeatExposure(player.opponent_counts)
+        const opponentRepeatOver = Math.max(
+          0,
+          opponentRepeatExposure - finiteOr(target.opponent_repeat_exposure, opponentRepeatExposure),
+        )
+        const partnerDiversityDebt = Math.max(
+          0,
+          finiteOr(target.partner_diversity, player.partner_counts.size) - player.partner_counts.size,
+        )
+        const opponentDiversityDebt = Math.max(
+          0,
+          finiteOr(target.opponent_diversity, player.opponent_counts.size) - player.opponent_counts.size,
+        )
+        const restStreakOver = Math.max(
+          0,
+          player.consecutive_rest - finiteOr(target.max_consecutive_rest, player.consecutive_rest),
+        )
+        const playStreakOver = Math.max(
+          0,
+          player.consecutive_play - finiteOr(target.max_consecutive_play, player.consecutive_play),
+        )
+        return sum
+          + remaining * remaining * 12
+          + over * over * 120
+          + restOver * restOver * 40
+          + qualityOver * qualityOver * 30
+          + partnerRepeatOver * 35
+          + opponentRepeatOver * 4
+          + partnerDiversityDebt * 3
+          + opponentDiversityDebt
+          + restStreakOver * 80
+          + playStreakOver * 8
       }, 0)
     : 0
   return spread * 30
