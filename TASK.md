@@ -280,6 +280,19 @@ Architecture and rollout ledger: `docs/PRECOMPUTED_SESSION_PLANNER.md`
   rejected candidate and score delta, cache/search pressure, and deadline
   exhaustion. Session replay analysis aggregates these alongside the existing
   session-quality comparator without duplicating full dump payloads.
+- [x] Align rolling choices with the full feasible candidate set instead of
+  truncating to the engine's first 3-5 alternatives before lookahead. Build a
+  bounded Pareto frontier over team gap, intra-team gap, partner/opponent
+  repeats, and projected plan/fairness debt, then preserve quality anchors plus
+  the best plan-debt candidate inside the existing beam width. A reference
+  quality guard prevents lookahead from trading a clean current match for an
+  excessive team/intra gap. Algorithm version 14 keeps hard rest requirements
+  and the production fallback unchanged. Focused unit, asynchronous chain, and
+  roster/court mutation matrix gates pass; the captured late-session miss
+  replays from historical 0.51 team / 2.35 intra with repeats to 0.23 / 0.80
+  without repeats in 473ms (request replay does not include the persisted
+  rolling target, so this is a candidate-quality result rather than a complete
+  session counterfactual).
 
 ### Deployment discipline
 - No migration, Edge deploy, or client deploy is required for Phase 0-2.

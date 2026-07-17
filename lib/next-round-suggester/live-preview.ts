@@ -58,7 +58,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 13
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 14
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -2825,6 +2825,8 @@ function pickRollingBeamAlternative(
   baseSimBusy: Set<string>,
   liveCommitments: SessionLiveMatchRow[],
   budgetMs: number,
+  candidateLimit: number,
+  qualityReference: SuggestionAlternative,
   planTarget?: RollingPlanTarget | null,
 ): ReturnType<typeof chooseRollingHorizonAlternative> {
   return chooseRollingHorizonAlternative({
@@ -2833,6 +2835,8 @@ function pickRollingBeamAlternative(
     baseBusyIds: baseSimBusy,
     liveCommitments,
     budgetMs,
+    candidateLimit,
+    qualityReference,
     suggestFuture: ({ state: futureState, busyIds, maxRuntimeMs }) => (
       suggestNextMatch(futureState, {
         busy_player_ids: busyIds,
@@ -3770,11 +3774,13 @@ export function buildSuggestedMatchPayloads({
         ...[...courtRoundBusyIds].filter(id => !liveLockedPlayerIds.has(id)),
       ])
       const beamAlt = pickRollingBeamAlternative(
-        finalAlternatives.slice(0, rollingCandidateLimit),
+        finalAlternatives,
         suggestionStateForCourt,
         beamBaseSimBusy,
         rollingCommitments,
         beamBudgetMs,
+        rollingCandidateLimit,
+        alternative,
         options.rollingPlanTarget,
       )
       if (beamAlt) {
@@ -3785,6 +3791,7 @@ export function buildSuggestedMatchPayloads({
             detail: [
               `court=${courtIdx}`,
               `candidates=${beamAlt.diagnostics.candidate_count}`,
+              `frontier=${beamAlt.diagnostics.frontier_candidate_count}`,
               `evaluated=${beamAlt.diagnostics.evaluated_candidate_count}`,
               `orders=${beamAlt.diagnostics.completion_orders}`,
               `depth=${beamAlt.diagnostics.horizon_events}`,

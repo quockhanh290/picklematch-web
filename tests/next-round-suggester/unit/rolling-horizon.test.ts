@@ -143,6 +143,87 @@ describe('rolling court-lane horizon', () => {
     expect(choice?.alternative).toBe(followsPlan)
   })
 
+  it('builds the bounded beam from the full Pareto frontier instead of the first alternatives', () => {
+    const players = createPlayers(16)
+    const pvnas: Record<string, number> = {
+      p01: 2, p02: 5, p03: 2.5, p04: 4.5,
+      p05: 2.4, p06: 4.6, p07: 3, p08: 3.8,
+      p09: 3, p10: 3, p11: 3, p12: 3,
+      p13: 3, p14: 3, p15: 3, p16: 3,
+    }
+    players.forEach(player => { player.pvna = pvnas[player.player_id] ?? 3 })
+    const state = createState({ players, courts: 2 })
+    const poorFirst = alternative(['p01', 'p02'], ['p03', 'p04'], 0)
+    const middlingSecond = alternative(['p05', 'p06'], ['p07', 'p08'], 0)
+    const paretoBestLast = alternative(['p09', 'p10'], ['p11', 'p12'], 0)
+    const commitment = liveRow(
+      'live-1',
+      1,
+      ['p13', 'p14'],
+      ['p15', 'p16'],
+      '2026-07-16T12:00:00.000Z',
+    )
+
+    const choice = chooseRollingHorizonAlternative({
+      candidates: [poorFirst, middlingSecond, paretoBestLast],
+      candidateLimit: 1,
+      state,
+      baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
+      liveCommitments: [commitment],
+      budgetMs: 300,
+      projectMatch: buildProjectedStateAfterLiveMatch,
+      suggestFuture: () => null,
+    })
+
+    expect(choice?.alternative).toBe(paretoBestLast)
+    expect(choice?.diagnostics.candidate_count).toBe(3)
+    expect(choice?.diagnostics.frontier_candidate_count).toBe(1)
+    expect(choice?.diagnostics.evaluated_candidate_count).toBe(1)
+  })
+
+  it('does not trade a clean current match for a plan candidate outside the quality guard', () => {
+    const players = createPlayers(16)
+    players.forEach(player => {
+      player.pvna = 3
+      player.matches_played = player.player_id <= 'p04' ? 2 : 0
+    })
+    players.find(player => player.player_id === 'p05')!.pvna = 2
+    players.find(player => player.player_id === 'p06')!.pvna = 5
+    players.find(player => player.player_id === 'p07')!.pvna = 3
+    players.find(player => player.player_id === 'p08')!.pvna = 2.6
+    const state = createState({ players, courts: 2, pvnaTolerance: 0.5 })
+    const clean = alternative(['p01', 'p02'], ['p03', 'p04'], 0)
+    const outsideGuard = alternative(['p05', 'p06'], ['p07', 'p08'], 0)
+    const commitment = liveRow(
+      'live-1',
+      1,
+      ['p09', 'p10'],
+      ['p11', 'p12'],
+      '2026-07-16T12:00:00.000Z',
+    )
+
+    const choice = chooseRollingHorizonAlternative({
+      candidates: [clean, outsideGuard],
+      candidateLimit: 2,
+      qualityReference: clean,
+      state,
+      baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
+      liveCommitments: [commitment],
+      budgetMs: 300,
+      projectMatch: buildProjectedStateAfterLiveMatch,
+      suggestFuture: () => alternative(['p13', 'p14'], ['p15', 'p16'], 0),
+      planTarget: {
+        target_matches_by_player: Object.fromEntries(players.map(player => [
+          player.player_id,
+          player.player_id >= 'p05' && player.player_id <= 'p08' ? 4 : 2,
+        ])),
+      },
+    })
+
+    expect(choice?.alternative).toBe(clean)
+    expect(choice?.diagnostics.evaluated_candidate_count).toBe(1)
+  })
+
   it('uses the next checkpoint instead of deferring balance until the final target', () => {
     const players = createPlayers(12)
     players.forEach(player => { player.pvna = 3 })

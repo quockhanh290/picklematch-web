@@ -5,6 +5,7 @@ import type { SessionLiveMatchRow, SessionState, SuggestionAlternative } from '.
 
 export type RollingHorizonDiagnostics = {
   candidate_count: number
+  frontier_candidate_count: number
   evaluated_candidate_count: number
   completion_orders: number
   horizon_events: number
@@ -76,6 +77,83 @@ const FLEXIBILITY_CONSUMPTION_WEIGHT = 1
 function playerIds(alternative: SuggestionAlternative) {
   const match = alternative.matches[0]
   return match ? [...match.team_a, ...match.team_b] : []
+}
+
+type CandidateFrontierMetrics = {
+  teamGap: number
+  intraGap: number
+  partnerRepeats: number
+  opponentRepeats: number
+  projectedFairnessCost: number
+}
+
+function candidateFrontierMetrics(
+  alternative: SuggestionAlternative,
+  state: SessionState,
+  projectedFairnessCost: number,
+): CandidateFrontierMetrics {
+  const match = alternative.matches[0]
+  if (!match) {
+    return {
+      teamGap: Infinity,
+      intraGap: Infinity,
+      partnerRepeats: Infinity,
+      opponentRepeats: Infinity,
+      projectedFairnessCost,
+    }
+  }
+  const pvna = (id: string) => {
+    const player = state.players.get(id)
+    return player ? getEffectivePvna(player) : 0
+  }
+  const teamGap = Math.abs(
+    pvna(match.team_a[0]) + pvna(match.team_a[1])
+      - pvna(match.team_b[0]) - pvna(match.team_b[1]),
+  )
+  const intraGap = Math.max(
+    Math.abs(pvna(match.team_a[0]) - pvna(match.team_a[1])),
+    Math.abs(pvna(match.team_b[0]) - pvna(match.team_b[1])),
+  )
+  const partnerRepeats = (
+    (state.players.get(match.team_a[0])?.partner_counts.get(match.team_a[1]) ?? 0)
+    + (state.players.get(match.team_b[0])?.partner_counts.get(match.team_b[1]) ?? 0)
+  )
+  const opponentRepeats = match.team_a.reduce((total, playerA) => (
+    total + match.team_b.reduce((subtotal, playerB) => (
+      subtotal + (state.players.get(playerA)?.opponent_counts.get(playerB) ?? 0)
+    ), 0)
+  ), 0)
+  return { teamGap, intraGap, partnerRepeats, opponentRepeats, projectedFairnessCost }
+}
+
+function dominatesCandidate(
+  left: CandidateFrontierMetrics,
+  right: CandidateFrontierMetrics,
+) {
+  const dimensions: Array<[number, number]> = [
+    [left.teamGap, right.teamGap],
+    [left.intraGap, right.intraGap],
+    [left.partnerRepeats, right.partnerRepeats],
+    [left.opponentRepeats, right.opponentRepeats],
+    [left.projectedFairnessCost, right.projectedFairnessCost],
+  ]
+  return dimensions.every(([leftValue, rightValue]) => leftValue <= rightValue + 1e-9)
+    && dimensions.some(([leftValue, rightValue]) => leftValue < rightValue - 1e-9)
+}
+
+function staysWithinRollingQualityGuard(
+  candidate: CandidateFrontierMetrics,
+  reference: CandidateFrontierMetrics,
+  pvnaTolerance: number,
+) {
+  const teamGapCap = reference.teamGap <= pvnaTolerance
+    ? pvnaTolerance
+    : reference.teamGap + 0.1
+  const intraGapCap = Math.max(1, reference.intraGap + 0.25)
+  return candidate.teamGap <= teamGapCap + 1e-9
+    && candidate.intraGap <= intraGapCap + 1e-9
+    && candidate.partnerRepeats <= reference.partnerRepeats + 1
+    && candidate.opponentRepeats <= reference.opponentRepeats + 2
 }
 
 export function buildCandidateFlexibilityCosts(candidates: SuggestionAlternative[]) {
@@ -348,6 +426,8 @@ export function chooseRollingHorizonAlternative(options: {
   budgetMs: number
   suggestFuture: FutureSuggestion
   projectMatch: ProjectMatch
+  candidateLimit?: number
+  qualityReference?: SuggestionAlternative | null
   horizonEvents?: number
   planTarget?: RollingPlanTarget | null
   now?: () => number
@@ -357,17 +437,91 @@ export function chooseRollingHorizonAlternative(options: {
   ))
   const startedAt = clock()
   const deadline = startedAt + Math.max(1, options.budgetMs)
-  const candidates = options.candidates.filter(candidate => candidate.matches.length > 0)
-  if (candidates.length <= 1) return null
+  const allCandidates = options.candidates.filter(candidate => candidate.matches.length > 0)
+  if (allCandidates.length <= 1) return null
   const orders = completionOrders(options.liveCommitments)
   if (orders.length === 0) return null
+  const preparedCandidates = allCandidates.map((alternative, candidateIndex) => {
+    const candidateMatch = asLiveMatch(alternative, options.state, `rolling-horizon-frontier-${candidateIndex}`)
+    const projectedState = candidateMatch
+      ? options.projectMatch(options.state, candidateMatch)
+      : options.state
+    const projectedFairnessCost = fairnessDebtCost(projectedState, options.planTarget)
+    const immediateQualityCost = matchQualityCost(alternative, options.state, options.planTarget)
+    return {
+      alternative,
+      candidateIndex,
+      immediateQualityCost,
+      projectedFairnessCost,
+      metrics: candidateFrontierMetrics(alternative, options.state, projectedFairnessCost),
+    }
+  })
+  const referenceAlternative = options.qualityReference ?? allCandidates[0]
+  const referenceMetrics = candidateFrontierMetrics(referenceAlternative, options.state, 0)
+  const guardedCandidates = preparedCandidates.filter(candidate => (
+    candidate.alternative === referenceAlternative
+    || staysWithinRollingQualityGuard(
+      candidate.metrics,
+      referenceMetrics,
+      options.state.config.pvna_tolerance,
+    )
+  ))
+  const candidatesForFrontier = guardedCandidates.length > 0
+    ? guardedCandidates
+    : preparedCandidates
+  const frontier = candidatesForFrontier.filter((candidate, candidateIndex) => (
+    !candidatesForFrontier.some((other, otherIndex) => (
+      candidateIndex !== otherIndex && dominatesCandidate(other.metrics, candidate.metrics)
+    ))
+  ))
+  const candidateLimit = Math.max(
+    1,
+    Math.min(options.candidateLimit ?? allCandidates.length, allCandidates.length),
+  )
+  const ranked = [...frontier].sort((left, right) => (
+    left.immediateQualityCost + left.projectedFairnessCost
+      - (right.immediateQualityCost + right.projectedFairnessCost)
+    || left.alternative.score - right.alternative.score
+    || left.candidateIndex - right.candidateIndex
+  ))
+  const selected = new Map<number, typeof preparedCandidates[number]>()
+  const addCandidate = (candidate: typeof preparedCandidates[number] | undefined) => {
+    if (candidate && selected.size < candidateLimit) selected.set(candidate.candidateIndex, candidate)
+  }
+  const metricKeys: Array<keyof CandidateFrontierMetrics> = [
+    'teamGap',
+    'intraGap',
+    'projectedFairnessCost',
+    'partnerRepeats',
+    'opponentRepeats',
+  ]
+  for (const key of metricKeys) {
+    addCandidate([...frontier].sort((left, right) => (
+      left.metrics[key] - right.metrics[key]
+      || left.immediateQualityCost - right.immediateQualityCost
+      || left.candidateIndex - right.candidateIndex
+    ))[0])
+  }
+  ranked.forEach(addCandidate)
+  if (selected.size < candidateLimit) {
+    [...candidatesForFrontier]
+      .sort((left, right) => (
+        left.immediateQualityCost + left.projectedFairnessCost
+          - (right.immediateQualityCost + right.projectedFairnessCost)
+        || left.candidateIndex - right.candidateIndex
+      ))
+      .forEach(addCandidate)
+  }
+  const candidates = [...selected.values()]
   const horizonEvents = Math.max(1, Math.min(
     options.horizonEvents ?? DEFAULT_HORIZON_EVENTS,
     options.liveCommitments.length,
   ))
   const pathCount = Math.max(1, candidates.length * orders.length * horizonEvents)
   const perStepBudgetMs = Math.max(12, Math.floor(options.budgetMs / pathCount))
-  const flexibilityCosts = buildCandidateFlexibilityCosts(candidates)
+  const flexibilityCosts = buildCandidateFlexibilityCosts(
+    candidates.map(candidate => candidate.alternative),
+  )
   const futureCache = new Map<string, SuggestionAlternative | null>()
   let evaluatedCandidateCount = 0
   let futureSearchCalls = 0
@@ -384,7 +538,8 @@ export function chooseRollingHorizonAlternative(options: {
   }> = []
   let best: (RollingHorizonChoice & { score: number }) | null = null
 
-  for (const [candidateIndex, candidate] of candidates.entries()) {
+  for (const prepared of candidates) {
+    const { alternative: candidate, candidateIndex } = prepared
     if (clock() >= deadline && evaluatedCandidateCount > 0) {
       budgetExhausted = true
       break
@@ -394,9 +549,9 @@ export function chooseRollingHorizonAlternative(options: {
     evaluatedCandidateCount += 1
     const candidateIds = playerIds(candidate)
     const flexibilityCost = flexibilityCosts.get(candidate) ?? 0
-    const immediateQualityCost = matchQualityCost(candidate, options.state, options.planTarget)
+    const immediateQualityCost = prepared.immediateQualityCost
     const projectedCandidateState = options.projectMatch(options.state, candidateMatch)
-    const projectedFairnessCost = fairnessDebtCost(projectedCandidateState, options.planTarget)
+    const projectedFairnessCost = prepared.projectedFairnessCost
     const pathScores: number[] = []
     let pathsWithoutFutureMatch = 0
 
@@ -473,7 +628,8 @@ export function chooseRollingHorizonAlternative(options: {
         alternative: candidate,
         score,
         diagnostics: {
-          candidate_count: candidates.length,
+          candidate_count: allCandidates.length,
+          frontier_candidate_count: frontier.length,
           evaluated_candidate_count: evaluatedCandidateCount,
           completion_orders: orders.length,
           horizon_events: horizonEvents,
@@ -498,19 +654,20 @@ export function chooseRollingHorizonAlternative(options: {
   }
 
   if (!best) return null
-  best.diagnostics.evaluated_candidate_count = evaluatedCandidateCount
-  best.diagnostics.future_search_calls = futureSearchCalls
-  best.diagnostics.future_cache_hits = futureCacheHits
-  best.diagnostics.budget_exhausted = budgetExhausted
-  best.diagnostics.elapsed_ms = clock() - startedAt
+  const selectedBest = best
+  selectedBest.diagnostics.evaluated_candidate_count = evaluatedCandidateCount
+  selectedBest.diagnostics.future_search_calls = futureSearchCalls
+  selectedBest.diagnostics.future_cache_hits = futureCacheHits
+  selectedBest.diagnostics.budget_exhausted = budgetExhausted
+  selectedBest.diagnostics.elapsed_ms = clock() - startedAt
   const rejected = evaluated
-    .filter(item => item.alternative !== best.alternative)
+    .filter(item => item.alternative !== selectedBest.alternative)
     .sort((left, right) => left.score - right.score)[0]
   if (rejected) {
-    best.diagnostics.best_rejected_candidate_index = rejected.candidateIndex
-    best.diagnostics.best_rejected_score = rejected.score
-    best.diagnostics.best_rejected_delta = rejected.score - best.score
-    best.diagnostics.best_rejected_worst_path_score = rejected.worst
+    selectedBest.diagnostics.best_rejected_candidate_index = rejected.candidateIndex
+    selectedBest.diagnostics.best_rejected_score = rejected.score
+    selectedBest.diagnostics.best_rejected_delta = rejected.score - selectedBest.score
+    selectedBest.diagnostics.best_rejected_worst_path_score = rejected.worst
   }
-  return { alternative: best.alternative, diagnostics: best.diagnostics }
+  return { alternative: selectedBest.alternative, diagnostics: selectedBest.diagnostics }
 }
