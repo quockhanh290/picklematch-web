@@ -58,7 +58,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 15
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 16
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -149,19 +149,20 @@ export function getLivePreviewCourtBudgetMs(remainingBatchMs: number, remainingC
 
 export function shouldDeferTightPoolSuggestion(input: {
   enabled: boolean
+  waitActive?: boolean
   activeLiveCourtCount: number
   availablePlayerCount: number
   pvnaGap: number
   intraTeamGap: number
   configuredPvnaTolerance: number
-  repeatOverBy?: number
-  maxPartnerPair?: number
 }) {
   if (!input.enabled || input.activeLiveCourtCount === 0) return false
+  const persistentOutlier = input.pvnaGap > Math.max(1.5, input.configuredPvnaTolerance + 1)
+    || input.intraTeamGap > 2.25
+  if (persistentOutlier) return true
+  if (input.waitActive === false) return false
   return input.pvnaGap > Math.max(1.25, input.configuredPvnaTolerance + 0.75)
     || input.intraTeamGap > 2
-    || (input.repeatOverBy ?? 0) > 1
-    || (input.maxPartnerPair ?? 0) > 2
 }
 
 export const TIGHT_POOL_QUALITY_WAIT_MS = 30_000
@@ -3871,21 +3872,19 @@ export function buildSuggestedMatchPayloads({
       courtIdx,
       options.nowMs,
     )
-    const selectedRepeatMetrics = getAlternativeRepeatMetrics(alternative, suggestionStateForCourt)
     if (shouldDeferTightPoolSuggestion({
-      enabled: options.deferExtremeTightPool === true && count === 1 && tightPoolWaitIsActive,
+      enabled: options.deferExtremeTightPool === true && count === 1,
+      waitActive: tightPoolWaitIsActive,
       activeLiveCourtCount: liveCourtIdxs.size,
       availablePlayerCount,
       pvnaGap: pvnaDiff,
       intraTeamGap: selectedIntraTeamGap,
       configuredPvnaTolerance,
-      repeatOverBy: selectedRepeatMetrics.repeat_over_by,
-      maxPartnerPair: selectedRepeatMetrics.max_partner_pair,
     })) {
       try {
         options.onInstrumentEvent?.({
           event: 'repair',
-          detail: `rolling_quality_deferred:court=${courtIdx};available=${availablePlayerCount};pvna=${pvnaDiff.toFixed(2)};intra=${selectedIntraTeamGap.toFixed(2)};repeat_over=${selectedRepeatMetrics.repeat_over_by};partner_max=${selectedRepeatMetrics.max_partner_pair};until=${tightPoolDeferUntilMs ?? 'unbounded'}`,
+          detail: `rolling_quality_deferred:court=${courtIdx};available=${availablePlayerCount};pvna=${pvnaDiff.toFixed(2)};intra=${selectedIntraTeamGap.toFixed(2)};until=${tightPoolDeferUntilMs ?? 'unbounded'}`,
           court_count: courtCount,
           available: availablePlayerCount,
         })

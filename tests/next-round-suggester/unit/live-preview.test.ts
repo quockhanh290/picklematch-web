@@ -72,23 +72,23 @@ describe('Edge rolling quality defer policy', () => {
     })).toBe(true)
   })
 
-  it('also defers severe repeat debt while another court can widen the pool', () => {
-    const base = {
-      enabled: true,
-      activeLiveCourtCount: 2,
-      availablePlayerCount: 12,
-      configuredPvnaTolerance: 0.5,
-      pvnaGap: 0.4,
-      intraTeamGap: 0.8,
-    }
-    expect(shouldDeferTightPoolSuggestion({ ...base, repeatOverBy: 2 })).toBe(true)
-    expect(shouldDeferTightPoolSuggestion({ ...base, maxPartnerPair: 3 })).toBe(true)
-  })
-
   it('never defers when disabled or no live court can release players', () => {
     const base = { enabled: true, activeLiveCourtCount: 5, availablePlayerCount: 4, configuredPvnaTolerance: 0.5, pvnaGap: 2.18, intraTeamGap: 0.4 }
     expect(shouldDeferTightPoolSuggestion({ ...base, enabled: false })).toBe(false)
     expect(shouldDeferTightPoolSuggestion({ ...base, activeLiveCourtCount: 0 })).toBe(false)
+  })
+
+  it('keeps catastrophic outliers blocked after the normal wait expires', () => {
+    const base = {
+      enabled: true,
+      waitActive: false,
+      activeLiveCourtCount: 2,
+      availablePlayerCount: 13,
+      configuredPvnaTolerance: 0.5,
+    }
+    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 1.4, intraTeamGap: 1 })).toBe(false)
+    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 2.18, intraTeamGap: 1 })).toBe(true)
+    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.5, intraTeamGap: 2.75 })).toBe(true)
   })
 
   it('uses the latest completion on each requested court as a stable 30-second deadline', () => {
