@@ -58,18 +58,36 @@ function alternative(teamA: [string, string], teamB: [string, string], pvnaDiff:
   }
 }
 
-describe('Edge tight-pool quality policy', () => {
-  it('defers only extreme four-player choices while another court is live', () => {
+describe('Edge rolling quality defer policy', () => {
+  it('defers an extreme choice while another court can release players', () => {
     const base = { enabled: true, activeLiveCourtCount: 5, availablePlayerCount: 4, configuredPvnaTolerance: 0.5 }
     expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 2.18, intraTeamGap: 0.4 })).toBe(true)
     expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.4, intraTeamGap: 2.75 })).toBe(true)
     expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.5, intraTeamGap: 0.8 })).toBe(false)
+    expect(shouldDeferTightPoolSuggestion({
+      ...base,
+      availablePlayerCount: 13,
+      pvnaGap: 2.18,
+      intraTeamGap: 0.4,
+    })).toBe(true)
   })
 
-  it('never defers when disabled, the pool is wider, or no live court can release players', () => {
+  it('also defers severe repeat debt while another court can widen the pool', () => {
+    const base = {
+      enabled: true,
+      activeLiveCourtCount: 2,
+      availablePlayerCount: 12,
+      configuredPvnaTolerance: 0.5,
+      pvnaGap: 0.4,
+      intraTeamGap: 0.8,
+    }
+    expect(shouldDeferTightPoolSuggestion({ ...base, repeatOverBy: 2 })).toBe(true)
+    expect(shouldDeferTightPoolSuggestion({ ...base, maxPartnerPair: 3 })).toBe(true)
+  })
+
+  it('never defers when disabled or no live court can release players', () => {
     const base = { enabled: true, activeLiveCourtCount: 5, availablePlayerCount: 4, configuredPvnaTolerance: 0.5, pvnaGap: 2.18, intraTeamGap: 0.4 }
     expect(shouldDeferTightPoolSuggestion({ ...base, enabled: false })).toBe(false)
-    expect(shouldDeferTightPoolSuggestion({ ...base, availablePlayerCount: 5 })).toBe(false)
     expect(shouldDeferTightPoolSuggestion({ ...base, activeLiveCourtCount: 0 })).toBe(false)
   })
 
