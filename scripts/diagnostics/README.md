@@ -127,6 +127,30 @@ npx tsx scripts/diagnostics/diagnose-live-repeat-tradeoff.ts <session-id>
 npx tsx scripts/diagnostics/diagnose-round-suggest.ts <session-id>
 ```
 
+## Offline full-board quality oracle
+
+The oracle uses Google OR-Tools CP-SAT outside the Expo/Edge bundle. It compares
+an engine dump with a lexicographically optimized full board and reports
+`OPTIMAL` only when every objective stage is proven optimal.
+
+```bash
+python -m venv tmp/oracle-venv
+tmp/oracle-venv/Scripts/python.exe -m pip install -r scripts/diagnostics/requirements-oracle.txt
+npx tsx scripts/diagnostics/solve-session-quality-oracle.ts --input=<dump.json>
+npx tsx scripts/diagnostics/solve-session-quality-oracle.ts --input=<dumps.jsonl> --line=-1 --time-limit=60
+tmp/oracle-venv/Scripts/python.exe scripts/diagnostics/quality-oracle-solver.py scripts/diagnostics/fixtures/quality-oracle-small.json --time-limit=10 --workers=1
+```
+
+Objective order: recover all players who already rested once, minimize projected
+match-count spread, max player quality debt, max team gap, max/total opponent
+repeat burden, max/total partner repeat burden, max intra-team gap, avoid-pair
+opponent exposure, partner gender-preference penalty, then total quality debt.
+Opponent gender preference remains a reported diagnostic and is not included in
+the current optimality proof.
+
+The proof covers one replayable scheduling checkpoint. It does not by itself
+prove that an entire asynchronous rolling-court session is globally optimal.
+
 ## Regression checks (live Supabase)
 
 These map directly to known bugs and can serve as manual regression probes:

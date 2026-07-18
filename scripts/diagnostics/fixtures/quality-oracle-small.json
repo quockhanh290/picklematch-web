@@ -1,0 +1,21 @@
+{
+  "court_count": 2,
+  "target_courts": 2,
+  "pvna_tolerance": 0.5,
+  "busy_player_ids": [],
+  "avoid_pairs": [],
+  "players": [
+    { "id": "p1", "pvna": 2.0, "matches_played": 1, "consecutive_rest": 1 },
+    { "id": "p2", "pvna": 2.1, "matches_played": 1, "consecutive_rest": 0 },
+    { "id": "p3", "pvna": 2.2, "matches_played": 1, "consecutive_rest": 0 },
+    { "id": "p4", "pvna": 2.3, "matches_played": 1, "consecutive_rest": 0 },
+    { "id": "p5", "pvna": 3.0, "matches_played": 1, "consecutive_rest": 1 },
+    { "id": "p6", "pvna": 3.1, "matches_played": 1, "consecutive_rest": 0 },
+    { "id": "p7", "pvna": 3.2, "matches_played": 1, "consecutive_rest": 0 },
+    { "id": "p8", "pvna": 3.3, "matches_played": 1, "consecutive_rest": 0 }
+  ],
+  "engine_matches": [
+    { "team_a": ["p1", "p4"], "team_b": ["p2", "p3"] },
+    { "team_a": ["p5", "p8"], "team_b": ["p6", "p7"] }
+  ]
+}
