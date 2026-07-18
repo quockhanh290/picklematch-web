@@ -58,7 +58,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 16
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 17
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -2056,6 +2056,9 @@ function repairEarlyPayloadBatchQuality(
     current = bestPayloads
     currentStats = bestStats
   }
+  if (currentStats.pvnaOver === 0 && currentStats.intraOverHard === 0) {
+    return current
+  }
   return repairEarlyPayloadBatchQualityWithBeam(current, state, pvnaTolerance)
 }
 
@@ -2162,6 +2165,178 @@ function scorePayloadRepeatRepair(payloads: SuggestedMatchPayload[], state: Sess
     repeat.opponentRepeatMatches * 18 +
     repeat.opponentRepeatEvents * 8
   )
+}
+
+function getPayloadBatchParticipationStats(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  const selectedIds = new Set(payloads.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+  const eligiblePlayers = [...state.players.values()].filter(player =>
+    player.checked_out_at === null && !player.opted_rest
+  )
+  const projectedMatches = eligiblePlayers.map(player =>
+    player.matches_played + (selectedIds.has(player.player_id) ? 1 : 0)
+  )
+  const requiredIds = eligiblePlayers
+    .filter(player => player.consecutive_rest >= 1)
+    .map(player => player.player_id)
+  const qualityDebt = payloads.flatMap(payload => {
+    const teamGap = getPayloadPvnaGap(payload, state)
+    const teamIntra = (team: [string, string]) => Math.abs(
+      getEffectivePvna(state.players.get(team[0])!)
+      - getEffectivePvna(state.players.get(team[1])!),
+    )
+    const gapDebt = Math.max(0, teamGap - pvnaTolerance) * 2
+    return [
+      gapDebt + Math.max(0, teamIntra(payload.team_a) - 1),
+      gapDebt + Math.max(0, teamIntra(payload.team_b) - 1),
+    ]
+  })
+  const quality = getPayloadBatchStats(payloads, state, pvnaTolerance)
+  return {
+    restMisses: requiredIds.filter(playerId => !selectedIds.has(playerId)).length,
+    matchSpread: projectedMatches.length > 0
+      ? Math.max(...projectedMatches) - Math.min(...projectedMatches)
+      : 0,
+    selectedMatchTotal: eligiblePlayers.reduce(
+      (sum, player) => sum + (selectedIds.has(player.player_id) ? player.matches_played : 0),
+      0,
+    ),
+    maxQualityDebt: Math.max(0, ...qualityDebt),
+    maxPvna: quality.maxPvna,
+    maxIntra: quality.maxIntra,
+    repeatMatches: quality.repeatMatches,
+    totalPvnaOver: quality.totalPvnaOver,
+    totalIntraOverPreferred: quality.totalIntraOverPreferred,
+  }
+}
+
+function comparePayloadBatchParticipation(
+  left: ReturnType<typeof getPayloadBatchParticipationStats>,
+  right: ReturnType<typeof getPayloadBatchParticipationStats>,
+) {
+  const fields: Array<keyof typeof left> = [
+    'restMisses',
+    'matchSpread',
+    'selectedMatchTotal',
+    'maxQualityDebt',
+    'maxPvna',
+    'maxIntra',
+    'repeatMatches',
+    'totalPvnaOver',
+    'totalIntraOverPreferred',
+  ]
+  for (const field of fields) {
+    const difference = left[field] - right[field]
+    if (Math.abs(difference) > 1e-9) return difference
+  }
+  return 0
+}
+
+function hasAvoidedPartnerPair(payloads: SuggestedMatchPayload[], state: SessionState) {
+  const avoidPairs = new Set((state.config.avoid_pairs ?? []).map(pair =>
+    getPayloadPairKey(pair.player_a, pair.player_b)
+  ))
+  if (avoidPairs.size === 0) return false
+  return payloads.some(payload =>
+    avoidPairs.has(getPayloadPairKey(payload.team_a[0], payload.team_a[1]))
+    || avoidPairs.has(getPayloadPairKey(payload.team_b[0], payload.team_b[1]))
+  )
+}
+
+function getPayloadMaxHistoricalPairCount(payload: SuggestedMatchPayload, state: SessionState) {
+  const partnerCounts = [
+    state.players.get(payload.team_a[0])?.partner_counts.get(payload.team_a[1]) ?? 0,
+    state.players.get(payload.team_b[0])?.partner_counts.get(payload.team_b[1]) ?? 0,
+  ]
+  const opponentCounts = payload.team_a.flatMap(left =>
+    payload.team_b.map(right =>
+      state.players.get(left)?.opponent_counts.get(right) ?? 0
+    )
+  )
+  return {
+    partner: Math.max(0, ...partnerCounts),
+    opponent: Math.max(0, ...opponentCounts),
+  }
+}
+
+export function repairAllIdlePayloadBatchParticipation(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  if (payloads.length < 2) return payloads
+  const eligiblePlayers = [...state.players.values()]
+    .filter(player => player.checked_out_at === null && !player.opted_rest)
+  const eligibleIds = eligiblePlayers.map(player => player.player_id)
+  const selectedIds = new Set(payloads.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+  if (selectedIds.size !== payloads.length * 4) return payloads
+  if (eligibleIds.length <= selectedIds.size) return payloads
+  const projectedMatches = eligiblePlayers.map(player =>
+    player.matches_played + (selectedIds.has(player.player_id) ? 1 : 0)
+  )
+  const projectedSpread = Math.max(...projectedMatches) - Math.min(...projectedMatches)
+  const missesRestRecovery = eligiblePlayers.some(player =>
+    player.consecutive_rest >= 1 && !selectedIds.has(player.player_id)
+  )
+  if (!missesRestRecovery && projectedSpread <= 1) return payloads
+
+  let current = payloads
+  let currentStats = getPayloadBatchParticipationStats(current, state, pvnaTolerance)
+  let changed = false
+  const passLimit = Math.min(6, eligibleIds.length - selectedIds.size + 2)
+  for (let pass = 0; pass < passLimit; pass += 1) {
+    const currentSelectedIds = new Set(current.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+    const unselectedIds = eligibleIds.filter(playerId => !currentSelectedIds.has(playerId))
+    let bestPayloads: SuggestedMatchPayload[] | null = null
+    let bestStats = currentStats
+    for (const incomingId of unselectedIds) {
+      const incomingPlayer = state.players.get(incomingId)
+      if (!incomingPlayer) continue
+      for (let payloadIndex = 0; payloadIndex < current.length; payloadIndex += 1) {
+        for (let position = 0; position < 4; position += 1) {
+          const outgoingId = getPayloadPlayer(current[payloadIndex], position)
+          const outgoingPlayer = outgoingId ? state.players.get(outgoingId) : undefined
+          if (!outgoingPlayer) continue
+          const incomingRepairsRest = incomingPlayer.consecutive_rest >= 1
+          if (
+            !incomingRepairsRest
+            && incomingPlayer.matches_played > outgoingPlayer.matches_played
+          ) continue
+          const candidate = [...current]
+          candidate[payloadIndex] = setPayloadPlayer(candidate[payloadIndex], position, incomingId)
+          if (hasAvoidedPartnerPair([candidate[payloadIndex]], state)) continue
+          const currentPairCounts = getPayloadMaxHistoricalPairCount(current[payloadIndex], state)
+          const candidatePairCounts = getPayloadMaxHistoricalPairCount(candidate[payloadIndex], state)
+          if (
+            candidatePairCounts.partner > Math.max(1, currentPairCounts.partner)
+            || candidatePairCounts.opponent > Math.max(1, currentPairCounts.opponent)
+          ) continue
+          const candidateStats = getPayloadBatchParticipationStats(candidate, state, pvnaTolerance)
+          if (candidateStats.restMisses > currentStats.restMisses) continue
+          if (candidateStats.maxPvna > Math.max(pvnaTolerance + 0.25, currentStats.maxPvna + 0.25)) continue
+          if (candidateStats.maxIntra > Math.max(1.5, currentStats.maxIntra + 0.25)) continue
+          if (comparePayloadBatchParticipation(candidateStats, bestStats) >= 0) continue
+          bestPayloads = candidate
+          bestStats = candidateStats
+        }
+      }
+    }
+    if (!bestPayloads) break
+    current = bestPayloads
+    currentStats = bestStats
+    changed = true
+  }
+  if (!changed) return payloads
+
+  const finalSelectedIds = new Set(current.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+  const resting = eligibleIds.filter(playerId => !finalSelectedIds.has(playerId)).sort()
+  return current.map(payload => normalizeRepairedPayload({
+    ...payload,
+    resting,
+  }, state, pvnaTolerance))
 }
 
 function shouldRepairRepeatForPayloadBatch(payloads: SuggestedMatchPayload[]) {
@@ -2273,8 +2448,11 @@ export function repairSuggestedPayloadBatch(
   payloads: SuggestedMatchPayload[],
   state: SessionState,
   pvnaTolerance: number,
-  onRepairUsed?: (detail: 'swap' | 'early' | 'repeat') => void,
-  options: { isTrueFirstRound?: boolean; allowEarlyQualityRepair?: boolean } = {},
+  onRepairUsed?: (detail: 'swap' | 'early' | 'repeat' | 'participation') => void,
+  options: {
+    isTrueFirstRound?: boolean
+    allowEarlyQualityRepair?: boolean
+  } = {},
 ) {
   let current = payloads
   let currentStats = getPayloadBatchStats(current, state, pvnaTolerance)
@@ -2327,7 +2505,12 @@ export function repairSuggestedPayloadBatch(
     (allowEarlyQualityRepair && shouldRepairEarlyQualityForPayloadBatch(current))
     || hasSeverePayloadPvnaOutlier(current, state, pvnaTolerance)
   ) {
-    const qualityRepaired = repairEarlyPayloadBatchQuality(current, state, pvnaTolerance, isTrueFirstRound)
+    const qualityRepaired = repairEarlyPayloadBatchQuality(
+      current,
+      state,
+      pvnaTolerance,
+      isTrueFirstRound,
+    )
     if (qualityRepaired !== current) {
       current = qualityRepaired
       changed = true
@@ -3686,7 +3869,11 @@ export function buildSuggestedMatchPayloads({
     ) ?? result.alternatives[0]
     let conditionalQualityRescue: SuggestionAlternative | null = null
     let conditionalQualityTradeoff: ReturnType<typeof findConditionalLiveQualityTradeoff> | null = null
-    if (baselineForConditionalSearch && effectiveCount >= courtCount && remainingBatchMs > LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS + 100) {
+    if (
+      baselineForConditionalSearch
+      && effectiveCount >= courtCount
+      && remainingBatchMs > LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS + 100
+    ) {
       const baselineMetrics = getTradeoffChoiceMetrics(
         baselineForConditionalSearch,
         suggestionStateForCourt,
@@ -3701,7 +3888,7 @@ export function buildSuggestedMatchPayloads({
           ran: false, timedOut: false, eligibleCount: 0,
           combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
         }
-        const conditionalBudgetMs = getRemainingCourtBudgetMs(220)
+        const conditionalBudgetMs = getRemainingCourtBudgetMs(100)
         const conditionalProtectedIds =
           liveSelectionGuard.relaxationStages[liveSelectionGuard.relaxationStages.length - 1]?.protectedIds
           ?? liveSelectionGuard.protectedIds
@@ -4078,7 +4265,7 @@ export function buildSuggestedMatchPayloads({
     })
   }
   const onRepairInstrument = options.onInstrumentEvent
-    ? (detail: 'swap' | 'early' | 'repeat') => {
+    ? (detail: 'swap' | 'early' | 'repeat' | 'participation') => {
         try { options.onInstrumentEvent!({ event: 'repair', detail, court_count: courtCount, available: availableForBatch }) } catch { /* noop */ }
       }
     : undefined
@@ -4089,9 +4276,17 @@ export function buildSuggestedMatchPayloads({
     isTrueFirstRound: state.rounds.length === 0 && !hasStartedOrCompletedLiveMatches,
     allowEarlyQualityRepair: payloads.length >= openCourtIdxsForBatch.length,
   })
+  const participationRepairedPayloads = liveCourtIdxs.size === 0
+    && repairedPayloads.length === effectiveCount
+    && effectiveCount >= 2
+    ? repairAllIdlePayloadBatchParticipation(repairedPayloads, repairState, pvnaTolerance)
+    : repairedPayloads
+  if (participationRepairedPayloads !== repairedPayloads) {
+    onRepairInstrument?.('participation')
+  }
   // Derive warnings from the exact lineups returned to persistence. Rescue and
   // repair paths must not leave over-cap quality metadata stale.
-  return repairedPayloads.map(payload => normalizeRepairedPayload(
+  return participationRepairedPayloads.map(payload => normalizeRepairedPayload(
     payload,
     repairState,
     pvnaTolerance,

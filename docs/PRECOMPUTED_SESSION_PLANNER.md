@@ -611,6 +611,34 @@ This is evidence for allowlist testing, not evidence for global rollout. Several
 fresh real sessions and mutation timelines are still required before widening
 the allowlist.
 
+### All-idle global rescue gate (algorithm v17, 2026-07-17)
+
+A real 32-player, six-court replay exposed a remaining live-engine fallback
+gap: the board recovered every player at rest risk, but its projected
+match-count spread was two even though an exact CP-SAT oracle proved that one
+was feasible. Algorithm v17 adds a bounded all-idle batch substitution after
+the existing board repair. Its lexicographic priorities are rest recovery,
+projected match-count spread, lower-match participation, quality debt, match
+gap, intra-team gap, and repeats. It cannot worsen rest recovery, create an
+avoid-pair partnership, or exceed the existing quality and repeat guards.
+
+The participation substitution is deliberately limited to a complete all-idle
+board; it never rewrites rolling lanes with live/busy commitments. Two bounded
+search controls apply to both paths: conditional rescue is capped at 100 ms,
+and deep beam repair is skipped once local repair has already cleared every
+PVNA and intra-team hard cap. Rolling-chain and rolling-matrix gates protect
+those controls. On the replay, v17 changed projected spread from two to one
+while keeping all ten rest-required players selected. Three isolated runs
+completed in 1416-1690 ms, filled all six courts, and returned maximum team gap
+0.43 and maximum intra-team gap 1.42.
+
+The exact oracle proved rest misses zero and match-count spread one optimal.
+It also found a lexicographically better quality-debt/team-gap board after
+about 45 seconds; that is useful offline headroom, not a viable synchronous
+Edge path. The live board used fewer partner and opponent repeat events than
+that oracle board. Unit, live timing, rolling-chain, and rolling-matrix gates
+remain green.
+
 ### Phase 5 - Advisory integration
 
 - Add a feature-flagged plan lookup to `session-live-matches-suggest`.

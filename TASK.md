@@ -398,3 +398,22 @@ features/host/session-detail/NextRoundSuggesterScreenV2.tsx
 lib/next-round-suggester/fairness/metrics.ts
 lib/next-round-suggester/live-preview.ts
 scripts/watch-court-lane.ts
+
+---
+
+## Task: All-idle global participation rescue
+Status: COMPLETE
+
+### Completed
+- [x] Reproduce the six-court quality miss from real dump line 272.
+- [x] Prove with CP-SAT that rest misses zero and projected match-count spread one are feasible and optimal.
+- [x] Add an all-idle-only batch substitution that improves spread from two to one without dropping any rest-required player.
+- [x] Keep all-idle participation substitution out of rolling lanes; gate the shared bounded-search fast paths with rolling-chain and rolling-matrix tests.
+- [x] Bound conditional rescue to 100 ms and pass the repeated under-two-second wall-clock gate.
+- [x] Pass 227 unit tests, four live-preview timing tests, four rolling-chain tests, and four rolling-matrix tests.
+
+### Evidence
+- Replay: 32 players, six courts, ten rest-required players.
+- Three isolated engine runs: 1416-1690 ms, six of six courts filled.
+- Final quality: rest misses 0, match-count spread 1, max team gap 0.43, max intra-team gap 1.42.
+- Oracle: rest misses 0 and spread 1 proven optimal; slower offline search still has quality-debt/team-gap headroom.

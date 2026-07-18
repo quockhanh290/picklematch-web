@@ -19,6 +19,7 @@ import {
   improvesPreviewBoardPvna,
   isTightPoolQualityWaitActive,
   needsEarlyFullBoardPvnaRescue,
+  repairAllIdlePayloadBatchParticipation,
   repairSuggestedPayloadBatch,
   resolveLivePreviewFinalChoice,
   shouldDeferTightPoolSuggestion,
@@ -1600,6 +1601,52 @@ describe('resolveLivePreviewFinalChoice', () => {
 })
 
 describe('live preview batch repair', () => {
+  it('repairs all-idle participation spread without dropping rest-required players', () => {
+    const playerRows = [
+      ['p1', 2.12, 4, 2], ['p2', 3.16, 4, 0], ['p3', 2.71, 3, 0], ['p4', 2.40, 4, 0],
+      ['p5', 3.28, 4, 0], ['p6', 2.83, 4, 0], ['p7', 2.52, 5, 0], ['p8', 4.22, 3, 2],
+      ['p9', 3.55, 4, 0], ['p10', 4.05, 4, 0], ['p11', 3.97, 4, 0], ['p12', 4.70, 3, 0],
+      ['p13', 2.53, 4, 0], ['p14', 4.71, 3, 2], ['p15', 4.36, 5, 0], ['p16', 4.47, 3, 0],
+      ['p17', 3.59, 3, 0], ['p18', 3.83, 4, 0], ['p19', 4.13, 4, 2], ['p20', 2.50, 4, 2],
+      ['p21', 4.51, 4, 2], ['p22', 2.60, 4, 0], ['p23', 4.98, 3, 0], ['p24', 4.54, 3, 2],
+      ['p25', 2.27, 4, 2], ['p26', 4.92, 3, 2], ['p27', 2.73, 4, 0], ['p28', 2.85, 4, 0],
+      ['p29', 4.28, 4, 2], ['p30', 3.38, 3, 0], ['p31', 2.04, 4, 0], ['p32', 4.27, 4, 0],
+    ] as const
+    const players = playerRows.map(([id, pvna, matchesPlayed, consecutiveRest]) =>
+      createPlayer(id, {
+        pvna,
+        matches_played: matchesPlayed,
+        consecutive_rest: consecutiveRest,
+      }))
+    const state = createState({ courts: 6, currentRound: 5, players })
+    const payloads = [
+      previewPayload(0, ['p14', 'p24'], ['p23', 'p32']),
+      previewPayload(1, ['p22', 'p20'], ['p27', 'p6']),
+      previewPayload(2, ['p29', 'p8'], ['p21', 'p19']),
+      previewPayload(3, ['p4', 'p3'], ['p28', 'p13']),
+      previewPayload(4, ['p11', 'p2'], ['p17', 'p9']),
+      previewPayload(5, ['p1', 'p18'], ['p26', 'p25']),
+    ]
+    const projectedSpread = (board: typeof payloads) => {
+      const selected = new Set(board.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+      const counts = players.map(player =>
+        player.matches_played + (selected.has(player.player_id) ? 1 : 0)
+      )
+      return Math.max(...counts) - Math.min(...counts)
+    }
+    const started = performance.now()
+    const repaired = repairAllIdlePayloadBatchParticipation(payloads, state, 0.5)
+    const selected = new Set(repaired.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+    const required = players
+      .filter(player => player.consecutive_rest >= 1)
+      .map(player => player.player_id)
+
+    expect(projectedSpread(payloads)).toBe(2)
+    expect(projectedSpread(repaired)).toBe(1)
+    expect(required.every(playerId => selected.has(playerId))).toBe(true)
+    expect(performance.now() - started).toBeLessThan(500)
+  })
+
   it('requests an early full-board rescue only when it improves a bad replacement', () => {
     const state = createState({
       courts: 2,
