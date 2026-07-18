@@ -608,6 +608,7 @@ def solve(payload: dict[str, Any], time_limit: float, workers: int) -> dict[str,
     solver.parameters.random_seed = 0
     stage_results = []
     final_status = cp_model.UNKNOWN
+    last_solution_assignment: list[list[str]] | None = None
     for name, objective, is_scaled in objectives:
         remaining = time_limit - (time.perf_counter() - started)
         if remaining <= 0:
@@ -630,6 +631,16 @@ def solve(payload: dict[str, Any], time_limit: float, workers: int) -> dict[str,
             break
         value = int(round(solver.value(objective)))
         bound = int(round(solver.best_objective_bound))
+        last_solution_assignment = [
+            [
+                next(
+                    player_id for player_id in player_ids
+                    if solver.value(assignment[player_id, court * 4 + offset])
+                )
+                for offset in range(4)
+            ]
+            for court in range(target_courts)
+        ]
         stage_results.append({
             "name": name,
             "status": solver.status_name(status),
@@ -642,16 +653,8 @@ def solve(payload: dict[str, Any], time_limit: float, workers: int) -> dict[str,
         model.add(objective == value)
 
     selected_candidates: list[Candidate] = []
-    if final_status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        for court in range(target_courts):
-            base = court * 4
-            assigned = [
-                next(
-                    player_id for player_id in player_ids
-                    if solver.value(assignment[player_id, base + offset])
-                )
-                for offset in range(4)
-            ]
+    if last_solution_assignment is not None:
+        for court, assigned in enumerate(last_solution_assignment):
             candidate = build_candidate(
                 court,
                 (assigned[0], assigned[1]),
