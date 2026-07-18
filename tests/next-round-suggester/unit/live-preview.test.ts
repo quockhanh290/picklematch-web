@@ -21,7 +21,9 @@ import {
   needsEarlyFullBoardPvnaRescue,
   repairAllIdlePayloadBatchParticipation,
   repairSuggestedPayloadBatch,
+  resolvePreviewPersistenceScope,
   resolveLivePreviewFinalChoice,
+  shouldRunReplacementFullBoardRescue,
   shouldDeferTightPoolSuggestion,
 } from '../../../lib/next-round-suggester/live-preview'
 import type { SessionLiveMatchRow, SuggestionAlternative } from '../../../lib/next-round-suggester/types'
@@ -1120,6 +1122,52 @@ describe('projected live match state', () => {
       finalPreviewBoard,
       replacementCourtIdxs: [],
     })).toEqual(finalPreviewBoard)
+  })
+
+  it('promotes an accepted quality rescue to an atomic full-board replacement', () => {
+    expect(resolvePreviewPersistenceScope({
+      mode: 'replace_courts',
+      qualityRescueUsed: true,
+      requestedCourtIdxs: [1],
+      openCourtIdxs: [1, 4, 5],
+      replaceAllSuggestions: false,
+    })).toEqual({
+      mode: 'full_board',
+      replace_court_idxs: [1, 4, 5],
+      replace_all: true,
+    })
+  })
+
+  it('keeps a normal court replacement scoped to the requested court', () => {
+    expect(resolvePreviewPersistenceScope({
+      mode: 'replace_courts',
+      qualityRescueUsed: false,
+      requestedCourtIdxs: [1],
+      openCourtIdxs: [1, 4, 5],
+      replaceAllSuggestions: false,
+    })).toEqual({
+      mode: 'replace_courts',
+      replace_court_idxs: [1],
+      replace_all: false,
+    })
+  })
+
+  it('automatically rescues a severe replacement even without the client flag', () => {
+    expect(shouldRunReplacementFullBoardRescue({
+      mode: 'replace_courts',
+      clientAllowsRescue: false,
+      replacementBoardIncomplete: false,
+      needsQualityRescue: true,
+    })).toBe(true)
+  })
+
+  it('does not globally recompute an ordinary incomplete replacement without the client flag', () => {
+    expect(shouldRunReplacementFullBoardRescue({
+      mode: 'replace_courts',
+      clientAllowsRescue: false,
+      replacementBoardIncomplete: true,
+      needsQualityRescue: false,
+    })).toBe(false)
   })
 
   it('does not add a replacement that overlaps an earlier replacement', () => {

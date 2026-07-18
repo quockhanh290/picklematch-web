@@ -318,6 +318,55 @@ export type FinalPreviewBoardResult = {
   quality_rescue_used: boolean
 }
 
+export type PreviewPersistenceScope = {
+  mode: PreviewBoardMode
+  replace_court_idxs: number[]
+  replace_all: boolean
+}
+
+export function resolvePreviewPersistenceScope({
+  mode,
+  qualityRescueUsed,
+  requestedCourtIdxs,
+  openCourtIdxs,
+  replaceAllSuggestions,
+}: {
+  mode: PreviewBoardMode
+  qualityRescueUsed: boolean
+  requestedCourtIdxs: number[]
+  openCourtIdxs: number[]
+  replaceAllSuggestions: boolean
+}): PreviewPersistenceScope {
+  const normalizeCourtIdxs = (courtIdxs: number[]) => [...new Set(
+    courtIdxs.map(Number).filter(courtIdx => Number.isFinite(courtIdx) && courtIdx >= 0),
+  )].sort((left, right) => left - right)
+  const promotedToFullBoard = mode === 'replace_courts' && qualityRescueUsed
+
+  return {
+    mode: promotedToFullBoard ? 'full_board' : mode,
+    replace_court_idxs: normalizeCourtIdxs(
+      promotedToFullBoard ? openCourtIdxs : requestedCourtIdxs,
+    ),
+    replace_all: promotedToFullBoard || replaceAllSuggestions,
+  }
+}
+
+export function shouldRunReplacementFullBoardRescue({
+  mode,
+  clientAllowsRescue,
+  replacementBoardIncomplete,
+  needsQualityRescue,
+}: {
+  mode: PreviewBoardMode
+  clientAllowsRescue: boolean
+  replacementBoardIncomplete: boolean
+  needsQualityRescue: boolean
+}) {
+  if (mode !== 'replace_courts') return false
+  if (needsQualityRescue) return true
+  return clientAllowsRescue && replacementBoardIncomplete
+}
+
 export function getPreviewMatchesToPersist({
   mode,
   finalPreviewBoard,

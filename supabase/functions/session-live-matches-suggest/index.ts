@@ -11,6 +11,8 @@ import {
   hasFulfilledPreviewBoardReplacements,
   improvesPreviewBoardPvna,
   needsEarlyFullBoardPvnaRescue,
+  resolvePreviewPersistenceScope,
+  shouldRunReplacementFullBoardRescue,
   LIVE_PREVIEW_ALGORITHM_VERSION,
 } from '../../../lib/next-round-suggester/live-preview.ts'
 import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state.ts'
@@ -1189,18 +1191,20 @@ Deno.serve(async (request) => {
       && !hasFulfilledPreviewBoardReplacements(board, courtIdxs)
     const needsQualityRescue = mode === 'replace_courts'
       && needsEarlyFullBoardPvnaRescue(payloads, state, pvnaTolerance)
-    const allowReplacementFullBoardRescue = mode === 'replace_courts'
+    const clientAllowsReplacementFullBoardRescue = mode === 'replace_courts'
       && body.allow_full_board_rescue === true
+    const runReplacementFullBoardRescue = shouldRunReplacementFullBoardRescue({
+      mode,
+      clientAllowsRescue: clientAllowsReplacementFullBoardRescue,
+      replacementBoardIncomplete,
+      needsQualityRescue,
+    })
     if (
       consumedPlanCourts.length === 0
-      && allowReplacementFullBoardRescue
-      && (replacementBoardIncomplete || needsQualityRescue)
+      && runReplacementFullBoardRescue
     ) {
       const liveRowsWithoutRetainedPreviews = liveMatchRows.filter((match: any) => match?.status !== 'suggested')
-      const fullBoardCount = Math.min(
-        courtCount,
-        Math.max(count, currentPreviewBoard.length + count),
-      )
+      const fullBoardCount = Math.min(courtCount, openCourtIdxs.length)
       const rescuedPayloads = buildSuggestedMatchPayloads({
         count: fullBoardCount,
         sessionId,
@@ -1293,13 +1297,21 @@ Deno.serve(async (request) => {
     let persistedPreviewVersion = liveStateVersion
     let persistedPreviewNoop = false
     if (finalPreviewBoard.length > 0 || targetCourtIdxs.length > 0) {
-      const replaceCourtIdxs = targetCourtIdxs.length > 0
+      const requestedPersistenceCourtIdxs = targetCourtIdxs.length > 0
         ? targetCourtIdxs
         : finalPreviewBoard
             .map((payload: any) => Number(payload.court_idx))
             .filter((idx: number) => Number.isFinite(idx) && idx >= 0 && idx < courtCount)
-      const matchesToPersist = getPreviewMatchesToPersist({
+      const persistenceScope = resolvePreviewPersistenceScope({
         mode,
+        qualityRescueUsed,
+        requestedCourtIdxs: requestedPersistenceCourtIdxs,
+        openCourtIdxs,
+        replaceAllSuggestions,
+      })
+      const replaceCourtIdxs = persistenceScope.replace_court_idxs
+      const matchesToPersist = getPreviewMatchesToPersist({
+        mode: persistenceScope.mode,
         finalPreviewBoard,
         replacementCourtIdxs: replaceCourtIdxs,
       })
@@ -1308,12 +1320,14 @@ Deno.serve(async (request) => {
           p_expected_live_state_version: requestLiveStateVersion,
           p_matches: matchesToPersist,
           p_replace_court_idxs: replaceCourtIdxs,
-          p_replace_all: replaceAllSuggestions,
+          p_replace_all: persistenceScope.replace_all,
           p_audit_payload: {
             source: EDGE_FUNCTION_NAME,
             suggestion_request_id: suggestionRequestId,
             client_request_id: clientRequestId,
             mode,
+            persistence_mode: persistenceScope.mode,
+            quality_rescue_used: qualityRescueUsed,
             requested_count: requestedCount,
             count,
             court_count: courtCount,
@@ -1369,9 +1383,9 @@ Deno.serve(async (request) => {
           maxSequenceNo: currentMaxSequenceNo,
         }))
         .filter(isNonNullPreviewMatch)
-      finalPreviewBoard = mode === 'replace_courts'
+      finalPreviewBoard = persistenceScope.mode === 'replace_courts'
         ? buildFinalPreviewBoard({
-            mode,
+            mode: persistenceScope.mode,
             payloads: normalizedPersistedMatches,
             currentPreviewBoard,
             replacementCourtIdxs: replaceCourtIdxs,
@@ -1519,7 +1533,7 @@ Deno.serve(async (request) => {
           live_state_version: liveStateVersion,
           completing_live_match_ids: [...completingLiveMatchIds],
           current_preview_board: currentPreviewBoard,
-          allow_full_board_rescue: allowReplacementFullBoardRescue,
+          allow_full_board_rescue: runReplacementFullBoardRescue,
           pvna_tolerance: pvnaTolerance,
           planned_total_rounds: plannedTotalRounds ?? null,
           court_preset: courtPreset ?? null,
@@ -1707,7 +1721,7 @@ Deno.serve(async (request) => {
         prefer_available_pool: preferAvailablePool,
         live_state_version: liveStateVersion,
         completing_live_match_ids: [...completingLiveMatchIds],
-        allow_full_board_rescue: allowReplacementFullBoardRescue,
+        allow_full_board_rescue: runReplacementFullBoardRescue,
         pvna_tolerance: pvnaTolerance,
         planned_total_rounds: plannedTotalRounds ?? null,
         court_preset: courtPreset ?? null,
