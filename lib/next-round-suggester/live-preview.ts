@@ -157,10 +157,10 @@ export function shouldDeferTightPoolSuggestion(input: {
   configuredPvnaTolerance: number
 }) {
   if (!input.enabled || input.activeLiveCourtCount === 0) return false
+  if (input.waitActive === false) return false
   const persistentOutlier = input.pvnaGap > Math.max(1.5, input.configuredPvnaTolerance + 1)
     || input.intraTeamGap > 2.25
   if (persistentOutlier) return true
-  if (input.waitActive === false) return false
   return input.pvnaGap > Math.max(1.25, input.configuredPvnaTolerance + 0.75)
     || input.intraTeamGap > 2
 }

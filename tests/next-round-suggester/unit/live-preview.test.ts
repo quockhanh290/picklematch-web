@@ -81,7 +81,7 @@ describe('Edge rolling quality defer policy', () => {
     expect(shouldDeferTightPoolSuggestion({ ...base, activeLiveCourtCount: 0 })).toBe(false)
   })
 
-  it('keeps catastrophic outliers blocked after the normal wait expires', () => {
+  it('serves the best feasible match after the normal wait expires, including catastrophic outliers', () => {
     const base = {
       enabled: true,
       waitActive: false,
@@ -90,8 +90,8 @@ describe('Edge rolling quality defer policy', () => {
       configuredPvnaTolerance: 0.5,
     }
     expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 1.4, intraTeamGap: 1 })).toBe(false)
-    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 2.18, intraTeamGap: 1 })).toBe(true)
-    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.5, intraTeamGap: 2.75 })).toBe(true)
+    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 2.18, intraTeamGap: 1 })).toBe(false)
+    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.5, intraTeamGap: 2.75 })).toBe(false)
   })
 
   it('uses the latest completion on each requested court as a stable 30-second deadline', () => {
@@ -111,6 +111,59 @@ describe('Edge rolling quality defer policy', () => {
     expect(isTightPoolQualityWaitActive({ 1: deadline }, 1, deadline - 1)).toBe(true)
     expect(isTightPoolQualityWaitActive({ 1: deadline }, 1, deadline)).toBe(false)
     expect(isTightPoolQualityWaitActive({ 1: deadline }, 2, deadline - 1)).toBe(false)
+  })
+
+  it('does not wait indefinitely when a requested court has no deadline', () => {
+    expect(isTightPoolQualityWaitActive({}, 1, Date.parse('2026-07-12T12:01:00.000Z'))).toBe(false)
+  })
+
+  it('releases a catastrophic tight-pool match when the court deadline expires', () => {
+    const freePlayers = [
+      createPlayer('free-1', { pvna: 1 }),
+      createPlayer('free-2', { pvna: 1 }),
+      createPlayer('free-3', { pvna: 1 }),
+      createPlayer('free-4', { pvna: 4 }),
+    ]
+    const busyPlayers = Array.from({ length: 20 }, (_, index) =>
+      createPlayer(`busy-${index + 1}`, { pvna: 3 }),
+    )
+    const state = createState({
+      courts: 6,
+      pvnaTolerance: 0.5,
+      players: [...freePlayers, ...busyPlayers],
+    })
+    const liveRows = [0, 1, 3, 4, 5].map((courtIdx, rowIndex) =>
+      liveRow(
+        `live-${courtIdx}`,
+        courtIdx,
+        'live',
+        [`busy-${rowIndex * 4 + 1}`, `busy-${rowIndex * 4 + 2}`],
+        [`busy-${rowIndex * 4 + 3}`, `busy-${rowIndex * 4 + 4}`],
+      ),
+    )
+    const now = Date.parse('2026-07-12T12:01:00.000Z')
+    const build = (deadline: number) => buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 6,
+      state,
+      rows: { liveMatchRows: liveRows, liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+      options: {
+        courtIdxs: [2],
+        deferExtremeTightPool: true,
+        tightPoolQualityDeferUntilByCourt: { 2: deadline },
+        nowMs: now,
+        rollingHorizon: true,
+      },
+    })
+
+    expect(build(now + 1)).toHaveLength(0)
+    expect(build(now)).toHaveLength(1)
   })
 })
 

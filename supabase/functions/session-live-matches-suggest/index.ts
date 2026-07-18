@@ -920,10 +920,6 @@ Deno.serve(async (request) => {
     const completingLiveMatchIds = new Set<string>(
       Array.isArray(body.completing_live_match_ids) ? body.completing_live_match_ids : []
     )
-    const tightPoolQualityDeferUntilByCourt = buildTightPoolQualityDeferUntilByCourt(
-      authoritativeLiveMatchRows,
-      courtIdxs,
-    )
     console.log('[suggest] request_start', {
       suggestion_request_id: suggestionRequestId,
       client_request_id: clientRequestId,
@@ -1016,6 +1012,10 @@ Deno.serve(async (request) => {
         activeManualMutationKind,
       })
     }
+    const tightPoolQualityDeferUntilByCourt = buildTightPoolQualityDeferUntilByCourt(
+      authoritativeLiveMatchRows,
+      targetCourtIdxs,
+    )
     const backgroundWrites: Promise<unknown>[] = []
     const verifyDumpEnabled = Deno.env.get('VERIFY_DUMP') === '1'
     const decisionSource = preferAvailablePool ? 'host_replacement' : 'engine_auto'
