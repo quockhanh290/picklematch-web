@@ -4,6 +4,7 @@ import type { RollingPlanPlayerTarget, RollingPlanTarget } from './rolling-horiz
 import type { SessionState, SuggestionAlternative } from '../types.ts'
 
 export type ActiveRollingInvariantTarget = {
+  completed_plan_rounds: number | null
   target_total_appearances: number
   players: Record<string, Partial<RollingPlanPlayerTarget> & { matches: number }>
 }
@@ -23,6 +24,7 @@ export function getActiveRollingInvariantTarget(
     ?.find(item => item.target_total_appearances > currentAppearances)
   if (checkpoint) {
     return {
+      completed_plan_rounds: checkpoint.completed_plan_rounds,
       target_total_appearances: checkpoint.target_total_appearances,
       players: checkpoint.players,
     }
@@ -33,6 +35,7 @@ export function getActiveRollingInvariantTarget(
   const finalAppearances = targetAppearances(finalPlayers)
   if (currentAppearances >= finalAppearances) return null
   return {
+    completed_plan_rounds: null,
     target_total_appearances: finalAppearances,
     players: finalPlayers,
   }

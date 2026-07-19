@@ -34,6 +34,10 @@ import {
 import {
   buildPlanningFrontier,
 } from '../../../lib/next-round-suggester/planner/frontier.ts'
+import {
+  buildPlanPromotionPayloads,
+  // @ts-ignore Deno edge-function bundling needs the local .ts extension.
+} from '../../../lib/next-round-suggester/planner/promotion.ts'
 import type { SessionLiveMatchRow } from '../../../lib/next-round-suggester/types.ts'
 
 const ENGINE_VERSION = 'precomputed-v8-rolling-frontier'
@@ -632,6 +636,63 @@ Deno.serve(async (request) => {
       .eq('id', jobId)
     if (completeError) throw new Error(completeError.message)
 
+    let initialBoardPromotion: Record<string, unknown> = {
+      status: 'skipped',
+      reason: frontier.commitments.length > 0 ? 'active_commitments' : 'not_attempted',
+    }
+    const firstRound = compactRounds[0]
+    if (frontier.commitments.length === 0 && firstRound) {
+      const promotionPayloads = buildPlanPromotionPayloads({
+        round: firstRound,
+        state,
+        courtCount: courts,
+        pvnaTolerance: state.config.pvna_tolerance,
+        planJobId: jobId,
+        planVersionId: version.id,
+      })
+      if (promotionPayloads.length !== courts) {
+        initialBoardPromotion = { status: 'skipped', reason: 'invalid_plan_board' }
+      } else {
+        const { data: promotionData, error: promotionError } = await auth.supabase.rpc(
+          'replace_planned_live_session_suggestions_versioned',
+          {
+            p_session_id: sessionId,
+            p_expected_live_state_version: publishedLiveStateVersion,
+            p_expected_planning_mutation_version: planningMutationVersion,
+            p_matches: promotionPayloads,
+            p_replace_court_idxs: Array.from({ length: courts }, (_, courtIdx) => courtIdx),
+            p_replace_all: true,
+            p_audit_payload: {
+              source: 'session-plan-shadow',
+              event: 'initial_plan_board_promoted',
+              plan_job_id: jobId,
+              plan_version_id: version.id,
+            },
+          },
+        )
+        if (promotionError) {
+          initialBoardPromotion = {
+            status: 'deferred',
+            reason: promotionError.message?.includes('Session changed')
+              || promotionError.message?.includes('Session planning changed')
+              ? 'state_changed'
+              : 'persistence_failed',
+            error: promotionError.message,
+          }
+        } else {
+          initialBoardPromotion = {
+            status: 'promoted',
+            match_count: promotionPayloads.length,
+            live_state_version: Number(
+              (promotionData as { live_state_version?: unknown } | null)?.live_state_version,
+            ),
+            persisted_preview_noop:
+              (promotionData as { persisted_preview_noop?: unknown } | null)?.persisted_preview_noop === true,
+          }
+        }
+      }
+    }
+
     return jsonResponse({
       ok: true,
       completed: true,
@@ -647,6 +708,7 @@ Deno.serve(async (request) => {
       quality_summary: qualitySummary,
       chunk_runtime_ms: lastChunkRuntimeMs,
       runtime_summary: runtimeSummary,
+      initial_board_promotion: initialBoardPromotion,
     }, 200, request)
   } catch (error) {
     if (jobId) {

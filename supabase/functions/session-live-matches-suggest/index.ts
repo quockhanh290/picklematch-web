@@ -34,12 +34,17 @@ import {
 import { getNextLiveRoundByCourt } from '../../../lib/next-round-suggester/live-rounds.ts'
 import {
   selectConsumablePlannedRoundPool,
+  selectConsumablePlannedRollingPool,
   shouldExpandPlanAdoption,
   type PlannedCourtConsumptionDecision,
 } from '../../../lib/next-round-suggester/planner/consumption.ts'
 import { validatePlannedBoard } from '../../../lib/next-round-suggester/planner/validation.ts'
 import { buildRollingPlanTarget } from '../../../lib/next-round-suggester/planner/rolling-target.ts'
 import type { RollingPlanTarget } from '../../../lib/next-round-suggester/planner/rolling-horizon.ts'
+import {
+  getActiveRollingInvariantTarget,
+  getRollingInvariantProtectedIds,
+} from '../../../lib/next-round-suggester/planner/rolling-invariants.ts'
 import type {
   SessionState,
   SessionLiveMatchRow,
@@ -114,6 +119,7 @@ async function loadPlanConsumption(options: {
   targetCourtIdxs: number[]
   busyIds: ReadonlySet<string>
   replaceAllSuggestions: boolean
+  rollingPolicyEnabled: boolean
   activeManualMutationKind?: string | null
 }): Promise<PlanConsumptionContext> {
   const disabled: PlanConsumptionContext = {
@@ -252,9 +258,13 @@ async function loadPlanConsumption(options: {
             roundNo,
             round.matches as Array<{ team_a: [string, string]; team_b: [string, string] }>,
           ])),
+          allowRollingPlanRounds: options.rollingPolicyEnabled,
         })
       : undefined
     const effectiveFrontierMatches = frontierMatches === true || progressMatches === true
+    const effectiveHistoryMatches = options.rollingPolicyEnabled
+      ? progressMatches
+      : historyMatches
     const targetCourtSet = new Set(options.targetCourtIdxs)
     const retainedSuggestedPlayerIds = new Set(options.authoritativeLiveMatchRows
       .filter(match => match.status === 'suggested' && !targetCourtSet.has(Number(match.court_idx)))
@@ -277,9 +287,12 @@ async function loadPlanConsumption(options: {
         consumedMatchIndexesByRound.set(plannedRoundNo, used)
       }
     }
-    const candidates = options.targetCourtIdxs.map(courtIdx => {
+    const activePlanRoundNo = options.rollingPolicyEnabled
+      ? getActiveRollingInvariantTarget(options.state, rollingTarget)?.completed_plan_rounds ?? null
+      : null
+    const roundCandidates = options.targetCourtIdxs.map(courtIdx => {
       const liveRoundNo = liveRoundByCourt.get(courtIdx) ?? options.state.current_round
-      const plannedRoundNo = liveRoundNo + 1
+      const plannedRoundNo = activePlanRoundNo ?? liveRoundNo + 1
       const plannedRound = plannedByRound.get(plannedRoundNo)
       return {
         court_idx: courtIdx,
@@ -291,19 +304,44 @@ async function loadPlanConsumption(options: {
         }>,
       }
     })
-    const selected = selectConsumablePlannedRoundPool({
-      candidates,
+    const protectedIds = options.rollingPolicyEnabled
+      ? getRollingInvariantProtectedIds(options.state, rollingTarget)
+      : new Set<string>()
+    const planBusyIds = new Set([...options.busyIds, ...protectedIds])
+    const sharedSelectionOptions = {
       consumedMatchIndexesByRound,
       state: options.state,
-      busyIds: options.busyIds,
+      busyIds: planBusyIds,
       reservedIds: retainedSuggestedPlayerIds,
       rosterIdentityMatches,
       configIdentityMatches,
-      historyMatches,
+      historyMatches: effectiveHistoryMatches,
       planningVersionMatches,
       frontierMatches: job ? effectiveFrontierMatches : undefined,
       activeManualMutationKind: options.activeManualMutationKind,
-    })
+    }
+    const selected = options.rollingPolicyEnabled && activePlanRoundNo !== null
+      ? selectConsumablePlannedRollingPool({
+          ...sharedSelectionOptions,
+          candidates: roundCandidates.map(candidate => ({
+            court_idx: candidate.court_idx,
+            live_round_no: candidate.live_round_no,
+            preferred_planned_round_no: activePlanRoundNo,
+            rounds: [...plannedByRound]
+              .filter(([roundNo]) => roundNo >= activePlanRoundNo)
+              .map(([roundNo, round]) => ({
+                planned_round_no: roundNo,
+                matches: round.matches as Array<{
+                  team_a: [string, string]
+                  team_b: [string, string]
+                }>,
+              })),
+          })),
+        })
+      : selectConsumablePlannedRoundPool({
+          ...sharedSelectionOptions,
+          candidates: roundCandidates,
+        })
     return {
       enabled: true,
       job_id: job?.id ?? null,
@@ -991,6 +1029,7 @@ Deno.serve(async (request) => {
       targetCourtIdxs: preferAvailablePool ? [] : targetCourtIdxs,
       busyIds: liveBusyIds,
       replaceAllSuggestions,
+      rollingPolicyEnabled,
       activeManualMutationKind,
     })
     if (shouldExpandPlanAdoption({
@@ -1009,6 +1048,7 @@ Deno.serve(async (request) => {
         targetCourtIdxs,
         busyIds: liveBusyIds,
         replaceAllSuggestions: true,
+        rollingPolicyEnabled,
         activeManualMutationKind,
       })
     }
@@ -1076,12 +1116,9 @@ Deno.serve(async (request) => {
           debugOut: selectionDebug,
         })
       : []
-    // A published plan is an exact first-board option. Once lanes are live,
-    // rolling sessions use it as an advisory quality target and let the live
-    // engine choose against current player availability/completion order.
-    let consumedPlanCourts = rollingPolicyEnabled && liveBusyIds.size > 0
-      ? []
-      : [...planConsumption.accepted]
+    // Every open lane first consumes an available lineup from the active
+    // session-wide plan checkpoint. The live engine fills only unresolved lanes.
+    let consumedPlanCourts = [...planConsumption.accepted]
     const consumedCourtSet = new Set(consumedPlanCourts.map(item => item.court_idx))
     const unresolvedCourtIdxs = targetCourtIdxs.filter(courtIdx => !consumedCourtSet.has(courtIdx))
     const maxExistingSequence = liveMatchRows.reduce(

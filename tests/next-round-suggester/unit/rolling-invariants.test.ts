@@ -77,7 +77,10 @@ describe('rolling invariant contract', () => {
       }],
     }
 
-    expect(getActiveRollingInvariantTarget(state, target)?.target_total_appearances).toBe(4)
+    expect(getActiveRollingInvariantTarget(state, target)).toMatchObject({
+      completed_plan_rounds: 1,
+      target_total_appearances: 4,
+    })
     players.slice(0, 4).forEach(player => {
       state.players.get(player.player_id)!.matches_played = 1
     })

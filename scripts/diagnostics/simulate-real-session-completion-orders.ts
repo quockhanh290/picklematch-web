@@ -16,6 +16,7 @@ import {
   type SuggestedMatchPayload,
 } from '../../lib/next-round-suggester/live-preview'
 import { buildRollingPlanTarget } from '../../lib/next-round-suggester/planner/rolling-target'
+import { selectConsumablePlannedRollingPool } from '../../lib/next-round-suggester/planner/consumption'
 import {
   getActiveRollingInvariantTarget,
   getRollingInvariantProtectedIds,
@@ -83,6 +84,15 @@ type ScenarioResult = {
   label: string
   order_samples: number[][]
   completed_matches: number
+  planned_matches_consumed: number
+  engine_fallback_matches: number
+  worst_gap_audit: {
+    selected_gap: number
+    best_available_gap: number
+    avoidable_delta: number
+    source: 'plan' | 'engine'
+    eligible_players: number
+  } | null
   incomplete_requests: number
   hard_wait_attempts: number
   deadlock: {
@@ -176,6 +186,39 @@ function projectedPairRepeats(state: SessionState, teamA: Team, teamB: Team) {
     opponent: opponentPairs.filter(([left, right]) =>
       (state.players.get(left)?.opponent_counts.get(right) ?? 0) > 0
     ).length,
+  }
+}
+
+function bestAvailableTeamGap(
+  state: SessionState,
+  liveRows: SessionLiveMatchRow[],
+  target: NonNullable<ReturnType<typeof buildRollingPlanTarget>>,
+) {
+  const excluded = new Set([
+    ...liveRows.flatMap(row => [...row.team_a, ...row.team_b]),
+    ...getRollingInvariantProtectedIds(state, target),
+  ])
+  const eligible = [...state.players.values()]
+    .filter(player => player.checked_out_at === null && !player.opted_rest && !excluded.has(player.player_id))
+  let best = Number.POSITIVE_INFINITY
+  for (let a = 0; a < eligible.length - 3; a += 1) {
+    for (let b = a + 1; b < eligible.length - 2; b += 1) {
+      for (let c = b + 1; c < eligible.length - 1; c += 1) {
+        for (let d = c + 1; d < eligible.length; d += 1) {
+          const values = [a, b, c, d].map(index => getEffectivePvna(eligible[index]))
+          best = Math.min(
+            best,
+            Math.abs(values[0] + values[1] - values[2] - values[3]),
+            Math.abs(values[0] + values[2] - values[1] - values[3]),
+            Math.abs(values[0] + values[3] - values[1] - values[2]),
+          )
+        }
+      }
+    }
+  }
+  return {
+    gap: Number.isFinite(best) ? best : 0,
+    eligible: eligible.length,
   }
 }
 
@@ -413,9 +456,82 @@ function suggest({
   return { payloads, elapsedMs: performance.now() - startedAt, debug }
 }
 
+function consumePlannedMatches({
+  state,
+  liveRows,
+  courtIdxs,
+  target,
+  plan,
+  consumedByRound,
+}: {
+  state: SessionState
+  liveRows: SessionLiveMatchRow[]
+  courtIdxs: number[]
+  target: NonNullable<ReturnType<typeof buildRollingPlanTarget>>
+  plan: ReturnType<typeof buildPrecomputedSessionPlan>
+  consumedByRound: Map<number, Set<number>>
+}) {
+  const activePlanRoundNo = getActiveRollingInvariantTarget(state, target)?.completed_plan_rounds
+  if (activePlanRoundNo == null) return [] as SuggestedMatchPayload[]
+  const busyIds = new Set([
+    ...liveRows.flatMap(row => [...row.team_a, ...row.team_b]),
+    ...getRollingInvariantProtectedIds(state, target),
+  ])
+  const rounds = plan.rounds
+    .filter(round => round.round >= activePlanRoundNo)
+    .map(round => ({
+      planned_round_no: round.round,
+      matches: round.matches,
+    }))
+  const selected = selectConsumablePlannedRollingPool({
+    candidates: courtIdxs.map(courtIdx => ({
+      court_idx: courtIdx,
+      live_round_no: 0,
+      preferred_planned_round_no: activePlanRoundNo,
+      rounds,
+    })),
+    consumedMatchIndexesByRound: consumedByRound,
+    state,
+    busyIds,
+  })
+  return selected.accepted.map(item => {
+    const used = consumedByRound.get(item.planned_round_no) ?? new Set<number>()
+    used.add(item.planned_match_idx)
+    consumedByRound.set(item.planned_round_no, used)
+    const plannedRound = plan.rounds.find(round => round.round === item.planned_round_no)
+    const pvna = (id: string) => getEffectivePvna(state.players.get(id)!)
+    const teamGap = Math.abs(
+      pvna(item.match.team_a[0]) + pvna(item.match.team_a[1])
+      - pvna(item.match.team_b[0]) - pvna(item.match.team_b[1]),
+    )
+    const overBy = Math.max(0, teamGap - state.config.pvna_tolerance)
+    return {
+      court_idx: item.court_idx,
+      team_a: item.match.team_a,
+      team_b: item.match.team_b,
+      resting: plannedRound?.resting ?? [],
+      round_no: item.live_round_no,
+      preview_live_state_version: null,
+      preview_countable_match_count: null,
+      warnings: overBy > 0 ? ['PVNA_TOLERANCE_RELAXED'] : [],
+      tradeoffs: [],
+      approval_required: overBy > 0,
+      configured_pvna_tolerance: state.config.pvna_tolerance,
+      effective_pvna_tolerance: Math.max(state.config.pvna_tolerance, teamGap),
+      fairness_reasons: [],
+      fairness_reason_details: [],
+      tradeoff_choices: [],
+      recommended_tradeoff_choice: null,
+      live_availability_context: null,
+      locked_player_ids: [],
+    } satisfies SuggestedMatchPayload
+  })
+}
+
 function simulateScenario({
   initialState,
   target,
+  plan,
   courts,
   rounds,
   label,
@@ -424,6 +540,7 @@ function simulateScenario({
 }: {
   initialState: SessionState
   target: ReturnType<typeof buildRollingPlanTarget>
+  plan: ReturnType<typeof buildPrecomputedSessionPlan>
   courts: number
   rounds: number
   label: string
@@ -442,22 +559,42 @@ function simulateScenario({
   let hardWaitAttempts = 0
   let deadlock: ScenarioResult['deadlock'] = null
   let lastWaitDebug: CourtSelectionDebug[] = []
+  const consumedByRound = new Map<number, Set<number>>()
+  const gapAudits: ScenarioResult['worst_gap_audit'][] = []
 
-  const initial = suggest({
+  const initialPlanPayloads = consumePlannedMatches({
     state,
     liveRows,
-    count: courts,
-    courts,
-    pvnaTolerance: state.config.pvna_tolerance,
-    target,
-    events,
+    courtIdxs: Array.from({ length: courts }, (_, courtIdx) => courtIdx),
+    target: target!,
+    plan,
+    consumedByRound,
   })
+  const initial = initialPlanPayloads.length === courts
+    ? { payloads: initialPlanPayloads, elapsedMs: 0, debug: [] }
+    : suggest({
+        state,
+        liveRows,
+        count: courts,
+        courts,
+        pvnaTolerance: state.config.pvna_tolerance,
+        target,
+        events,
+      })
   timings.push(initial.elapsedMs)
   if (initial.payloads.length !== courts) {
     throw new Error(`${label}: initial board ${initial.payloads.length}/${courts}`)
   }
   initial.payloads.forEach(payload => {
+    const best = bestAvailableTeamGap(state, liveRows, target!)
     const match = observeMatch(payload, state, 0)
+    gapAudits.push({
+      selected_gap: match.team_gap,
+      best_available_gap: best.gap,
+      avoidable_delta: Math.max(0, match.team_gap - best.gap),
+      source: initialPlanPayloads.length === courts ? 'plan' : 'engine',
+      eligible_players: best.eligible,
+    })
     observations.push(match)
     updatePlayerSummary(playerSummary, match, state)
     liveRows.push(asLiveRow(payload, state.session_id, sequenceNo++, 0))
@@ -507,16 +644,26 @@ function simulateScenario({
         && !liveRows.some(row => row.status === 'live' && row.court_idx === index)
       ))
       for (const idleCourtIdx of idleCourts) {
-        const next = suggest({
+        const plannedPayloads = consumePlannedMatches({
           state,
           liveRows,
-          count: 1,
-          courts,
-          pvnaTolerance: state.config.pvna_tolerance,
-          target,
           courtIdxs: [idleCourtIdx],
-          events,
+          target: target!,
+          plan,
+          consumedByRound,
         })
+        const next = plannedPayloads.length === 1
+          ? { payloads: plannedPayloads, elapsedMs: 0, debug: [] }
+          : suggest({
+              state,
+              liveRows,
+              count: 1,
+              courts,
+              pvnaTolerance: state.config.pvna_tolerance,
+              target,
+              courtIdxs: [idleCourtIdx],
+              events,
+            })
         timings.push(next.elapsedMs)
         if (next.payloads.length !== 1) {
           hardWaitAttempts += 1
@@ -529,7 +676,15 @@ function simulateScenario({
           throw new Error(`${label}: court ${idleCourtIdx} reused a busy player`)
         }
         const laneRound = laneCompleted.get(idleCourtIdx) ?? 0
+        const best = bestAvailableTeamGap(state, liveRows, target!)
         const match = observeMatch(payload, state, laneRound)
+        gapAudits.push({
+          selected_gap: match.team_gap,
+          best_available_gap: best.gap,
+          avoidable_delta: Math.max(0, match.team_gap - best.gap),
+          source: plannedPayloads.length === 1 ? 'plan' : 'engine',
+          eligible_players: best.eligible,
+        })
         observations.push(match)
         updatePlayerSummary(playerSummary, match, state)
         liveRows.push(asLiveRow(payload, state.session_id, sequenceNo++, laneRound))
@@ -636,6 +791,12 @@ function simulateScenario({
     label,
     order_samples: orders.slice(0, 3),
     completed_matches: observations.length,
+    planned_matches_consumed: [...consumedByRound.values()]
+      .reduce((sum, indexes) => sum + indexes.size, 0),
+    engine_fallback_matches: observations.length - [...consumedByRound.values()]
+      .reduce((sum, indexes) => sum + indexes.size, 0),
+    worst_gap_audit: [...gapAudits]
+      .sort((left, right) => (right?.selected_gap ?? 0) - (left?.selected_gap ?? 0))[0] ?? null,
     incomplete_requests: incompleteRequests,
     hard_wait_attempts: hardWaitAttempts,
     deadlock,
@@ -738,6 +899,7 @@ async function main() {
     results = scenarioOrders(courts, requestedRounds).map(scenario => simulateScenario({
       initialState: buildState(snapshot, sessionId, courts, pvnaTolerance),
       target,
+      plan,
       courts,
       rounds: requestedRounds,
       label: scenario.label,

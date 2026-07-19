@@ -181,6 +181,35 @@ describe('precomputed planner primitives', () => {
     })).toBe(false)
   })
 
+  it('validates rolling progress by plan metadata instead of the court-local round', () => {
+    const plannedByRound = new Map([[2, [{
+      team_a: ['p1', 'p2'] as [string, string],
+      team_b: ['p3', 'p4'] as [string, string],
+    }]]])
+    const rollingRow = liveRow({
+      round_no: 4,
+      suggestion_metadata: {
+        preview_source: 'session_plan',
+        plan_version_id: 'plan-1',
+        planned_round_no: 2,
+      },
+    })
+
+    expect(plannedProgressMatches({
+      rows: [rollingRow],
+      startingRound: 1,
+      planVersionId: 'plan-1',
+      plannedByRound,
+      allowRollingPlanRounds: true,
+    })).toBe(true)
+    expect(plannedProgressMatches({
+      rows: [rollingRow],
+      startingRound: 1,
+      planVersionId: 'plan-1',
+      plannedByRound,
+    })).toBe(false)
+  })
+
   it('invalidates a plan when a baseline commitment is cancelled', () => {
     const baseline = liveRow({ id: 'baseline' })
     expect(plannedProgressMatches({

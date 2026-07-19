@@ -119,6 +119,7 @@ export function plannedProgressMatches(options: {
   startingRound: number
   planVersionId: string
   plannedByRound: ReadonlyMap<number, ReadonlyArray<SessionPlanMatch>>
+  allowRollingPlanRounds?: boolean
 }) {
   const rowsById = new Map(options.rows.map(row => [row.id, row]))
   for (const baseline of options.baselineCommitments ?? []) {
@@ -143,9 +144,14 @@ export function plannedProgressMatches(options: {
   ))
 
   for (const row of progressRows) {
-    const plannedRoundNo = Number(row.round_no) + 1
+    const liveRoundNo = Number(row.round_no) + 1
+    const metadataPlanRoundNo = Number(row.suggestion_metadata?.planned_round_no)
+    const plannedRoundNo = options.allowRollingPlanRounds
+      ? metadataPlanRoundNo
+      : liveRoundNo
     if (row.suggestion_metadata?.plan_version_id !== options.planVersionId) return false
-    if (Number(row.suggestion_metadata?.planned_round_no) !== plannedRoundNo) return false
+    if (!Number.isFinite(plannedRoundNo)) return false
+    if (!options.allowRollingPlanRounds && metadataPlanRoundNo !== liveRoundNo) return false
     const planned = options.plannedByRound.get(plannedRoundNo) ?? []
     const used = usedByRound.get(plannedRoundNo) ?? new Set<number>()
     const matchIndex = planned.findIndex((match, index) => (
