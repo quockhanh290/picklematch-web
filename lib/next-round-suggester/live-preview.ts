@@ -49,6 +49,9 @@ const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 12
 const LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT = 80
 const LIVE_QUOTA_RESCUE_ALTERNATIVE_LIMIT = 24
 const LIVE_CONDITIONAL_RESCUE_ALTERNATIVE_LIMIT = 500
+const LIVE_SOCIAL_TRADEOFF_MIN_PVNA_IMPROVEMENT = 0.35
+const LIVE_SOCIAL_TRADEOFF_EXACT_REMATCH_LIMIT = 0
+const LIVE_SOCIAL_TRADEOFF_MAX_NEAR_REMATCH = 1
 const LIVE_STRICT_RESCUE_ELIGIBLE_LIMIT = 20
 const LIVE_STRICT_RESCUE_TIMEOUT_MS = 300
 const LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3800
@@ -58,7 +61,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 17
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 18
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -762,6 +765,27 @@ function getAlternativeRecentCost(alternative: SuggestionAlternative, state: Ses
   ), 0)
 }
 
+function getAlternativeRecentRepeatCost(alternative: SuggestionAlternative, state: SessionState) {
+  return alternative.matches.reduce((summary, match) => {
+    const recent = getRecentRepeatCost(match.team_a, match.team_b, state)
+    return {
+      total: summary.total + recent.total,
+      partner: summary.partner + recent.partner,
+      opponent: summary.opponent + recent.opponent,
+      overlap2: summary.overlap2 + recent.overlap2,
+      overlap3: summary.overlap3 + recent.overlap3,
+      exact4: summary.exact4 + recent.exact4,
+    }
+  }, {
+    total: 0,
+    partner: 0,
+    opponent: 0,
+    overlap2: 0,
+    overlap3: 0,
+    exact4: 0,
+  })
+}
+
 export function getProjectedCountViolation(
   alternative: SuggestionAlternative,
   state: SessionState,
@@ -1265,6 +1289,139 @@ function getProjectedSelectionBurden(alternative: SuggestionAlternative, state: 
     max_streak: Math.max(0, ...projectedStreaks),
     streak_gte_3: projectedStreaks.filter(streak => streak >= 3).length,
     streak_gte_4: projectedStreaks.filter(streak => streak >= 4).length,
+  }
+}
+
+export type UnifiedSocialTradeoffCertificate = {
+  reference_pvna_gap: number
+  selected_pvna_gap: number
+  pvna_improvement: number
+  reference_intra_gap: number
+  selected_intra_gap: number
+  selected_recent_overlap3: number
+  selected_recent_exact4: number
+  selected_max_partner_pair: number
+  selected_max_opponent_pair: number
+  reference_score: number
+  selected_score: number
+}
+
+function unifiedSocialTradeoffScore({
+  metrics,
+  recent,
+}: {
+  metrics: SuggestionTradeoffChoice['metrics']
+  recent: ReturnType<typeof getAlternativeRecentRepeatCost>
+}) {
+  return metrics.pvna_over_by * 120
+    + metrics.intra_team_over_by * 40
+    + metrics.repeat_over_by * 65
+    + Math.max(0, metrics.max_partner_pair - 1) * 90
+    + Math.max(0, metrics.max_opponent_pair - 1) * 15
+    + recent.partner * 28
+    + recent.opponent * 4
+    + recent.overlap2 * 2
+    + recent.overlap3 * 55
+    + recent.exact4 * 500
+}
+
+export function findUnifiedSocialTradeoffRescue(
+  alternatives: SuggestionAlternative[],
+  reference: SuggestionAlternative,
+  state: SessionState,
+  configuredPvnaTolerance: number,
+  nextMatchIndex: number,
+): {
+  alternative: SuggestionAlternative
+  certificate: UnifiedSocialTradeoffCertificate
+} | null {
+  const referenceMetrics = getTradeoffChoiceMetrics(reference, state, configuredPvnaTolerance)
+  if (
+    referenceMetrics.pvna_gap <= configuredPvnaTolerance + GUARDED_LIVE_QUALITY_TIER_C_PVNA_EXTRA
+    && referenceMetrics.intra_team_gap <= GUARDED_LIVE_QUALITY_TIER_C_INTRA_LIMIT
+  ) {
+    return null
+  }
+
+  const referenceRecent = getAlternativeRecentRepeatCost(reference, state)
+  const referenceBurden = getProjectedSelectionBurden(reference, state)
+  const { min: targetMinAfter, max: targetMaxAfter } = getProjectedTargetRangeAfter(state, nextMatchIndex)
+  const referenceQuota = getProjectedCountViolation(reference, state, targetMaxAfter, targetMinAfter)
+  const referenceScore = unifiedSocialTradeoffScore({
+    metrics: referenceMetrics,
+    recent: referenceRecent,
+  })
+
+  const selected = alternatives
+    .filter(alternative => alternative.matches.length > 0)
+    .map(alternative => {
+      const metrics = getTradeoffChoiceMetrics(alternative, state, configuredPvnaTolerance)
+      const recent = getAlternativeRecentRepeatCost(alternative, state)
+      const quota = getProjectedCountViolation(alternative, state, targetMaxAfter, targetMinAfter)
+      const burden = getProjectedSelectionBurden(alternative, state)
+      return {
+        alternative,
+        metrics,
+        recent,
+        quota,
+        burden,
+        score: unifiedSocialTradeoffScore({ metrics, recent }),
+      }
+    })
+    .filter(item =>
+      referenceMetrics.pvna_gap - item.metrics.pvna_gap >= LIVE_SOCIAL_TRADEOFF_MIN_PVNA_IMPROVEMENT
+      && item.metrics.pvna_gap <= Math.max(
+        configuredPvnaTolerance + 0.45,
+        referenceMetrics.pvna_gap * 0.65,
+      )
+      && item.metrics.intra_team_gap <= Math.max(
+        GUARDED_LIVE_QUALITY_TIER_B_INTRA_LIMIT,
+        referenceMetrics.intra_team_gap,
+      )
+      && item.recent.exact4 <= LIVE_SOCIAL_TRADEOFF_EXACT_REMATCH_LIMIT
+      && item.recent.overlap3 <= LIVE_SOCIAL_TRADEOFF_MAX_NEAR_REMATCH
+      && item.metrics.max_partner_pair <= Math.max(2, referenceMetrics.max_partner_pair)
+      && item.metrics.max_opponent_pair <= referenceMetrics.max_opponent_pair + 1
+      && item.quota.over <= referenceQuota.over
+      && item.quota.under <= referenceQuota.under
+      && item.burden.max_streak <= referenceBurden.max_streak
+      && item.burden.streak_gte_4 <= referenceBurden.streak_gte_4
+      && item.score + 20 < referenceScore
+    )
+    .sort((left, right) =>
+      left.score - right.score
+      || left.metrics.pvna_gap - right.metrics.pvna_gap
+      || left.metrics.intra_team_gap - right.metrics.intra_team_gap
+      || left.recent.overlap3 - right.recent.overlap3
+      || left.recent.total - right.recent.total
+      || left.alternative.score - right.alternative.score
+    )[0]
+
+  if (!selected) return null
+  const warnings = selected.recent.overlap3 > 0
+    ? [...new Set([
+        ...selected.alternative.warnings,
+        'RECENT_GROUP_REMATCH_RELAXED',
+      ])]
+    : selected.alternative.warnings
+  return {
+    alternative: {
+      ...selected.alternative,
+      warnings,
+    },
+    certificate: {
+      reference_pvna_gap: referenceMetrics.pvna_gap,
+      selected_pvna_gap: selected.metrics.pvna_gap,
+      pvna_improvement: referenceMetrics.pvna_gap - selected.metrics.pvna_gap,
+      reference_intra_gap: referenceMetrics.intra_team_gap,
+      selected_intra_gap: selected.metrics.intra_team_gap,
+      selected_recent_overlap3: selected.recent.overlap3,
+      selected_recent_exact4: selected.recent.exact4,
+      selected_max_partner_pair: selected.metrics.max_partner_pair,
+      selected_max_opponent_pair: selected.metrics.max_opponent_pair,
+      reference_score: referenceScore,
+      selected_score: selected.score,
+    },
   }
 }
 
@@ -3918,6 +4075,7 @@ export function buildSuggestedMatchPayloads({
     ) ?? result.alternatives[0]
     let conditionalQualityRescue: SuggestionAlternative | null = null
     let conditionalQualityTradeoff: ReturnType<typeof findConditionalLiveQualityTradeoff> | null = null
+    let unifiedSocialTradeoff: ReturnType<typeof findUnifiedSocialTradeoffRescue> | null = null
     if (
       baselineForConditionalSearch
       && effectiveCount >= courtCount
@@ -3981,6 +4139,77 @@ export function buildSuggestedMatchPayloads({
         }
       }
     }
+    if (
+      count === 1
+      && baselineForConditionalSearch
+      && remainingBatchMs > LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS + 100
+    ) {
+      const baselineMetrics = getTradeoffChoiceMetrics(
+        baselineForConditionalSearch,
+        suggestionStateForCourt,
+        configuredPvnaTolerance,
+      )
+      const shouldSearchSocialTradeoff =
+        baselineMetrics.pvna_gap > configuredPvnaTolerance + GUARDED_LIVE_QUALITY_TIER_C_PVNA_EXTRA
+        || baselineMetrics.intra_team_gap > GUARDED_LIVE_QUALITY_TIER_C_INTRA_LIMIT
+      if (shouldSearchSocialTradeoff) {
+        const socialBudgetMs = getRemainingCourtBudgetMs(400)
+        const socialProtectedIds =
+          liveSelectionGuard.relaxationStages[liveSelectionGuard.relaxationStages.length - 1]?.protectedIds
+          ?? liveSelectionGuard.protectedIds
+        const socialResult = suggestNextMatch(suggestionStateForCourt, {
+          tier_overrides: fairnessAdjustment.tier_overrides as any,
+          busy_player_ids: buildBusyIdsForProtected(new Set(socialProtectedIds)),
+          court_idx: courtIdx,
+          max_alternatives: LIVE_CONDITIONAL_RESCUE_ALTERNATIVE_LIMIT,
+          exhaustive_fallback: true,
+          allow_recent_group_rematch: true,
+          max_runtime_ms: socialBudgetMs,
+          forced_required_player_ids: requiredForThisCourt,
+          force_budget_deadline: Date.now() + socialBudgetMs,
+        })
+        unifiedSocialTradeoff = findUnifiedSocialTradeoffRescue(
+          socialResult.alternatives,
+          baselineForConditionalSearch,
+          suggestionStateForCourt,
+          configuredPvnaTolerance,
+          previewCountableMatchCount + index + 1,
+        )
+        if (unifiedSocialTradeoff) {
+          const rescueKey = getAlternativeMatchKey(unifiedSocialTradeoff.alternative)
+          result = {
+            ...result,
+            alternatives: [
+              unifiedSocialTradeoff.alternative,
+              ...result.alternatives.filter(alternative => getAlternativeMatchKey(alternative) !== rescueKey),
+            ].slice(0, LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT),
+          }
+          const certificate = unifiedSocialTradeoff.certificate
+          try {
+            options.onInstrumentEvent?.({
+              event: 'rescue',
+              detail: [
+                'unified_social_tradeoff',
+                `court=${courtIdx}`,
+                `reference_pvna=${certificate.reference_pvna_gap.toFixed(2)}`,
+                `selected_pvna=${certificate.selected_pvna_gap.toFixed(2)}`,
+                `improvement=${certificate.pvna_improvement.toFixed(2)}`,
+                `reference_intra=${certificate.reference_intra_gap.toFixed(2)}`,
+                `selected_intra=${certificate.selected_intra_gap.toFixed(2)}`,
+                `overlap3=${certificate.selected_recent_overlap3.toFixed(2)}`,
+                `exact4=${certificate.selected_recent_exact4.toFixed(2)}`,
+                `partner_max=${certificate.selected_max_partner_pair}`,
+                `opponent_max=${certificate.selected_max_opponent_pair}`,
+                `reference_score=${certificate.reference_score.toFixed(2)}`,
+                `selected_score=${certificate.selected_score.toFixed(2)}`,
+              ].join(';'),
+              court_count: courtCount,
+              available: availableForBatch,
+            })
+          } catch { /* noop */ }
+        }
+      }
+    }
     const finalAlternatives = result.alternatives
     const {
       finalGuardedAlternative,
@@ -3995,7 +4224,9 @@ export function buildSuggestedMatchPayloads({
       nextMatchIndex: previewCountableMatchCount + index + 1,
       policy: options.liveQualityPolicy ?? 'current',
     })
-    let alternative = finalGuardedAlternative ?? finalAlternatives[0]
+    let alternative = unifiedSocialTradeoff?.alternative
+      ?? finalGuardedAlternative
+      ?? finalAlternatives[0]
     const rollingCommitments = options.rollingHorizon === true && count === 1
       ? liveMatchRows.filter(row => (
           row.status === 'live'

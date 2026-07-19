@@ -149,6 +149,47 @@ describe('suggestNextRound', () => {
     expect(overlap).toBeLessThan(3)
   })
 
+  it('can build a dedicated recent-rematch-open pool for bounded social tradeoff selection', () => {
+    const players = createPlayers(5, { pvna: 3.0 })
+    const state = {
+      ...createState({
+        courts: 1,
+        players,
+        currentRound: 1,
+        pvnaTolerance: 0.5,
+      }),
+      rounds: [{
+        session_id: 'session-test',
+        round_no: 0,
+        status: 'completed' as const,
+        matches: [{
+          court_idx: 0,
+          team_a: ['p01', 'p02'] as [string, string],
+          team_b: ['p03', 'p04'] as [string, string],
+        }],
+        resting: ['p05'],
+        started_at: null,
+        ended_at: null,
+      }],
+    }
+
+    const result = suggestNextMatch(state, {
+      allow_recent_group_rematch: true,
+      exhaustive_fallback: true,
+      max_alternatives: 20,
+      max_runtime_ms: 1000,
+    })
+    const previousIds = new Set(['p01', 'p02', 'p03', 'p04'])
+    const overlaps = result.alternatives.map(item => {
+      const match = item.matches[0]
+      return [...match.team_a, ...match.team_b]
+        .filter(playerId => previousIds.has(playerId)).length
+    })
+
+    expect(result.alternatives.length).toBeGreaterThan(0)
+    expect(overlaps.some(overlap => overlap === 3)).toBe(true)
+  })
+
   it('prefers a clean recent-partner split when the same four players can be paired safely', () => {
     const state = {
       ...createState({

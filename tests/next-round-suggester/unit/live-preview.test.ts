@@ -14,6 +14,7 @@ import {
   buildLiveTradeoffChoices,
   findConditionalLiveQualityRescue,
   findConditionalLiveQualityTradeoff,
+  findUnifiedSocialTradeoffRescue,
   findStrictCleanLiveAlternative,
   hasFulfilledPreviewBoardReplacements,
   improvesPreviewBoardPvna,
@@ -1589,6 +1590,89 @@ describe('conditional live quality rescue', () => {
       0.5,
       5,
     )?.alternative).toBe(qualityTradeoff)
+  })
+})
+
+describe('unified social tradeoff rescue', () => {
+  function socialTradeoffFixture(overrides: { nearMatchesPlayed?: number } = {}) {
+    const state = createState({
+      courts: 6,
+      currentRound: 3,
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('a', { pvna: 4.30, matches_played: overrides.nearMatchesPlayed ?? 1 }),
+        createPlayer('b', { pvna: 3.95, matches_played: 1 }),
+        createPlayer('c', { pvna: 4.21, matches_played: 1 }),
+        createPlayer('d', { pvna: 4.04, matches_played: 1 }),
+        createPlayer('x', { pvna: 3.80, matches_played: 1 }),
+        createPlayer('r1', { pvna: 4.75, matches_played: 1 }),
+        createPlayer('r2', { pvna: 4.30, matches_played: 1 }),
+        createPlayer('r3', { pvna: 3.95, matches_played: 1 }),
+        createPlayer('r4', { pvna: 3.11, matches_played: 1 }),
+      ],
+    })
+    state.rounds = [{
+      session_id: state.session_id,
+      round_no: 2,
+      status: 'completed',
+      matches: [{
+        court_idx: 0,
+        team_a: ['a', 'b'],
+        team_b: ['c', 'x'],
+      }],
+      resting: [],
+    }]
+    return {
+      state,
+      reference: alternative(['r1', 'r2'], ['r3', 'r4'], 1.99),
+      nearRematch: alternative(['a', 'b'], ['c', 'd'], 0),
+      exactRematch: alternative(['a', 'b'], ['c', 'x'], 0.01),
+    }
+  }
+
+  it('accepts a bounded near-rematch to rescue a catastrophic team gap', () => {
+    const { state, reference, nearRematch, exactRematch } = socialTradeoffFixture()
+
+    const rescue = findUnifiedSocialTradeoffRescue(
+      [exactRematch, nearRematch],
+      reference,
+      state,
+      0.5,
+      3,
+    )
+
+    expect(rescue?.alternative.matches[0]).toMatchObject(nearRematch.matches[0])
+    expect(rescue?.alternative.warnings).toContain('RECENT_GROUP_REMATCH_RELAXED')
+    expect(rescue?.certificate).toMatchObject({
+      reference_pvna_gap: 1.99,
+      selected_pvna_gap: 0,
+      selected_recent_overlap3: 1,
+      selected_recent_exact4: 0,
+    })
+  })
+
+  it('never selects an exact four-player rematch as the social rescue', () => {
+    const { state, reference, exactRematch } = socialTradeoffFixture()
+
+    expect(findUnifiedSocialTradeoffRescue(
+      [exactRematch],
+      reference,
+      state,
+      0.5,
+      3,
+    )).toBeNull()
+  })
+
+  it('does not rescue quality by increasing match-count quota debt', () => {
+    const { state, reference, nearRematch } = socialTradeoffFixture({ nearMatchesPlayed: 2 })
+
+    expect(findUnifiedSocialTradeoffRescue(
+      [nearRematch],
+      reference,
+      state,
+      0.5,
+      3,
+    )).toBeNull()
   })
 })
 

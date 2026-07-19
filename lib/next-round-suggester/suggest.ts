@@ -80,6 +80,7 @@ export type ExhaustiveFallbackDiagnostic = {
 export type SuggestNextMatchOptions = SuggestNextRoundOptions & {
   busy_player_ids?: Iterable<string>
   court_idx?: number
+  allow_recent_group_rematch?: boolean
   _exhaustiveDiag?: ExhaustiveFallbackDiagnostic
 }
 
@@ -875,10 +876,6 @@ export function suggestNextMatch(
     },
     players,
   }
-  const result = suggestNextRound(matchState, {
-    ...options,
-    max_alternatives: options.max_alternatives ?? 1,
-  })
   const courtIdx = Math.max(0, Math.floor(options.court_idx ?? 0))
   const forcedRequiredIds = new Set((options.forced_required_player_ids ?? []).map(String))
   const hasForcedRequired = forcedRequiredIds.size > 0
@@ -888,6 +885,24 @@ export function suggestNextMatch(
       alternative.matches.some(match => [...match.team_a, ...match.team_b].includes(playerId)),
     )
   )
+  if (options.allow_recent_group_rematch === true) {
+    const fallback = suggestNextMatchExhaustiveFallback(matchState, {
+      ...options,
+      court_idx: courtIdx,
+      max_alternatives: options.max_alternatives ?? 1,
+    })
+    return {
+      ...fallback,
+      alternatives: uniqueSingleMatchAlternatives(
+        fallback.alternatives.filter(containsForcedRequired),
+      ).slice(0, Math.max(1, Math.floor(options.max_alternatives ?? 1))),
+    }
+  }
+
+  const result = suggestNextRound(matchState, {
+    ...options,
+    max_alternatives: options.max_alternatives ?? 1,
+  })
   const mappedResult: SuggestionResult = {
     ...result,
     alternatives: result.alternatives.map(alternative => ({
@@ -1139,7 +1154,8 @@ function suggestNextMatchExhaustiveFallback(
     }
   }
 
-  evaluateStage(false, false)
+  const initialRecentGroupRematch = options.allow_recent_group_rematch === true
+  evaluateStage(false, false, true, initialRecentGroupRematch)
   if (options._exhaustiveDiag) {
     options._exhaustiveDiag._seenAfterStage1 = seen.size
     options._exhaustiveDiag._altsAfterStage1 = alternatives.length
@@ -1164,10 +1180,10 @@ function suggestNextMatchExhaustiveFallback(
       evaluateStage(true, true, false)
     }
   }
-  if (allHaveTradeoffs() && !timedOut()) {
+  if (!initialRecentGroupRematch && allHaveTradeoffs() && !timedOut()) {
     evaluateStage(false, false, true, true)
   }
-  if (allHaveTradeoffs() && !timedOut()) {
+  if (!initialRecentGroupRematch && allHaveTradeoffs() && !timedOut()) {
     evaluateStage(false, true, true, true)
     if (!timedOut()) evaluateStage(true, false, true, true)
     if (allHaveTradeoffs() && !timedOut()) {
