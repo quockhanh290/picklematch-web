@@ -112,7 +112,7 @@ describe('rolling court-lane horizon', () => {
     })).toBeNull()
   })
 
-  it('uses the session target to preserve scarce future opportunities without making it a hard constraint', () => {
+  it('uses the session target as a hard cap before optimizing future opportunities', () => {
     const players = createPlayers(20)
     players.slice(0, 4).forEach(player => { player.matches_played = 2 })
     const state = createState({ players, courts: 3 })
@@ -141,6 +141,48 @@ describe('rolling court-lane horizon', () => {
     })
 
     expect(choice?.alternative).toBe(followsPlan)
+  })
+
+  it('returns no choice when every candidate exceeds the active plan checkpoint', () => {
+    const players = createPlayers(12)
+    players.slice(0, 8).forEach(player => { player.matches_played = 1 })
+    const state = createState({ players, courts: 2 })
+    const commitment = liveRow(
+      'live-1',
+      1,
+      ['p09', 'p10'],
+      ['p11', 'p12'],
+      '2026-07-16T12:00:00.000Z',
+    )
+    const cappedPlayers = Object.fromEntries(players.map(player => [
+      player.player_id,
+      playerTarget(1),
+    ]))
+
+    const choice = chooseRollingHorizonAlternative({
+      candidates: [
+        alternative(['p01', 'p02'], ['p03', 'p04']),
+        alternative(['p05', 'p06'], ['p07', 'p08']),
+      ],
+      state,
+      baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
+      liveCommitments: [commitment],
+      budgetMs: 300,
+      projectMatch: buildProjectedStateAfterLiveMatch,
+      suggestFuture: () => null,
+      planTarget: {
+        target_matches_by_player: Object.fromEntries(players.map(player => [player.player_id, 1])),
+        players: cappedPlayers,
+        checkpoints: [{
+          progress_ratio: 1,
+          completed_plan_rounds: 1,
+          target_total_appearances: 12,
+          players: cappedPlayers,
+        }],
+      },
+    })
+
+    expect(choice).toBeNull()
   })
 
   it('builds the bounded beam from the full Pareto frontier instead of the first alternatives', () => {
@@ -181,7 +223,7 @@ describe('rolling court-lane horizon', () => {
     expect(choice?.diagnostics.evaluated_candidate_count).toBe(1)
   })
 
-  it('does not trade a clean current match for a plan candidate outside the quality guard', () => {
+  it('does not keep a clean current match when it exceeds the hard plan quota', () => {
     const players = createPlayers(16)
     players.forEach(player => {
       player.pvna = 3
@@ -220,7 +262,7 @@ describe('rolling court-lane horizon', () => {
       },
     })
 
-    expect(choice?.alternative).toBe(clean)
+    expect(choice?.alternative).toBe(outsideGuard)
     expect(choice?.diagnostics.evaluated_candidate_count).toBe(1)
   })
 

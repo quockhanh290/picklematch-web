@@ -11,13 +11,23 @@ import {
   buildProjectedStateAfterCompletedLiveRound,
   buildProjectedStateAfterLiveMatch,
   buildSuggestedMatchPayloads,
+  LIVE_PREVIEW_ALGORITHM_VERSION,
+  type CourtSelectionDebug,
   type SuggestedMatchPayload,
 } from '../../lib/next-round-suggester/live-preview'
 import { buildRollingPlanTarget } from '../../lib/next-round-suggester/planner/rolling-target'
+import {
+  getActiveRollingInvariantTarget,
+  getRollingInvariantProtectedIds,
+} from '../../lib/next-round-suggester/planner/rolling-invariants'
 import { buildPrecomputedSessionPlan } from '../../lib/next-round-suggester/planner/session-plan'
 import { getEffectivePvna, mapRowsToSessionState } from '../../lib/next-round-suggester/state'
 import type {
   EngineInstrumentEvent,
+} from '../../lib/next-round-suggester/suggest'
+import {
+  suggestNextMatch,
+  type ExhaustiveFallbackDiagnostic,
 } from '../../lib/next-round-suggester/suggest'
 import type {
   SessionLiveMatchRow,
@@ -74,6 +84,37 @@ type ScenarioResult = {
   order_samples: number[][]
   completed_matches: number
   incomplete_requests: number
+  hard_wait_attempts: number
+  deadlock: {
+    completed_events: number
+    target_total_appearances: number | null
+    remaining_target_slots: number
+    core_probe: {
+      strict_alternatives: number
+      rematch_relaxed_alternatives: number
+      strict_diagnostic: {
+        eligible_count: number
+        combinations_evaluated: number
+        best_pvna_diff: number | null
+        timed_out: boolean
+      }
+      rematch_relaxed_diagnostic: {
+        eligible_count: number
+        combinations_evaluated: number
+        best_pvna_diff: number | null
+        timed_out: boolean
+      }
+      live_debug: CourtSelectionDebug[]
+    }
+    remaining_players: Array<{
+      id: string
+      name: string
+      pvna: number
+      matches: number
+      target: number
+      remaining: number
+    }>
+  } | null
   max_request_ms: number
   avg_request_ms: number
   avg_team_gap: number
@@ -348,6 +389,7 @@ function suggest({
   events: EngineInstrumentEvent[]
 }) {
   const startedAt = performance.now()
+  const debug: CourtSelectionDebug[] = []
   const payloads = buildSuggestedMatchPayloads({
     count,
     sessionId: state.session_id,
@@ -366,8 +408,9 @@ function suggest({
       rollingPlanTarget: target,
       onInstrumentEvent: event => events.push(event),
     },
+    debugOut: debug,
   })
-  return { payloads, elapsedMs: performance.now() - startedAt }
+  return { payloads, elapsedMs: performance.now() - startedAt, debug }
 }
 
 function simulateScenario({
@@ -396,6 +439,9 @@ function simulateScenario({
   const timings: number[] = []
   const events: EngineInstrumentEvent[] = []
   let incompleteRequests = 0
+  let hardWaitAttempts = 0
+  let deadlock: ScenarioResult['deadlock'] = null
+  let lastWaitDebug: CourtSelectionDebug[] = []
 
   const initial = suggest({
     state,
@@ -417,56 +463,161 @@ function simulateScenario({
     liveRows.push(asLiveRow(payload, state.session_id, sequenceNo++, 0))
   })
 
-  for (let cycle = 0; cycle < rounds; cycle += 1) {
-    const completedPlayerIds = new Set<string>()
-    for (let orderIndex = 0; orderIndex < orders[cycle].length; orderIndex += 1) {
-      const courtIdx = orders[cycle][orderIndex]
+  let completionBatchPlayerIds = new Set<string>()
+  let completedEvents = 0
+  let scheduleCycle = 0
+  const targetCompletedEvents = courts * rounds
+  while (completedEvents < targetCompletedEvents) {
+    let madeProgress = false
+    const order = orders[scheduleCycle % orders.length]
+    for (const courtIdx of order) {
+      if ((laneCompleted.get(courtIdx) ?? 0) >= rounds) continue
       const live = liveRows.find(row => row.status === 'live' && row.court_idx === courtIdx)
-      if (!live) throw new Error(`${label}: court ${courtIdx} has no live match at cycle ${cycle}`)
+      if (!live) continue
+      madeProgress = true
       const completedAt = new Date((sequenceNo + 1) * 1000).toISOString()
       const completed: SessionLiveMatchRow = {
         ...live,
         status: 'completed',
         ended_at: completedAt,
       }
-      state = buildProjectedStateAfterLiveMatch(state, completed, completed.round_no ?? cycle)
-      ;[...completed.team_a, ...completed.team_b].forEach(id => completedPlayerIds.add(id))
+      state = buildProjectedStateAfterLiveMatch(
+        state,
+        completed,
+        completed.round_no ?? laneCompleted.get(courtIdx) ?? 0,
+      )
+      ;[...completed.team_a, ...completed.team_b].forEach(id => completionBatchPlayerIds.add(id))
       liveRows = liveRows.filter(row => row.id !== live.id)
       laneCompleted.set(courtIdx, (laneCompleted.get(courtIdx) ?? 0) + 1)
-      if (orderIndex === orders[cycle].length - 1) {
+      completedEvents += 1
+      if (completedEvents % courts === 0) {
         state = {
-          ...buildProjectedStateAfterCompletedLiveRound(state, completedPlayerIds),
-          current_round: Math.max(state.current_round, cycle + 1),
+          ...buildProjectedStateAfterCompletedLiveRound(state, completionBatchPlayerIds),
+          current_round: Math.max(state.current_round, Math.floor(completedEvents / courts)),
         }
+        completionBatchPlayerIds = new Set<string>()
       }
       updateMaxRest(playerSummary, state)
 
-      if ((laneCompleted.get(courtIdx) ?? 0) >= rounds) continue
-      const next = suggest({
-        state,
-        liveRows,
-        count: 1,
-        courts,
-        pvnaTolerance: state.config.pvna_tolerance,
-        target,
-        courtIdxs: [courtIdx],
-        events,
+      const idleCourts = [
+        courtIdx,
+        ...Array.from({ length: courts }, (_, index) => index).filter(index => index !== courtIdx),
+      ].filter(index => (
+        (laneCompleted.get(index) ?? 0) < rounds
+        && !liveRows.some(row => row.status === 'live' && row.court_idx === index)
+      ))
+      for (const idleCourtIdx of idleCourts) {
+        const next = suggest({
+          state,
+          liveRows,
+          count: 1,
+          courts,
+          pvnaTolerance: state.config.pvna_tolerance,
+          target,
+          courtIdxs: [idleCourtIdx],
+          events,
+        })
+        timings.push(next.elapsedMs)
+        if (next.payloads.length !== 1) {
+          hardWaitAttempts += 1
+          lastWaitDebug = next.debug
+          continue
+        }
+        const payload = next.payloads[0]
+        const busy = new Set(liveRows.flatMap(row => [...row.team_a, ...row.team_b]))
+        if (playerIds(payload).some(id => busy.has(id))) {
+          throw new Error(`${label}: court ${idleCourtIdx} reused a busy player`)
+        }
+        const laneRound = laneCompleted.get(idleCourtIdx) ?? 0
+        const match = observeMatch(payload, state, laneRound)
+        observations.push(match)
+        updatePlayerSummary(playerSummary, match, state)
+        liveRows.push(asLiveRow(payload, state.session_id, sequenceNo++, laneRound))
+      }
+    }
+    if (!madeProgress) {
+      incompleteRequests = Array.from({ length: courts }, (_, courtIdx) => courtIdx)
+        .filter(courtIdx => (laneCompleted.get(courtIdx) ?? 0) < rounds)
+        .length
+      const activeTarget = getActiveRollingInvariantTarget(state, target)
+      const remainingPlayers = Object.entries(activeTarget?.players ?? {})
+        .map(([id, playerTarget]) => {
+          const player = state.players.get(id)
+          const matches = player?.matches_played ?? 0
+          return {
+            id,
+            name: names.get(id) ?? id.slice(0, 8),
+            pvna: player ? getEffectivePvna(player) : 0,
+            matches,
+            target: playerTarget.matches,
+            remaining: Math.max(0, playerTarget.matches - matches),
+          }
+        })
+        .filter(player => player.remaining > 0)
+        .sort((left, right) => right.remaining - left.remaining || left.pvna - right.pvna)
+      const protectedIds = getRollingInvariantProtectedIds(state, target)
+      const strictDiagnostic: ExhaustiveFallbackDiagnostic = {
+        ran: false,
+        timedOut: false,
+        eligibleCount: 0,
+        combinationsEvaluated: 0,
+        bestPvnaDiff: null,
+        bestHasTradeoffs: false,
+        elapsedMs: 0,
+      }
+      const rematchRelaxedDiagnostic: ExhaustiveFallbackDiagnostic = {
+        ran: false,
+        timedOut: false,
+        eligibleCount: 0,
+        combinationsEvaluated: 0,
+        bestPvnaDiff: null,
+        bestHasTradeoffs: false,
+        elapsedMs: 0,
+      }
+      const strictProbe = suggestNextMatch(state, {
+        busy_player_ids: protectedIds,
+        exhaustive_fallback: true,
+        max_alternatives: 80,
+        max_runtime_ms: 1200,
+        _exhaustiveDiag: strictDiagnostic,
       })
-      timings.push(next.elapsedMs)
-      if (next.payloads.length !== 1) {
-        incompleteRequests += 1
-        continue
+      const rematchRelaxedProbe = suggestNextMatch(state, {
+        busy_player_ids: protectedIds,
+        exhaustive_fallback: true,
+        allow_recent_group_rematch: true,
+        max_alternatives: 80,
+        max_runtime_ms: 1200,
+        _exhaustiveDiag: rematchRelaxedDiagnostic,
+      })
+      deadlock = {
+        completed_events: completedEvents,
+        target_total_appearances: activeTarget?.target_total_appearances ?? null,
+        remaining_target_slots: remainingPlayers.reduce((sum, player) => sum + player.remaining, 0),
+        core_probe: {
+          strict_alternatives: strictProbe.alternatives.length,
+          rematch_relaxed_alternatives: rematchRelaxedProbe.alternatives.length,
+          strict_diagnostic: {
+            eligible_count: strictDiagnostic.eligibleCount,
+            combinations_evaluated: strictDiagnostic.combinationsEvaluated,
+            best_pvna_diff: strictDiagnostic.bestPvnaDiff,
+            timed_out: strictDiagnostic.timedOut,
+          },
+          rematch_relaxed_diagnostic: {
+            eligible_count: rematchRelaxedDiagnostic.eligibleCount,
+            combinations_evaluated: rematchRelaxedDiagnostic.combinationsEvaluated,
+            best_pvna_diff: rematchRelaxedDiagnostic.bestPvnaDiff,
+            timed_out: rematchRelaxedDiagnostic.timedOut,
+          },
+          live_debug: lastWaitDebug,
+        },
+        remaining_players: remainingPlayers,
       }
-      const payload = next.payloads[0]
-      const busy = new Set(liveRows.flatMap(row => [...row.team_a, ...row.team_b]))
-      if (playerIds(payload).some(id => busy.has(id))) {
-        throw new Error(`${label}: court ${courtIdx} reused a busy player`)
-      }
-      const laneRound = laneCompleted.get(courtIdx) ?? 0
-      const match = observeMatch(payload, state, laneRound)
-      observations.push(match)
-      updatePlayerSummary(playerSummary, match, state)
-      liveRows.push(asLiveRow(payload, state.session_id, sequenceNo++, laneRound))
+      break
+    }
+    scheduleCycle += 1
+    if (scheduleCycle > targetCompletedEvents * 3) {
+      incompleteRequests = 1
+      break
     }
   }
 
@@ -486,6 +637,8 @@ function simulateScenario({
     order_samples: orders.slice(0, 3),
     completed_matches: observations.length,
     incomplete_requests: incompleteRequests,
+    hard_wait_attempts: hardWaitAttempts,
+    deadlock,
     max_request_ms: Number(Math.max(...timings).toFixed(1)),
     avg_request_ms: Number(average(timings).toFixed(1)),
     avg_team_gap: Number(average(teamGaps).toFixed(3)),
@@ -609,7 +762,7 @@ async function main() {
   console.log(JSON.stringify({
     session_id: sessionId,
     read_only: true,
-    algorithm_version: 18,
+    algorithm_version: LIVE_PREVIEW_ALGORITHM_VERSION,
     ignored_persisted_suggestions: ignoredSuggestedRows,
     roster: {
       active_players: activePlayerCount,

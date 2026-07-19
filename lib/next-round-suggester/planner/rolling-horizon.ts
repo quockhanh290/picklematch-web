@@ -2,6 +2,12 @@
 import { getEffectivePvna } from '../state.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import type { SessionLiveMatchRow, SessionState, SuggestionAlternative } from '../types.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import {
+  filterRollingInvariantAlternatives,
+  getActiveRollingInvariantTarget,
+  // @ts-ignore Node's strip-only test runner needs the local .ts extension.
+} from './rolling-invariants.ts'
 
 export type RollingHorizonDiagnostics = {
   candidate_count: number
@@ -278,20 +284,6 @@ function finiteOr(value: unknown, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-function activePlanPlayerTargets(
-  state: SessionState,
-  planTarget?: RollingPlanTarget | null,
-): Record<string, Partial<RollingPlanPlayerTarget> & { matches: number }> | null {
-  if (!planTarget) return null
-  const currentAppearances = Object.keys(planTarget.target_matches_by_player)
-    .reduce((sum, playerId) => sum + (state.players.get(playerId)?.matches_played ?? 0), 0)
-  const checkpoint = planTarget.checkpoints
-    ?.find(item => item.target_total_appearances > currentAppearances)
-  return checkpoint?.players ?? planTarget.players ?? Object.fromEntries(
-    Object.entries(planTarget.target_matches_by_player).map(([id, matches]) => [id, { matches }]),
-  )
-}
-
 function fairnessDebtCost(state: SessionState, planTarget?: RollingPlanTarget | null) {
   const active = [...state.players.values()]
     .filter(player => player.checked_out_at === null && !player.opted_rest)
@@ -305,7 +297,7 @@ function fairnessDebtCost(state: SessionState, planTarget?: RollingPlanTarget | 
     (sum, player) => sum + Math.max(0, player.consecutive_play - 2),
     0,
   )
-  const planPlayers = activePlanPlayerTargets(state, planTarget)
+  const planPlayers = getActiveRollingInvariantTarget(state, planTarget)?.players ?? null
   const qualityDebt = planPlayers ? qualityDebtByPlayer(state) : null
   const planDebt = planPlayers
     ? active.reduce((sum, player) => {
@@ -437,7 +429,44 @@ export function chooseRollingHorizonAlternative(options: {
   ))
   const startedAt = clock()
   const deadline = startedAt + Math.max(1, options.budgetMs)
-  const allCandidates = options.candidates.filter(candidate => candidate.matches.length > 0)
+  const rawCandidates = options.candidates.filter(candidate => candidate.matches.length > 0)
+  const allCandidates = filterRollingInvariantAlternatives({
+    alternatives: rawCandidates,
+    state: options.state,
+    planTarget: options.planTarget,
+  })
+  if (allCandidates.length === 0) return null
+  if (allCandidates.length === 1 && rawCandidates.length > 1) {
+    return {
+      alternative: allCandidates[0],
+      diagnostics: {
+        candidate_count: rawCandidates.length,
+        frontier_candidate_count: 1,
+        evaluated_candidate_count: 1,
+        completion_orders: 0,
+        horizon_events: 0,
+        future_search_calls: 0,
+        future_cache_hits: 0,
+        budget_exhausted: false,
+        elapsed_ms: clock() - startedAt,
+        selected_candidate_index: rawCandidates.indexOf(allCandidates[0]),
+        selected_immediate_quality_cost: matchQualityCost(
+          allCandidates[0],
+          options.state,
+          options.planTarget,
+        ),
+        selected_projected_fairness_cost: 0,
+        selected_flexibility_cost: 0,
+        selected_score: 0,
+        selected_worst_path_score: 0,
+        paths_without_future_match: 0,
+        best_rejected_candidate_index: null,
+        best_rejected_score: null,
+        best_rejected_delta: null,
+        best_rejected_worst_path_score: null,
+      },
+    }
+  }
   if (allCandidates.length <= 1) return null
   const orders = completionOrders(options.liveCommitments)
   if (orders.length === 0) return null

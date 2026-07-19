@@ -29,7 +29,15 @@ import { suggestNextMatch, type EngineInstrumentEvent, type ExhaustiveFallbackDi
 import {
   chooseRollingHorizonAlternative,
   type RollingPlanTarget,
+  // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 } from './planner/rolling-horizon.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import {
+  filterRollingInvariantAlternatives,
+  getActiveRollingInvariantTarget,
+  getRollingInvariantProtectedIds,
+  // @ts-ignore Node's strip-only test runner needs the local .ts extension.
+} from './planner/rolling-invariants.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { reconstructLiveRounds } from './live-rounds.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
@@ -61,7 +69,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 18
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 19
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -1677,12 +1685,14 @@ export function deferLowViabilityRequiredIdsForCourt({
   availableRequiredIds,
   busyIds,
   remainingCourtsInRound,
+  minimumRequiredCount = 0,
   state,
 }: {
   requiredForThisCourt: string[]
   availableRequiredIds: string[]
   busyIds: Set<string>
   remainingCourtsInRound: number
+  minimumRequiredCount?: number
   state: SessionState
 }) {
   if (requiredForThisCourt.length === 0 || remainingCourtsInRound <= 1) {
@@ -1709,8 +1719,14 @@ export function deferLowViabilityRequiredIdsForCourt({
     return activePool.some(player => Math.abs(getEffectivePvna(player) - getEffectivePvna(required)) <= tolerance)
   }
   const viable = requiredForThisCourt.filter(hasNearLevelCandidate)
-  if (viable.length === 0) return requiredForThisCourt.slice(0, 1)
-  return viable
+  const selected = viable.length === 0 ? requiredForThisCourt.slice(0, 1) : viable
+  if (selected.length >= minimumRequiredCount) return selected
+  for (const playerId of requiredForThisCourt) {
+    if (selected.includes(playerId)) continue
+    selected.push(playerId)
+    if (selected.length >= minimumRequiredCount) break
+  }
+  return selected
 }
 
 function getPayloadPlayer(payload: SuggestedMatchPayload, position: number) {
@@ -3271,7 +3287,7 @@ function legacyBeamMatchScore(
     + ((state.players.get(teamB[0])?.partner_counts.get(teamB[1]) ?? 0) > 0 ? 1 : 0)
   const opponentRepeat = teamA.flatMap(playerA => teamB.map(playerB => (
     (state.players.get(playerA)?.opponent_counts.get(playerB) ?? 0) > 0 ? 1 : 0
-  ))).reduce((sum, repeat) => sum + repeat, 0)
+  ))).reduce<number>((sum, repeat) => sum + repeat, 0)
   return inter * interWeight + intra * intraWeight + partnerRepeat * 4 + opponentRepeat * 2
 }
 
@@ -3704,13 +3720,24 @@ export function buildSuggestedMatchPayloads({
       ? new Set<string>()
       : new Set(playerIdsByRound.get(payloadRoundNo) ?? [])
     const remainingCourtsInRound = Math.max(1, courtCapacity - courtRoundMatchCount)
-    const courtRoundRequiredIds = getRoundRequiredIds(
-      payloadRoundNo,
-      remainingCourtsInRound,
-      new Set([...courtRoundBusyIds, ...batchBusyIds]),
+    const activeRollingInvariantTarget = getActiveRollingInvariantTarget(
+      { ...suggestionState, current_round: payloadRoundNo },
+      options.rollingPlanTarget,
+    )
+    const courtRoundRequiredIds = activeRollingInvariantTarget
+      ? new Set<string>()
+      : getRoundRequiredIds(
+          payloadRoundNo,
+          remainingCourtsInRound,
+          new Set([...courtRoundBusyIds, ...batchBusyIds]),
+        )
+    const rollingInvariantProtectedIds = getRollingInvariantProtectedIds(
+      { ...suggestionState, current_round: payloadRoundNo },
+      options.rollingPlanTarget,
     )
     const availableRequiredIds = [...courtRoundRequiredIds]
       .filter(playerId => !courtRoundBusyIds.has(playerId) && !batchBusyIds.has(playerId))
+      .filter(playerId => !rollingInvariantProtectedIds.has(playerId))
     // Only defer required players into courts this request will actually fill.
     // Rolling lanes can assign future open courts to a later logical cycle.
     const futureBatchSlots = Math.max(0, (effectiveCount - index - 1) * 4)
@@ -3735,6 +3762,7 @@ export function buildSuggestedMatchPayloads({
       availableRequiredIds,
       busyIds: new Set([...batchBusyIds, ...courtRoundBusyIds]),
       remainingCourtsInRound,
+      minimumRequiredCount: minRequiredForThisCourt,
       state: suggestionState,
     })
     for (const playerId of options.forcedRequiredPlayerIds ?? []) {
@@ -3791,19 +3819,29 @@ export function buildSuggestedMatchPayloads({
       { ...suggestionState, current_round: payloadRoundNo },
       getBlockedRecentGroupRematchKeys(completedMatchGroups, payloadRoundNo),
     )
-    const liveSelectionGuard = buildLiveSelectionGuard({
-      state: suggestionStateForCourt,
-      busyIds,
-      nextMatchIndex: previewCountableMatchCount + index + 1,
-    })
+    const liveSelectionGuard = activeRollingInvariantTarget
+      ? {
+          protectedIds: new Set<string>(),
+          quotaProtectedIds: [] as string[],
+          intraRescueProtectedIds: new Set<string>(),
+          warnings: [] as string[],
+          relaxationStages: [] as Array<{ protectedIds: Set<string>; warnings: string[] }>,
+        }
+      : buildLiveSelectionGuard({
+          state: suggestionStateForCourt,
+          busyIds,
+          nextMatchIndex: previewCountableMatchCount + index + 1,
+        })
     const applicableProtectedIds = (protectedIds: Set<string>) => new Set(
       [...protectedIds].filter(playerId => !requiredForThisCourtIds.has(playerId)),
     )
     applicableProtectedIds(liveSelectionGuard.protectedIds).forEach(playerId => busyIds.add(playerId))
+    rollingInvariantProtectedIds.forEach(playerId => busyIds.add(playerId))
     const buildBusyIdsForProtected = (protectedIds: Set<string>) => new Set([
       ...batchBusyIds,
       ...courtRoundBusyIds,
       ...applicableProtectedIds(protectedIds),
+      ...rollingInvariantProtectedIds,
     ])
     const buildRelaxedTierOverrides = () => {
       const relaxedTierOverrides = { ...tierOverrides }
@@ -4210,7 +4248,25 @@ export function buildSuggestedMatchPayloads({
         }
       }
     }
-    const finalAlternatives = result.alternatives
+    const finalAlternatives = filterRollingInvariantAlternatives({
+      alternatives: result.alternatives,
+      state: suggestionStateForCourt,
+      requiredPlayerIds: requiredForThisCourtIds,
+      planTarget: options.rollingPlanTarget,
+    })
+    if (finalAlternatives.length === 0) {
+      if (debugOut && debugEligible) {
+        debugOut.push({
+          court_idx: courtIdx,
+          busy_count: busyIds.size,
+          required_for_court: requiredForThisCourt,
+          outcome: 'no_match',
+          eligible_players: debugEligible,
+          selected: [],
+        })
+      }
+      continue
+    }
     const {
       finalGuardedAlternative,
       tradeoffChoices,
@@ -4561,12 +4617,23 @@ export function buildSuggestedMatchPayloads({
     && effectiveCount >= 2
     ? repairAllIdlePayloadBatchParticipation(repairedPayloads, repairState, pvnaTolerance)
     : repairedPayloads
-  if (participationRepairedPayloads !== repairedPayloads) {
+  const selectedPlayerKey = (items: SuggestedMatchPayload[]) => items
+    .flatMap(payload => [...payload.team_a, ...payload.team_b])
+    .sort()
+    .join('|')
+  const invariantSafePayloads = getActiveRollingInvariantTarget(repairState, options.rollingPlanTarget)
+    && selectedPlayerKey(participationRepairedPayloads) !== selectedPlayerKey(payloads)
+    ? payloads
+    : participationRepairedPayloads
+  if (
+    participationRepairedPayloads !== repairedPayloads
+    && invariantSafePayloads === participationRepairedPayloads
+  ) {
     onRepairInstrument?.('participation')
   }
   // Derive warnings from the exact lineups returned to persistence. Rescue and
   // repair paths must not leave over-cap quality metadata stale.
-  return participationRepairedPayloads.map(payload => normalizeRepairedPayload(
+  return invariantSafePayloads.map(payload => normalizeRepairedPayload(
     payload,
     repairState,
     pvnaTolerance,

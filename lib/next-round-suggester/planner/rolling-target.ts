@@ -31,8 +31,6 @@ type PlayerAccumulator = RollingPlanPlayerTarget & {
   consecutive_play: number
 }
 
-const CHECKPOINT_RATIOS = [0.25, 0.5, 0.75, 1]
-
 function finite(value: unknown, fallback = 0) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -157,9 +155,9 @@ export function buildRollingPlanTarget(options: {
   }
   const rounds = [...options.plannedRounds].sort((left, right) => left.round_no - right.round_no)
   const checkpointRounds = new Map<number, number[]>()
-  for (const ratio of CHECKPOINT_RATIOS) {
-    const roundCount = Math.max(1, Math.ceil(rounds.length * ratio))
-    checkpointRounds.set(roundCount, [...(checkpointRounds.get(roundCount) ?? []), ratio])
+  for (let roundIndex = 0; roundIndex < rounds.length; roundIndex += 1) {
+    const roundCount = roundIndex + 1
+    checkpointRounds.set(roundCount, [roundCount / rounds.length])
   }
   const teamGaps: number[] = []
   const intraGaps: number[] = []

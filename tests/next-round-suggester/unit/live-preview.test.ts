@@ -453,6 +453,30 @@ describe('deferLowViabilityRequiredIdsForCourt', () => {
 
     expect(result).toEqual(['r1', 'r2'])
   })
+
+  it('never defers below the hard number of players required to preserve rest rotation', () => {
+    const state = createState({
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('r-low', { pvna: 2.5 }),
+        createPlayer('r-high', { pvna: 4.5 }),
+        createPlayer('near-low', { pvna: 2.8 }),
+        createPlayer('far-1', { pvna: 3.4 }),
+        createPlayer('far-2', { pvna: 3.5 }),
+      ],
+    })
+
+    const result = deferLowViabilityRequiredIdsForCourt({
+      requiredForThisCourt: ['r-low', 'r-high'],
+      availableRequiredIds: ['r-low', 'r-high'],
+      busyIds: new Set(),
+      remainingCourtsInRound: 2,
+      minimumRequiredCount: 2,
+      state,
+    })
+
+    expect(result).toEqual(['r-low', 'r-high'])
+  })
 })
 
 describe('projected live match state', () => {
