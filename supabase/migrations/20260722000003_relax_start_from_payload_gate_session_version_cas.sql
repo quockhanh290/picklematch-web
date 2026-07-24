@@ -9,7 +9,8 @@
 -- player-not-live / court-free checks under the row lock, correctness is preserved.
 --
 -- Fix: drop only the `live_state_version <> p_expected_live_state_version` rejection.
--- Body copied verbatim from 20260624000001.
+-- Body based on 20260625000001 (the latest prior definition) — KEEPS its
+-- "A player already played in this round" guard added by prevent_duplicate_play_same_round.
 --
 -- Contract mirrored by tests/host/startGateModel.ts::evaluateStartFromPayloadGate.
 
@@ -164,6 +165,27 @@ begin
   where session_id = p_session_id;
 
   v_round_no := floor(v_next_sequence::numeric / v_expected_round_matches)::int;
+
+  -- Prevent a player from playing twice in the same round.
+  -- This catches re-suggested lineups where already-completed players were re-picked
+  -- because their first match in the round was no longer 'live'.
+  -- (Preserved from 20260625000001 — must NOT be dropped when removing the CAS.)
+  if exists (
+    with match_players as (
+      select jsonb_array_elements_text(p_match -> 'team_a')::uuid as player_id
+      union all
+      select jsonb_array_elements_text(p_match -> 'team_b')::uuid as player_id
+    )
+    select 1
+    from match_players mp
+    join public.session_live_matches slm
+      on slm.session_id = p_session_id
+     and slm.round_no = v_round_no
+     and slm.status not in ('cancelled', 'suggested')
+     and (slm.team_a ? mp.player_id::text or slm.team_b ? mp.player_id::text)
+  ) then
+    raise exception 'A player already played in this round';
+  end if;
 
   insert into public.session_live_matches (
     session_id,

@@ -181,6 +181,7 @@ function payloadInput(overrides: Partial<StartPayloadGateInput> = {}): StartPayl
     playerStates: Object.fromEntries(players.map((id) => [id, AVAILABLE])),
     liveMatches: [],
     courtIdx: 2,
+    roundNo: 3,
     ...overrides,
   }
 }
@@ -211,6 +212,23 @@ describe('start-from-payload gate', () => {
       currentVersion: 14,
       liveMatches: [{ id: 'm2', status: 'live', court_idx: 0, round_no: 3, team_a: ['p1', 'px'], team_b: ['py', 'pz'] }],
     }))).toEqual({ ok: false, error: 'A player is already in a live match' })
+  })
+
+  // Regression guard (migration 20260625000001): a player whose first match THIS round
+  // already COMPLETED (no longer 'live') must not be re-started into the same round via
+  // the payload path — else they double-play and fairness/pair-history corrupt.
+  it('rejects a player who already played (completed) in this round', () => {
+    expect(evaluateStartFromPayloadGate(payloadInput({
+      currentVersion: 14, roundNo: 3,
+      liveMatches: [{ id: 'm2', status: 'completed', court_idx: 0, round_no: 3, team_a: ['p1', 'px'], team_b: ['py', 'pz'] }],
+    }))).toEqual({ ok: false, error: 'A player already played in this round' })
+  })
+
+  it('allows a completed player from a DIFFERENT round (no double-play)', () => {
+    expect(evaluateStartFromPayloadGate(payloadInput({
+      roundNo: 4,
+      liveMatches: [{ id: 'm2', status: 'completed', court_idx: 0, round_no: 2, team_a: ['p1', 'px'], team_b: ['py', 'pz'] }],
+    }))).toEqual({ ok: true })
   })
 
   it('rejects when the court already has a live match', () => {

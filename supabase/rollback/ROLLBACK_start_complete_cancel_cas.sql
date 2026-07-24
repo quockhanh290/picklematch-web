@@ -577,6 +577,23 @@ begin
 
   v_round_no := floor(v_next_sequence::numeric / v_expected_round_matches)::int;
 
+  if exists (
+    with match_players as (
+      select jsonb_array_elements_text(p_match -> 'team_a')::uuid as player_id
+      union all
+      select jsonb_array_elements_text(p_match -> 'team_b')::uuid as player_id
+    )
+    select 1
+    from match_players mp
+    join public.session_live_matches slm
+      on slm.session_id = p_session_id
+     and slm.round_no = v_round_no
+     and slm.status not in ('cancelled', 'suggested')
+     and (slm.team_a ? mp.player_id::text or slm.team_b ? mp.player_id::text)
+  ) then
+    raise exception 'A player already played in this round';
+  end if;
+
   insert into public.session_live_matches (
     session_id,
     sequence_no,

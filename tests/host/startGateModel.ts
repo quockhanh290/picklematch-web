@@ -143,6 +143,7 @@ export type StartPayloadGateInput = {
   playerStates: Record<string, StartGatePlayerState>
   liveMatches: StartGateLiveMatch[]       // other rows for the session
   courtIdx: number | null
+  roundNo: number                         // v_round_no the inserted match would land in
 }
 
 export function evaluateStartFromPayloadGate(input: StartPayloadGateInput): StartGateResult {
@@ -174,6 +175,17 @@ export function evaluateStartFromPayloadGate(input: StartPayloadGateInput): Star
     liveMatches.some((m) => m.status === 'live' && (m.team_a.includes(id) || m.team_b.includes(id))),
   )
   if (playerInLive) return { ok: false, error: 'A player is already in a live match' }
+
+  // Prevent a player from playing twice in the same round (guard from migration
+  // 20260625000001 — must survive the CAS removal). Catches a re-picked player whose
+  // first match this round already COMPLETED (no longer 'live').
+  const playedThisRound = matchPlayers.some((id) =>
+    liveMatches.some((m) =>
+      m.round_no === input.roundNo &&
+      m.status !== 'cancelled' && m.status !== 'suggested' &&
+      (m.team_a.includes(id) || m.team_b.includes(id))),
+  )
+  if (playedThisRound) return { ok: false, error: 'A player already played in this round' }
 
   const courtOccupied =
     courtIdx !== null &&
