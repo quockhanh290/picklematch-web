@@ -15,6 +15,35 @@ export function isSameCourtAndPlayers(
     && leftPlayers.every((playerId, index) => playerId === rightPlayers[index])
 }
 
+/**
+ * Idempotency backstops for the complete / cancel actions, mirroring the start path's
+ * "already committed → reconcile silently" check. After the coarse `live_state_version`
+ * CAS was removed, these actions no longer fail with a retryable 'Session changed'; a
+ * dropped response (flaky mobile) or a second device makes the RPC raise a specific error
+ * (`Only live matches can be completed`, `Only suggested/live matches can be cancelled`)
+ * even though the action actually landed. These helpers detect that from a fresh snapshot.
+ *
+ * NOTE: the live snapshot RPC excludes `cancelled` rows, so a cancelled match is ABSENT
+ * from the fetched rows — hence cancel treats "no longer live/suggested (or gone)" as done.
+ */
+export function completeAlreadyApplied(
+  rows: Pick<SessionLiveMatchRow, 'id' | 'status'>[],
+  matchId: string,
+): boolean {
+  const row = rows.find((r) => r.id === matchId)
+  return row?.status === 'completed'
+}
+
+export function cancelAlreadyApplied(
+  rows: Pick<SessionLiveMatchRow, 'id' | 'status'>[],
+  matchId: string,
+): boolean {
+  const row = rows.find((r) => r.id === matchId)
+  // Absent (cancelled rows are filtered out of the snapshot) or in any terminal/non-actionable
+  // state means the match is no longer a live/suggested board slot — the cancel goal is met.
+  return !row || (row.status !== 'live' && row.status !== 'suggested')
+}
+
 export function shouldInvalidatePreviewAfterStartError(error: unknown) {
   const message = error instanceof Error
     ? error.message

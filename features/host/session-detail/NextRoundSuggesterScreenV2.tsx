@@ -153,7 +153,7 @@ import { classifyPersistAssignmentConflict } from './next-round-v2/preview-confl
 import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
 import { pruneOptimisticLiveMatchesByServerId, withoutRowsById } from './next-round-v2/optimisticLiveMatches'
 import { useCheckInMutation, useCheckOutMutation, useStartMatchMutation, useCompleteMatchMutation } from './next-round-v2/mutations'
-import { getMatchPlayerIds, isSameCourtAndPlayers, shouldInvalidatePreviewAfterStartError } from './liveMatchGuards'
+import { getMatchPlayerIds, isSameCourtAndPlayers, shouldInvalidatePreviewAfterStartError, completeAlreadyApplied, cancelAlreadyApplied } from './liveMatchGuards'
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const LIVE_SCORE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 90 : SCREEN_WIDTH > 360 ? 80 : 72
 const LIVE_SCORE_CARD_HEIGHT = LIVE_SCORE_CARD_WIDTH * 1.25
@@ -1039,7 +1039,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     router.push({ pathname: '/host/session/[id]/roster', params: { id: sessionId } } as any)
   }, [sessionId])
 
-  const runAction = useCallback(async (key: string, action: () => Promise<ActionResult | void>) => {
+  const runAction = useCallback(async (
+    key: string,
+    action: () => Promise<ActionResult | void>,
+    opts?: { alreadyAppliedOnError?: (rows: any) => boolean },
+  ) => {
     if (actionInFlightRef.current) {
       if (__DEV__) console.warn('[NextRoundSuggesterV2] action ignored while another action is running', { key, busy })
       setError('Đang xử lý thao tác trước đó, thử lại sau vài giây.')
@@ -1059,8 +1063,15 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     } catch (err: any) {
       const safeMessage = toUserSafeActionError(err)
       console.warn('[NextRoundSuggesterV2] action failed', err)
+      // Idempotency backstop: a dropped response / second device can make the RPC report a
+      // specific error even though the action landed. Reconcile from a fresh snapshot first;
+      // if the desired outcome is already in place, treat it as success (no error dialog).
+      const reconciledRows = await loadLiveState()
+      if (opts?.alreadyAppliedOnError?.(reconciledRows)) {
+        if (__DEV__) console.warn('[NextRoundSuggesterV2] action failed but already applied; reconciled', { key, error: err?.message ?? String(err) })
+        return
+      }
       setError(safeMessage)
-      await loadLiveState()
       if (err && typeof err === 'object') {
         try {
           ;(err as { message?: string }).message = safeMessage
@@ -1894,10 +1905,20 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         return next
       })
       setOptimisticLiveMatches(current => current.filter(row => row.id !== match.id))
+      // Idempotency backstop: a dropped response (flaky mobile) or a second device can make
+      // the RPC report 'Only live matches can be completed' even though the completion landed.
+      // Reconcile from a fresh snapshot; if the match is now completed, treat it as success.
+      const reconciledRows = await loadLiveState()
+      if (completeAlreadyApplied(reconciledRows?.liveMatchRows ?? [], match.id)) {
+        if (__DEV__) console.warn('[NextRoundSuggesterV2] complete response failed but match was completed; reconciled', {
+          matchId: match.id,
+          error: err?.message ?? String(err),
+        })
+        return
+      }
       const safeMessage = toUserSafeActionError(err)
       console.warn('[NextRoundSuggesterV2] complete match failed', err)
       setError(safeMessage)
-      await loadLiveState()
       Alert.alert('Lỗi', safeMessage)
     }
   }
@@ -1938,7 +1959,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         reload: false,
         reconcileAfterMs: 600,
       }
-    })
+    }, { alreadyAppliedOnError: (rows: any) => cancelAlreadyApplied(rows?.liveMatchRows ?? [], match.id) })
   }
 
   const openSwapForPlayer = useCallback((playerId: string, match?: SuggestedLiveMatchRow) => {

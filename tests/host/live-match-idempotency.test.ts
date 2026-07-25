@@ -7,7 +7,7 @@
  * that govern WHEN to retry and WHEN to treat a call as idempotent.
  */
 
-import { isSameCourtAndPlayers, shouldInvalidatePreviewAfterStartError } from '@/features/host/session-detail/liveMatchGuards'
+import { isSameCourtAndPlayers, shouldInvalidatePreviewAfterStartError, completeAlreadyApplied, cancelAlreadyApplied } from '@/features/host/session-detail/liveMatchGuards'
 
 /**
  * Pure retry harness that replicates the two-attempt pattern used by
@@ -109,6 +109,44 @@ describe('C: shouldInvalidatePreviewAfterStartError', () => {
 
   it('handles plain object with message property', () => {
     expect(shouldInvalidatePreviewAfterStartError({ message: 'Session changed' })).toBe(true)
+  })
+})
+
+describe('C: completeAlreadyApplied (idempotency backstop after dropped response / 2nd device)', () => {
+  const rows = (status: string) => [{ id: 'm1', status }, { id: 'm2', status: 'live' }] as any
+
+  it('true when the target match is now completed (the completion actually landed)', () => {
+    expect(completeAlreadyApplied(rows('completed'), 'm1')).toBe(true)
+  })
+
+  it('false when the target match is still live (genuine failure — surface the error)', () => {
+    expect(completeAlreadyApplied(rows('live'), 'm1')).toBe(false)
+  })
+
+  it('false when the target match was cancelled instead (not a completion)', () => {
+    expect(completeAlreadyApplied(rows('cancelled'), 'm1')).toBe(false)
+  })
+
+  it('false when the match is absent (cannot confirm completion)', () => {
+    expect(completeAlreadyApplied([{ id: 'other', status: 'live' }] as any, 'm1')).toBe(false)
+  })
+})
+
+describe('C: cancelAlreadyApplied (idempotency backstop; snapshot omits cancelled rows)', () => {
+  it('true when the target match is absent (cancelled rows are filtered out → it is gone)', () => {
+    expect(cancelAlreadyApplied([{ id: 'other', status: 'live' }] as any, 'm1')).toBe(true)
+  })
+
+  it('true when the match is no longer live/suggested (completed elsewhere — goal met)', () => {
+    expect(cancelAlreadyApplied([{ id: 'm1', status: 'completed' }] as any, 'm1')).toBe(true)
+  })
+
+  it('false when the match is still live (genuine failure — surface the error)', () => {
+    expect(cancelAlreadyApplied([{ id: 'm1', status: 'live' }] as any, 'm1')).toBe(false)
+  })
+
+  it('false when the match is still a suggested board slot', () => {
+    expect(cancelAlreadyApplied([{ id: 'm1', status: 'suggested' }] as any, 'm1')).toBe(false)
   })
 })
 
