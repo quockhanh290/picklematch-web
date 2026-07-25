@@ -69,7 +69,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 19
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 20
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -3749,6 +3749,19 @@ export function buildSuggestedMatchPayloads({
       4,
       Math.max(0, availableRequiredIds.length - futureRoundSlots),
     )
+    // Async single-court fill: this request fills one court while other courts are still
+    // live. Each of those will complete and trigger its own fill, so a rester deferred now
+    // replays on the next one. Without a future court in THIS batch to defer to, the rest-
+    // rotation floor would otherwise force the full required foursome onto this court even
+    // when those resters span too wide a PVNA range to balance — relaxing tolerance into a
+    // blowout. Allow the low-viability defer below the floor so it can prune the resters
+    // that cannot form a balanced foursome (it is a no-op when the required spread already
+    // fits tolerance, so full rest rotation is preserved in the common case).
+    const asyncSingleCourtFill = effectiveCount === 1 && liveMatchRows.some(row => (
+      row.status === 'live'
+      && !completingLiveMatchIds.has(row.id)
+      && row.court_idx !== courtIdx
+    ))
     const canLetQuotaGuardPickRequiredPool =
       availableRequiredIds.length >= remainingCourtsInRound * 4
     let requiredForThisCourt = selectRequiredIdsForCourt(
@@ -3762,7 +3775,9 @@ export function buildSuggestedMatchPayloads({
       availableRequiredIds,
       busyIds: new Set([...batchBusyIds, ...courtRoundBusyIds]),
       remainingCourtsInRound,
-      minimumRequiredCount: minRequiredForThisCourt,
+      minimumRequiredCount: asyncSingleCourtFill
+        ? Math.min(1, minRequiredForThisCourt)
+        : minRequiredForThisCourt,
       state: suggestionState,
     })
     for (const playerId of options.forcedRequiredPlayerIds ?? []) {

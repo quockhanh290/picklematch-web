@@ -617,6 +617,69 @@ describe('projected live match state', () => {
     })
   })
 
+  it('defers surplus resters instead of force-packing a blowout onto the only open court', () => {
+    // Two courts still live + one open court (async single-court fill, count=1).
+    // Eight idle players rested last round -> all "required". The four highest-priority
+    // resters are bimodal (2 high + 2 low PVNA) and every high/low cross pairing is
+    // repeat-blocked, so forcing all four onto the open court can only relax tolerance
+    // into a blowout (high+high vs low+low). The fix treats the two pending live courts
+    // as future fill slots and forces only the single highest-priority rester, leaving
+    // the pool free to form a balanced match and deferring the rest to the next fill.
+    const high1 = createPlayer('H1', { pvna: 4.7, consecutive_rest: 2, matches_played: 2, last_played_round: 0 })
+    const high2 = createPlayer('H2', { pvna: 4.6, consecutive_rest: 2, matches_played: 2, last_played_round: 0 })
+    const low1 = createPlayer('L1', { pvna: 2.1, consecutive_rest: 2, matches_played: 2, last_played_round: 0 })
+    const low2 = createPlayer('L2', { pvna: 2.2, consecutive_rest: 2, matches_played: 2, last_played_round: 0 })
+    const mids = [3.4, 3.5, 3.6, 3.5].map((pvna, index) =>
+      createPlayer(`M${index + 1}`, { pvna, consecutive_rest: 1, matches_played: 2, last_played_round: 0 }))
+    const busy = Array.from({ length: 8 }, (_, index) =>
+      createPlayer(`B${index + 1}`, { pvna: 3.5, matches_played: 2, last_played_round: 0 }))
+    for (const highPlayer of [high1, high2]) {
+      for (const lowPlayer of [low1, low2]) setPartnerRepeats(highPlayer, lowPlayer, 3)
+    }
+
+    const state = createState({
+      courts: 6,
+      pvnaTolerance: 0.5,
+      players: [high1, high2, low1, low2, ...mids, ...busy],
+    })
+
+    // Two courts still live (round not yet full -> the open court keeps a large
+    // remainingCourtsInRound, so the quota guard does not step in and the required-rester
+    // forcing path is exercised, matching the real async session shape).
+    const liveRows = [
+      liveRow('live-court-4', 4, 'live', ['B1', 'B2'], ['B3', 'B4']),
+      liveRow('live-court-5', 5, 'live', ['B5', 'B6'], ['B7', 'B8']),
+    ]
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 6,
+      state,
+      rows: { liveMatchRows: liveRows, liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+      options: { courtIdxs: [0], ignoreCapacityLock: true },
+    })
+
+    expect(payloads).toHaveLength(1)
+    const selected = payloads[0]
+    const selectedIds = [...selected.team_a, ...selected.team_b]
+    // Never force all four repeat-blocked bimodal resters together (the only blowout path).
+    const forcedBimodalFoursome = ['H1', 'H2', 'L1', 'L2'].every(id => selectedIds.includes(id))
+    expect(forcedBimodalFoursome).toBe(false)
+    // The chosen match stays balanced rather than a tolerance-relaxed blowout.
+    const pvnaOf = (id: string) => state.players.get(id)!.pvna
+    const gap = Math.abs(
+      pvnaOf(selected.team_a[0]) + pvnaOf(selected.team_a[1])
+      - pvnaOf(selected.team_b[0]) - pvnaOf(selected.team_b[1]),
+    )
+    expect(gap).toBeLessThan(2.0)
+  })
+
   it('does not mark same-court live players as cross-court locked', () => {
     const state = createState({
       courts: 1,
