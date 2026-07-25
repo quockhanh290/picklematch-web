@@ -457,6 +457,8 @@ export function RecapView({
   liveMatchRows,
   onOpenHistory,
   onContinue,
+  onFinish,
+  finishing = false,
   hideContinue = false,
 }: {
   summary: ReturnType<typeof sanitizeSummaryForHost>
@@ -467,6 +469,8 @@ export function RecapView({
   liveMatchRows?: SessionLiveMatchRow[]
   onOpenHistory: () => void
   onContinue: () => void
+  onFinish?: () => void
+  finishing?: boolean
   hideContinue?: boolean
 }) {
   const theme = useAppTheme()
@@ -577,6 +581,17 @@ export function RecapView({
           <Text style={ctaTextStyle(theme.onPrimary, 12)}>Lịch sử vòng</Text>
         </TouchableOpacity>
       </View>
+      {onFinish ? (
+        <TouchableOpacity
+          onPress={onFinish}
+          disabled={finishing}
+          style={{ marginTop: 10, height: 52, borderRadius: RADIUS.md, backgroundColor: theme.dangerBg, borderWidth: BORDER.hairline, borderColor: theme.dangerText, alignItems: 'center', justifyContent: 'center', opacity: finishing ? 0.6 : 1 }}
+        >
+          {finishing
+            ? <ActivityIndicator color={theme.dangerText} />
+            : <Text style={ctaTextStyle(theme.dangerText, 12)}>Kết thúc kèo</Text>}
+        </TouchableOpacity>
+      ) : null}
     </ScrollView>
   )
 }

@@ -646,8 +646,35 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
   const [completingLiveMatchIds, setCompletingLiveMatchIds] = useState<Set<string>>(() => new Set())
   const [creatingNextMatchIds, setCreatingNextMatchIds] = useState<Set<string>>(() => new Set())
   const [completedLiveMatchCommitNonce, setCompletedLiveMatchCommitNonce] = useState(0)
+  const [finishingSession, setFinishingSession] = useState(false)
   const [completingLiveMatchPlaceholders, setCompletingLiveMatchPlaceholders] = useState<Map<string, SessionLiveMatchRow>>(() => new Map())
   const [previewRefreshNonce, setPreviewRefreshNonce] = useState(0)
+  const handleFinishSession = useCallback(() => {
+    Alert.alert(
+      'Kết thúc kèo',
+      'Xác nhận kết thúc kèo này? Kèo sẽ chuyển sang lịch sử và không thể thêm vòng mới.',
+      [
+        { text: 'Huỷ', style: 'cancel' },
+        {
+          text: 'Kết thúc',
+          style: 'destructive',
+          onPress: async () => {
+            setFinishingSession(true)
+            const { error } = await supabase
+              .from('sessions')
+              .update({ status: 'finished' })
+              .eq('id', sessionId)
+            setFinishingSession(false)
+            if (error) {
+              Alert.alert('Lỗi', error.message ?? 'Không thể kết thúc kèo')
+              return
+            }
+            router.replace('/host/dashboard' as any)
+          },
+        },
+      ],
+    )
+  }, [sessionId])
   const [isSuggestingPreview, setIsSuggestingPreview] = useState(false)
   const [courtShortageBreakdown, setCourtShortageBreakdown] = useState<{ temp: number; real: number } | null>(null)
   const completingLiveMatchPlaceholdersRef = useRef(completingLiveMatchPlaceholders)
@@ -3826,6 +3853,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
           liveMatchRows={rows.liveMatchRows}
           onOpenHistory={() => setSheet('history')}
           onContinue={() => setShowSessionReport(false)}
+          onFinish={handleFinishSession}
+          finishing={finishingSession}
           hideContinue={initialShowReport}
         />
       ) : (
