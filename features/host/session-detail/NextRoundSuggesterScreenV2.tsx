@@ -531,15 +531,15 @@ function hasHardPreviewQualityViolation(
   const roundNo = Number(match.round_no ?? 0)
   const isEarlyOrMidRound = roundNo < 5
 
-  // Balancing team TOTALS in a wide-PVNA pool forces high+low pairings within a team, so a
-  // large intra-team gap is expected and acceptable once the session is past its early rounds
-  // (the primary goal there is team-total balance, which this match already meets). Enforcing
-  // the strict intra cap on every round would hard-reject these structurally-necessary lineups
-  // and leave lanes unfillable. Keep the strict cap early; relax it (2x) for late rounds and
-  // only reject an egregious internal imbalance.
+  // Early/mid rounds keep the strict intra cap — the pool still has room to avoid pairing a
+  // strong+weak player within one team. Late rounds are NOT intra-capped: a wide-PVNA pool must
+  // pair strong+weak to keep the team TOTALS balanced, and a balanced (competitive) match with
+  // mixed-strength teams is a GOOD outcome, not a defect. A fixed intra cap (even a relaxed 2x)
+  // still rejects the structurally-necessary lineup when the pool spread exceeds it (observed
+  // intra 2.34 at gap 0.33), leaving the lane unfillable and thrashing the board. So on late
+  // rounds we reject only on the team-total axis (a real blowout below), never on intra alone.
   const intraGap = getSuggestedMatchIntraTeamGap(match, state)
-  const intraLimit = isEarlyOrMidRound ? INTRA_TEAM_PVNA_GAP_LIMIT : INTRA_TEAM_PVNA_GAP_LIMIT * 2
-  if (intraGap > intraLimit) return true
+  if (isEarlyOrMidRound && intraGap > INTRA_TEAM_PVNA_GAP_LIMIT) return true
 
   const pvnaGap = getSuggestedMatchPvnaGap(match, state)
   const pvnaOverBy = pvnaGap - pvnaTolerance
