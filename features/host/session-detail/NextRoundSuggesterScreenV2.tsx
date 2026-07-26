@@ -528,15 +528,23 @@ function hasHardPreviewQualityViolation(
   state: SessionState,
   pvnaTolerance: number,
 ) {
+  const roundNo = Number(match.round_no ?? 0)
+  const isEarlyOrMidRound = roundNo < 5
+
+  // Balancing team TOTALS in a wide-PVNA pool forces high+low pairings within a team, so a
+  // large intra-team gap is expected and acceptable once the session is past its early rounds
+  // (the primary goal there is team-total balance, which this match already meets). Enforcing
+  // the strict intra cap on every round would hard-reject these structurally-necessary lineups
+  // and leave lanes unfillable. Keep the strict cap early; relax it (2x) for late rounds and
+  // only reject an egregious internal imbalance.
   const intraGap = getSuggestedMatchIntraTeamGap(match, state)
-  if (intraGap > INTRA_TEAM_PVNA_GAP_LIMIT) return true
+  const intraLimit = isEarlyOrMidRound ? INTRA_TEAM_PVNA_GAP_LIMIT : INTRA_TEAM_PVNA_GAP_LIMIT * 2
+  if (intraGap > intraLimit) return true
 
   const pvnaGap = getSuggestedMatchPvnaGap(match, state)
   const pvnaOverBy = pvnaGap - pvnaTolerance
   if (pvnaOverBy > 1) return true
 
-  const roundNo = Number(match.round_no ?? 0)
-  const isEarlyOrMidRound = roundNo < 5
   if (!isEarlyOrMidRound) return false
 
   return pvnaOverBy > 0.25
