@@ -930,8 +930,21 @@ export function bestPartitioning(
   relaxedIter += s6.iterations
 
   {
-    const s5_5or6 =
-      s5_5.result && s6.result
+    // Never serve a genuine team-total blowout (Stage 5.5: same-strength teams, one side much
+    // stronger) when the intra-overflow split (Stage 6: mixed-strength teams) delivers a far
+    // more competitive game. With INTRA_OVERFLOW_WEIGHT=1 a very high intra gap can make the
+    // balanced split score worse than the blowout, so the raw score comparison would pick the
+    // lopsided match — worse for everyone than mixed teams that stay close. Only override for
+    // genuinely extreme per-court gaps (same threshold as the Stage 6 crossover) where the
+    // balanced split is substantially closer; normal cases keep the tuned score comparison.
+    const perCourtBlowoutGap = s5_5.result ? s5_5.result.stats.pvna_diff / numCourts : Number.POSITIVE_INFINITY
+    const perCourtBalancedGap = s6.result ? s6.result.stats.pvna_diff / numCourts : Number.POSITIVE_INFINITY
+    const preferBalancedOverBlowout = s5_5.result != null && s6.result != null
+      && perCourtBlowoutGap > softTolerance * 1.5
+      && perCourtBlowoutGap - perCourtBalancedGap > softTolerance
+    const s5_5or6 = preferBalancedOverBlowout
+      ? s6.result
+      : s5_5.result && s6.result
         ? (s5_5.result.score <= s6.result.score ? s5_5.result : s6.result)
         : s5_5.result ?? s6.result ?? null
     if (s5_5or6) {
