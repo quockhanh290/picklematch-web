@@ -187,8 +187,19 @@ export default function HostDashboardScreen() {
   )
   // A 'playing' session has already started, so it is neither "upcoming" nor history —
   // it belongs in its own "Đang diễn ra" section. Only recent ones count as in-progress;
-  // a 'playing' session left untouched past its end / >12h after start is treated as done
-  // (falls through to the past/history filters below via isWayPastStart/isPastTime).
+  // a 'playing' session left untouched past its end / >12h after start is treated as done.
+  // V2 quick-start sessions often have no slot times (start/end parse to 0), so the slot-time
+  // fallbacks can never fire — age those out by created_at instead, otherwise an abandoned
+  // null-slot 'playing' session would pin itself in "Đang diễn ra" forever.
+  const STALE_PLAYING_MS = 12 * 3600000
+  const isStaleNullSlotPlaying = (s: any) => {
+    if (s.status !== 'playing') return false
+    const startTs = parseRobustDate(s.slot?.start_time)
+    const endTs = parseRobustDate(s.slot?.end_time)
+    if (startTs > 0 || endTs > 0) return false // has slot times → handled by isWayPastStart/isPastTime
+    const createdTs = parseRobustDate(s.created_at)
+    return createdTs > 0 && (Date.now() - createdTs) > STALE_PLAYING_MS
+  }
   const inProgressSessions = sessions.filter(s => {
     if (s.status !== 'playing') return false
     const startTs = parseRobustDate(s.slot?.start_time)
@@ -196,7 +207,7 @@ export default function HostDashboardScreen() {
     const now = Date.now()
     const isWayPastStart = startTs > 0 && (now - startTs) > (12 * 3600000)
     const isPastTime = endTs > 0 && endTs <= now
-    return !isWayPastStart && !isPastTime
+    return !isWayPastStart && !isPastTime && !isStaleNullSlotPlaying(s)
   }).sort((a, b) => parseRobustDate(b.slot?.start_time) - parseRobustDate(a.slot?.start_time))
   const inProgressIds = new Set(inProgressSessions.map(s => s.id))
 
@@ -211,7 +222,7 @@ export default function HostDashboardScreen() {
     const isAfterEnd = isPastTime || isWayPastStart
     const isInvalidPlayerCount = !s.is_unlimited && confirmedCount < minPlayers && isAfterEnd
     const isPastStatus = ['completed', 'finished', 'archived', 'done', 'cancelled', 'pending_results', 'pending_completion', 'failed_to_fill', 'cancelled_no_players'].includes(s.status)
-    const isPast = isPastTime || isPastStatus || isWayPastStart || isInvalidPlayerCount
+    const isPast = isPastTime || isPastStatus || isWayPastStart || isInvalidPlayerCount || isStaleNullSlotPlaying(s)
     return !isPast && !inProgressIds.has(s.id)
   }).sort((a, b) => parseRobustDate(a.slot?.start_time) - parseRobustDate(b.slot?.start_time))
 
@@ -480,8 +491,8 @@ export default function HostDashboardScreen() {
                 'cancelled_no_players'
               ].includes(s.status)
               
-              const isPast = isPastTime || isPastStatus || isWayPastStart || isInvalidPlayerCount
-              
+              const isPast = isPastTime || isPastStatus || isWayPastStart || isInvalidPlayerCount || isStaleNullSlotPlaying(s)
+
               // In-progress ('playing') sessions live in their own section, not in either tab.
               if (inProgressIds.has(s.id)) return false
               // Exclude the nextSession if it's currently highlighted in upcoming tab
