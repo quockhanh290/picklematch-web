@@ -1333,7 +1333,12 @@ Deno.serve(async (request) => {
     stageStartedAt = performance.now()
     let persistedPreviewVersion = liveStateVersion
     let persistedPreviewNoop = false
-    if (finalPreviewBoard.length > 0 || targetCourtIdxs.length > 0) {
+    // A replace_courts request that produced no lineup (e.g. the engine deferred on an
+    // extreme tight pool) must NOT run persistence: doing so would cancel the court's
+    // existing valid suggestion and insert nothing, leaving it blank/stuck. Retain the
+    // current suggestion instead. full_board close-court paths still persist as before.
+    const replaceCourtsProducedNothing = mode === 'replace_courts' && finalPreviewBoard.length === 0
+    if ((finalPreviewBoard.length > 0 || targetCourtIdxs.length > 0) && !replaceCourtsProducedNothing) {
       const requestedPersistenceCourtIdxs = targetCourtIdxs.length > 0
         ? targetCourtIdxs
         : finalPreviewBoard
