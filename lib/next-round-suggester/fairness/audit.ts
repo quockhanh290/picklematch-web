@@ -123,10 +123,15 @@ export function buildMatchCountConsistencyRows(
       live_opponent_total: totalCounts(liveState.players.get(playerId)?.opponent_counts),
       replay_opponent_total: totalCounts(replayState.players.get(playerId)?.opponent_counts),
     }))
+    // Only flag HISTORICAL-INTEGRITY divergence (matches played, partner/opponent totals) —
+    // those must match the replayed history, so a mismatch is a real data-integrity problem.
+    // consecutive_play / consecutive_rest are order-fragile LIVE counters: they are maintained
+    // incrementally across async, out-of-order match completions, so under stragglers/churn they
+    // legitimately drift from the strict round-order replay and self-heal as play continues. The
+    // report renders replayed values anyway, so a pure consecutive_* drift is not a data problem
+    // and must not raise the sync warning (it stays visible in the row columns for diagnostics).
     .filter((row) => (
       row.live !== row.replay ||
-      row.live_consecutive_rest !== row.replay_consecutive_rest ||
-      row.live_consecutive_play !== row.replay_consecutive_play ||
       row.live_partner_total !== row.replay_partner_total ||
       row.live_opponent_total !== row.replay_opponent_total
     ))
