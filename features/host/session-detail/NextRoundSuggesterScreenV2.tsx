@@ -662,7 +662,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             setFinishingSession(true)
             const { error } = await supabase
               .from('sessions')
-              .update({ status: 'finished' })
+              .update({ status: 'done' })
               .eq('id', sessionId)
             setFinishingSession(false)
             if (error) {
