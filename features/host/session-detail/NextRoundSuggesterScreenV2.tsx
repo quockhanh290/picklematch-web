@@ -2433,8 +2433,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       players: [...state.players.values()],
       assignedPlayerIds: assignedPreviewPlayerIds,
     })
+    // A PERSISTED (committed) suggestion is a startable board slot the host already has.
+    // Its intra-team gap can be structurally unavoidable in a wide-PVNA pool (balancing
+    // team totals forces a high+low pairing), so treating it as a "hard violation" would
+    // escalate every cycle into a full-board re-suggest that can never converge to an
+    // all-clean board — the client then thrashes (retry → block → unblock) and leaves open
+    // courts (e.g. the last empty lane) unfilled. Only fresh, not-yet-committed previews
+    // (and a genuine rest-priority miss) should force a full-board re-suggest; committed
+    // courts are left as-is and missing courts are filled independently via mini-recover.
     const hasHardReusableQualityViolation = hasRestPriorityMiss || currentPreviewBoardForEdge.some(match =>
-      !match.available_pool_only
+      !isPersistedSuggestedMatch(match)
+      && !match.available_pool_only
       && hasHardPreviewQualityViolation(match, state, pvnaTolerance)
     )
     // When getCurrentPreviewBoardForEdge returns [] (e.g. live-player filter drops all courts),
@@ -2464,7 +2473,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       && reusableMatches.length < suggestedQueueCount
     const hardPreviewQualityCourtIdxs = hasHardReusableQualityViolation
       ? currentPreviewBoardForEdge
-          .filter(match => hasRestPriorityMiss || hasHardPreviewQualityViolation(match, state, pvnaTolerance))
+          .filter(match => hasRestPriorityMiss
+            || (!isPersistedSuggestedMatch(match) && hasHardPreviewQualityViolation(match, state, pvnaTolerance)))
           .map(match => getSuggestedLaneCourtIdx(match))
           .filter((courtIdx): courtIdx is number => courtIdx !== null)
       : []
