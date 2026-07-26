@@ -660,13 +660,14 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
           style: 'destructive',
           onPress: async () => {
             setFinishingSession(true)
-            const { error } = await supabase
+            const { data, error } = await supabase
               .from('sessions')
               .update({ status: 'done' })
               .eq('id', sessionId)
+              .select('id')
             setFinishingSession(false)
-            if (error) {
-              Alert.alert('Lỗi', error.message ?? 'Không thể kết thúc kèo')
+            if (error || !data || data.length === 0) {
+              Alert.alert('Lỗi', error?.message ?? 'Không thể kết thúc kèo')
               return
             }
             router.replace('/host/dashboard' as any)

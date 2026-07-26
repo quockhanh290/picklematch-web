@@ -502,9 +502,9 @@ export default function HostDashboardScreen() {
             })
             
             if (filteredSessions.length === 0) {
-              // If we are in upcoming tab and already showing the nextSession at the top, 
-              // don't show the empty state box below it.
-              if (activeTab === 'upcoming' && nextSessionId) return null
+              // If we are in upcoming tab and already showing the nextSession or an
+              // in-progress session at the top, don't show the empty state box below it.
+              if (activeTab === 'upcoming' && (nextSessionId || inProgressSessions.length > 0)) return null
               
               return (
                 <View

@@ -23,8 +23,10 @@ export function isSameCourtAndPlayers(
  * (`Only live matches can be completed`, `Only suggested/live matches can be cancelled`)
  * even though the action actually landed. These helpers detect that from a fresh snapshot.
  *
- * NOTE: the live snapshot RPC excludes `cancelled` rows, so a cancelled match is ABSENT
- * from the fetched rows — hence cancel treats "no longer live/suggested (or gone)" as done.
+ * NOTE: the live snapshot RPC (`get_live_session_snapshot_versioned`) returns ALL rows
+ * including `cancelled` ones (it selects * with no status filter). A cancelled match is
+ * therefore usually PRESENT with status='cancelled'; it may also be absent (pruned). Cancel
+ * treats both "present but no longer live/suggested" and "gone" as the done state.
  */
 export function completeAlreadyApplied(
   rows: Pick<SessionLiveMatchRow, 'id' | 'status'>[],
@@ -39,8 +41,8 @@ export function cancelAlreadyApplied(
   matchId: string,
 ): boolean {
   const row = rows.find((r) => r.id === matchId)
-  // Absent (cancelled rows are filtered out of the snapshot) or in any terminal/non-actionable
-  // state means the match is no longer a live/suggested board slot — the cancel goal is met.
+  // Present in a terminal/non-actionable state (e.g. status='cancelled') or absent entirely
+  // means the match is no longer a live/suggested board slot — the cancel goal is met.
   return !row || (row.status !== 'live' && row.status !== 'suggested')
 }
 
