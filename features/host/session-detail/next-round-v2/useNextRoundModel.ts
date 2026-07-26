@@ -533,13 +533,18 @@ export function useNextRoundModel({ sessionId, players = [], courts, initialShow
   )
   const groupSummaries = useMemo(() => buildGroupSummaries(deferredRows.playerRows), [deferredRows.playerRows])
   const groupAliases = useMemo(() => buildGroupAliasMap(groupSummaries), [groupSummaries])
+  // Only auto-open the report when the host set an EXPLICIT round target. Otherwise the
+  // duration-based recommendation (effectiveTargetRounds' fallback) would pop the report the
+  // moment completed rounds reach it, interrupting an open-ended session the host is still
+  // playing. The report stays available on demand (reportReady still permits the recap view).
+  const hasExplicitTarget = typeof targetRounds === 'number' && targetRounds > 0
   useEffect(() => {
-    if (!reportReady || activeRound) return
+    if (!reportReady || activeRound || !hasExplicitTarget) return
     const reportKey = `${sessionId}:${effectiveTargetRounds}`
     if (autoOpenedReportKeyRef.current === reportKey) return
     autoOpenedReportKeyRef.current = reportKey
     setShowSessionReport(true)
-  }, [activeRound, effectiveTargetRounds, reportReady, sessionId])
+  }, [activeRound, effectiveTargetRounds, hasExplicitTarget, reportReady, sessionId])
   const phase = resolveNextRoundPhase({
     showSessionReport,
     reportReady,

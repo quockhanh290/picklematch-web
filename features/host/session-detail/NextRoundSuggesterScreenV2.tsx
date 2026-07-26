@@ -1576,7 +1576,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         player_rows: snap.rows.playerRows,
         pair_rows: snap.rows.pairRows,
         round_rows: snap.rows.roundRows,
-        planned_total_rounds: snap.effectiveTargetRounds > 0 ? snap.effectiveTargetRounds : undefined,
+        planned_total_rounds: snap.plannedTargetRounds,
         court_preset: snap.courtPreset,
         current_courts: snap.queueCourtCount,
         avoid_pairs: snap.avoidPairs.length > 0 ? snap.avoidPairs : undefined,
@@ -1709,7 +1709,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         playerRows: rows.playerRows,
         sessionId,
         courtCount: queueCourtCount,
-        targetRounds: effectiveTargetRounds,
+        targetRounds: typeof targetRounds === 'number' && targetRounds > 0 ? targetRounds : 0,
       })
       const targetMs = nowMs() - targetT0
       const fairnessT0 = nowMs()
@@ -2360,9 +2360,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     sessionId,
     avoidPairs,
     effectiveTargetRounds,
+    plannedTargetRounds: undefined as number | undefined,
     courtPreset,
   })
-  previewBodyRef.current = { effectiveLiveMatchRows, liveStateVersion: rows.liveStateVersion, completingLiveMatchIds, playersById, rows, queueCourtCount, pvnaTolerance, suggestedQueueCount, sessionId, avoidPairs, effectiveTargetRounds, courtPreset }
+  // planned_total_rounds sent to the edge must be the host's EXPLICIT target only. The
+  // duration-based recommendation (effectiveTargetRounds' fallback) is advisory; sending it
+  // as a hard target makes the edge return should_end once completed rounds reach it, which
+  // yields zero suggestions (empty lanes stay stuck) and re-pops the session report every
+  // cycle even though the host chose to keep playing.
+  const plannedTargetRounds = typeof targetRounds === 'number' && targetRounds > 0 ? targetRounds : undefined
+  previewBodyRef.current = { effectiveLiveMatchRows, liveStateVersion: rows.liveStateVersion, completingLiveMatchIds, playersById, rows, queueCourtCount, pvnaTolerance, suggestedQueueCount, sessionId, avoidPairs, effectiveTargetRounds, plannedTargetRounds, courtPreset }
 
   useEffect(() => {
     const previewReady = phase === 'plan'
@@ -2724,7 +2731,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         player_rows: snap.rows.playerRows,
         pair_rows: snap.rows.pairRows,
         round_rows: snap.rows.roundRows,
-        planned_total_rounds: snap.effectiveTargetRounds > 0 ? snap.effectiveTargetRounds : undefined,
+        planned_total_rounds: snap.plannedTargetRounds,
         court_preset: snap.courtPreset,
         current_courts: snap.queueCourtCount,
         avoid_pairs: snap.avoidPairs.length > 0 ? snap.avoidPairs : undefined,
