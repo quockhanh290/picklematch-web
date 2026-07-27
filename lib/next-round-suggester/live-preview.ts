@@ -69,7 +69,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 21
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 22
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5

@@ -86,8 +86,6 @@ import {
   MAX_PROJECTED_PARTNER_PAIR_COUNT,
   MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER,
   MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER,
-  INTRA_TEAM_PVNA_GAP_LIMIT,
-  PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
   getProjectedRepeatSummary,
   scoreMatch,
 } from '@/lib/next-round-suggester/score'
@@ -514,15 +512,6 @@ function getSuggestedMatchPvnaGap(match: Pick<SessionLiveMatchRow, 'team_a' | 't
   return Math.abs(getTeamPvna(match.team_a) - getTeamPvna(match.team_b))
 }
 
-function getSuggestedMatchIntraTeamGap(match: Pick<SessionLiveMatchRow, 'team_a' | 'team_b'>, state: SessionState) {
-  const getTeamIntraGap = (team: readonly string[]) => {
-    if (team.length < 2) return 0
-    const pvnas = team.map(playerId => state.players.get(String(playerId))?.pvna ?? 0)
-    return Math.abs(pvnas[0] - pvnas[1])
-  }
-  return Math.max(getTeamIntraGap(match.team_a), getTeamIntraGap(match.team_b))
-}
-
 function hasHardPreviewQualityViolation(
   match: SuggestedLiveMatchRow,
   state: SessionState,
@@ -531,16 +520,14 @@ function hasHardPreviewQualityViolation(
   const roundNo = Number(match.round_no ?? 0)
   const isEarlyOrMidRound = roundNo < 5
 
-  // Early/mid rounds keep the strict intra cap — the pool still has room to avoid pairing a
-  // strong+weak player within one team. Late rounds are NOT intra-capped: a wide-PVNA pool must
-  // pair strong+weak to keep the team TOTALS balanced, and a balanced (competitive) match with
-  // mixed-strength teams is a GOOD outcome, not a defect. A fixed intra cap (even a relaxed 2x)
-  // still rejects the structurally-necessary lineup when the pool spread exceeds it (observed
-  // intra 2.34 at gap 0.33), leaving the lane unfillable and thrashing the board. So on late
-  // rounds we reject only on the team-total axis (a real blowout below), never on intra alone.
-  const intraGap = getSuggestedMatchIntraTeamGap(match, state)
-  if (isEarlyOrMidRound && intraGap > INTRA_TEAM_PVNA_GAP_LIMIT) return true
-
+  // NEVER reject on intra-team gap alone, at any round. A wide-PVNA pool — and the live per-court
+  // flow that fills lanes incrementally — forces strong+weak pairing to keep the team TOTALS
+  // balanced. A balanced (competitive) match with mixed-strength teams is a GOOD outcome, not a
+  // defect; a fixed intra cap (even a relaxed 2x) still rejects the structurally-necessary lineup
+  // when the pool spread exceeds it (observed intra 2.57 at gap 0.39 on round 4), leaving the last
+  // lane unfillable and thrashing the board into an under-filled round. We reject only on the
+  // team-total axis (a real blowout), never on intra. Early/mid rounds keep a tighter total-gap
+  // threshold since the pool has more room to stay balanced; late rounds allow more.
   const pvnaGap = getSuggestedMatchPvnaGap(match, state)
   const pvnaOverBy = pvnaGap - pvnaTolerance
   if (pvnaOverBy > 1) return true
@@ -1802,8 +1789,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
           const freedPlayerIds = new Set([...completedMatch.team_a, ...completedMatch.team_b])
           setSuggestedLiveMatches(current => current.filter(m => {
             if (m.locked_player_ids?.some(id => freedPlayerIds.has(id))) return false
+            // Drop a stale availability-context preview only on real imbalance (team-total gap
+            // over tolerance) or explicit tradeoffs — never on intra alone, since a balanced-total
+            // mixed-strength lane is a valid fill (see hasHardPreviewQualityViolation).
             if (m.live_availability_context != null && (
-              getSuggestedMatchIntraTeamGap(m, state) > PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT ||
               getSuggestedMatchPvnaGap(m, state) > pvnaTolerance ||
               (m.tradeoffs?.length ?? 0) > 0
             )) return false
