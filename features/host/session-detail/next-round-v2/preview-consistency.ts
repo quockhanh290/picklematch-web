@@ -51,21 +51,35 @@ export function getSuggestedPreviewQueueCount({
 export function hasMissingRestPriorityPlayer({
   players,
   assignedPlayerIds,
+  pvnaTolerance,
 }: {
   players: Array<{
     player_id: string
     consecutive_rest: number
     opted_rest: boolean
     checked_out_at: unknown
+    pvna: number
   }>
   assignedPlayerIds: Set<string>
+  pvnaTolerance: number
 }) {
-  return players.some(player =>
+  const unassignedActive = players.filter(player =>
     player.checked_out_at === null
     && !player.opted_rest
-    && player.consecutive_rest >= 1
     && !assignedPlayerIds.has(player.player_id)
   )
+  return unassignedActive.some(player => {
+    if (player.consecutive_rest < 1) return false
+    // Balance-justified deferral: a rest-priority player with no near-level partner left in the
+    // unassigned pool can only be seated by forcing a lopsided (blowout) court, so the engine
+    // deliberately rests them (deferLowViabilityRequiredIdsForCourt). Don't count that as a "miss"
+    // — doing so forces an unwinnable full-board re-suggest and leaves lanes stuck. Only flag a
+    // rest-priority player who actually has a near-level partner available to pair with.
+    return unassignedActive.some(other =>
+      other.player_id !== player.player_id
+      && Math.abs(other.pvna - player.pvna) <= pvnaTolerance
+    )
+  })
 }
 
 export function mergePersistedSuggestionMetadata<T extends { suggestion_metadata?: Record<string, unknown> | null }>(row: T) {

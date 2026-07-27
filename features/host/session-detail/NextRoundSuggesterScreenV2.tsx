@@ -2434,8 +2434,15 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       ...currentPreviewBoardForEdge.flatMap(match => getMatchPlayerIds(match)),
     ])
     const hasRestPriorityMiss = completedLiveMatches.length > 0 && hasMissingRestPriorityPlayer({
-      players: [...state.players.values()],
+      players: [...state.players.values()].map(player => ({
+        player_id: player.player_id,
+        consecutive_rest: player.consecutive_rest,
+        opted_rest: player.opted_rest,
+        checked_out_at: player.checked_out_at,
+        pvna: player.pvna ?? 0,
+      })),
       assignedPlayerIds: assignedPreviewPlayerIds,
+      pvnaTolerance,
     })
     // A PERSISTED (committed) suggestion is a startable board slot the host already has.
     // Its intra-team gap can be structurally unavoidable in a wide-PVNA pool (balancing
@@ -2445,11 +2452,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     // courts (e.g. the last empty lane) unfilled. Only fresh, not-yet-committed previews
     // (and a genuine rest-priority miss) should force a full-board re-suggest; committed
     // courts are left as-is and missing courts are filled independently via mini-recover.
-    const hasHardReusableQualityViolation = hasRestPriorityMiss || currentPreviewBoardForEdge.some(match =>
+    const hasGenuinePreviewQualityViolation = currentPreviewBoardForEdge.some(match =>
       !isPersistedSuggestedMatch(match)
       && !match.available_pool_only
       && hasHardPreviewQualityViolation(match, state, pvnaTolerance)
     )
+    const hasHardReusableQualityViolation = hasRestPriorityMiss || hasGenuinePreviewQualityViolation
     // When getCurrentPreviewBoardForEdge returns [] (e.g. live-player filter drops all courts),
     // fall back to suggestedLiveMatches so already-suggested courts are still treated as present.
     const effectivePreviewBoard = currentPreviewBoardForEdge.length > 0
@@ -2472,12 +2480,18 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       liveMatches: activeLiveMatches,
       previewMatches: effectivePreviewBoard,
     })
-    const shouldRecoverMissingPreviewCourts = !hasHardReusableQualityViolation
+    // A rest-priority miss only forces a full-board re-optimization when the board is already full.
+    // If a lane is empty, mini-recover fills it from the unassigned pool — which seats the very
+    // rest-priority players that are "missing" — so blocking recovery / forcing a full-board
+    // re-suggest there just leaves the lane stuck (the recover that would resolve the miss is
+    // exactly what gets blocked). Genuine bad-match violations still force a full re-suggest.
+    const restMissForcesFullBoard = hasRestPriorityMiss && missingPreviewCourtIdxsForRecovery.length === 0
+    const shouldRecoverMissingPreviewCourts = !hasGenuinePreviewQualityViolation
       && missingPreviewCourtIdxsForRecovery.length > 0
       && reusableMatches.length < suggestedQueueCount
-    const hardPreviewQualityCourtIdxs = hasHardReusableQualityViolation
+    const hardPreviewQualityCourtIdxs = (hasGenuinePreviewQualityViolation || restMissForcesFullBoard)
       ? currentPreviewBoardForEdge
-          .filter(match => hasRestPriorityMiss
+          .filter(match => restMissForcesFullBoard
             || (!isPersistedSuggestedMatch(match) && hasHardPreviewQualityViolation(match, state, pvnaTolerance)))
           .map(match => getSuggestedLaneCourtIdx(match))
           .filter((courtIdx): courtIdx is number => courtIdx !== null)
@@ -2513,7 +2527,8 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       return
     }
     const shouldRequestFullBoardPreview = pendingPlanAdoption
-      || hasHardReusableQualityViolation
+      || hasGenuinePreviewQualityViolation
+      || restMissForcesFullBoard
       || reusableMatches.length === 0
       || (shouldRecoverMissingPreviewCourts && missingPreviewCourtIdxsForRecovery.length > LIVE_PREVIEW_REPLACEMENT_MAX_COUNT)
     const previewEdgeMaxCount = shouldRequestFullBoardPreview
@@ -3225,7 +3240,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             })
             return
           }
-          const retainedMatches = hasHardReusableQualityViolation ? [] : getReusableSuggestedLaneMatches()
+          // A rest-priority miss no longer discards reusable lanes here: mini-recover keeps the
+          // existing courts and only fills the empty lane(s). Only a genuine bad-match violation
+          // wipes the board for a full re-suggest.
+          const retainedMatches = hasGenuinePreviewQualityViolation ? [] : getReusableSuggestedLaneMatches()
           const usedCourts = new Set<number>()
           const usedPlayerIds = new Set<string>()
           const busyCourtIdxs = new Set<number>()

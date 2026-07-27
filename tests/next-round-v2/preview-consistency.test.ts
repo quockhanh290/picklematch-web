@@ -41,24 +41,43 @@ describe('preview consistency', () => {
     })).toBe(1)
   })
 
-  it('invalidates a persisted board that omits an available player who already rested once', () => {
+  it('invalidates a persisted board that omits a rested player who still has a near-level partner', () => {
     expect(hasMissingRestPriorityPlayer({
       players: [
-        { player_id: 'rested', consecutive_rest: 1, opted_rest: false, checked_out_at: null },
-        { player_id: 'fresh', consecutive_rest: 0, opted_rest: false, checked_out_at: null },
+        { player_id: 'rested', consecutive_rest: 1, opted_rest: false, checked_out_at: null, pvna: 3.0 },
+        { player_id: 'partner', consecutive_rest: 0, opted_rest: false, checked_out_at: null, pvna: 3.2 },
+        { player_id: 'assigned', consecutive_rest: 0, opted_rest: false, checked_out_at: null, pvna: 4.0 },
       ],
-      assignedPlayerIds: new Set(['fresh']),
+      assignedPlayerIds: new Set(['assigned']),
+      pvnaTolerance: 0.5,
     })).toBe(true)
+  })
+
+  it('does not invalidate a rested outlier with no near-level partner (balance-justified deferral)', () => {
+    // 'outlier' (2.0) rested once but the only other unassigned player (4.6) is > tolerance away —
+    // seating them would force a blowout court, so the engine deliberately rests them. This must NOT
+    // count as a rest-priority miss, otherwise the client thrashes into an unwinnable full-board
+    // re-suggest and leaves lanes stuck.
+    expect(hasMissingRestPriorityPlayer({
+      players: [
+        { player_id: 'outlier', consecutive_rest: 1, opted_rest: false, checked_out_at: null, pvna: 2.0 },
+        { player_id: 'other', consecutive_rest: 0, opted_rest: false, checked_out_at: null, pvna: 4.6 },
+        { player_id: 'assigned', consecutive_rest: 0, opted_rest: false, checked_out_at: null, pvna: 3.3 },
+      ],
+      assignedPlayerIds: new Set(['assigned']),
+      pvnaTolerance: 0.5,
+    })).toBe(false)
   })
 
   it('does not invalidate for opted-rest, checked-out, or already-assigned players', () => {
     expect(hasMissingRestPriorityPlayer({
       players: [
-        { player_id: 'assigned', consecutive_rest: 2, opted_rest: false, checked_out_at: null },
-        { player_id: 'opted', consecutive_rest: 2, opted_rest: true, checked_out_at: null },
-        { player_id: 'left', consecutive_rest: 2, opted_rest: false, checked_out_at: '2026-07-13' },
+        { player_id: 'assigned', consecutive_rest: 2, opted_rest: false, checked_out_at: null, pvna: 3.0 },
+        { player_id: 'opted', consecutive_rest: 2, opted_rest: true, checked_out_at: null, pvna: 3.1 },
+        { player_id: 'left', consecutive_rest: 2, opted_rest: false, checked_out_at: '2026-07-13', pvna: 3.2 },
       ],
       assignedPlayerIds: new Set(['assigned']),
+      pvnaTolerance: 0.5,
     })).toBe(false)
   })
 
