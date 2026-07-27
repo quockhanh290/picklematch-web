@@ -63,10 +63,12 @@ function alternative(teamA: [string, string], teamB: [string, string], pvnaDiff:
 }
 
 describe('Edge rolling quality defer policy', () => {
-  it('defers an extreme choice while another court can release players', () => {
+  it('defers a real team-total blowout while another court can release players', () => {
     const base = { enabled: true, activeLiveCourtCount: 5, availablePlayerCount: 4, configuredPvnaTolerance: 0.5 }
     expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 2.18, intraTeamGap: 0.4 })).toBe(true)
-    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.4, intraTeamGap: 2.75 })).toBe(true)
+    // A high intra-team gap with a BALANCED total is a mixed-strength but competitive court — a good
+    // outcome (aligned with 286f79c), never a reason to hold the lane empty. Must NOT defer.
+    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.4, intraTeamGap: 2.75 })).toBe(false)
     expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.5, intraTeamGap: 0.8 })).toBe(false)
     expect(shouldDeferTightPoolSuggestion({
       ...base,

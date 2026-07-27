@@ -69,7 +69,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 23
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 24
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -169,11 +169,14 @@ export function shouldDeferTightPoolSuggestion(input: {
 }) {
   if (!input.enabled || input.activeLiveCourtCount === 0) return false
   if (input.waitActive === false) return false
+  // Defer only on a real team-TOTAL imbalance (a genuine blowout). A high intra-team gap with a
+  // balanced total is a mixed-strength but competitive court — a GOOD outcome (see 286f79c), not a
+  // reason to hold the lane empty for up to TIGHT_POOL_QUALITY_WAIT_MS waiting for a "cleaner"
+  // pairing. Deferring on intra alone left fillable courts stuck until the host completed another
+  // court (which changed the pool), even though the available match was perfectly balanced.
   const persistentOutlier = input.pvnaGap > Math.max(1.5, input.configuredPvnaTolerance + 1)
-    || input.intraTeamGap > 2.25
   if (persistentOutlier) return true
   return input.pvnaGap > Math.max(1.25, input.configuredPvnaTolerance + 0.75)
-    || input.intraTeamGap > 2
 }
 
 export const TIGHT_POOL_QUALITY_WAIT_MS = 30_000
