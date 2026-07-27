@@ -17,6 +17,7 @@ import {
   computeRestFairness,
 } from '@/lib/next-round-suggester/fairness/metrics'
 import { computeRepeatPressure } from '@/lib/next-round-suggester/fairness/pressure'
+import { getEffectivePvna } from '@/lib/next-round-suggester/state'
 import type { sanitizeSummaryForHost } from '@/lib/next-round-suggester/fairness/sanitize'
 import type {
   SessionLiveMatchRow,
@@ -146,10 +147,23 @@ function explainBreakdown(key: string, state: SessionState, playersById: Map<str
     const maxRest = Math.max(0, ...rest.per_player.map(player => player.max_consecutive_rest))
     const affected = rest.violations.map(player => player.player_id)
     const affectedText = affected.length > 0 ? ` Người bị ảnh hưởng rõ nhất: ${joinNames(affected, playersById)}.` : ''
+    // Consecutive rest is frequently a DELIBERATE balance tradeoff, not a scheduling failure: in a
+    // wide-PVNA pool the engine rests a hard-to-pair player an extra round rather than force a
+    // lopsided (blowout) court. Surface that explicitly so a low rest score on an outlier-heavy
+    // roster isn't misread as a bug. Trigger when there are consecutive-rest violations AND the pool
+    // actually has strength outliers (someone ≥1.0 from the active-pool mean).
+    const activePvnas = [...state.players.values()]
+      .filter(player => player.checked_out_at === null)
+      .map(getEffectivePvna)
+    const meanPvna = activePvnas.length > 0 ? activePvnas.reduce((sum, v) => sum + v, 0) / activePvnas.length : 0
+    const poolHasOutliers = activePvnas.some(v => Math.abs(v - meanPvna) >= 1)
+    const balanceTradeoff = rest.violations.length > 0 && poolHasOutliers
+      ? ` Phần lớn các lượt nghỉ liên tiếp này là ĐÁNH ĐỔI CÓ CHỦ ĐÍCH để giữ trận cân, không phải lỗi xếp lịch: pool chênh lệch trình độ lớn (có người PVNA lệch xa nhóm), nên khi không đủ người cùng tầm để ghép, engine cho người khó ghép nghỉ thêm một vòng thay vì ép vào trận chênh lệch lớn (blowout).`
+      : ''
     const cause = rosterCause
       ? ` Có ${rosterCause}; phần đến muộn/về sớm và xin nghỉ chủ động không bị tính như lượt nghỉ do engine tạo ra. Chỉ các vòng người đó thật sự nằm trong roster và bị xếp ngồi ngoài mới được chấm.`
       : ' Điểm nghỉ thường thấp khi số người không chia đều cho số sân, khiến một số người phải nghỉ liên tiếp.'
-    return `Chỉ số này đo nhịp nghỉ có đều không, đặc biệt tránh một người phải ngồi ngoài quá nhiều vòng liên tiếp. Max nghỉ liên tiếp hiện là ${maxRest}; có ${rest.violations.length} người vượt ngưỡng.${affectedText}${cause}`
+    return `Chỉ số này đo nhịp nghỉ có đều không, đặc biệt tránh một người phải ngồi ngoài quá nhiều vòng liên tiếp. Max nghỉ liên tiếp hiện là ${maxRest}; có ${rest.violations.length} người vượt ngưỡng.${affectedText}${balanceTradeoff}${cause}`
   }
 
   if (key === 'gender_prefs') {

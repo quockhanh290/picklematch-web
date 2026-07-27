@@ -5,9 +5,11 @@
  * Chạy: npx tsx scripts/diagnose-session.ts <session_id>
  */
 import { mapRowsToSessionState } from '../lib/next-round-suggester/state'
+import { rebuildStateThroughRound } from '../lib/next-round-suggester/history'
 import { classifyPlayer, computeDynamicThresholds, getAverageMatches, Tier } from '../lib/next-round-suggester/classify'
 import { detectFairnessIssues } from '../lib/next-round-suggester/fairness/detector'
 import { computeSessionFairness } from '../lib/next-round-suggester/fairness/metrics'
+import { buildCompletedLiveCycleRows } from '../features/host/session-detail/next-round-v2/live-cycle-rows'
 import { calculateOptimalCourts } from '../lib/court-calculator/calculator'
 import type { SessionState } from '../lib/next-round-suggester/types'
 
@@ -77,7 +79,7 @@ async function main() {
     querySingle<any>('session_next_round_settings', { session_id: `eq.${sessionId}`, select: '*' }),
     query<any>('session_player_state', {
       session_id: `eq.${sessionId}`,
-      select: '*,players(pvna,elo,current_elo,gender,name)',
+      select: '*,players(pvna,elo,current_elo,gender,name,partner_gender_pref,opponent_gender_pref)',
     }),
     query<any>('session_players', {
       session_id: `eq.${sessionId}`,
@@ -122,11 +124,24 @@ async function main() {
   )
 
   // ── Build state ───────────────────────────────────────────────────────────
+  // Live-match sessions store rounds in session_live_matches, not session_rounds.
+  // Convert them to round records (same path the app uses) so completed rounds — and
+  // thus every round-based fairness dimension — are actually present. Passing raw
+  // session_rounds (often empty here) would leave the state with 0 rounds and report a
+  // bogus warmup fairness of 100.
+  const legacyRoundRows = roundRows.filter((r: any) => r.status !== 'active')
+  const stateRoundRows = buildCompletedLiveCycleRows({
+    liveMatchRows: rawMatchRows,
+    legacyRoundRows,
+    playerRows,
+    sessionId,
+    courtCount,
+  })
   const state: SessionState = mapRowsToSessionState({
     sessionId,
     playerRows,
     pairRows,
-    roundRows,
+    roundRows: stateRoundRows,
     courts: courtCount,
     pvnaTolerance,
   })
@@ -148,7 +163,18 @@ async function main() {
   const completedRoundNos = new Set(completedMatches.map((m: any) => m.round_no).filter((n: any) => n != null))
   const maxCompletedRound = completedRoundNos.size > 0 ? Math.max(...completedRoundNos) : 0
   const currentRound = maxCompletedRound + 1
-  const fairness = computeSessionFairness(state)
+  // Fairness + round-based warnings use the REPLAY state (rebuilt through the last
+  // completed round), exactly like the app's session report — so this matches what the
+  // host sees. Replaying recomputes order-fragile counters (consecutive rest/play) from
+  // the round records in canonical order.
+  const completedStateRounds = stateRoundRows
+    .filter((r: any) => r.status === 'completed')
+    .map((r: any) => Number(r.round_no))
+    .sort((a: number, b: number) => b - a)
+  const reportState: SessionState = completedStateRounds.length > 0
+    ? rebuildStateThroughRound(state, completedStateRounds[0])
+    : state
+  const fairness = computeSessionFairness(reportState)
 
   // ══════════════════════════════════════════════════════════════════════════
   console.log(hr('═'))
@@ -271,7 +297,9 @@ async function main() {
   }
 
   // ── Fairness warnings ──────────────────────────────────────────────────────
-  const warnings = detectFairnessIssues(state)
+  // Detect on the replay state so round-based warnings (match imbalance, opponent
+  // repeats) surface — same basis as the fairness score above.
+  const warnings = detectFairnessIssues(reportState)
   if (warnings.length > 0) {
     console.log(`\n${hr()}`)
     console.log('FAIRNESS WARNINGS')
