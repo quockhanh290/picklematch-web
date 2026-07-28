@@ -95,6 +95,13 @@ function joinNames(ids: string[], playersById: Map<string, ArrangementPlayer>, l
   return remaining > 0 ? `${names.join(', ')} và ${remaining} người khác` : names.join(', ')
 }
 
+// Rolling-lane structural repeat cause. In rolling (async) play the engine fills a court the moment
+// one frees up — at that instant most players are still on live courts, so only a handful are
+// available. That small, clustered pool usually can't offer a fresh pairing, so much of the repeat
+// is a structural limit of rolling play, not a scheduling error. Only holding the fill until a whole
+// round finishes (all players free at once) meaningfully avoids it — at the cost of players waiting.
+const ROLLING_LANE_REPEAT_NOTE = ' Lưu ý (chế độ sân cuốn chiếu): engine xếp sân ngay khi có sân trống, mà lúc đó phần lớn người vẫn đang chơi ở các sân khác — chỉ vài người rảnh. Pool nhỏ này thường không đủ cặp mới để tránh lặp, nên phần lớn lặp ở đây là GIỚI HẠN CẤU TRÚC của lối chơi cuốn chiếu, không phải lỗi xếp lịch. Chỉ khi chờ cả vòng xong rồi xếp một lượt (mọi người rảnh cùng lúc) mới giảm được lặp đáng kể — đổi lại mọi người phải chờ lâu hơn.'
+
 function explainBreakdown(key: string, state: SessionState, playersById: Map<string, ArrangementPlayer>) {
   const rosterCause = rosterCauseText(state)
   const availability = computeAvailabilityMetrics(state)
@@ -123,7 +130,7 @@ function explainBreakdown(key: string, state: SessionState, playersById: Map<str
     const cause = rosterCause
       ? ` Roster biến động (${rosterCause}) làm nhóm ghép cặp nhỏ hoặc thay đổi liên tục, nên engine có ít lựa chọn partner mới hơn.`
       : ' Khi số vòng nhiều hơn số tổ hợp partner tốt, hoặc có nhóm đi cùng nhau, việc lặp partner dễ xảy ra hơn.'
-    return `Chỉ số này đo mỗi người được chơi với bao nhiêu đồng đội khác nhau. Trung bình mỗi người có ${partner.avg_unique_partners.toFixed(1)} partner khác, đạt khoảng ${Math.round(partner.avg_diversity_ratio * 100)}% mức đa dạng lý tưởng; có ${repeated} cặp partner bị lặp. Nhóm ít đa dạng nhất gồm ${joinNames(lowest, playersById)}. Áp lực phải lặp đang ở mức ${pressureText(pressure.repeat_risk)}.${cause}`
+    return `Chỉ số này đo mỗi người được chơi với bao nhiêu đồng đội khác nhau. Trung bình mỗi người có ${partner.avg_unique_partners.toFixed(1)} partner khác, đạt khoảng ${Math.round(partner.avg_diversity_ratio * 100)}% mức đa dạng lý tưởng; có ${repeated} cặp partner bị lặp. Nhóm ít đa dạng nhất gồm ${joinNames(lowest, playersById)}. Áp lực phải lặp đang ở mức ${pressureText(pressure.repeat_risk)}.${cause}${repeated > 0 ? ROLLING_LANE_REPEAT_NOTE : ''}`
   }
 
   if (key === 'opponent_diversity') {
@@ -139,7 +146,7 @@ function explainBreakdown(key: string, state: SessionState, playersById: Map<str
       ? ` Roster biến động (${rosterCause}) làm số đối thủ khả dụng thay đổi theo từng vòng, nên một số người phải gặp lại đối thủ cũ.`
       : ' Nếu roster ổn định mà điểm này thấp, thường là vì số vòng chơi cao so với số người, hoặc nhiều người có ràng buộc khiến pool đối thủ bị thu hẹp.'
     const burdenText = mostBurdened.length > 0 ? ` Người bị lặp đối thủ nhiều nhất: ${joinNames(mostBurdened, playersById)}.` : ''
-    return `Chỉ số này đo mỗi người có gặp được nhiều đối thủ khác nhau không. Trung bình mỗi người gặp ${(opponent.avg_unique_opponents ?? opponent.avg_unique_partners).toFixed(1)} đối thủ khác, đạt khoảng ${Math.round(opponent.avg_diversity_ratio * 100)}% mức lý tưởng; có ${repeated} cặp đối thủ bị lặp. Tải lặp tối đa là ${burden.max_repeated_opponents}.${burdenText}${cause}`
+    return `Chỉ số này đo mỗi người có gặp được nhiều đối thủ khác nhau không. Trung bình mỗi người gặp ${(opponent.avg_unique_opponents ?? opponent.avg_unique_partners).toFixed(1)} đối thủ khác, đạt khoảng ${Math.round(opponent.avg_diversity_ratio * 100)}% mức lý tưởng; có ${repeated} cặp đối thủ bị lặp. Tải lặp tối đa là ${burden.max_repeated_opponents}.${burdenText}${cause}${repeated > 0 ? ROLLING_LANE_REPEAT_NOTE : ''}`
   }
 
   if (key === 'rest') {
