@@ -69,7 +69,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 24
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 25
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -176,8 +176,17 @@ export function shouldDeferTightPoolSuggestion(input: {
   // court (which changed the pool), even though the available match was perfectly balanced.
   const persistentOutlier = input.pvnaGap > Math.max(1.5, input.configuredPvnaTolerance + 1)
   if (persistentOutlier) return true
+  // A MODERATE imbalance is only worth waiting on when the pool is genuinely TIGHT — few players
+  // free, so a court completing would materially change the available pairings. With a healthy pool
+  // a moderate gap is the structural best available, so holding the lane for up to
+  // TIGHT_POOL_QUALITY_WAIT_MS just adds latency for no real quality gain. Observed cause of the
+  // "suggest returns slowly" complaint: gap ~1.3 lanes deferred ~30s with 12-14 players still free.
+  if (input.availablePlayerCount > MODERATE_TIGHT_POOL_MAX_AVAILABLE) return false
   return input.pvnaGap > Math.max(1.25, input.configuredPvnaTolerance + 0.75)
 }
+// Above this many free players the pool is not "tight": a completion would not meaningfully improve
+// a moderate-gap match, so we fill immediately instead of holding the lane for a marginal gain.
+const MODERATE_TIGHT_POOL_MAX_AVAILABLE = 8
 
 export const TIGHT_POOL_QUALITY_WAIT_MS = 30_000
 

@@ -78,6 +78,17 @@ describe('Edge rolling quality defer policy', () => {
     })).toBe(true)
   })
 
+  it('only defers a moderate gap when the pool is genuinely tight', () => {
+    const tol = { enabled: true, activeLiveCourtCount: 5, configuredPvnaTolerance: 0.5, intraTeamGap: 0.4 }
+    // Tight pool (few free): a completion could materially improve a moderate gap → worth waiting.
+    expect(shouldDeferTightPoolSuggestion({ ...tol, availablePlayerCount: 4, pvnaGap: 1.4 })).toBe(true)
+    // Healthy pool (many free): a moderate gap is the structural best; fill now instead of holding
+    // the lane ~30s for a marginal gain (this was the "suggest returns slowly" latency source).
+    expect(shouldDeferTightPoolSuggestion({ ...tol, availablePlayerCount: 13, pvnaGap: 1.4 })).toBe(false)
+    // A real blowout still defers regardless of pool size.
+    expect(shouldDeferTightPoolSuggestion({ ...tol, availablePlayerCount: 13, pvnaGap: 2.0 })).toBe(true)
+  })
+
   it('never defers when disabled or no live court can release players', () => {
     const base = { enabled: true, activeLiveCourtCount: 5, availablePlayerCount: 4, configuredPvnaTolerance: 0.5, pvnaGap: 2.18, intraTeamGap: 0.4 }
     expect(shouldDeferTightPoolSuggestion({ ...base, enabled: false })).toBe(false)
