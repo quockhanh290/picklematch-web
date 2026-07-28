@@ -53,7 +53,7 @@ import { createClientTraceId, fetchLiveMatchesPreview, fetchLiveSessionVersion }
 import { LIVE_VERSION_POLL_INTERVAL_MS, shouldRefetchForExternalVersion } from './next-round-v2/version-poll'
 import { getMissingPreviewCourtIdxs, getRequestedReplacementCourtIdxs, isPreviewBoardComplete } from './next-round-v2/court-lanes'
 import { hasReachedCompletedLiveCycleTarget } from './next-round-v2/live-cycle-rows'
-import { getLiveRowsForPreviewMode, getSuggestedPreviewQueueCount, hasMissingRestPriorityPlayer, hasPendingPlanAdoption, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isServerPersistedPreviewSource, isStartablePreviewRow, mergePreviewLaneCandidates } from './next-round-v2/preview-consistency'
+import { canRecoverMissingPreviewCourts, computeHasGenuinePreviewQualityViolation, computeShouldRequestFullBoardPreview, getLiveRowsForPreviewMode, getSuggestedPreviewQueueCount, hasHardPreviewQualityViolation, hasMissingRestPriorityPlayer, hasPendingPlanAdoption, isCommittedPreviewMatch, isPreviewBatchCacheCurrent, isPreviewResponseCurrent, isServerPersistedPreviewSource, isStartablePreviewRow, mergePreviewLaneCandidates, shouldRestMissForceFullBoard } from './next-round-v2/preview-consistency'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -433,37 +433,6 @@ const getSuggestedLaneCourtIdx = (match: Pick<SessionLiveMatchRow, 'court_idx' |
   const courtIdx = Number(match.court_idx ?? match.sequence_no)
   return Number.isFinite(courtIdx) ? courtIdx : null
 }
-
-function hasHardPreviewQualityViolation(
-  match: SuggestedLiveMatchRow,
-  state: SessionState,
-  pvnaTolerance: number,
-) {
-  const roundNo = Number(match.round_no ?? 0)
-  const isEarlyOrMidRound = roundNo < 5
-
-  // NEVER reject on intra-team gap alone, at any round. A wide-PVNA pool — and the live per-court
-  // flow that fills lanes incrementally — forces strong+weak pairing to keep the team TOTALS
-  // balanced. A balanced (competitive) match with mixed-strength teams is a GOOD outcome, not a
-  // defect; a fixed intra cap (even a relaxed 2x) still rejects the structurally-necessary lineup
-  // when the pool spread exceeds it (observed intra 2.57 at gap 0.39 on round 4), leaving the last
-  // lane unfillable and thrashing the board into an under-filled round. We reject only on the
-  // team-total axis (a real blowout), never on intra. Early/mid rounds keep a tighter total-gap
-  // threshold since the pool has more room to stay balanced; late rounds allow more.
-  const pvnaGap = getSuggestedMatchPvnaGap(match, state)
-  const pvnaOverBy = pvnaGap - pvnaTolerance
-  if (pvnaOverBy > 1) return true
-
-  if (!isEarlyOrMidRound) return false
-
-  return pvnaOverBy > 0.25
-}
-
-
-
-
-
-
 
 
 
@@ -2259,11 +2228,12 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     // courts (e.g. the last empty lane) unfilled. Only fresh, not-yet-committed previews
     // (and a genuine rest-priority miss) should force a full-board re-suggest; committed
     // courts are left as-is and missing courts are filled independently via mini-recover.
-    const hasGenuinePreviewQualityViolation = currentPreviewBoardForEdge.some(match =>
-      !isPersistedSuggestedMatch(match)
-      && !match.available_pool_only
-      && hasHardPreviewQualityViolation(match, state, pvnaTolerance)
-    )
+    const hasGenuinePreviewQualityViolation = computeHasGenuinePreviewQualityViolation({
+      previewBoard: currentPreviewBoardForEdge,
+      persistedSuggestedMatchIds,
+      state,
+      pvnaTolerance,
+    })
     const hasHardReusableQualityViolation = hasRestPriorityMiss || hasGenuinePreviewQualityViolation
     // When getCurrentPreviewBoardForEdge returns [] (e.g. live-player filter drops all courts),
     // fall back to suggestedLiveMatches so already-suggested courts are still treated as present.
@@ -2292,10 +2262,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     // rest-priority players that are "missing" — so blocking recovery / forcing a full-board
     // re-suggest there just leaves the lane stuck (the recover that would resolve the miss is
     // exactly what gets blocked). Genuine bad-match violations still force a full re-suggest.
-    const restMissForcesFullBoard = hasRestPriorityMiss && missingPreviewCourtIdxsForRecovery.length === 0
-    const shouldRecoverMissingPreviewCourts = !hasGenuinePreviewQualityViolation
-      && missingPreviewCourtIdxsForRecovery.length > 0
-      && reusableMatches.length < suggestedQueueCount
+    const restMissForcesFullBoard = shouldRestMissForceFullBoard({
+      hasRestPriorityMiss,
+      missingPreviewCourtIdxsForRecoveryCount: missingPreviewCourtIdxsForRecovery.length,
+    })
+    const shouldRecoverMissingPreviewCourts = canRecoverMissingPreviewCourts({
+      hasGenuinePreviewQualityViolation,
+      missingPreviewCourtIdxsForRecoveryCount: missingPreviewCourtIdxsForRecovery.length,
+      reusableMatchCount: reusableMatches.length,
+      suggestedQueueCount,
+    })
     const hardPreviewQualityCourtIdxs = (hasGenuinePreviewQualityViolation || restMissForcesFullBoard)
       ? currentPreviewBoardForEdge
           .filter(match => restMissForcesFullBoard
@@ -2333,11 +2309,15 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       suggestedPreviewBatchRef.current = null
       return
     }
-    const shouldRequestFullBoardPreview = pendingPlanAdoption
-      || hasGenuinePreviewQualityViolation
-      || restMissForcesFullBoard
-      || reusableMatches.length === 0
-      || (shouldRecoverMissingPreviewCourts && missingPreviewCourtIdxsForRecovery.length > LIVE_PREVIEW_REPLACEMENT_MAX_COUNT)
+    const shouldRequestFullBoardPreview = computeShouldRequestFullBoardPreview({
+      pendingPlanAdoption,
+      hasGenuinePreviewQualityViolation,
+      restMissForcesFullBoard,
+      reusableMatchCount: reusableMatches.length,
+      shouldRecoverMissingPreviewCourts,
+      missingPreviewCourtIdxsForRecoveryCount: missingPreviewCourtIdxsForRecovery.length,
+      replacementMaxCount: LIVE_PREVIEW_REPLACEMENT_MAX_COUNT,
+    })
     const previewEdgeMaxCount = shouldRequestFullBoardPreview
       ? LIVE_PREVIEW_FULL_BOARD_MAX_COUNT
       : LIVE_PREVIEW_REPLACEMENT_MAX_COUNT

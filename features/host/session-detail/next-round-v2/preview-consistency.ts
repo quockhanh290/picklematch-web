@@ -1,3 +1,6 @@
+import type { SessionState } from '@/lib/next-round-suggester/types'
+import { getSuggestedMatchPvnaGap } from './preview-helpers'
+
 type PreviewRow = {
   status?: string | null
 }
@@ -179,4 +182,117 @@ export function isStartablePreviewRow(match: {
     && Array.isArray(match.team_b)
     && match.team_b.length === 2
     && Number.isFinite(courtIdx)
+}
+
+type PreviewQualityMatch = {
+  round_no?: number | string | null
+  team_a: [string, string]
+  team_b: [string, string]
+}
+
+export function hasHardPreviewQualityViolation(
+  match: PreviewQualityMatch,
+  state: SessionState,
+  pvnaTolerance: number,
+) {
+  const roundNo = Number(match.round_no ?? 0)
+  const isEarlyOrMidRound = roundNo < 5
+
+  // NEVER reject on intra-team gap alone, at any round. A wide-PVNA pool — and the live per-court
+  // flow that fills lanes incrementally — forces strong+weak pairing to keep the team TOTALS
+  // balanced. A balanced (competitive) match with mixed-strength teams is a GOOD outcome, not a
+  // defect; a fixed intra cap (even a relaxed 2x) still rejects the structurally-necessary lineup
+  // when the pool spread exceeds it (observed intra 2.57 at gap 0.39 on round 4), leaving the last
+  // lane unfillable and thrashing the board into an under-filled round. We reject only on the
+  // team-total axis (a real blowout), never on intra. Early/mid rounds keep a tighter total-gap
+  // threshold since the pool has more room to stay balanced; late rounds allow more.
+  const pvnaGap = getSuggestedMatchPvnaGap(match, state)
+  const pvnaOverBy = pvnaGap - pvnaTolerance
+  if (pvnaOverBy > 1) return true
+
+  if (!isEarlyOrMidRound) return false
+
+  return pvnaOverBy > 0.25
+}
+
+type PreviewBoardQualityMatch = PreviewQualityMatch & {
+  id: string
+  available_pool_only?: boolean
+}
+
+// A PERSISTED (committed) suggestion is a startable board slot the host already has. Its
+// intra-team gap can be structurally unavoidable in a wide-PVNA pool (balancing team totals
+// forces a high+low pairing), so treating it as a "hard violation" would escalate every cycle
+// into a full-board re-suggest that can never converge to an all-clean board. Only fresh,
+// not-yet-committed previews should force a full-board re-suggest.
+export function computeHasGenuinePreviewQualityViolation({
+  previewBoard,
+  persistedSuggestedMatchIds,
+  state,
+  pvnaTolerance,
+}: {
+  previewBoard: PreviewBoardQualityMatch[]
+  persistedSuggestedMatchIds: Set<string>
+  state: SessionState
+  pvnaTolerance: number
+}) {
+  return previewBoard.some(match =>
+    !persistedSuggestedMatchIds.has(match.id)
+    && !match.available_pool_only
+    && hasHardPreviewQualityViolation(match, state, pvnaTolerance)
+  )
+}
+
+// A rest-priority miss only forces a full-board re-optimization when the board is already full.
+// If a lane is empty, mini-recover fills it from the unassigned pool — which seats the very
+// rest-priority players that are "missing" — so blocking recovery there just leaves the lane
+// stuck. Genuine bad-match violations still force a full re-suggest.
+export function shouldRestMissForceFullBoard({
+  hasRestPriorityMiss,
+  missingPreviewCourtIdxsForRecoveryCount,
+}: {
+  hasRestPriorityMiss: boolean
+  missingPreviewCourtIdxsForRecoveryCount: number
+}) {
+  return hasRestPriorityMiss && missingPreviewCourtIdxsForRecoveryCount === 0
+}
+
+export function canRecoverMissingPreviewCourts({
+  hasGenuinePreviewQualityViolation,
+  missingPreviewCourtIdxsForRecoveryCount,
+  reusableMatchCount,
+  suggestedQueueCount,
+}: {
+  hasGenuinePreviewQualityViolation: boolean
+  missingPreviewCourtIdxsForRecoveryCount: number
+  reusableMatchCount: number
+  suggestedQueueCount: number
+}) {
+  return !hasGenuinePreviewQualityViolation
+    && missingPreviewCourtIdxsForRecoveryCount > 0
+    && reusableMatchCount < suggestedQueueCount
+}
+
+export function computeShouldRequestFullBoardPreview({
+  pendingPlanAdoption,
+  hasGenuinePreviewQualityViolation,
+  restMissForcesFullBoard,
+  reusableMatchCount,
+  shouldRecoverMissingPreviewCourts,
+  missingPreviewCourtIdxsForRecoveryCount,
+  replacementMaxCount,
+}: {
+  pendingPlanAdoption: boolean
+  hasGenuinePreviewQualityViolation: boolean
+  restMissForcesFullBoard: boolean
+  reusableMatchCount: number
+  shouldRecoverMissingPreviewCourts: boolean
+  missingPreviewCourtIdxsForRecoveryCount: number
+  replacementMaxCount: number
+}) {
+  return pendingPlanAdoption
+    || hasGenuinePreviewQualityViolation
+    || restMissForcesFullBoard
+    || reusableMatchCount === 0
+    || (shouldRecoverMissingPreviewCourts && missingPreviewCourtIdxsForRecoveryCount > replacementMaxCount)
 }
