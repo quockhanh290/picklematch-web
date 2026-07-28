@@ -2,7 +2,12 @@ import { BrandedFooter } from '@/components/design/BrandedFooter'
 import { SHADOW as LAYOUT_SHADOW, RADIUS } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import type { SessionMatch } from '@/hooks/useSessionDetail'
-import { buildRoundRobinDoublesScheduleAsync } from '@/lib/roundRobinSchedulerClient'
+import {
+  computeEffectiveCourts,
+  generateFixedSchedule,
+  generateRoundRobinRound,
+  sortPlayersForSchedule,
+} from '@/features/host/session-detail/host-match/scheduleGenerators'
 import type { SchedulePriority } from '@/lib/roundRobinScheduler'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
@@ -192,31 +197,22 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
       return
     }
 
-    const effectiveCourts = Math.min(Math.max(1, Math.floor(scheduleCourtCount || 1)), Math.floor(X / 4))
+    const effectiveCourts = computeEffectiveCourts(X, scheduleCourtCount)
 
     const performGeneration = async () => {
       try {
         setSubmitting(true)
-        const sortedPlayers = [...activePlayers].sort((a, b) =>
-          a.name.localeCompare(b.name) || String(a.id).localeCompare(String(b.id))
-        )
+        const sortedPlayers = sortPlayersForSchedule(activePlayers)
         setScheduledPlayers(sortedPlayers)
 
-        const generated = await buildRoundRobinDoublesScheduleAsync(
-          sortedPlayers.map(p => String(p.id)),
-          effectiveCourts,
-          undefined,
-          scheduleMode === 'limited'
-            ? { minGamesPerPlayer, priority: schedulePriority, maxRuntimeMs: 2_000 }
-            : { priority: 'balanced', maxRuntimeMs: 1_500 }
-        )
-        const schedule: PendingMatch[] = generated.matches.map(match => ({
-          teamA: match.teamA,
-          teamB: match.teamB,
-          rotation: match.rotation,
-          court: match.court,
-          sitterId: match.sitterIds.join(',')
-        }))
+        const generated = await generateFixedSchedule({
+          playerIds: sortedPlayers.map(p => String(p.id)),
+          courtCount: effectiveCourts,
+          mode: scheduleMode,
+          minGamesPerPlayer,
+          priority: schedulePriority,
+        })
+        const schedule: PendingMatch[] = generated.matches
 
         setPendingRoundRobinMatches([])
         setPendingRoundRobinMatches(schedule)
@@ -560,8 +556,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
 
   const handleGenerateRoundRobinRound = () => {
     if (isAfterEnd) return
-    
-    // 1. Identify who is TRULY available
+
     const busyFromDb = new Set(matches
       .filter(m => m.status === 'playing' || String(m.status) === 'pending')
       .flatMap(m => {
@@ -569,123 +564,27 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
         return [...team_a, ...team_b]
       })
     )
-    const alreadyPendingIds = new Set(pendingRoundRobinMatches.flatMap(m => [
-      ...m.teamA.map(pid => String(pid)), 
-      ...m.teamB.map(pid => String(pid))
-    ]))
-    
-    const trulyAvailable = activePlayers.filter(p => {
-      const sid = String(p.id)
-      return !busyFromDb.has(sid) && !alreadyPendingIds.has(sid)
+
+    const result = generateRoundRobinRound({
+      activePlayers,
+      busyPlayerIds: busyFromDb,
+      pendingMatches: pendingRoundRobinMatches,
+      matchesPlayed,
+      metMap,
+      partnerMap,
     })
 
-    if (trulyAvailable.length < 4) {
+    if (result.status === 'not_enough_available_players') {
       Alert.alert('Hết người rảnh', 'Tất cả mọi người đều đang thi đấu hoặc đã có lịch chờ.')
       return
     }
-
-    // 2. Projected Matches Calculation
-    const projectedMatches = new Map<string, number>()
-    activePlayers.forEach(p => projectedMatches.set(String(p.id), matchesPlayed.get(String(p.id)) ?? 0))
-    
-    pendingRoundRobinMatches.forEach(m => {
-      [...m.teamA, ...m.teamB].forEach(pid => {
-        const sid = String(pid)
-        if (projectedMatches.has(sid)) {
-          projectedMatches.set(sid, (projectedMatches.get(sid) ?? 0) + 1)
-        }
-      })
-    })
-
-    // 3. Hard Match-Gap Filter (Priority #1)
-    const checkedInPlayers = activePlayers.filter(p => p.checkInStatus === 'checked_in')
-    const referenceGroup = checkedInPlayers.length > 0 ? checkedInPlayers : activePlayers
-    const allProjectedCounts = referenceGroup.map(p => projectedMatches.get(String(p.id)) ?? 0)
-    const globalMinMatches = Math.min(...allProjectedCounts)
-    
-    // Only allow people who won't violate the Match Gap-1 rule
-    const allowedByMatch = trulyAvailable.filter(p => {
-      const pCount = projectedMatches.get(String(p.id)) ?? 0
-      return pCount <= globalMinMatches + 1
-    })
-
-    if (allowedByMatch.length < 4) {
+    if (result.status === 'match_gap_exceeded') {
       Alert.alert('Chờ cân bằng', 'Cần đợi một số người đánh xong để đảm bảo khoảng cách trận đấu không quá 1.')
       return
     }
 
-    // 4. Secondary Sorting: Prioritize Encounter Balance (Soft Constraint)
-    const allMetCounts = referenceGroup.map(p => metMap.get(String(p.id))?.size ?? 0)
-    const globalMinMet = Math.min(...allMetCounts)
-    
-    const sortedAllowed = [...allowedByMatch].sort((a, b) => {
-      const sA = String(a.id); const sB = String(b.id)
-      
-      // Tier 1: Matches Played (Lower is better)
-      const countA = projectedMatches.get(sA) ?? 0
-      const countB = projectedMatches.get(sB) ?? 0
-      if (countA !== countB) return countA - countB
-      
-      // Tier 2: Encounter Gap (If someone is already >2 ahead of the minimum, they get lower priority)
-      const metA = metMap.get(sA)?.size ?? 0
-      const metB = metMap.get(sB)?.size ?? 0
-      const isOverA = metA > globalMinMet + 2
-      const isOverB = metB > globalMinMet + 2
-      if (isOverA !== isOverB) return isOverA ? 1 : -1
-      
-      // Tier 3: Absolute number of encounters
-      if (metA !== metB) return metA - metB
-      
-      return Math.random() - 0.5
-    })
-    
-    // Pick the most urgent seed
-    const seedPlayer = sortedAllowed[0]
-    const others = sortedAllowed.slice(1)
-    
-    // We want to pick 3 people from 'others' who have NOT met seedPlayer
-    const seedMet = metMap.get(String(seedPlayer.id))
-    const notMetOthers = others.filter(o => !seedMet?.has(String(o.id)))
-    const metOthers = others.filter(o => seedMet?.has(String(o.id)))
-    
-    // Take as many as possible from notMetOthers, fill the rest from metOthers
-    const finalFour = [seedPlayer, ...notMetOthers.slice(0, 3)]
-    if (finalFour.length < 4) {
-      finalFour.push(...metOthers.slice(0, 4 - finalFour.length))
-    }
-    
-    let bestMatch: PendingMatch = { teamA: [], teamB: [] }
-    let lowestMatchScore = Infinity
-
-    // Try 200 combinations within these 4 specific people to find the best teams
-    for (let i = 0; i < 200; i++) {
-      const shuffle = [...finalFour].sort(() => Math.random() - 0.5)
-      const teamA = [shuffle[0].id, shuffle[1].id]
-      const teamB = [shuffle[2].id, shuffle[3].id]
-      
-      let score = 0
-      teamA.forEach(pA => {
-        teamB.forEach(pB => {
-          if (!metMap.get(pA)?.has(pB)) score -= 1000 
-          else score += 1
-        })
-      })
-      if (partnerMap.get(teamA[0])?.has(teamA[1])) score += 50
-      if (partnerMap.get(teamB[0])?.has(teamB[1])) score += 50
-
-      if (score < lowestMatchScore) {
-        lowestMatchScore = score
-        bestMatch = { teamA, teamB }
-      }
-    }
-
-    setPendingRoundRobinMatches(prev => [...prev, bestMatch])
-    const newPendingIds = new Set([...alreadyPendingIds, ...bestMatch.teamA, ...bestMatch.teamB])
-    const sittingOut = activePlayers.filter(p => {
-      const sid = String(p.id)
-      return !busyFromDb.has(sid) && !newPendingIds.has(sid)
-    }).map(p => p.id)
-    setSittingOutPlayers(sittingOut)
+    setPendingRoundRobinMatches(prev => [...prev, result.match])
+    setSittingOutPlayers(result.sittingOutPlayerIds)
   }
 
   const handleConfirmRoundRobinMatch = async (match: PendingMatch) => {
