@@ -117,7 +117,20 @@ function explainBreakdown(key: string, state: SessionState, playersById: Map<str
     const cause = rosterCause
       ? ` Nguyên nhân hợp lý nhất là roster có thay đổi giữa buổi: ${rosterCause}. Khi một người vào muộn hoặc về sớm, họ không có cùng số vòng khả dụng như nhóm chơi từ đầu đến cuối, nên điểm số trận sẽ bị kéo xuống dù engine vẫn xếp công bằng trong phần thời gian họ có mặt.`
       : ' Vì roster khá ổn định, nếu điểm này thấp thì thường là do số người/sân tạo ra lượt nghỉ không đều hoặc một vài vòng phải ưu tiên ràng buộc khác.'
-    return `Chỉ số này đo xem mọi người có được đánh số trận gần nhau không. Hiện người đánh nhiều nhất là ${joinNames(mostPlayed, playersById)} với ${metrics.max} trận; ít nhất là ${joinNames(leastPlayed, playersById)} với ${metrics.min} trận, lệch ${metrics.range} trận. Nếu tính theo thời gian thực sự có mặt, độ lệch còn khoảng ${availability.expected_match_delta_range.toFixed(1)} trận. ${churn}.${cause}`
+    // Match-count imbalance on a stable roster is frequently the balance-vs-fairness tradeoff: a
+    // PVNA outlier (very strong or very weak) is hard to pair into a balanced court, so the engine
+    // rests them more often to avoid blowouts — leaving them with fewer matches. Surface that when
+    // the least-played players are actually outliers and the pool genuinely has a spread cluster.
+    const activePvnas = [...state.players.values()].filter(player => player.checked_out_at === null).map(getEffectivePvna)
+    const meanPvna = activePvnas.length > 0 ? activePvnas.reduce((sum, v) => sum + v, 0) / activePvnas.length : 0
+    const leastAreOutliers = leastPlayed.some(id => {
+      const player = state.players.get(id)
+      return player != null && Math.abs(getEffectivePvna(player) - meanPvna) >= 1
+    })
+    const outlierCause = !rosterCause && metrics.range >= 2 && leastAreOutliers
+      ? ` Lưu ý: người chơi ít trận nhất ở đây có trình độ lệch hẳn nhóm (PVNA cách trung bình ≥1). Trong pool có cụm chênh lệch trình độ, engine ưu tiên trận CÂN nên cho người khó ghép (rất mạnh hoặc rất yếu) nghỉ nhiều hơn để tránh trận lệch (blowout) — vì vậy họ chơi ít trận hơn. Đây là đánh đổi giữ trận cân, không phải xếp lịch bất công.`
+      : ''
+    return `Chỉ số này đo xem mọi người có được đánh số trận gần nhau không. Hiện người đánh nhiều nhất là ${joinNames(mostPlayed, playersById)} với ${metrics.max} trận; ít nhất là ${joinNames(leastPlayed, playersById)} với ${metrics.min} trận, lệch ${metrics.range} trận. Nếu tính theo thời gian thực sự có mặt, độ lệch còn khoảng ${availability.expected_match_delta_range.toFixed(1)} trận. ${churn}.${cause}${outlierCause}`
   }
 
   if (key === 'partner_diversity') {
