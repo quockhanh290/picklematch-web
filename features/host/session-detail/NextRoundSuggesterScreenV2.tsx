@@ -11,29 +11,16 @@ import {
   buildLogicalRoundDisplayMap
 } from './next-round-v2/components/ScreenComponents'
 
-import { ActivityIndicator, Alert, Dimensions, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { SecondaryNavbar } from '@/components/design'
 import { BORDER, RADIUS, SPACING } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
-import {  buildSwappedAlternative } from '@/lib/next-round-suggester/manual-swap'
-import {
-  
-  
-  
-  getProjectedRepeatSummary,
-} from '@/lib/next-round-suggester/score'
-import type { FairnessWarning } from '@/lib/next-round-suggester/fairness/detector'
-import {
-  
-  
-  
-  type SessionFairnessScore,
-} from '@/lib/next-round-suggester/fairness/metrics'
+import { buildSwappedAlternative } from '@/lib/next-round-suggester/manual-swap'
+import { getProjectedRepeatSummary } from '@/lib/next-round-suggester/score'
 import type {
-  
   SessionLiveMatchRow,
   SessionPlayerStateRow,
   SessionState,
@@ -44,10 +31,10 @@ import type {
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
 import { useAppTheme } from '@/lib/theme-context'
-import {  invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent } from './next-round-v2/api'
+import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent } from './next-round-v2/api'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
-import {   swapPlayersInSuggestedMatch } from './next-round-v2/preview-helpers'
-import {  NavbarRightActions } from './next-round-v2/controls'
+import { swapPlayersInSuggestedMatch } from './next-round-v2/preview-helpers'
+import { NavbarRightActions } from './next-round-v2/controls'
 import {
   HistorySheet as HistorySheetView,
   LateArrivalsSheet as LateArrivalsSheetView,
@@ -64,64 +51,12 @@ import {
 } from './next-round-v2/helpers'
 import type { NextRoundSuggesterV2Props } from './next-round-v2/types'
 import { useNextRoundModel } from './next-round-v2/useNextRoundModel'
-import { useCheckInMutation, useCheckOutMutation, useStartMatchMutation, useCompleteMatchMutation } from './next-round-v2/mutations'
+import { useCheckInMutation, useStartMatchMutation, useCompleteMatchMutation } from './next-round-v2/mutations'
 import { useScrollDebug } from './next-round-v2/hooks/useScrollDebug'
 import { usePreviewTelemetry } from './next-round-v2/hooks/usePreviewTelemetry'
 import { useLiveBoard } from './next-round-v2/hooks/useLiveBoard'
-const { width: SCREEN_WIDTH } = Dimensions.get('window')
-const LIVE_SCORE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 90 : SCREEN_WIDTH > 360 ? 80 : 72
-const LIVE_SCORE_CARD_HEIGHT = LIVE_SCORE_CARD_WIDTH * 1.25
-const LIVE_SCORE_FONT_SIZE = SCREEN_WIDTH > 400 ? 56 : SCREEN_WIDTH > 360 ? 48 : 42
 const EMPTY_ARRANGEMENT_PLAYERS: ArrangementPlayer[] = []
 const LiveMatchBoardComponent = CourtLaneLiveMatchBoard
-const BALANCED_PVNA_COST_WEIGHT = 10
-const BALANCED_REPEAT_COST_WEIGHT = 3
-const BALANCED_AFFECTED_PLAYER_COST_WEIGHT = 1
-
-
-function fairnessLabel(score: SessionFairnessScore) {
-  if (score.grade === 'excellent') return 'Rất đều'
-  if (score.grade === 'good') return 'Đều'
-  if (score.grade === 'acceptable') return 'Tạm ổn'
-  return 'Cần chỉnh'
-}
-
-function churnLevelLabel(level: string) {
-  if (level === 'low') return 'thấp'
-  if (level === 'medium') return 'vừa'
-  if (level === 'high') return 'cao'
-  return level
-}
-
-function feasibilityLabel(feasibility: string) {
-  if (feasibility === 'optimal') return 'Tối ưu'
-  if (feasibility === 'tight') return 'Vừa khít'
-  if (feasibility === 'infeasible') return 'Không khả thi'
-  return feasibility
-}
-
-function warningTitle(type: string) {
-  if (type === 'match_count_imbalance') return 'Lệch số trận'
-  if (type === 'projected_match_count_imbalance') return 'Sắp lệch số trận'
-  if (type === 'underplayed') return 'Có người chơi ít hơn'
-  if (type === 'partner_repeat') return 'Lặp partner (đồng đội)'
-  if (type === 'opponent_repeat') return 'Lặp đối thủ'
-  if (type === 'opponent_repeat_burden') return 'Một người gặp lại nhiều đối thủ'
-  if (type === 'projected_opponent_repeat_burden') return 'Sắp lặp đối thủ nhiều'
-  if (type === 'missing_pvna') return 'Thiếu PVNA'
-  if (type === 'rest_violation') return 'Nghỉ liên tiếp'
-  if (type === 'gender_pref_unsatisfied') return 'Sở thích giới tính chưa tốt'
-  if (type === 'gender_pref_impossible') return 'Sở thích giới tính khó đáp ứng'
-  return type.replace(/_/g, ' ')
-}
-
-
-function warningTone(theme: ReturnType<typeof useAppTheme>, severity: FairnessWarning['severity'] | 'ok') {
-  if (severity === 'critical') return { bg: theme.dangerBg, border: theme.dangerText, text: theme.dangerText }
-  if (severity === 'warning') return { bg: theme.warningBg, border: theme.warningStrong, text: theme.warningText }
-  if (severity === 'info') return { bg: theme.infoBg, border: theme.outlineVariant, text: theme.infoText }
-  return { bg: theme.successBg, border: theme.secondaryContainer, text: theme.successText }
-}
 
 function toUserSafeActionError(error: unknown): string {
   const message = error instanceof Error
@@ -196,12 +131,6 @@ type ActionResult = {
   }
 }
 
-type BuildSuggestedMatchOptions = {
-  courtIdx?: number
-  stateOverride?: SessionState
-  liveMatchRowsOverride?: SessionLiveMatchRow[]
-}
-
 type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   preview_source?: 'edge_committed' | 'session_plan' | 'edge_partial' | 'local_fallback' | 'manual_available_pool'
   preview_request_key?: string
@@ -228,19 +157,11 @@ type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   available_pool_only?: boolean
 }
 
-type LiveDisplayMatchRow = SessionLiveMatchRow & {
-  client_preview_id?: string
-}
-
-
-
-
 
 
 export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEMENT_PLAYERS, courts, bootstrapTelemetry = null, initialShowReport = false }: NextRoundSuggesterV2Props) {
   const queryClient = useQueryClient()
   const checkInMutation = useCheckInMutation(sessionId)
-  const checkOutMutation = useCheckOutMutation(sessionId)
   const startMatchMutation = useStartMatchMutation(sessionId)
   const completeMatchMutation = useCompleteMatchMutation(sessionId)
   const theme = useAppTheme()
@@ -564,7 +485,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       ...workingAlternative.resting,
     ]).size
     : presentCount, [workingAlternative, presentCount])
-  const nextMatchSuggestion = null
 
   const liveLogicalRoundByMatchId = useMemo(
     () => buildLogicalRoundDisplayMap([...completedLiveMatches, ...activeLiveMatches], queueCourtCount),
@@ -609,20 +529,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     || busy === 'sync'
     || (rows.playerRows.length === 0 && checkedInPlayers.length > 0 && !autoSyncAttemptedRef.current)
   )
-  const liveBoardRenderKey = useMemo(() => {
-    if (!isWeb) return 'live-board'
-    const liveKey = activeLiveMatches
-      .map(match => `${(match as LiveDisplayMatchRow).client_preview_id ?? match.id}:${match.status}:${match.sequence_no ?? ''}`)
-      .join(',')
-    const suggestedKey = suggestedLiveMatches
-      .map(match => `${match.id}:${match.status}:${match.sequence_no ?? ''}`)
-      .join(',')
-    return [
-      rows.liveStateVersion ?? 'noversion',
-      liveKey,
-      suggestedKey,
-    ].join('|')
-  }, [activeLiveMatches, isWeb, rows.liveStateVersion, suggestedLiveMatches])
   const lateArrivalPlayers = useMemo(() => {
     const livePlayerIds = new Set(rows.playerRows.map(row => String(row.player_id)))
     return rosterPlayers.filter(player => {
