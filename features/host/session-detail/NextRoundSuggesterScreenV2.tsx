@@ -128,6 +128,7 @@ import { checkInLiveSessionPlayers, invokeLiveSessionFunction, loadLatestSyncabl
 import { getNextRoundTelemetry, markNextRoundStage } from './next-round-v2/telemetry'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from './next-round-v2/constants'
+import { getSuggestedMatchPvnaGap, getSuggestedMatchSignature, swapPlayersInSuggestedMatch } from './next-round-v2/preview-helpers'
 import { ChoiceRow, NavbarRightActions } from './next-round-v2/controls'
 import {
   HistorySheet as HistorySheetView,
@@ -497,19 +498,6 @@ type SuggestedPreviewBatch = {
 const getSuggestedLaneCourtIdx = (match: Pick<SessionLiveMatchRow, 'court_idx' | 'sequence_no'>): number | null => {
   const courtIdx = Number(match.court_idx ?? match.sequence_no)
   return Number.isFinite(courtIdx) ? courtIdx : null
-}
-
-const getSuggestedMatchSignature = (match: Pick<SessionLiveMatchRow, 'team_a' | 'team_b'>) => [
-  ...match.team_a.map(String).sort(),
-  ...match.team_b.map(String).sort(),
-].join('|')
-
-function getSuggestedMatchPvnaGap(match: Pick<SessionLiveMatchRow, 'team_a' | 'team_b'>, state: SessionState) {
-  const getTeamPvna = (team: readonly string[]) => team.reduce(
-    (sum, playerId) => sum + (state.players.get(String(playerId))?.pvna ?? 0),
-    0,
-  )
-  return Math.abs(getTeamPvna(match.team_a) - getTeamPvna(match.team_b))
 }
 
 function hasHardPreviewQualityViolation(
@@ -4167,30 +4155,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       </NextRoundSheet>
     </View>
   )
-}
-
-function swapPlayersInSuggestedMatch(match: SuggestedLiveMatchRow, fromId: string, toId: string): SuggestedLiveMatchRow {
-  const replaceInTeam = (team: string[]) => team.map(playerId => {
-    if (playerId === fromId) return toId
-    if (playerId === toId) return fromId
-    return playerId
-  }) as [string, string]
-
-  const teamA = replaceInTeam(match.team_a)
-  const teamB = replaceInTeam(match.team_b)
-  const toWasResting = (match.resting ?? []).includes(toId)
-  const restingBase = toWasResting
-    ? [...(match.resting ?? []).filter(playerId => playerId !== toId), fromId]
-    : (match.resting ?? [])
-  const playingAfter = new Set([...teamA, ...teamB])
-  const resting = [...new Set(restingBase)].filter(playerId => !playingAfter.has(playerId))
-
-  return {
-    ...match,
-    team_a: teamA,
-    team_b: teamB,
-    resting,
-  }
 }
 
 function buildSuggestedSwapImpact(match: SuggestedLiveMatchRow, fromId: string, toId: string, state: SessionState) {
