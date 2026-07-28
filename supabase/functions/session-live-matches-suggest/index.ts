@@ -1843,6 +1843,19 @@ Deno.serve(async (request) => {
       if (planAdvisoryWrite) void planAdvisoryWrite
     }
 
+    // Courts the engine deliberately held back this pass because their only available match was a
+    // lopsided blowout — it is waiting for a court to finish (freeing better-matched players), not
+    // stuck. Surface them so the client can tell the host "waiting for a balanced match" instead of
+    // showing a silently empty lane. Parsed from the rolling_quality_deferred instrument events.
+    const qualityDeferredCourts = [...new Set(
+      instrumentEvents
+        .filter(e => e.event === 'repair' && typeof e.detail === 'string' && e.detail.startsWith('rolling_quality_deferred'))
+        .map(e => {
+          const match = /court=(\d+)/.exec(e.detail)
+          return match ? Number(match[1]) : null
+        })
+        .filter((court): court is number => court !== null && missingTargetCourts.includes(court)),
+    )].sort((left, right) => left - right)
     return jsonResponse({
       ok: true,
       payloads,
@@ -1859,6 +1872,7 @@ Deno.serve(async (request) => {
       filled_court_idxs: [...finalFilledCourtIdxs].sort((left, right) => left - right),
       missing_open_courts: finalMissingOpenCourts,
       missing_target_courts: missingTargetCourts,
+      quality_deferred_courts: qualityDeferredCourts,
       partial_full_board_request: partialFullBoardRequest,
       target_expected_count: targetExpectedCount,
       filled_target_count: filledTargetCount,

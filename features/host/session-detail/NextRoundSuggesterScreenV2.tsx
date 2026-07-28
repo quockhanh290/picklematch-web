@@ -673,6 +673,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
   }, [sessionId])
   const [isSuggestingPreview, setIsSuggestingPreview] = useState(false)
   const [courtShortageBreakdown, setCourtShortageBreakdown] = useState<{ temp: number; real: number } | null>(null)
+  // Courts the engine is holding back this pass to avoid a lopsided blowout — waiting for a court to
+  // finish (freeing better-matched players), not stuck. Surfaced so the host sees a clear reason.
+  const [qualityDeferredCourts, setQualityDeferredCourts] = useState<number[]>([])
   const completingLiveMatchPlaceholdersRef = useRef(completingLiveMatchPlaceholders)
   const [suggestedSwapMatch, setSuggestedSwapMatch] = useState<SuggestedLiveMatchRow | null>(null)
   const {
@@ -2902,6 +2905,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             previewScheduledRetryKeysRef.current.clear()
             setSuggestedLiveMatches(current => current.length === 0 ? current : [])
             setCourtShortageBreakdown(null)
+            setQualityDeferredCourts([])
             setShowSessionReport(true)
             traceClientPreviewEvent('client_preview_target_reached', {
               requestId: previewClientRequestId,
@@ -3231,6 +3235,9 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             } else {
               setCourtShortageBreakdown(null)
             }
+            setQualityDeferredCourts(Array.isArray(res.quality_deferred_courts)
+              ? res.quality_deferred_courts.filter((court: unknown): court is number => typeof court === 'number')
+              : [])
             if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch done', {
               totalMs: Math.round(nowMs() - previewT0),
               matchCount: committedCandidateMatches.length,
@@ -3982,6 +3989,16 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
                 onSetCourtCount={setCourtCount}
                 onOpenSwapForPlayer={openSwapForPlayer}
               />
+              {qualityDeferredCourts.length > 0 ? (
+                <Card style={{ padding: 12, marginBottom: 12, backgroundColor: theme.warningBg }}>
+                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12.5, color: theme.warningText }}>
+                    Sân {qualityDeferredCourts.map(court => court + 1).join(', ')} đang chờ ghép cân
+                  </Text>
+                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText, marginTop: 2 }}>
+                    Người còn rảnh lúc này chỉ ghép được trận chênh lệch nhiều — engine đợi một sân xong để có người cân hơn rồi tự fill. Đây là chờ CÓ CHỦ ĐÍCH để tránh trận lệch, không phải lỗi.
+                  </Text>
+                </Card>
+              ) : null}
               <LiveMatchBoardComponent
                 liveMatches={activeLiveMatches}
                 suggestedMatches={suggestedLiveMatches}
