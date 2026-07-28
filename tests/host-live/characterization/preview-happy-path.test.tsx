@@ -34,7 +34,7 @@
 // NOT fire). Test 2's fixture therefore uses 3 courts: two live matches (one gets
 // completed, one stays untouched) plus one DB-persisted suggested match.
 
-import { fireEvent, waitFor } from '@testing-library/react-native'
+import { act, fireEvent, waitFor } from '@testing-library/react-native'
 import { getLevelIdForElo } from '@/lib/eloSystem'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import type { SessionLiveMatchRow, SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
@@ -317,8 +317,21 @@ beforeEach(() => {
   jest.clearAllMocks()
 })
 
+afterEach(() => {
+  jest.useRealTimers()
+})
+
 describe('NextRoundSuggesterScreenV2 characterization: happy-path preview + fill 1 sân', () => {
+  // This test was flaky under real timers + waitFor(timeout: 5000): the assertion races the
+  // screen's internal 80ms request-debounce setTimeout (NextRoundSuggesterScreenV2.tsx ~3533)
+  // against real wall-clock time, and under load (parallel jest workers, CI) the debounce timer
+  // + edge promise resolution + re-render don't reliably land inside the waitFor polling window.
+  // Fixed per the pattern proven stable in task A3 (preview-retry-defer.test.tsx): fake timers,
+  // each timer hop advanced via its own `advanceTimersByTimeAsync` call (not summed into one),
+  // which deterministically drives the debounce instead of racing it. Assertions are unchanged
+  // from the original real-timer version -- same behavior pinned, just a deterministic driver.
   it('mount requests a full-board edge preview exactly once and renders the returned board', async () => {
+    jest.useFakeTimers()
     mockSnapshotOnlyRpc()
     mockApi.fetchLiveMatchesPreview.mockResolvedValueOnce(buildMountPreviewResponse())
 
@@ -328,16 +341,27 @@ describe('NextRoundSuggesterScreenV2 characterization: happy-path preview + fill
       courts: 2,
     })
 
-    await waitFor(() => {
-      expect(mockApi.fetchLiveMatchesPreview).toHaveBeenCalledTimes(1)
-    }, { timeout: 5000 })
+    // Let the initial snapshot-load microtasks (supabase.rpc mock, settings load, etc.) settle
+    // before the preview effect's own 80ms request-debounce timer starts.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0)
+    })
+
+    // Debounce -> the edge call fires.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(80)
+    })
+    expect(mockApi.fetchLiveMatchesPreview).toHaveBeenCalledTimes(1)
     expect(mockApi.fetchLiveMatchesPreview.mock.calls[0][1]).toMatchObject({ mode: 'full_board' })
 
-    await waitFor(() => {
-      expect(queryByTestId('nrv2-suggested-card-court-1')).toBeTruthy()
-    }, { timeout: 5000 })
+    // Flush the microtasks from the resolved preview promise (state updates that render the board).
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0)
+    })
+
     expect(getByTestId('nrv2-court-lane-board')).toBeTruthy()
     expect(getByTestId('nrv2-live-card-court-0')).toBeTruthy()
+    expect(queryByTestId('nrv2-suggested-card-court-1')).toBeTruthy()
     expect(getByTestId('nrv2-start-match-court-1')).toBeTruthy()
     // Court 0 is occupied by the live match -- the board must not also show a
     // suggested card for the same lane.
