@@ -1,4 +1,4 @@
-import type { SessionLiveMatchRow, SessionState } from '@/lib/next-round-suggester/types'
+import type { PlayerSessionState, SessionLiveMatchRow, SessionState } from '@/lib/next-round-suggester/types'
 
 type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   preview_source?: 'edge_committed' | 'session_plan' | 'edge_partial' | 'local_fallback' | 'manual_available_pool'
@@ -37,6 +37,30 @@ export function getSuggestedMatchPvnaGap(match: Pick<SessionLiveMatchRow, 'team_
     0,
   )
   return Math.abs(getTeamPvna(match.team_a) - getTeamPvna(match.team_b))
+}
+
+export function applyPairIncrement(
+  players: Map<string, PlayerSessionState>,
+  playerAId: string,
+  playerBId: string,
+  type: 'partner' | 'opponent',
+): void {
+  const playerA = players.get(playerAId)
+  const playerB = players.get(playerBId)
+  if (playerA) {
+    const partnerCounts = new Map(playerA.partner_counts)
+    const opponentCounts = new Map(playerA.opponent_counts)
+    const counts = type === 'partner' ? partnerCounts : opponentCounts
+    counts.set(playerBId, (counts.get(playerBId) ?? 0) + 1)
+    players.set(playerAId, { ...playerA, partner_counts: partnerCounts, opponent_counts: opponentCounts })
+  }
+  if (playerB) {
+    const partnerCounts = new Map(playerB.partner_counts)
+    const opponentCounts = new Map(playerB.opponent_counts)
+    const counts = type === 'partner' ? partnerCounts : opponentCounts
+    counts.set(playerAId, (counts.get(playerAId) ?? 0) + 1)
+    players.set(playerBId, { ...playerB, partner_counts: partnerCounts, opponent_counts: opponentCounts })
+  }
 }
 
 export function swapPlayersInSuggestedMatch(match: SuggestedLiveMatchRow, fromId: string, toId: string): SuggestedLiveMatchRow {

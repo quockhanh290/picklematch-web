@@ -1,4 +1,5 @@
 import {
+  applyPairIncrement,
   getSuggestedMatchPvnaGap,
   getSuggestedMatchSignature,
   swapPlayersInSuggestedMatch,
@@ -37,6 +38,28 @@ describe('getSuggestedMatchPvnaGap', () => {
     const match = { team_a: ['1'], team_b: ['2'] }
     const state = { players: new Map() } as any
     expect(getSuggestedMatchPvnaGap(match, state)).toBe(0)
+  })
+})
+
+describe('applyPairIncrement', () => {
+  it('bumps partner counts both directions', () => {
+    const players = new Map<string, any>([
+      ['A', { partner_counts: new Map(), opponent_counts: new Map() }],
+      ['B', { partner_counts: new Map(), opponent_counts: new Map() }],
+    ])
+    applyPairIncrement(players, 'A', 'B', 'partner')
+    expect(players.get('A').partner_counts.get('B')).toBe(1)
+    expect(players.get('B').partner_counts.get('A')).toBe(1)
+  })
+
+  it('type=opponent bumps opponent_counts', () => {
+    const players = new Map<string, any>([
+      ['A', { partner_counts: new Map(), opponent_counts: new Map() }],
+      ['B', { partner_counts: new Map(), opponent_counts: new Map() }],
+    ])
+    applyPairIncrement(players, 'A', 'B', 'opponent')
+    expect(players.get('A').opponent_counts.get('B')).toBe(1)
+    expect(players.get('A').partner_counts.get('B') ?? 0).toBe(0)
   })
 })
 
