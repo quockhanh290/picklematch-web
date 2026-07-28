@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   SessionDashboardCard,
@@ -49,7 +49,7 @@ import {
 
 import { buildPreviewBatchKey } from './next-round-v2/preview'
 import { buildPreviewPolicyFingerprint } from './next-round-v2/preview-policy'
-import { createClientTraceId, fetchLiveMatchesPreview, fetchLiveSessionVersion, recordClientSessionAuditEvent } from './next-round-v2/api'
+import { createClientTraceId, fetchLiveMatchesPreview, fetchLiveSessionVersion } from './next-round-v2/api'
 import { LIVE_VERSION_POLL_INTERVAL_MS, shouldRefetchForExternalVersion } from './next-round-v2/version-poll'
 import { getMissingPreviewCourtIdxs, getRequestedReplacementCourtIdxs, isPreviewBoardComplete } from './next-round-v2/court-lanes'
 import { hasReachedCompletedLiveCycleTarget } from './next-round-v2/live-cycle-rows'
@@ -154,6 +154,7 @@ import { pruneOptimisticLiveMatchesByServerId, withoutRowsById } from './next-ro
 import { useCheckInMutation, useCheckOutMutation, useStartMatchMutation, useCompleteMatchMutation } from './next-round-v2/mutations'
 import { getMatchPlayerIds, isSameCourtAndPlayers, shouldInvalidatePreviewAfterStartError, completeAlreadyApplied, cancelAlreadyApplied } from './liveMatchGuards'
 import { useScrollDebug } from './next-round-v2/hooks/useScrollDebug'
+import { usePreviewTelemetry, STUCK_THRESHOLD_MS } from './next-round-v2/hooks/usePreviewTelemetry'
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const LIVE_SCORE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 90 : SCREEN_WIDTH > 360 ? 80 : 72
 const LIVE_SCORE_CARD_HEIGHT = LIVE_SCORE_CARD_WIDTH * 1.25
@@ -503,41 +504,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
   const previewBlockedIncompleteKeysRef = useRef(new Set<string>())
   const previewUnblockNonceRef = useRef(0)
   const startingPreviewIdsRef = useRef(new Set<string>())
-  // Board-stuck observability (read-only — no recovery logic touched)
-  const STUCK_THRESHOLD_MS = 5000
-  const stuckTrackerRef = useRef<{
-    startedAt: number
-    firedAt: number | null
-    kind: string
-    courtIdxs: number[]
-    resolvedBy: string
-    timer: ReturnType<typeof setTimeout> | null
-  } | null>(null)
-  const lastStuckHintRef = useRef<{ kind: string; courtIdxs: number[] }>({ kind: 'unknown', courtIdxs: [] })
-  const traceClientPreviewEvent = useCallback((
-    eventType: string,
-    input: {
-      requestId?: string | null
-      requestPayload?: unknown
-      responsePayload?: unknown
-      detail?: unknown
-    } = {},
-  ) => {
-    void recordClientSessionAuditEvent(sessionId, eventType, {
-      requestId: input.requestId ?? null,
-      clientRequestId: input.requestId ?? null,
-      requestPayload: input.requestPayload,
-      responsePayload: input.responsePayload,
-      detail: {
-        screen: 'NextRoundSuggesterScreenV2',
-        ...(input.detail && typeof input.detail === 'object' && !Array.isArray(input.detail)
-          ? input.detail as Record<string, unknown>
-          : input.detail === undefined
-            ? {}
-            : { value: input.detail }),
-      },
-    })
-  }, [sessionId])
+  const telemetry = usePreviewTelemetry(sessionId)
   const endingLiveMatchIdsRef = useRef(new Set<string>())
   const completedLiveMatchCommitIdsRef = useRef(new Set<string>())
   const cancelingLiveMatchIdsRef = useRef(new Set<string>())
@@ -726,37 +693,17 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     setLiveMatchDisplayKeys({})
   }, [sessionId])
 
-  // ── Board-stuck tracker (observability only) ──────────────────────────────
-  const resolveStuckTracker = useCallback((resolvedBy: string) => {
-    const tracker = stuckTrackerRef.current
-    if (!tracker) return
-    if (tracker.timer) clearTimeout(tracker.timer)
-    stuckTrackerRef.current = null
-    if (tracker.firedAt === null) return
-    try {
-      supabase.from('board_stuck_events').insert({
-        session_id: sessionId,
-        stuck_kind: tracker.kind,
-        court_idxs: tracker.courtIdxs,
-        duration_ms: Math.round(nowMs() - tracker.startedAt),
-        resolved_by: resolvedBy,
-        detail: {},
-      }).then(({ error }) => {
-        if (error && __DEV__) console.warn('[stuck-tracker] insert failed', error.message)
-      })
-    } catch { /* noop */ }
-  }, [sessionId])
-
+  // ── Board-stuck tracker (observability only; bookkeeping lives in usePreviewTelemetry) ──
   useEffect(() => {
     if (!isSuggestingPreview) {
-      resolveStuckTracker(stuckTrackerRef.current?.resolvedBy ?? 'auto')
+      telemetry.resolveStuckTracker(telemetry.stuckTrackerRef.current?.resolvedBy ?? 'auto')
       return
     }
-    if (stuckTrackerRef.current) return
+    if (telemetry.stuckTrackerRef.current) return
     const timer = setTimeout(() => {
-      const tracker = stuckTrackerRef.current
+      const tracker = telemetry.stuckTrackerRef.current
       if (!tracker) return
-      const hint = lastStuckHintRef.current
+      const hint = telemetry.lastStuckHintRef.current
       tracker.firedAt = nowMs()
       tracker.kind = hint.kind !== 'unknown'
         ? hint.kind
@@ -767,7 +714,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             : 'unknown'
       tracker.courtIdxs = hint.courtIdxs
     }, STUCK_THRESHOLD_MS)
-    stuckTrackerRef.current = {
+    telemetry.stuckTrackerRef.current = {
       startedAt: nowMs(),
       firedAt: null,
       kind: 'unknown',
@@ -775,14 +722,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       resolvedBy: 'auto',
       timer,
     }
-  }, [isSuggestingPreview, resolveStuckTracker])
+  }, [isSuggestingPreview, telemetry.resolveStuckTracker])
 
   useEffect(() => {
-    return () => { resolveStuckTracker('unresolved') }
-  }, [resolveStuckTracker])
-
-  useEffect(() => {
-    if (stuckTrackerRef.current) stuckTrackerRef.current.resolvedBy = 'complete_match'
+    if (telemetry.stuckTrackerRef.current) telemetry.stuckTrackerRef.current.resolvedBy = 'complete_match'
   }, [completedLiveMatchCommitNonce])
   // ── end board-stuck tracker ───────────────────────────────────────────────
 
@@ -902,7 +845,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       try {
         const serverVersion = await fetchLiveSessionVersion(sessionId)
         if (shouldRefetchForExternalVersion(liveStateVersionRef.current, serverVersion)) {
-          traceClientPreviewEvent('client_external_live_version_advanced', {
+          telemetry.trace('client_external_live_version_advanced', {
             detail: {
               local_live_state_version: liveStateVersionRef.current,
               server_live_state_version: serverVersion,
@@ -920,7 +863,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     }
     const interval = setInterval(() => { void poll() }, LIVE_VERSION_POLL_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [loadLiveState, sessionId, traceClientPreviewEvent])
+  }, [loadLiveState, sessionId, telemetry.trace])
 
   const openRoster = useCallback(() => {
     router.push({ pathname: '/host/session/[id]/roster', params: { id: sessionId } } as any)
@@ -1068,7 +1011,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     if (startingPreviewIdsRef.current.has(match.id) || startedPreviewIds.has(match.id)) return
     const startedCourtIdx = getSuggestedLaneCourtIdx(match)
     const blockUntrustedStart = (reason: string, extraDetail?: Record<string, unknown>) => {
-      traceClientPreviewEvent('client_start_blocked_untrusted_preview', {
+      telemetry.trace('client_start_blocked_untrusted_preview', {
         requestId: match.preview_request_key ?? match.id,
         responsePayload: {
           match_id: match.id,
@@ -1403,7 +1346,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       .reduce((max, match) => Math.max(max, (match.sequence_no ?? -1) + 1), 0)
     previewRequestSerialRef.current += 1
     const availablePoolRequestId = createClientTraceId('preview-available-pool')
-    traceClientPreviewEvent('client_available_pool_preview_start', {
+    telemetry.trace('client_available_pool_preview_start', {
       requestId: availablePoolRequestId,
       detail: {
         court_idx: courtIdx,
@@ -1440,7 +1383,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         : (res.payloads ?? [])
       const rawMatch = responsePayloads.find((m: any) => Number(m.court_idx ?? 0) === courtIdx)
       if (!rawMatch) {
-        traceClientPreviewEvent('client_available_pool_preview_empty', {
+        telemetry.trace('client_available_pool_preview_empty', {
           requestId: availablePoolRequestId,
           responsePayload: {
             payload_count: responsePayloads.length,
@@ -1477,7 +1420,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         locked_player_ids: undefined,
       }
       setAvailablePoolPreviews(prev => new Map(prev).set(courtIdx, constrainedMatch))
-      traceClientPreviewEvent('client_available_pool_preview_ready', {
+      telemetry.trace('client_available_pool_preview_ready', {
         requestId: availablePoolRequestId,
         responsePayload: {
           payload_count: responsePayloads.length,
@@ -1490,7 +1433,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       })
     } catch (err) {
       setAvailablePoolPreviews(prev => { const next = new Map(prev); next.delete(courtIdx); return next })
-      traceClientPreviewEvent('client_available_pool_preview_error', {
+      telemetry.trace('client_available_pool_preview_error', {
         requestId: availablePoolRequestId,
         detail: {
           court_idx: courtIdx,
@@ -2426,7 +2369,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     const previewTraceKey = compactTraceKey(previewRequestKey)
     if (previewBlockedIncompleteKeysRef.current.has(incompleteRequestKey)) {
       const blockedRequestId = createClientTraceId('preview-blocked')
-      traceClientPreviewEvent('client_preview_blocked_before_request', {
+      telemetry.trace('client_preview_blocked_before_request', {
         requestId: blockedRequestId,
         detail: {
           incomplete_request_key: incompleteTraceKey,
@@ -2446,7 +2389,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     }
     if (previewPendingRequestKeysRef.current.has(incompleteRequestKey)) {
       const pendingRequestId = createClientTraceId('preview-pending')
-      traceClientPreviewEvent('client_preview_pending_skip', {
+      telemetry.trace('client_preview_pending_skip', {
         requestId: pendingRequestId,
         detail: {
           incomplete_request_key: incompleteTraceKey,
@@ -2475,7 +2418,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       suggested_queue_count: fetchSuggestedCount,
       live_state_version: rows.liveStateVersion,
     })
-    traceClientPreviewEvent('client_preview_request_scheduled', {
+    telemetry.trace('client_preview_request_scheduled', {
       requestId: previewClientRequestId,
       detail: {
         incomplete_request_key: incompleteTraceKey,
@@ -2512,7 +2455,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         suggested_queue_count: fetchSuggestedCount,
         live_state_version: rows.liveStateVersion,
       })
-      traceClientPreviewEvent('client_preview_request_start', {
+      telemetry.trace('client_preview_request_start', {
         requestId: previewClientRequestId,
         detail: {
           incomplete_request_key: incompleteTraceKey,
@@ -2705,7 +2648,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             suggestedPreviewBatchRef.current = null
             suggestedLaneCacheRef.current.clear()
             setSuggestedLiveMatches(current => current.length === 0 ? current : [])
-            traceClientPreviewEvent('client_preview_discarded_state_advanced', {
+            telemetry.trace('client_preview_discarded_state_advanced', {
               requestId: previewClientRequestId,
               responsePayload: {
                 request_live_state_version: snapshotLiveStateVersion,
@@ -2727,7 +2670,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
               ? responseVersion
               : Math.max(liveStateVersionRef.current, responseVersion)
           }
-          traceClientPreviewEvent('client_preview_edge_response', {
+          telemetry.trace('client_preview_edge_response', {
             requestId: previewClientRequestId,
             requestPayload: {
               mode: previewMode,
@@ -2768,7 +2711,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             setCourtShortageBreakdown(null)
             setQualityDeferredCourts([])
             setShowSessionReport(true)
-            traceClientPreviewEvent('client_preview_target_reached', {
+            telemetry.trace('client_preview_target_reached', {
               requestId: previewClientRequestId,
               responsePayload: {
                 should_end: true,
@@ -3013,7 +2956,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             if (fullBoardIncompleteNoop) {
               previewBlockedIncompleteKeysRef.current.add(incompleteRequestKey)
               previewIncompleteRetryRef.current = { key: '', count: 0 }
-              traceClientPreviewEvent('client_preview_blocked_incomplete_noop', {
+              telemetry.trace('client_preview_blocked_incomplete_noop', {
                 requestId: previewClientRequestId,
                 responsePayload: {
                   fetched_match_count: fetchedMatches.length,
@@ -3041,7 +2984,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
                 ? previewIncompleteRetryRef.current.count + 1
                 : 1
               previewIncompleteRetryRef.current = { key: retryKey, count: currentRetry }
-              traceClientPreviewEvent(currentRetry < 2 ? 'client_preview_incomplete_retry_scheduled' : 'client_preview_blocked_after_retries', {
+              telemetry.trace(currentRetry < 2 ? 'client_preview_incomplete_retry_scheduled' : 'client_preview_blocked_after_retries', {
                 requestId: previewClientRequestId,
                 responsePayload: {
                   fetched_match_count: fetchedMatches.length,
@@ -3314,7 +3257,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
           if (fullBoardIncompleteNoop) {
             previewBlockedIncompleteKeysRef.current.add(incompleteRequestKey)
             previewIncompleteRetryRef.current = { key: '', count: 0 }
-            traceClientPreviewEvent('client_preview_blocked_incomplete_noop', {
+            telemetry.trace('client_preview_blocked_incomplete_noop', {
               requestId: previewClientRequestId,
               responsePayload: {
                 fetched_match_count: fetchedMatches.length,
@@ -3340,7 +3283,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
               ? previewIncompleteRetryRef.current.count + 1
               : 1
             previewIncompleteRetryRef.current = { key: retryKey, count: currentRetry }
-            traceClientPreviewEvent(currentRetry < 2 ? 'client_preview_incomplete_retry_scheduled' : 'client_preview_blocked_after_retries', {
+            telemetry.trace(currentRetry < 2 ? 'client_preview_incomplete_retry_scheduled' : 'client_preview_blocked_after_retries', {
               requestId: previewClientRequestId,
               responsePayload: {
                 fetched_match_count: fetchedMatches.length,
@@ -3409,7 +3352,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             previewBlockedIncompleteKeysRef.current.clear()
             previewIncompleteRetryRef.current = { key: '', count: 0 }
             setSuggestedLiveMatches(current => current.length === 0 ? current : [])
-            traceClientPreviewEvent('client_preview_state_changed', {
+            telemetry.trace('client_preview_state_changed', {
               requestId: previewClientRequestId,
               detail: {
                 incomplete_request_key: incompleteTraceKey,
@@ -3422,7 +3365,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             return
           }
           if (previewAbortReason === 'cleanup' && errMsg.includes('Request cancelled')) {
-            traceClientPreviewEvent('client_preview_request_cancelled', {
+            telemetry.trace('client_preview_request_cancelled', {
               requestId: previewClientRequestId,
               detail: {
                 incomplete_request_key: incompleteTraceKey,
@@ -3439,10 +3382,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             : 'unknown'
           const isPersistAssignmentConflict = errMsg.includes('Could not persist live match suggestions')
             && errMsg.includes('already assigned or already played')
-          lastStuckHintRef.current = { kind: hintKind, courtIdxs: requestedReplacementCourtIdxs }
+          telemetry.lastStuckHintRef.current = { kind: hintKind, courtIdxs: requestedReplacementCourtIdxs }
           const fallbackMatches = isLocalPreviewFallbackEnabled() ? buildLocalFallbackPreview() : []
           if (fallbackMatches.length > 0) {
-            traceClientPreviewEvent('client_preview_fallback_not_committed', {
+            telemetry.trace('client_preview_fallback_not_committed', {
               requestId: previewClientRequestId,
               responsePayload: {
                 fallback_match_count: fallbackMatches.length,
@@ -3489,7 +3432,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
               suggestedLaneCacheRef.current.clear()
               setSuggestedLiveMatches(current => current.length === 0 ? current : [])
               previewUnblockNonceRef.current += 1
-              traceClientPreviewEvent('client_preview_persist_assignment_conflict_state_advanced', {
+              telemetry.trace('client_preview_persist_assignment_conflict_state_advanced', {
                 requestId: previewClientRequestId,
                 detail: {
                   request_live_state_version: snapshotLiveStateVersion,
@@ -3512,7 +3455,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
                   setPreviewRefreshNonce(value => value + 1)
                 })
               : false
-            traceClientPreviewEvent(conflictRetryCount < 2
+            telemetry.trace(conflictRetryCount < 2
               ? 'client_preview_persist_assignment_conflict_retry_scheduled'
               : 'client_preview_persist_assignment_conflict_terminal', {
               requestId: previewClientRequestId,
@@ -3551,7 +3494,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
           const retryScheduled = schedulePreviewRetry(`error:${incompleteRequestKey}`, retryDelayMs, () => {
             setPreviewRefreshNonce(value => value + 1)
           })
-          traceClientPreviewEvent('client_preview_edge_error_retry_scheduled', {
+          telemetry.trace('client_preview_edge_error_retry_scheduled', {
             requestId: previewClientRequestId,
             detail: {
               incomplete_request_key: incompleteTraceKey,
@@ -3590,7 +3533,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
             generationChanged: sessionGenerationRef.current !== requestSessionGeneration,
           })
           if (!isStillCurrent) {
-            traceClientPreviewEvent('client_preview_request_stale_finally', {
+            telemetry.trace('client_preview_request_stale_finally', {
               requestId: previewClientRequestId,
               detail: {
                 incomplete_request_key: incompleteTraceKey,
@@ -3614,7 +3557,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         cancelledBeforeStart = true
         clearTimeout(timer)
         previewPendingRequestKeysRef.current.delete(incompleteRequestKey)
-        traceClientPreviewEvent('client_preview_cancelled_before_start', {
+        telemetry.trace('client_preview_cancelled_before_start', {
           requestId: previewClientRequestId,
           detail: {
             incomplete_request_key: incompleteTraceKey,
@@ -3634,7 +3577,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
         previewAbortController?.abort()
       }
     }
-  }, [phase, previewLaneCacheKey, previewRequestKey, queryClient, rows.playerRows.length, sessionId, settingsHydrated, suggestedQueueCount, traceClientPreviewEvent])
+  }, [phase, previewLaneCacheKey, previewRequestKey, queryClient, rows.playerRows.length, sessionId, settingsHydrated, suggestedQueueCount, telemetry.trace])
   const liveLogicalRoundByMatchId = useMemo(
     () => buildLogicalRoundDisplayMap([...completedLiveMatches, ...activeLiveMatches], queueCourtCount),
     [activeLiveMatches, completedLiveMatches, queueCourtCount],
