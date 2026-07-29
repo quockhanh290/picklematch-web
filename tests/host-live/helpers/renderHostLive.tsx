@@ -71,7 +71,7 @@ jest.mock('@/lib/supabase', () => {
   }
 })
 
-jest.mock('../../../features/host/session-detail/next-round-v2/api', () => ({
+jest.mock('@/features/host/session-detail/next-round-v2/api', () => ({
   invokeLiveSessionFunction: jest.fn(async () => ({})),
   prewarmLiveSessionVersionGuard: jest.fn(async () => undefined),
   loadLatestSyncablePlayerIds: jest.fn(async () => []),
