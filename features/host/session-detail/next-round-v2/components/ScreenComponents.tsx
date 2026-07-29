@@ -78,7 +78,6 @@ import {
   repeatRiskLabel
 } from '../helpers'
 import type { SuggestedLiveMatchRow } from '../preview'
-import { applyPairIncrement } from '../preview-helpers'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const LIVE_SCORE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 90 : SCREEN_WIDTH > 360 ? 80 : 72
@@ -222,63 +221,6 @@ function RepeatCapBoardNotice() {
       </Text>
     </View>
   )
-}
-
-function buildProjectedStateAfterLiveMatch(
-  state: SessionState,
-  match: SessionLiveMatchRow,
-  roundNo?: number,
-): SessionState {
-  const playedIds = new Set([...match.team_a, ...match.team_b])
-  const players = new Map(state.players)
-  const effectiveRoundNo = roundNo ?? match.round_no ?? match.sequence_no
-
-  players.forEach((player, playerId) => {
-    if (playedIds.has(playerId)) {
-      players.set(playerId, {
-        ...player,
-        matches_played: player.matches_played + 1,
-        last_played_round: effectiveRoundNo,
-        consecutive_play: player.consecutive_play + 1,
-        consecutive_rest: 0,
-        opted_rest: false,
-      })
-      return
-    }
-  })
-
-  applyPairIncrement(players, match.team_a[0], match.team_a[1], 'partner')
-  applyPairIncrement(players, match.team_b[0], match.team_b[1], 'partner')
-  for (const playerAId of match.team_a) {
-    for (const playerBId of match.team_b) {
-      applyPairIncrement(players, playerAId, playerBId, 'opponent')
-    }
-  }
-
-  const newMatch = {
-    court_idx: match.court_idx ?? 0,
-    team_a: match.team_a,
-    team_b: match.team_b,
-  }
-  const existingRound = state.rounds.find(r => r.round_no === effectiveRoundNo)
-  const rounds = existingRound
-    ? state.rounds.map(r =>
-        r.round_no === effectiveRoundNo ? { ...r, matches: [...r.matches, newMatch] } : r,
-      )
-    : [
-        ...state.rounds,
-        {
-          session_id: state.session_id,
-          round_no: effectiveRoundNo,
-          status: 'completed' as const,
-          matches: [newMatch],
-          resting: [],
-          started_at: match.started_at ? new Date(match.started_at) : null,
-          ended_at: new Date(),
-        },
-      ]
-
-  return { ...state, players, rounds }
 }
 
 function nowMs() {
