@@ -1,3 +1,14 @@
+# BUGS PHÁT HIỆN TRONG REFACTOR host-live (KHÔNG fix trong đợt tách logic — PR riêng)
+
+- **Hydrate-stomp sau mini-recover** (phát hiện task A2, 2026-07-28): effect hydrate `suggestedLiveMatches` từ DB rows (NextRoundSuggesterScreenV2.tsx:2185-2247) unconditionally overwrite state khi computed key khác, có `activeLiveMatches` trong deps → sau khi mini-recover (replace_courts) fetch bản ephemeral cho sân vừa trống, effect này có thể ĐÈ mất bản đó (chỉ giữ DB-persisted rows). Hệ quả: sân vừa trống có thể không hiện gợi ý thay thế vừa fetch. Chưa verify mức độ ảnh hưởng thật (test A2 chỉ pin request shape, không pin nội dung sân trống). Cần điều tra riêng.
+- **LiveMatchBoard dead code**: `ScreenComponents.tsx` export `LiveMatchBoard` nhưng screen render `CourtLaneLiveMatchBoard` (NextRoundSuggesterScreenV2.tsx:168). Xác nhận trước khi task split ScreenComponents di chuyển code board.
+- **`SuggestedLiveMatchRow` bị duplicate 4 lần** (phát hiện task B1, 2026-07-28): screen (cục bộ, không export), `next-round-v2/preview.ts:43` (export), `next-round-v2/components/ScreenComponents.tsx:383` (cục bộ), `lib/next-round-suggester/live-preview.ts:302` (export) — 4 bản khai báo cấu trúc gần giống nhau, không import chéo. TS structural typing khiến chúng "vô tình" tương thích nên chưa gây lỗi biên dịch, nhưng là rủi ro drift (sửa field ở 1 chỗ không tự lan). Task B1 thêm 1 bản thứ 5 trong `preview-helpers.ts` (chỉ dùng nội bộ cho `swapPlayersInSuggestedMatch`) theo đúng tiền lệ hiện có — KHÔNG hợp nhất, ngoài phạm vi B1. Nên gộp về 1 nguồn (`live-preview.ts` có vẻ là source hợp lý nhất, đã export) ở 1 task dọn riêng.
+- **`isRecentSuggestedLiveMatch` không được export từ `live-preview.ts`** (phát hiện task B1, 2026-07-28, đã verify pre-existing bằng `git stash` + `tsc --noEmit` trên cây sạch): `next-round-v2/preview.ts:15` import tên này nhưng `lib/next-round-suggester/live-preview.ts` không export nó → `npm run typecheck:guard` báo lỗi TS2305 mới (chưa có trong baseline). Không thuộc phạm vi B1 (không đụng `preview.ts`/`live-preview.ts`), không fix.
+- **`getPayloadPvnaGap is not defined`** ở `scripts/diagnostics/simulate-live-preview-policy.ts:430` (phát hiện task B1, 2026-07-28): `npm run lint:errors` báo `no-undef`, pre-existing, ngoài phạm vi B1.
+- **E2 BLOCKER — effect-order không bảo toàn được khi gom vào 1 hook** (task E2, 2026-07-28): ~14 effect preview/mutation nằm XEN KẼ với 5 effect ở lại (shell-paint 598, autoRepair 701, focus 798, autoSync 904, AppState 924). Gom hết vào 1 `usePreviewOrchestrator()` → đổi thứ tự đăng ký effect toàn cục. Tương tác nhạy thứ tự cụ thể: session-reset effect (630, move) set `autoRepairStateAttemptedRef.current=false`; autoRepair (701, ở lại) đọc ref đó để quyết fire repair. Khi đổi session vào recap-inconsistent lúc ref đã `true` → thứ tự cũ (reset→autoRepair) fire repair, thứ tự mới (autoRepair→reset) SKIP. Không có vị trí đặt hook nào bảo toàn được (moved effects nằm 2 phía của staying effects). Chỉ cách bảo toàn = kéo cả autoRepair/autoSync/AppState/focus vào hook (runAction/scheduleReconcile/syncRoster giữ ở screen, thread vào deps). → OWNER CHỌN HƯỚNG NÀY (option A: hook rộng `useLiveBoard`). ĐÃ LÀM: gom TẤT CẢ 18 effect vào hook theo ĐÚNG thứ tự nguồn → screen 0 effect → registration order byte-identical. Screen 4148→1155 dòng. Test 5×44 xanh warm, tsc 0 lỗi mới, no-BOM. Verbatim move (hydrate-stomp move nguyên trạng). Deps/output + APP QA CHECKLIST đầy đủ ở `task-E2-report.md`. Owner QA app thật sau rebuild (đặc biệt: session-switch → auto-repair, mục #1 checklist).
+
+---
+
 # SWEEP AUDIT — Scalability & Auditability (2026-07-27)
 
 Phương pháp: 6 agent điều tra song song (đọc code + đo thực `npx tsx` + đọc schema/migration). Các finding CONFIRMED trọng yếu đã tự verify lại bằng đọc code trực tiếp. Read-only, CHƯA sửa gì.
@@ -119,6 +130,8 @@ Cliff phụ (phần lớn PLAUSIBLE/lịch sử, không confirm nặng): client 
 ---
 
 # CODE-QUALITY AUDIT — God Components & Tách UI/Logic (2026-07-27)
+
+→ ĐÃ REFACTOR (2026-07-28): NextRoundSuggesterScreenV2 4148→1061 (useLiveBoard+telemetry+scrollDebug+predicates), HostMatchScreen 1754→1222 (controller+api+scheduleGenerators). Chi tiết: `.superpowers/sdd/2026-07-27-host-live-logic-ui-separation/` (progress.md = ledger, task-*-brief/report.md per task).
 
 Phương pháp: đo line-count toàn repo + 2 agent soi sâu + tự verify (grep React trong lib/, đếm component export). Read-only.
 

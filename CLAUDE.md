@@ -16,6 +16,8 @@
 app/                  Expo Router file-based routes (screens)
 components/           Shared UI components
 features/             Feature-specific screens & logic (e.g. host/session-detail)
+  host/session-detail/next-round-v2/hooks/   hooks split from NextRoundSuggesterScreenV2 (useLiveBoard = preview+mutation state-machine, usePreviewTelemetry, useScrollDebug)
+  host/session-detail/host-match/            logic split from HostMatchScreen (scheduleGenerators = pure, api.ts = I/O, useHostMatchController)
 lib/                  Pure domain logic (no React)
   next-round-suggester/   Core suggestion algorithm
   i18n/               i18next setup + translations
@@ -29,6 +31,8 @@ tests/
 scripts/              One-off scripts, run with `tsx` or `node`
 scratch/              Throwaway benchmarks, not linted
 ```
+
+Pattern: host-live/host-match screens use controller-hook + api.ts + thin screen (the repo's "new world" standard).
 
 ## Commands
 
