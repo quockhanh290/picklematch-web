@@ -10,9 +10,7 @@ import { Alert, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpac
 import { deleteAllMatchesForSession } from './host-match/api'
 import { useHostMatchController } from './host-match/useHostMatchController'
 import { MatchControlHeader } from './MatchControlHeader'
-import { MatchControlSection } from './MatchControlSection'
 import { MatchPlayerManagementPanel } from './MatchPlayerManagementPanel'
-import { ScheduleCoverageReport } from './ScheduleCoverageReport'
 import { ScheduleSetupPanel } from './ScheduleSetupPanel'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
@@ -39,9 +37,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   const theme = useAppTheme()
   const [editingPendingIndex, setEditingPendingIndex] = useState<number | null>(null)
   const [showAllProgress, setShowAllProgress] = useState(false)
-  const [appliedScheduleMode] = useState<'full' | 'limited'>('full')
-  const [appliedMinGames] = useState(1)
-  const [showScheduleDiagnostics, setShowScheduleDiagnostics] = useState(false)
 
   const {
     isRoundRobinMode,
@@ -138,24 +133,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
           scheduleCourtCount={scheduleCourtCount}
           onScheduleCourtCountChange={setScheduleCourtCount}
         />
-      )}
-
-      {false && isRoundRobinMode && (
-      <MatchControlSection
-        title="CHI TIẾT THUẬT TOÁN"
-        subtitle="Mở khi cần kiểm tra độ phủ (coverage), thời gian chạy (runtime) và chất lượng lịch."
-        expanded={showScheduleDiagnostics}
-        onToggle={() => setShowScheduleDiagnostics(value => !value)}
-      >
-        <ScheduleCoverageReport
-          players={scheduledPlayers.length > 0 ? scheduledPlayers : activePlayers}
-          schedule={pendingRoundRobinMatches.length > 0 ? pendingRoundRobinMatches : fullRotationSchedule}
-          mode={appliedScheduleMode}
-          minGamesPerPlayer={appliedMinGames}
-          quality={scheduleQuality}
-          variant={isRoundRobinMode ? 'round-robin' : 'fixed'}
-        />
-      </MatchControlSection>
       )}
     </>
   )
@@ -995,22 +972,6 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                 )
               })()}
             </View>
-
-            {/* Odd player warning */}
-            {false && players.filter(p => p.status === 'confirmed' && p.checkInStatus !== 'no_show').length % 2 !== 0 && (
-              <View style={{ backgroundColor: '#FEF9EE', borderRadius: RADIUS.md, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#F5DFA0' }}>
-                <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 12, color: '#854F0B', marginBottom: 4 }}>
-                  ⚠ Có người dự bị trong chế độ cố định
-                </Text>
-                <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: '#7A8884', lineHeight: 16 }}>
-                  Người lẻ sẽ không nằm trong cặp cố định/lịch nháp hiện tại. Nếu muốn xoay đều người lẻ, chuyển sang{' '}
-                  <Text style={{ color: '#0F6E56', fontWeight: '700' }}>
-                    Round Robin
-                  </Text>
-                  {' '}để xử lý linh hoạt hơn.
-                </Text>
-              </View>
-            )}
 
             <View style={{ gap: 12 }}>
               {(pendingRoundRobinMatches.length > 0 || fullRotationSchedule.length > 0) && teamIds.map((tA, idx) => teamIds.slice(idx + 1).map(tB => (
