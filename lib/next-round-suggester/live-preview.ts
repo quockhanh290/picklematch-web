@@ -4584,70 +4584,86 @@ export function buildSuggestedMatchPayloads({
     let rescueCourtIdxs: number[] = []
     let degradedCounterfactual: string | undefined
     if (options.blowoutRescue === true) {
-      // Never silently defer. If the only available lineup is degraded (Phase 1: blowout / Phase 2:
-      // a 3rd meeting), SEAT it (host can "Chơi luôn") and offer the live courts whose completion
-      // would enable a better lineup ("Chờ Sân X"). Repeat caps are 2 → count >= 3 is "over".
-      const isBlowout = pvnaDiff > Math.max(1.5, configuredPvnaTolerance + 1)
-      const seatedRepeat = getProjectedRepeatSummary(match.team_a, match.team_b, suggestionStateForCourt)
-      const isRepeat = seatedRepeat.max_opponent_pair_count >= 3 || seatedRepeat.max_partner_pair_count >= 3
-      if ((isBlowout || isRepeat) && count === 1 && liveCourtIdxs.size > 0) {
-        const liveCourtPlayers = new Map<number, string[]>()
-        for (const [playerId, playerCourtIdx] of liveLockedPlayerCourtIdxs) {
-          if (!liveCourtIdxs.has(playerCourtIdx)) continue
-          const players = liveCourtPlayers.get(playerCourtIdx) ?? []
-          players.push(playerId)
-          liveCourtPlayers.set(playerCourtIdx, players)
-        }
-        // Dedicated budget: the per-court budget is already spent by the seated suggest above, so
-        // draw from the (still-ample on a single-court refill) batch budget instead.
-        const rescueBudgetMs = Math.max(120, Math.min(400, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)))
-        rescueCourtIdxs = findRescueCourts({
-          state: suggestionStateForCourt,
-          courtIdx,
-          busyIds,
-          liveCourtPlayers,
-          // A rescue court must fix EVERY problem the seated lineup has (else waiting isn't honest).
-          isFixed: (teamA, teamB) => {
-            if (isBlowout) {
-              const pv = (id: string) => {
-                const player = suggestionStateForCourt.players.get(id)
-                return player ? getEffectivePvna(player) : 0
-              }
-              const gap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
-              if (gap > configuredPvnaTolerance + 0.5) return false
-            }
-            if (isRepeat) {
-              const rescued = getProjectedRepeatSummary(teamA, teamB, suggestionStateForCourt)
-              if (rescued.max_opponent_pair_count >= 3 || rescued.max_partner_pair_count >= 3) return false
-            }
-            return true
-          },
-          perCourtRuntimeMs: 100,
-          budgetMs: rescueBudgetMs,
-          nowMsFn: nowMs,
-        })
-        degradedReason = isBlowout && isRepeat ? 'both' : isBlowout ? 'blowout' : 'repeat'
-        if (isRepeat) {
-          degradedCounterfactual = computeRepeatCounterfactual({
-            teamA: match.team_a as Team,
-            teamB: match.team_b as Team,
+      try {
+        // Never silently defer. If the only available lineup is degraded (Phase 1: blowout / Phase 2:
+        // a 3rd meeting), SEAT it (host can "Chơi luôn") and offer the live courts whose completion
+        // would enable a better lineup ("Chờ Sân X"). Repeat caps are 2 → count >= 3 is "over".
+        const isBlowout = pvnaDiff > Math.max(1.5, configuredPvnaTolerance + 1)
+        const seatedRepeat = getProjectedRepeatSummary(match.team_a, match.team_b, suggestionStateForCourt)
+        const isRepeat = seatedRepeat.max_opponent_pair_count >= 3 || seatedRepeat.max_partner_pair_count >= 3
+        if ((isBlowout || isRepeat) && count === 1 && liveCourtIdxs.size > 0) {
+          const liveCourtPlayers = new Map<number, string[]>()
+          for (const [playerId, playerCourtIdx] of liveLockedPlayerCourtIdxs) {
+            if (!liveCourtIdxs.has(playerCourtIdx)) continue
+            const players = liveCourtPlayers.get(playerCourtIdx) ?? []
+            players.push(playerId)
+            liveCourtPlayers.set(playerCourtIdx, players)
+          }
+          // Dedicated budget: the per-court budget is already spent by the seated suggest above, so
+          // draw from the (still-ample on a single-court refill) batch budget instead.
+          const rescueBudgetMs = Math.max(120, Math.min(400, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)))
+          rescueCourtIdxs = findRescueCourts({
             state: suggestionStateForCourt,
-            busyIds,
             courtIdx,
-            seatedGap: pvnaDiff,
-            runtimeMs: Math.max(60, Math.min(150, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt) - 50)),
+            busyIds,
+            liveCourtPlayers,
+            // A rescue court must fix EVERY problem the seated lineup has (else waiting isn't honest).
+            isFixed: (teamA, teamB) => {
+              if (isBlowout) {
+                const pv = (id: string) => {
+                  const player = suggestionStateForCourt.players.get(id)
+                  return player ? getEffectivePvna(player) : 0
+                }
+                const gap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
+                if (gap > configuredPvnaTolerance + 0.5) return false
+              }
+              if (isRepeat) {
+                const rescued = getProjectedRepeatSummary(teamA, teamB, suggestionStateForCourt)
+                if (rescued.max_opponent_pair_count >= 3 || rescued.max_partner_pair_count >= 3) return false
+              }
+              return true
+            },
+            perCourtRuntimeMs: 100,
+            budgetMs: rescueBudgetMs,
+            nowMsFn: nowMs,
           })
+          degradedReason = isBlowout && isRepeat ? 'both' : isBlowout ? 'blowout' : 'repeat'
+          if (isRepeat) {
+            degradedCounterfactual = computeRepeatCounterfactual({
+              teamA: match.team_a as Team,
+              teamB: match.team_b as Team,
+              state: suggestionStateForCourt,
+              busyIds,
+              courtIdx,
+              seatedGap: pvnaDiff,
+              runtimeMs: Math.max(60, Math.min(150, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt) - 50)),
+            })
+          }
+          try {
+            options.onInstrumentEvent?.({
+              event: 'repair',
+              detail: `degraded_seated_with_rescue:court=${courtIdx};reason=${degradedReason};pvna=${pvnaDiff.toFixed(2)};maxOpp=${seatedRepeat.max_opponent_pair_count};rescue=${rescueCourtIdxs.join('|') || 'none'}`,
+              court_count: courtCount,
+              available: availablePlayerCount,
+            })
+          } catch { /* noop */ }
         }
+        // fall through: seat the lineup (no continue) — host decides via "Chờ Sân X" / "Chơi luôn".
+      } catch {
+        // Metadata-only failure — the lineup itself was already selected above. Fail soft: seat it
+        // without degraded metadata rather than aborting the whole batch (edge 500).
+        degradedReason = undefined
+        rescueCourtIdxs = []
+        degradedCounterfactual = undefined
         try {
           options.onInstrumentEvent?.({
             event: 'repair',
-            detail: `degraded_seated_with_rescue:court=${courtIdx};reason=${degradedReason};pvna=${pvnaDiff.toFixed(2)};maxOpp=${seatedRepeat.max_opponent_pair_count};rescue=${rescueCourtIdxs.join('|') || 'none'}`,
+            detail: `rescue_metadata_failed:court=${courtIdx}`,
             court_count: courtCount,
             available: availablePlayerCount,
           })
         } catch { /* noop */ }
       }
-      // fall through: seat the lineup (no continue) — host decides via "Chờ Sân X" / "Chơi luôn".
     } else if (shouldDeferTightPoolSuggestion({
       enabled: options.deferExtremeTightPool === true && count === 1,
       waitActive: tightPoolWaitIsActive,
@@ -4715,8 +4731,10 @@ export function buildSuggestedMatchPayloads({
         available_pool_quality: availablePoolQuality,
       }
     }
-    const matchExplanations = options.blowoutRescue === true
-      ? explainMatchCompromises({
+    let matchExplanations: string[] = []
+    if (options.blowoutRescue === true) {
+      try {
+        matchExplanations = explainMatchCompromises({
           teamA: match.team_a as Team,
           teamB: match.team_b as Team,
           state: suggestionStateForCourt,
@@ -4726,7 +4744,12 @@ export function buildSuggestedMatchPayloads({
             .map(player => player.player_id),
           pvnaTolerance: configuredPvnaTolerance,
         })
-      : []
+      } catch {
+        // Metadata-only failure — fail soft, seat the match without explanations rather than
+        // aborting the whole batch (edge 500).
+        matchExplanations = []
+      }
+    }
     if (degradedCounterfactual) matchExplanations.push(degradedCounterfactual)
     payloads.push({
       court_idx: courtIdx,
