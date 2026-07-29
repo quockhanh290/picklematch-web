@@ -70,6 +70,29 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
+
+// --- Wait-rescue "how lopsided is lopsided" thresholds ---------------------------------------
+// Three separate questions, three separate bars, all measured off the same configuredPvnaTolerance:
+//   1. DETECT (BLOWOUT_DEGRADE_GAP_FLOOR / _TOLERANCE_MARGIN): is the SEATED lineup bad enough to
+//      seat-degrade (degraded_reason='blowout') and offer a "Chờ Sân X" wait button? Bar is HIGH —
+//      mirrors the "genuine blowout" concept in shouldDeferTightPoolSuggestion's persistentOutlier
+//      check above (same floor/margin values, different feature/caller — not shared on purpose,
+//      keep them independently editable).
+//   2. RESCUE_FIXED_GAP_CEILING_MARGIN: once a wait-rescue search finds an alternative lineup, is
+//      THAT lineup good enough to call the blowout "fixed"? A different question from #1 — "did the
+//      rescue actually help", not "was the seat bad enough to search" — so it is intentionally not
+//      the same value. Looser than raw tolerance so a near-perfect alt isn't rejected over a trivial
+//      residual gap.
+//   3. EXPLAIN_LOPSIDED_GAP_MARGIN: bar for including a "Trận lệch X điểm" line in the seated
+//      match's compromise list (explainMatchCompromises). Deliberately LOWER than DETECT: that list
+//      surfaces EVERY compromise in the seated lineup (in the same function, a 2nd-meeting repeat
+//      within cap is listed too, well under the >=3 DETECT/isRepeat cap) — it is informational for
+//      any tolerance-exceeding match, not gated to ones severe enough to justify a wait offer. A
+//      "Trận lệch" line appearing without degraded_reason='blowout' is by design, not a threshold bug.
+const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
+const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
+const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
+const EXPLAIN_LOPSIDED_GAP_MARGIN = 0
 export const LIVE_PREVIEW_ALGORITHM_VERSION = 31
 
 const BEAM_K = 3
@@ -3569,7 +3592,7 @@ export function explainMatchCompromises(input: {
       out.push(`${nm(strong)}(${pv(strong).toFixed(1)}) + ${nm(weak)}(${pv(weak).toFixed(1)}) cùng đội để cân tổng 2 đội`)
     }
   }
-  if (totalGap > pvnaTolerance) {
+  if (totalGap > pvnaTolerance + EXPLAIN_LOPSIDED_GAP_MARGIN) {
     const lowIds = availableIds.filter(id => pv(id) <= 3.0)
     const highIds = availableIds.filter(id => pv(id) >= 4.0)
     let why = ''
@@ -4588,7 +4611,10 @@ export function buildSuggestedMatchPayloads({
         // Never silently defer. If the only available lineup is degraded (Phase 1: blowout / Phase 2:
         // a 3rd meeting), SEAT it (host can "Chơi luôn") and offer the live courts whose completion
         // would enable a better lineup ("Chờ Sân X"). Repeat caps are 2 → count >= 3 is "over".
-        const isBlowout = pvnaDiff > Math.max(1.5, configuredPvnaTolerance + 1)
+        const isBlowout = pvnaDiff > Math.max(
+          BLOWOUT_DEGRADE_GAP_FLOOR,
+          configuredPvnaTolerance + BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN,
+        )
         const seatedRepeat = getProjectedRepeatSummary(match.team_a, match.team_b, suggestionStateForCourt)
         const isRepeat = seatedRepeat.max_opponent_pair_count >= 3 || seatedRepeat.max_partner_pair_count >= 3
         if ((isBlowout || isRepeat) && count === 1 && liveCourtIdxs.size > 0) {
@@ -4615,7 +4641,7 @@ export function buildSuggestedMatchPayloads({
                   return player ? getEffectivePvna(player) : 0
                 }
                 const gap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
-                if (gap > configuredPvnaTolerance + 0.5) return false
+                if (gap > configuredPvnaTolerance + RESCUE_FIXED_GAP_CEILING_MARGIN) return false
               }
               if (isRepeat) {
                 const rescued = getProjectedRepeatSummary(teamA, teamB, suggestionStateForCourt)
