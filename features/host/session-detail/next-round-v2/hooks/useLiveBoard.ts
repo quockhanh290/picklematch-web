@@ -7,7 +7,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { buildPreviewBatchKey } from '../preview'
+import { buildPreviewBatchKey, type SuggestedLiveMatchRow } from '../preview'
 import { buildPreviewPolicyFingerprint } from '../preview-policy'
 import { createClientTraceId, fetchLiveMatchesPreview, fetchLiveSessionVersion } from '../api'
 import { LIVE_VERSION_POLL_INTERVAL_MS, shouldRefetchForExternalVersion } from '../version-poll'
@@ -28,9 +28,6 @@ import {
 import type {
   SessionLiveMatchRow,
   SessionState,
-  SuggestionTradeoff,
-  SuggestionTradeoffChoice,
-  SuggestionTradeoffChoiceId,
 } from '@/lib/next-round-suggester/types'
 import { supabase } from '@/lib/supabase'
 import { repairLiveSessionPlayerStateFromRounds } from '../api'
@@ -58,31 +55,6 @@ type ActionResult = {
     expectedRoundNo?: number | null
     expectedRoundStatus?: 'active' | 'completed'
   }
-}
-type SuggestedLiveMatchRow = SessionLiveMatchRow & {
-  preview_source?: 'edge_committed' | 'session_plan' | 'edge_partial' | 'local_fallback' | 'manual_available_pool'
-  preview_request_key?: string
-  preview_request_serial?: number
-  preview_live_state_version?: number | null
-  preview_countable_match_count?: number | null
-  preview_max_sequence_no?: number | null
-  warnings?: string[]
-  tradeoffs?: SuggestionTradeoff[]
-  approval_required?: boolean
-  configured_pvna_tolerance?: number
-  effective_pvna_tolerance?: number
-  fairness_reasons?: string[]
-  fairness_reason_details?: string[]
-  tradeoff_choices?: SuggestionTradeoffChoice[]
-  recommended_tradeoff_choice?: SuggestionTradeoffChoiceId
-  live_availability_context?: {
-    locked_player_count: number
-    live_court_count: number
-    locked_beam_quality?: number
-    available_pool_quality?: number
-  }
-  locked_player_ids?: string[]
-  available_pool_only?: boolean
 }
 type LiveDisplayMatchRow = SessionLiveMatchRow & {
   client_preview_id?: string

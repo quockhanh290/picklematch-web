@@ -55,7 +55,6 @@ import type {
   SessionState,
   SuggestionAlternative,
   SuggestionResult,
-  SuggestionTradeoff,
   SuggestionTradeoffChoice,
   SuggestionTradeoffChoiceId
 } from '@/lib/next-round-suggester/types'
@@ -78,6 +77,7 @@ import {
   playerName,
   repeatRiskLabel
 } from '../helpers'
+import type { SuggestedLiveMatchRow } from '../preview'
 import { applyPairIncrement } from '../preview-helpers'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
@@ -315,31 +315,6 @@ type BuildSuggestedMatchOptions = {
   courtIdx?: number
   stateOverride?: SessionState
   liveMatchRowsOverride?: SessionLiveMatchRow[]
-}
-
-type SuggestedLiveMatchRow = SessionLiveMatchRow & {
-  preview_source?: 'edge_committed' | 'session_plan' | 'edge_partial' | 'local_fallback' | 'manual_available_pool'
-  preview_request_key?: string
-  preview_request_serial?: number
-  preview_live_state_version?: number | null
-  preview_countable_match_count?: number | null
-  warnings?: string[]
-  tradeoffs?: SuggestionTradeoff[]
-  approval_required?: boolean
-  configured_pvna_tolerance?: number
-  effective_pvna_tolerance?: number
-  fairness_reasons?: string[]
-  fairness_reason_details?: string[]
-  tradeoff_choices?: SuggestionTradeoffChoice[]
-  recommended_tradeoff_choice?: SuggestionTradeoffChoiceId
-  live_availability_context?: {
-    locked_player_count: number
-    live_court_count: number
-    locked_beam_quality?: number
-    available_pool_quality?: number
-  }
-  locked_player_ids?: string[]
-  available_pool_only?: boolean
 }
 
 type LiveDisplayMatchRow = SessionLiveMatchRow & {

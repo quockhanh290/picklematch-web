@@ -24,9 +24,6 @@ import type {
   SessionLiveMatchRow,
   SessionPlayerStateRow,
   SessionState,
-  SuggestionTradeoff,
-  SuggestionTradeoffChoice,
-  SuggestionTradeoffChoiceId,
 } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { supabase } from '@/lib/supabase'
@@ -34,6 +31,7 @@ import { useAppTheme } from '@/lib/theme-context'
 import { invokeLiveSessionFunction, loadLatestSyncablePlayerIds, markSessionPlayersPresent } from './next-round-v2/api'
 import { Card, NextRoundSheet, PlayerAvatar, SheetTitle } from './next-round-v2/components'
 import { swapPlayersInSuggestedMatch } from './next-round-v2/preview-helpers'
+import type { SuggestedLiveMatchRow } from './next-round-v2/preview'
 import { NavbarRightActions } from './next-round-v2/controls'
 import {
   HistorySheet as HistorySheetView,
@@ -75,32 +73,6 @@ type ActionResult = {
     expectedRoundNo?: number | null
     expectedRoundStatus?: 'active' | 'completed'
   }
-}
-
-type SuggestedLiveMatchRow = SessionLiveMatchRow & {
-  preview_source?: 'edge_committed' | 'session_plan' | 'edge_partial' | 'local_fallback' | 'manual_available_pool'
-  preview_request_key?: string
-  preview_request_serial?: number
-  preview_live_state_version?: number | null
-  preview_countable_match_count?: number | null
-  preview_max_sequence_no?: number | null
-  warnings?: string[]
-  tradeoffs?: SuggestionTradeoff[]
-  approval_required?: boolean
-  configured_pvna_tolerance?: number
-  effective_pvna_tolerance?: number
-  fairness_reasons?: string[]
-  fairness_reason_details?: string[]
-  tradeoff_choices?: SuggestionTradeoffChoice[]
-  recommended_tradeoff_choice?: SuggestionTradeoffChoiceId
-  live_availability_context?: {
-    locked_player_count: number
-    live_court_count: number
-    locked_beam_quality?: number
-    available_pool_quality?: number
-  }
-  locked_player_ids?: string[]
-  available_pool_only?: boolean
 }
 
 

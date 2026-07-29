@@ -41,8 +41,12 @@ export type BuildSuggestedMatchOptions = {
 }
 
 export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
+  preview_source?: 'edge_committed' | 'session_plan' | 'edge_partial' | 'local_fallback' | 'manual_available_pool'
+  preview_request_key?: string
+  preview_request_serial?: number
   preview_live_state_version?: number | null
   preview_countable_match_count?: number | null
+  preview_max_sequence_no?: number | null
   warnings?: string[]
   tradeoffs?: SuggestionTradeoff[]
   approval_required?: boolean
