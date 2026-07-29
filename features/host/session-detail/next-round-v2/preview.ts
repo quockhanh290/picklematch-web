@@ -12,7 +12,6 @@ import {
   buildLiveSelectionGuard,
   buildProjectedStateAfterCompletedLiveRound,
   isLiveRoundFullyCompleted,
-  isRecentSuggestedLiveMatch,
   warnLiveRoundProjectionDrift,
 } from '@/lib/next-round-suggester/live-preview'
 import type {
@@ -498,9 +497,9 @@ export function buildSuggestedMatchPayloads({
   let suggestMs = 0
   let projectMs = 0
   let suggestionState = options.stateOverride ?? state
-  const previewNowMs = Date.now()
-  const liveMatchRows = (options.liveMatchRowsOverride ?? rows.liveMatchRows)
-    .filter(match => match.status !== 'suggested' || isRecentSuggestedLiveMatch(match, previewNowMs))
+  // Persisted suggestions are authoritative locks until they are replaced or
+  // cancelled. Their age must not make their players available to another court.
+  const liveMatchRows = options.liveMatchRowsOverride ?? rows.liveMatchRows
   const previewSeedBase = buildPreviewBatchKey(
     sessionId,
     state,

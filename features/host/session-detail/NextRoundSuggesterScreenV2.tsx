@@ -690,10 +690,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
               {qualityDeferredCourts.length > 0 ? (
                 <Card style={{ padding: 12, marginBottom: 12, backgroundColor: theme.warningBg }}>
                   <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12.5, color: theme.warningText }}>
-                    Sân {qualityDeferredCourts.map(court => court + 1).join(', ')} đang chờ ghép cân
+                    Sân {qualityDeferredCourts.map(court => court + 1).join(', ')} đang chờ ghép cân (tránh trận lệch)
                   </Text>
                   <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText, marginTop: 2 }}>
-                    Người còn rảnh lúc này chỉ ghép được trận chênh lệch nhiều — engine đợi một sân xong để có người cân hơn rồi tự fill. Đây là chờ CÓ CHỦ ĐÍCH để tránh trận lệch, không phải lỗi.
+                    Người còn rảnh lúc này chỉ ghép được trận chênh lệch nhiều. Để mở khóa NGAY: hoàn thành một sân đang chạy để giải phóng người cân hơn — hoặc chờ chút, engine sẽ tự ghép khi đủ người. Đây là chờ CÓ CHỦ ĐÍCH, không phải lỗi.
                   </Text>
                 </Card>
               ) : null}

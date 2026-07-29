@@ -3,14 +3,7 @@ import { getCourtPresetTargetMatches, PRESETS, PRESET_ROTATION_TARGETS } from '.
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { computeCourtRepeatPressure } from './pressure.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import type {
-  CourtCalculatorInput,
-  CourtOption,
-  CourtPreset,
-  CourtWarning,
-  CourtWarningAlternative,
-  CourtWarningPreview,
-} from './types.ts'
+import type { CourtCalculatorInput, CourtOption, CourtPreset, CourtWarning, CourtWarningAlternative, CourtWarningPreview } from './types.ts'
 
 const DEFAULT_MATCH_DURATION_MIN = 15
 

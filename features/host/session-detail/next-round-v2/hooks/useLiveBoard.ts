@@ -2300,6 +2300,13 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
               })
             })
           }
+          // Deferred courts must surface even when the edge returns an empty board: the anti-blowout
+          // defer produces no lineup, so edgeReturnedFinalBoard is false below and the board branch is
+          // skipped. Set this here, before that branch, so the "waiting for a balanced match" banner
+          // shows on the exact response it describes instead of only when a board comes back.
+          setQualityDeferredCourts(Array.isArray(res.quality_deferred_courts)
+            ? res.quality_deferred_courts.filter((court: unknown): court is number => typeof court === 'number')
+            : [])
           const edgeReturnedFinalBoard = Array.isArray(res.final_preview_board) && res.final_preview_board.length > 0
           const responsePayloads = edgeReturnedFinalBoard
             ? res.final_preview_board.filter((match: any) => isStartablePreviewRow(match))
@@ -2590,9 +2597,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
             } else {
               setCourtShortageBreakdown(null)
             }
-            setQualityDeferredCourts(Array.isArray(res.quality_deferred_courts)
-              ? res.quality_deferred_courts.filter((court: unknown): court is number => typeof court === 'number')
-              : [])
             if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch done', {
               totalMs: Math.round(nowMs() - previewT0),
               matchCount: committedCandidateMatches.length,
