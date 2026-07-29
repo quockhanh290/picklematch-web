@@ -1671,19 +1671,6 @@ export function buildLogicalRoundDisplayMap(matches: SessionLiveMatchRow[], roun
   ]))
 }
 
-export function RoundDivider({ roundNo }: { roundNo: number }) {
-  const theme = useAppTheme()
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-      <View style={{ flex: 1, height: BORDER.hairline, backgroundColor: theme.outlineVariant }} />
-      <View style={{ borderRadius: RADIUS.full, borderWidth: BORDER.hairline, borderColor: theme.outlineVariant, backgroundColor: theme.surfaceContainerLow, paddingHorizontal: 10, paddingVertical: 4 }}>
-        <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10, color: theme.outline, fontWeight: '800' }}>Vòng {roundNo}</Text>
-      </View>
-      <View style={{ flex: 1, height: BORDER.hairline, backgroundColor: theme.outlineVariant }} />
-    </View>
-  )
-}
-
 export function SuggestedRoundHeader({ roundNo, targetRounds }: { roundNo: number; targetRounds: number }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2, marginBottom: 2 }}>
