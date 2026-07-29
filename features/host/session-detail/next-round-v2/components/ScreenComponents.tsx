@@ -1887,6 +1887,29 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     qualityGap === null ||
     qualityGap >= 0.2
   )
+  // Degraded-rescue (Phase 1 blowout / Phase 2 repeat): the lineup is seated & startable ("Chơi
+  // luôn"); if waiting for a specific live court would give a better match, surface it as an
+  // optional, non-blocking hint.
+  const isDegradedRescue = (match.degraded_reason === 'blowout' || match.degraded_reason === 'repeat' || match.degraded_reason === 'both')
+  const degradedRescueCourtIdxs = isDegradedRescue && !showingAvailablePoolPreview
+    ? (match.rescue_court_idxs ?? [])
+    : []
+  const showDegradedRescue = degradedRescueCourtIdxs.length > 0
+  const degradedRescueTitle = match.degraded_reason === 'repeat'
+    ? '⏳ Trận này bị trùng người'
+    : match.degraded_reason === 'both'
+      ? '⏳ Trận này hơi lệch & trùng'
+      : '⏳ Trận này hơi lệch trình'
+  const degradedRescueBenefit = match.degraded_reason === 'repeat'
+    ? 'đỡ trùng'
+    : match.degraded_reason === 'both'
+      ? 'tốt hơn'
+      : 'cân hơn'
+  const degradedRescueLabel = degradedRescueCourtIdxs.length > 0
+    ? `Chờ Sân ${degradedRescueCourtIdxs.map(idx => idx + 1).join(' hoặc ')} xong sẽ ${degradedRescueBenefit}`
+    : ''
+  // Phase 3: concrete per-match "vì sao xếp trận này" list (repeat/intra/blowout + reason).
+  const matchExplanations = !showingAvailablePoolPreview ? (match.match_explanations ?? []) : []
   const previewTrustIssue = visibleMatch.preview_source === 'local_fallback'
     ? 'fallback'
     : visibleMatch.preview_source === 'edge_partial'
@@ -2122,6 +2145,28 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
               )
             })}
           </View>
+        </View>
+      ) : null}
+      {showDegradedRescue ? (
+        <View style={{ marginHorizontal: 14, marginBottom: 12, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, backgroundColor: theme.warningBg, padding: 12, gap: 4 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12.5, color: theme.warningText, fontWeight: '900' }}>
+            {degradedRescueTitle}
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText }}>
+            {degradedRescueLabel} — hoặc bấm Bắt đầu để chơi luôn.
+          </Text>
+        </View>
+      ) : null}
+      {matchExplanations.length > 0 ? (
+        <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 2 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: colors.textSecondary, fontWeight: '700' }}>
+            Vì sao xếp trận này
+          </Text>
+          {matchExplanations.map((line, index) => (
+            <Text key={index} style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: colors.textSecondary }}>
+              • {line}
+            </Text>
+          ))}
         </View>
       ) : null}
       {false ? (

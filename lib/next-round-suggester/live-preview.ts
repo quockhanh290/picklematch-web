@@ -50,6 +50,7 @@ import type {
   SuggestionTradeoff,
   SuggestionTradeoffChoice,
   SuggestionTradeoffChoiceId,
+  Team,
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 } from './types.ts'
 
@@ -69,7 +70,7 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 26
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 31
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -282,6 +283,9 @@ export type BuildSuggestedMatchOptions = {
   ignoreCapacityLock?: boolean
   deferExtremeTightPool?: boolean
   tightPoolQualityDeferUntilByCourt?: Record<number, number>
+  // Phase 1: when true, a single-court refill that can only produce a blowout is SEATED (startable)
+  // instead of silently deferred, and the host is offered rescue courts to optionally wait for.
+  blowoutRescue?: boolean
   nowMs?: number
   rollingHorizon?: boolean
   rollingPlanTarget?: RollingPlanTarget | null
@@ -319,6 +323,13 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   }
   locked_player_ids?: string[]
   available_pool_only?: boolean
+  // Set when this seated lineup is degraded (Phase 1: 'blowout') and the host is offered a choice
+  // to wait for a specific live court to finish for a better lineup, or play this one now.
+  degraded_reason?: 'blowout' | 'repeat' | 'both'
+  // Live court idxs whose completion would let the engine build a non-degraded lineup ("sân cứu").
+  rescue_court_idxs?: number[]
+  // Phase 3: concrete per-match explanations of each compromise (repeat/intra/blowout) + reason.
+  match_explanations?: string[]
 }
 
 export type LiveDisplayMatchRow = SessionLiveMatchRow & {
@@ -330,7 +341,7 @@ export type SuggestedPreviewBatch = {
   matches: SuggestedLiveMatchRow[]
 }
 
-export type SuggestedMatchPayload = Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context' | 'locked_player_ids'>
+export type SuggestedMatchPayload = Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context' | 'locked_player_ids' | 'degraded_reason' | 'rescue_court_idxs' | 'match_explanations'>
 
 export type PreviewBoardMode = 'full_board' | 'replace_courts'
 
@@ -3429,6 +3440,153 @@ function findBestAvailablePoolQuality(
   return best
 }
 
+// When a single-court refill can only produce a degraded lineup (blowout for Phase 1), find which
+// currently-live courts, once they finish and free their players, would let the engine build a
+// NON-degraded lineup instead. Every candidate is produced by the real engine (suggestNextMatch),
+// so a "rescue" lineup is invariant-valid by construction: if breaking the degradation would violate
+// an invariant, the engine never produces the fixed lineup and that court is not counted.
+function findRescueCourts(input: {
+  state: SessionState
+  courtIdx: number
+  busyIds: Set<string>
+  liveCourtPlayers: Map<number, string[]>
+  isFixed: (teamA: Team, teamB: Team) => boolean
+  perCourtRuntimeMs: number
+  budgetMs: number
+  nowMsFn: () => number
+}): number[] {
+  const rescue: number[] = []
+  const startedAt = input.nowMsFn()
+  for (const [liveCourt, players] of input.liveCourtPlayers) {
+    if (input.nowMsFn() - startedAt > input.budgetMs) break
+    const freedBusy = new Set([...input.busyIds].filter(id => !players.includes(id)))
+    const result = suggestNextMatch(input.state, {
+      busy_player_ids: [...freedBusy],
+      court_idx: input.courtIdx,
+      max_runtime_ms: input.perCourtRuntimeMs,
+    })
+    const candidate = result.alternatives?.[0]?.matches?.[0]
+    if (!candidate) continue
+    const usesFreed = [...candidate.team_a, ...candidate.team_b].some(id => players.includes(id))
+    if (usesFreed && input.isFixed(candidate.team_a as Team, candidate.team_b as Team)) {
+      rescue.push(liveCourt)
+    }
+  }
+  return rescue.sort((left, right) => left - right)
+}
+
+// Phase 3b (counterfactual, ONLY for a degraded single-court refill so cost is 1 extra suggest):
+// find the best lineup that AVOIDS the over-cap repeat pair, and report what that alternative costs.
+function computeRepeatCounterfactual(input: {
+  teamA: Team
+  teamB: Team
+  state: SessionState
+  busyIds: Set<string>
+  courtIdx: number
+  seatedGap: number
+  runtimeMs: number
+}): string | undefined {
+  let pair: [string, string] | null = null
+  for (const a of input.teamA) {
+    for (const b of input.teamB) {
+      const projected = (input.state.players.get(a)?.opponent_counts.get(b) ?? 0) + 1
+      if (projected >= 3) { pair = [a, b]; break }
+    }
+    if (pair) break
+  }
+  if (!pair) return undefined
+  const [pa, pb] = pair
+  const result = suggestNextMatch(input.state, {
+    busy_player_ids: [...input.busyIds],
+    court_idx: input.courtIdx,
+    max_alternatives: 16,
+    max_runtime_ms: input.runtimeMs,
+  })
+  const opposes = (teamA: readonly string[], teamB: readonly string[]) =>
+    (teamA.includes(pa) && teamB.includes(pb)) || (teamA.includes(pb) && teamB.includes(pa))
+  const clean = (result.alternatives ?? [])
+    .map(alt => alt.matches?.[0])
+    .find((match): match is NonNullable<typeof match> => !!match && !opposes(match.team_a, match.team_b))
+  if (!clean) return 'nếu tránh cặp này thì không còn cách ghép hợp lý nào từ người đang rảnh'
+  const pv = (id: string) => {
+    const player = input.state.players.get(id)
+    return player ? getEffectivePvna(player) : 0
+  }
+  const altGap = Math.abs(pv(clean.team_a[0]) + pv(clean.team_a[1]) - pv(clean.team_b[0]) - pv(clean.team_b[1]))
+  if (altGap > input.seatedGap + 0.5) return `nếu tránh cặp này thì trận sẽ lệch ${altGap.toFixed(1)} điểm`
+  const altRepeat = getProjectedRepeatSummary(clean.team_a as Team, clean.team_b as Team, input.state)
+  if (altRepeat.max_opponent_pair_count >= 3) return `nếu tránh cặp này thì lại có cặp khác gặp lần ${altRepeat.max_opponent_pair_count}`
+  return undefined
+}
+
+// Phase 3: concrete, per-match explanation of every compromise in a seated lineup (incl. a 2nd
+// meeting that is still within cap), with the derived binding reason. Pure (no engine calls).
+export function explainMatchCompromises(input: {
+  teamA: Team
+  teamB: Team
+  state: SessionState
+  playersById: Map<string, { name?: string | null }>
+  availableIds: string[]
+  pvnaTolerance: number
+}): string[] {
+  const { teamA, teamB, state, playersById, availableIds, pvnaTolerance } = input
+  const out: string[] = []
+  const nm = (id: string) => playersById.get(id)?.name || id.slice(0, 4)
+  const pv = (id: string) => {
+    const player = state.players.get(id)
+    return player ? getEffectivePvna(player) : 0
+  }
+  const availOthers = Math.max(0, availableIds.length - 1)
+  // Concrete reason for a repeat: name how many of the currently-free players this person has
+  // ALREADY faced/partnered — that is what actually forces re-pairing (derived, no guessing).
+  const metOppCount = (id: string) => availableIds.filter(o => o !== id && (state.players.get(id)?.opponent_counts.get(o) ?? 0) >= 1).length
+  const metPartnerCount = (id: string) => availableIds.filter(o => o !== id && (state.players.get(id)?.partner_counts.get(o) ?? 0) >= 1).length
+  const whyFromMet = (id: string, met: number, verb: string) => {
+    if (availOthers > 0 && met >= availOthers) return ` — vì ${nm(id)} đã ${verb} với tất cả người đang rảnh`
+    if (availOthers >= 4 && met >= availOthers - 1) return ` — vì ${nm(id)} đã ${verb} với gần hết người rảnh (${met}/${availOthers})`
+    return availableIds.length <= 6 ? ' — vì chỉ còn ' + availableIds.length + ' người rảnh, khó tránh' : ''
+  }
+
+  for (const a of teamA) {
+    for (const b of teamB) {
+      const prev = state.players.get(a)?.opponent_counts.get(b) ?? 0
+      if (prev >= 1) out.push(`${nm(a)} & ${nm(b)} đấu lại lần ${prev + 1}${whyFromMet(a, metOppCount(a), 'đấu')}`)
+    }
+  }
+  for (const team of [teamA, teamB]) {
+    const prev = state.players.get(team[0])?.partner_counts.get(team[1]) ?? 0
+    if (prev >= 1) out.push(`${nm(team[0])} & ${nm(team[1])} chung đội lần ${prev + 1}${whyFromMet(team[0], metPartnerCount(team[0]), 'chung đội')}`)
+  }
+  const totalGap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
+  const teamsAreBalanced = totalGap <= pvnaTolerance + 0.5
+  for (const team of [teamA, teamB]) {
+    const g = Math.abs(pv(team[0]) - pv(team[1]))
+    // Only claim "để cân tổng" when the totals ARE balanced (that is when the strong+weak pairing
+    // actually served balance). If the match is lopsided, the blowout line below explains it instead.
+    if (g > PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT && teamsAreBalanced) {
+      const strong = pv(team[0]) >= pv(team[1]) ? team[0] : team[1]
+      const weak = strong === team[0] ? team[1] : team[0]
+      out.push(`${nm(strong)}(${pv(strong).toFixed(1)}) + ${nm(weak)}(${pv(weak).toFixed(1)}) cùng đội để cân tổng 2 đội`)
+    }
+  }
+  if (totalGap > pvnaTolerance) {
+    const lowIds = availableIds.filter(id => pv(id) <= 3.0)
+    const highIds = availableIds.filter(id => pv(id) >= 4.0)
+    let why = ''
+    if (lowIds.length <= 1 && highIds.length >= 3) {
+      why = lowIds.length === 1
+        ? ` — vì trong ${availableIds.length} người rảnh chỉ có 1 người trình thấp (${nm(lowIds[0])} ${pv(lowIds[0]).toFixed(1)})`
+        : ` — vì cả ${availableIds.length} người rảnh đều trình cao, không có người yếu để cân`
+    } else if (highIds.length <= 1 && lowIds.length >= 3) {
+      why = highIds.length === 1
+        ? ` — vì trong ${availableIds.length} người rảnh chỉ có 1 người trình cao (${nm(highIds[0])} ${pv(highIds[0]).toFixed(1)})`
+        : ` — vì cả ${availableIds.length} người rảnh đều trình thấp`
+    }
+    out.push(`Trận lệch ${totalGap.toFixed(1)} điểm${why}`)
+  }
+  return out
+}
+
 export function buildSuggestedMatchPayloads({
   count,
   sessionId,
@@ -4422,7 +4580,75 @@ export function buildSuggestedMatchPayloads({
       courtIdx,
       options.nowMs,
     )
-    if (shouldDeferTightPoolSuggestion({
+    let degradedReason: SuggestedMatchPayload['degraded_reason']
+    let rescueCourtIdxs: number[] = []
+    let degradedCounterfactual: string | undefined
+    if (options.blowoutRescue === true) {
+      // Never silently defer. If the only available lineup is degraded (Phase 1: blowout / Phase 2:
+      // a 3rd meeting), SEAT it (host can "Chơi luôn") and offer the live courts whose completion
+      // would enable a better lineup ("Chờ Sân X"). Repeat caps are 2 → count >= 3 is "over".
+      const isBlowout = pvnaDiff > Math.max(1.5, configuredPvnaTolerance + 1)
+      const seatedRepeat = getProjectedRepeatSummary(match.team_a, match.team_b, suggestionStateForCourt)
+      const isRepeat = seatedRepeat.max_opponent_pair_count >= 3 || seatedRepeat.max_partner_pair_count >= 3
+      if ((isBlowout || isRepeat) && count === 1 && liveCourtIdxs.size > 0) {
+        const liveCourtPlayers = new Map<number, string[]>()
+        for (const [playerId, playerCourtIdx] of liveLockedPlayerCourtIdxs) {
+          if (!liveCourtIdxs.has(playerCourtIdx)) continue
+          const players = liveCourtPlayers.get(playerCourtIdx) ?? []
+          players.push(playerId)
+          liveCourtPlayers.set(playerCourtIdx, players)
+        }
+        // Dedicated budget: the per-court budget is already spent by the seated suggest above, so
+        // draw from the (still-ample on a single-court refill) batch budget instead.
+        const rescueBudgetMs = Math.max(120, Math.min(400, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)))
+        rescueCourtIdxs = findRescueCourts({
+          state: suggestionStateForCourt,
+          courtIdx,
+          busyIds,
+          liveCourtPlayers,
+          // A rescue court must fix EVERY problem the seated lineup has (else waiting isn't honest).
+          isFixed: (teamA, teamB) => {
+            if (isBlowout) {
+              const pv = (id: string) => {
+                const player = suggestionStateForCourt.players.get(id)
+                return player ? getEffectivePvna(player) : 0
+              }
+              const gap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
+              if (gap > configuredPvnaTolerance + 0.5) return false
+            }
+            if (isRepeat) {
+              const rescued = getProjectedRepeatSummary(teamA, teamB, suggestionStateForCourt)
+              if (rescued.max_opponent_pair_count >= 3 || rescued.max_partner_pair_count >= 3) return false
+            }
+            return true
+          },
+          perCourtRuntimeMs: 100,
+          budgetMs: rescueBudgetMs,
+          nowMsFn: nowMs,
+        })
+        degradedReason = isBlowout && isRepeat ? 'both' : isBlowout ? 'blowout' : 'repeat'
+        if (isRepeat) {
+          degradedCounterfactual = computeRepeatCounterfactual({
+            teamA: match.team_a as Team,
+            teamB: match.team_b as Team,
+            state: suggestionStateForCourt,
+            busyIds,
+            courtIdx,
+            seatedGap: pvnaDiff,
+            runtimeMs: Math.max(60, Math.min(150, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt) - 50)),
+          })
+        }
+        try {
+          options.onInstrumentEvent?.({
+            event: 'repair',
+            detail: `degraded_seated_with_rescue:court=${courtIdx};reason=${degradedReason};pvna=${pvnaDiff.toFixed(2)};maxOpp=${seatedRepeat.max_opponent_pair_count};rescue=${rescueCourtIdxs.join('|') || 'none'}`,
+            court_count: courtCount,
+            available: availablePlayerCount,
+          })
+        } catch { /* noop */ }
+      }
+      // fall through: seat the lineup (no continue) — host decides via "Chờ Sân X" / "Chơi luôn".
+    } else if (shouldDeferTightPoolSuggestion({
       enabled: options.deferExtremeTightPool === true && count === 1,
       waitActive: tightPoolWaitIsActive,
       activeLiveCourtCount: liveCourtIdxs.size,
@@ -4489,6 +4715,19 @@ export function buildSuggestedMatchPayloads({
         available_pool_quality: availablePoolQuality,
       }
     }
+    const matchExplanations = options.blowoutRescue === true
+      ? explainMatchCompromises({
+          teamA: match.team_a as Team,
+          teamB: match.team_b as Team,
+          state: suggestionStateForCourt,
+          playersById,
+          availableIds: [...suggestionStateForCourt.players.values()]
+            .filter(player => player.checked_out_at === null && !player.opted_rest && !busyIds.has(player.player_id))
+            .map(player => player.player_id),
+          pvnaTolerance: configuredPvnaTolerance,
+        })
+      : []
+    if (degradedCounterfactual) matchExplanations.push(degradedCounterfactual)
     payloads.push({
       court_idx: courtIdx,
       team_a: match.team_a,
@@ -4512,6 +4751,9 @@ export function buildSuggestedMatchPayloads({
       recommended_tradeoff_choice: recommendedTradeoffChoice,
       live_availability_context: perMatchAvailabilityContext,
       locked_player_ids: matchLockedPlayerIds.length > 0 ? matchLockedPlayerIds : undefined,
+      degraded_reason: degradedReason,
+      rescue_court_idxs: rescueCourtIdxs.length > 0 ? rescueCourtIdxs : undefined,
+      match_explanations: matchExplanations.length > 0 ? matchExplanations : undefined,
     })
 
     if (debugOut && debugEligible) {

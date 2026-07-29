@@ -1011,6 +1011,8 @@ Deno.serve(async (request) => {
         : openCourtIdxs
     const replaceAllSuggestions = mode === 'full_board' && explicitTargetCourtIdxs.length === 0
     const rollingPolicyEnabled = planRolloutEnabled('SESSION_PLAN_ROLLING_POLICY', sessionId)
+    // Default ON for all sessions. Kill-switch: set secret SESSION_BLOWOUT_RESCUE=0 to disable instantly.
+    const blowoutRescueEnabled = Deno.env.get('SESSION_BLOWOUT_RESCUE') !== '0'
     const activeManualMutationKind = authoritativeLiveMatchRows
       .filter(match => (
         match.status === 'suggested' || match.status === 'live'
@@ -1107,6 +1109,7 @@ Deno.serve(async (request) => {
             ...(engineCourtIdxs && engineCourtIdxs.length > 0 ? { courtIdxs: engineCourtIdxs } : {}),
             ignoreCapacityLock: !preferAvailablePool,
             deferExtremeTightPool: true,
+            blowoutRescue: blowoutRescueEnabled,
             tightPoolQualityDeferUntilByCourt,
             rollingHorizon: rollingPolicyEnabled,
             rollingPlanTarget: rollingPolicyEnabled ? planConsumption.rolling_target : null,

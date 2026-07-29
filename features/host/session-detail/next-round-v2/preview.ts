@@ -64,6 +64,9 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   }
   locked_player_ids?: string[]
   available_pool_only?: boolean
+  degraded_reason?: 'blowout' | 'repeat' | 'both'
+  rescue_court_idxs?: number[]
+  match_explanations?: string[]
 }
 
 export type LiveDisplayMatchRow = SessionLiveMatchRow & {
