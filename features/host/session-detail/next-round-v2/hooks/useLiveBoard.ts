@@ -1361,6 +1361,12 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       .flatMap(match => [...match.team_a, ...match.team_b]),
   ), [effectiveLiveMatchRows])
   const [suggestedLiveMatches, setSuggestedLiveMatches] = useState<SuggestedLiveMatchRow[]>([])
+  // Mirrors suggestedLiveMatches synchronously every render (assigned here, not in
+  // an effect) so effects can read the latest committed value without adding
+  // suggestedLiveMatches to their dependency array — see previewBodyRef for the
+  // same pattern elsewhere in this hook.
+  const suggestedLiveMatchesRef = useRef(suggestedLiveMatches)
+  suggestedLiveMatchesRef.current = suggestedLiveMatches
   const [edgeDebug, setEdgeDebug] = useState<any>(null)
   const queueCourtCount = Math.max(1, Math.floor(courtCount || 1))
   const suggestedQueueCount = getSuggestedPreviewQueueCount({
@@ -1504,38 +1510,44 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       (getSuggestedLaneCourtIdx(left) ?? Number.MAX_SAFE_INTEGER)
       - (getSuggestedLaneCourtIdx(right) ?? Number.MAX_SAFE_INTEGER)
 
-    setSuggestedLiveMatches(current => {
-      // Merge, don't replace: keep fresh ephemeral (edge_committed) lanes for
-      // courts the DB-suggested rebuild doesn't cover, so a mini-recover refill
-      // for a just-vacated court survives this effect re-firing. Apply the same
-      // guards the hydrate path uses (occupied / out-of-range / started /
-      // stale-vs-completed / player-collision) so a stale or overlapping
-      // suggestion is never resurfaced. Keep suggestedLaneCacheRef in sync with
-      // the merged result so the preview effect doesn't treat the lane as missing.
-      const mergedLaneCache = new Map(nextLaneCache)
-      const mergedUsedPlayerIds = new Set(usedPlayerIds)
-      const retainedEphemeral: SuggestedLiveMatchRow[] = []
-      for (const match of current) {
-        const courtIdx = getSuggestedLaneCourtIdx(match)
-        if (courtIdx === null || courtIdx < 0 || courtIdx >= queueCourtCount) continue
-        if (occupiedCourts.has(courtIdx)) continue
-        if (mergedLaneCache.has(courtIdx)) continue
-        if (isPersistedSuggestedMatch(match)) continue
-        if (startedPreviewIds.has(match.id)) continue
-        if (isPreviewInvalidatedByCompletedMatch(match)) continue
-        const playerIds = getMatchPlayerIds(match)
-        if (playerIds.some(playerId => mergedUsedPlayerIds.has(playerId))) continue
-        playerIds.forEach(playerId => mergedUsedPlayerIds.add(playerId))
-        retainedEphemeral.push(match)
-        mergedLaneCache.set(courtIdx, match)
-      }
-      suggestedLaneCacheRef.current = mergedLaneCache
+    // Merge, don't replace: keep fresh ephemeral (edge_committed) lanes for
+    // courts the DB-suggested rebuild doesn't cover, so a mini-recover refill
+    // for a just-vacated court survives this effect re-firing. Apply the same
+    // guards the hydrate path uses (occupied / out-of-range / started /
+    // stale-vs-completed / player-collision) so a stale or overlapping
+    // suggestion is never resurfaced. Read the previous value via
+    // suggestedLiveMatchesRef (synced every render, see its declaration) rather
+    // than the setState updater, so the merge computation and the
+    // suggestedLaneCacheRef sync stay plain, side-effect-free steps outside of
+    // React's state updater — setSuggestedLiveMatches is only called with the
+    // final, already-computed array.
+    const current = suggestedLiveMatchesRef.current
+    const mergedLaneCache = new Map(nextLaneCache)
+    const mergedUsedPlayerIds = new Set(usedPlayerIds)
+    const retainedEphemeral: SuggestedLiveMatchRow[] = []
+    for (const match of current) {
+      const courtIdx = getSuggestedLaneCourtIdx(match)
+      if (courtIdx === null || courtIdx < 0 || courtIdx >= queueCourtCount) continue
+      if (occupiedCourts.has(courtIdx)) continue
+      if (mergedLaneCache.has(courtIdx)) continue
+      if (isPersistedSuggestedMatch(match)) continue
+      if (startedPreviewIds.has(match.id)) continue
+      if (isPreviewInvalidatedByCompletedMatch(match)) continue
+      const playerIds = getMatchPlayerIds(match)
+      if (playerIds.some(playerId => mergedUsedPlayerIds.has(playerId))) continue
+      playerIds.forEach(playerId => mergedUsedPlayerIds.add(playerId))
+      retainedEphemeral.push(match)
+      mergedLaneCache.set(courtIdx, match)
+    }
+    // Keep suggestedLaneCacheRef in sync with the merged result (unconditionally,
+    // even when the visible array below turns out unchanged) so the preview
+    // effect doesn't treat the lane as missing.
+    suggestedLaneCacheRef.current = mergedLaneCache
 
-      const merged = [...hydrated, ...retainedEphemeral].sort(sortByCourtIdx)
-      const currentKey = [...current].sort(sortByCourtIdx).map(laneKeyOf).join('|')
-      const mergedKey = merged.map(laneKeyOf).join('|')
-      return currentKey === mergedKey ? current : merged
-    })
+    const merged = [...hydrated, ...retainedEphemeral].sort(sortByCourtIdx)
+    const currentKey = [...current].sort(sortByCourtIdx).map(laneKeyOf).join('|')
+    const mergedKey = merged.map(laneKeyOf).join('|')
+    if (currentKey !== mergedKey) setSuggestedLiveMatches(merged)
   }, [
     activeLiveMatches,
     effectiveLiveMatchRows,
