@@ -59,6 +59,7 @@ describe('applyPairIncrement', () => {
     ])
     applyPairIncrement(players, 'A', 'B', 'opponent')
     expect(players.get('A').opponent_counts.get('B')).toBe(1)
+    expect(players.get('B').opponent_counts.get('A')).toBe(1)
     expect(players.get('A').partner_counts.get('B') ?? 0).toBe(0)
   })
 })
