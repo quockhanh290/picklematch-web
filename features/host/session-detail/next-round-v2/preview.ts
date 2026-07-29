@@ -7,6 +7,7 @@ import {
   getProjectedRepeatSummary,
 } from '@/lib/next-round-suggester/score'
 import { suggestNextMatch } from '@/lib/next-round-suggester/suggest'
+import { applyPairIncrement } from './preview-helpers'
 import {
   LIVE_PREVIEW_ALGORITHM_VERSION,
   buildLiveSelectionGuard,
@@ -123,30 +124,11 @@ export function buildProjectedStateAfterLiveMatch(
     }
   })
 
-  const incrementPair = (playerAId: string, playerBId: string, type: 'partner' | 'opponent') => {
-    const playerA = players.get(playerAId)
-    const playerB = players.get(playerBId)
-    if (playerA) {
-      const partnerCounts = new Map(playerA.partner_counts)
-      const opponentCounts = new Map(playerA.opponent_counts)
-      const counts = type === 'partner' ? partnerCounts : opponentCounts
-      counts.set(playerBId, (counts.get(playerBId) ?? 0) + 1)
-      players.set(playerAId, { ...playerA, partner_counts: partnerCounts, opponent_counts: opponentCounts })
-    }
-    if (playerB) {
-      const partnerCounts = new Map(playerB.partner_counts)
-      const opponentCounts = new Map(playerB.opponent_counts)
-      const counts = type === 'partner' ? partnerCounts : opponentCounts
-      counts.set(playerAId, (counts.get(playerAId) ?? 0) + 1)
-      players.set(playerBId, { ...playerB, partner_counts: partnerCounts, opponent_counts: opponentCounts })
-    }
-  }
-
-  incrementPair(match.team_a[0], match.team_a[1], 'partner')
-  incrementPair(match.team_b[0], match.team_b[1], 'partner')
+  applyPairIncrement(players, match.team_a[0], match.team_a[1], 'partner')
+  applyPairIncrement(players, match.team_b[0], match.team_b[1], 'partner')
   for (const playerAId of match.team_a) {
     for (const playerBId of match.team_b) {
-      incrementPair(playerAId, playerBId, 'opponent')
+      applyPairIncrement(players, playerAId, playerBId, 'opponent')
     }
   }
 
