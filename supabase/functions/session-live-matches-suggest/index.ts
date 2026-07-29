@@ -1,6 +1,7 @@
 /* eslint-disable import/no-unresolved */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { createServiceClient, getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost, writeSessionAuditEvent } from '../_shared/live-session.ts'
+import { buildDegradedPreviewFieldsByCourtIdx, reattachDegradedPreviewFields } from '../_shared/preview-degraded-fields.ts'
 import { correctForFairness } from '../../../lib/next-round-suggester/fairness/corrector.ts'
 import { detectFairnessIssues } from '../../../lib/next-round-suggester/fairness/detector.ts'
 import {
@@ -1360,6 +1361,10 @@ Deno.serve(async (request) => {
         finalPreviewBoard,
         replacementCourtIdxs: replaceCourtIdxs,
       })
+      // The persistence RPC only INSERTs 8 columns and drops degraded_reason/rescue_court_idxs/
+      // match_explanations. Snapshot them here (pre-persist, still on the engine payload) so they
+      // can be re-attached onto the post-persist board read back from the RPC response below.
+      const prePersistDegradedFieldsByCourtIdx = buildDegradedPreviewFieldsByCourtIdx(matchesToPersist)
       const persistencePayload = {
           p_session_id: sessionId,
           p_expected_live_state_version: requestLiveStateVersion,
@@ -1437,6 +1442,7 @@ Deno.serve(async (request) => {
             courtCount,
           }).final_preview_board
         : normalizedPersistedMatches
+      finalPreviewBoard = reattachDegradedPreviewFields(finalPreviewBoard, prePersistDegradedFieldsByCourtIdx)
     }
     timingMs.persistence = roundedDuration(stageStartedAt)
 
