@@ -1498,15 +1498,43 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
 
     if (hydrated.length === 0) return
 
-    suggestedLaneCacheRef.current = nextLaneCache
+    const laneKeyOf = (match: SuggestedLiveMatchRow) =>
+      `${match.id}:${getSuggestedLaneCourtIdx(match) ?? ''}`
+    const sortByCourtIdx = (left: SuggestedLiveMatchRow, right: SuggestedLiveMatchRow) =>
+      (getSuggestedLaneCourtIdx(left) ?? Number.MAX_SAFE_INTEGER)
+      - (getSuggestedLaneCourtIdx(right) ?? Number.MAX_SAFE_INTEGER)
+
     setSuggestedLiveMatches(current => {
-      const currentKey = current
-        .map(match => `${match.id}:${getSuggestedLaneCourtIdx(match) ?? ''}`)
-        .join('|')
-      const hydratedKey = hydrated
-        .map(match => `${match.id}:${getSuggestedLaneCourtIdx(match) ?? ''}`)
-        .join('|')
-      return currentKey === hydratedKey ? current : hydrated
+      // Merge, don't replace: keep fresh ephemeral (edge_committed) lanes for
+      // courts the DB-suggested rebuild doesn't cover, so a mini-recover refill
+      // for a just-vacated court survives this effect re-firing. Apply the same
+      // guards the hydrate path uses (occupied / out-of-range / started /
+      // stale-vs-completed / player-collision) so a stale or overlapping
+      // suggestion is never resurfaced. Keep suggestedLaneCacheRef in sync with
+      // the merged result so the preview effect doesn't treat the lane as missing.
+      const mergedLaneCache = new Map(nextLaneCache)
+      const mergedUsedPlayerIds = new Set(usedPlayerIds)
+      const retainedEphemeral: SuggestedLiveMatchRow[] = []
+      for (const match of current) {
+        const courtIdx = getSuggestedLaneCourtIdx(match)
+        if (courtIdx === null || courtIdx < 0 || courtIdx >= queueCourtCount) continue
+        if (occupiedCourts.has(courtIdx)) continue
+        if (mergedLaneCache.has(courtIdx)) continue
+        if (isPersistedSuggestedMatch(match)) continue
+        if (startedPreviewIds.has(match.id)) continue
+        if (isPreviewInvalidatedByCompletedMatch(match)) continue
+        const playerIds = getMatchPlayerIds(match)
+        if (playerIds.some(playerId => mergedUsedPlayerIds.has(playerId))) continue
+        playerIds.forEach(playerId => mergedUsedPlayerIds.add(playerId))
+        retainedEphemeral.push(match)
+        mergedLaneCache.set(courtIdx, match)
+      }
+      suggestedLaneCacheRef.current = mergedLaneCache
+
+      const merged = [...hydrated, ...retainedEphemeral].sort(sortByCourtIdx)
+      const currentKey = [...current].sort(sortByCourtIdx).map(laneKeyOf).join('|')
+      const mergedKey = merged.map(laneKeyOf).join('|')
+      return currentKey === mergedKey ? current : merged
     })
   }, [
     activeLiveMatches,
