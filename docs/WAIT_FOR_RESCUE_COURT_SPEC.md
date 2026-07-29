@@ -163,3 +163,26 @@ Một lineup có thể dính 1, cả 2, hoặc không. `degraded_reason` = `'blo
 - Sim harness (`scripts/diagnostics/probe-*.ts`, `tests/.../simulation`): under-fill, opponent_repeat, blowout rate trước/sau.
 - Unit test path seat+rescue + hold.
 - Session thật + engine_instrumentation.
+
+---
+
+## 10. AUDIT & FIXES (2026-07-29)
+
+Audit toàn diện feature (3 agent song song: engine correctness / consistency engine↔edge↔client / giao thoa với refactor useLiveBoard). Kết luận: **engine đúng & trung thực** (findRescueCourts không bịa sân cứu, flag gating sạch, v20/v21 blowout-fix còn nguyên, 252 unit xanh) nhưng có 1 BLOCKER + vài quality-concern.
+
+### Đã FIX
+- **C1 (BLOCKER) — 3 field degraded bị strip ở persist round-trip** → banner/explain DOA. RPC `replace_live_session_suggestions_versioned` chỉ lưu 8 cột; edge gán lại board từ DB đã strip. **FIX (commit 272842f):** edge re-merge `degraded_reason`/`rescue_court_idxs`/`match_explanations` theo `court_idx` từ bản pre-persist (`matchesToPersist`, còn field) vào board sau round-trip. Helper thuần `_shared/preview-degraded-fields.ts` + deno test. (Cách B — không migration.)
+- **M2 — rescue block không try/catch** → throw = edge 500 cả batch. **FIX (commit 739384c):** bọc try/catch fail-soft quanh khối tính metadata (SEAT nằm NGOÀI try → trận vẫn seat khi throw), catch → bỏ metadata degraded, không re-throw.
+- **M4 — 3 ngưỡng blowout khác nhau (khó hiểu)** → **CLARITY FIX (commit 15087b4):** đặt tên 4 hằng + comment. Kết luận: 3 ngưỡng KHÁC value CÓ CHỦ ĐÍCH (DETECT=ngưỡng offer Chờ cao; EXPLAIN=liệt kê mọi gap thấp hơn; isFixed=chất lượng rescue). "Gap text không kèm nút Chờ" là by-design, không phải bug. Giữ nguyên value (no behavior change).
+
+### QUYẾT ĐỊNH (không sửa code)
+- **M3 — "Chờ Sân X" là CHỮ thông báo, không phải nút giữ-sân actionable.** CHỐT: **giữ chữ** (hợp triết lý "không biết chờ tới bao giờ, seat luôn"). Không xây cơ chế hold + auto-refresh ở useLiveBoard. §5/§6 điều chỉnh theo: "Chờ" = host tự quyết định không bấm Start.
+- **H2 — banner cũ `quality_deferred_courts` KHÔNG phải dead-code.** Nó là UI fallback cho path **flag-OFF** (kill-switch `SESSION_BLOWOUT_RESCUE=0` → defer cũ chạy lại → banner cũ cần). Hai banner loại trừ nhau theo flag (ON→"Chờ Sân X/Chơi luôn"; OFF→"đang chờ ghép cân"). **GIỮ cả hai.** Công của a0d3cc1 ngủ đông khi flag ON, không lãng phí.
+
+### CÒN LẠI (chưa làm / thông tin)
+- **M1 (thông tin):** rescue hiếm tìm được ở ca refill-1-sân-giữa-vòng (người rảnh = must-play → freeing sân chỉ trả người đã-đá → engine vẫn ép must-play → rescue=none). → Nút "Chờ Sân X" ít hiện; **giá trị chính người dùng thấy là phần GIẢI THÍCH "vì sao"**. (Tùy chọn: soi thêm `alternatives[1..k]` để tăng hit-rate — chưa làm.)
+- **CẦN LÀM để feature chạy end-to-end:** rebuild client + QA (complete sân live khi còn persisted-suggested → banner "Chờ/Chơi luôn" + list "Vì sao" hiện đúng, không trùng người, không sập).
+- **LOW polish (defer):** isFixed không kiểm vấn-đề-mới-phát-sinh (blowout↔repeat chéo); explainMatchCompromises vài chỗ chữ (vùng chồng lấn, pool-skew hard-code 3.0/4.0, availableIds gồm người vừa seat, counterfactual thiếu cặp đồng-đội); kill-switch chỉ nhận đúng `=0`.
+
+### Kill-switch (nhắc)
+`SESSION_BLOWOUT_RESCUE=0` → tắt hẳn, về defer cũ y nguyên (verified sạch). Bất kỳ giá trị khác `0` (kể cả `false`) = ON.
