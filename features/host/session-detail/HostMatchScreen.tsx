@@ -4,7 +4,6 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import type { SessionMatch } from '@/hooks/useSessionDetail'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
-import { router } from 'expo-router'
 import { Minus, Plus, SwordsIcon } from 'lucide-react-native'
 import React, { useState } from 'react'
 import { Alert, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
@@ -40,8 +39,8 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
   const theme = useAppTheme()
   const [editingPendingIndex, setEditingPendingIndex] = useState<number | null>(null)
   const [showAllProgress, setShowAllProgress] = useState(false)
-  const [appliedScheduleMode, setAppliedScheduleMode] = useState<'full' | 'limited'>('full')
-  const [appliedMinGames, setAppliedMinGames] = useState(1)
+  const [appliedScheduleMode] = useState<'full' | 'limited'>('full')
+  const [appliedMinGames] = useState(1)
   const [showScheduleDiagnostics, setShowScheduleDiagnostics] = useState(false)
 
   const {
