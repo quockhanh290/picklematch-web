@@ -116,6 +116,15 @@ function pairKey(playerA: string, playerB: string) {
   return playerA < playerB ? `${playerA}:${playerB}` : `${playerB}:${playerA}`
 }
 
+// A re-split of the same four players (fresh partners, e.g. {A,B}v{C,D} -> {A,C}v{B,D}) is a fresh
+// lineup, not a rematch — only identical partnerships (both partner-pairs recur, teams may swap
+// sides) count as an exact rematch. Host decision, see task-2-brief.md Decision 1.
+function hasIdenticalPartnerships(teamA: Team, teamB: Team, otherTeamA: Team, otherTeamB: Team): boolean {
+  const pairs = [pairKey(teamA[0], teamA[1]), pairKey(teamB[0], teamB[1])]
+  const otherPairs = [pairKey(otherTeamA[0], otherTeamA[1]), pairKey(otherTeamB[0], otherTeamB[1])]
+  return pairs.every((key) => otherPairs.includes(key))
+}
+
 function recentRepeatDecay(distance: number) {
   if (distance <= 1) return 1
   if (distance === 2) return 0.65
@@ -147,7 +156,6 @@ export function getRecentRepeatCost(
   }
   const partnerPairs = [pairKey(teamA[0], teamA[1]), pairKey(teamB[0], teamB[1])]
   const opponentPairs = teamA.flatMap(playerA => teamB.map(playerB => pairKey(playerA, playerB)))
-  const matchGroupKey = getMatchGroupKey(teamA, teamB)
 
   for (const round of state.rounds) {
     const distance = roundNo - round.round_no
@@ -174,7 +182,9 @@ export function getRecentRepeatCost(
       cost.opponent += opponentHits * weight
       if (playerOverlap === 2) cost.overlap2 += weight
       if (playerOverlap === 3) cost.overlap3 += weight
-      if (playerOverlap === 4 || getMatchGroupKey(match.team_a, match.team_b) === matchGroupKey) {
+      // Both partnerships identical (partnerHits === 2) is the exact-rematch signal — a re-split of
+      // the same four (partnerHits < 2) is a fresh lineup, not a rematch.
+      if (partnerHits === 2) {
         cost.exact4 += weight
       }
     }
@@ -235,8 +245,15 @@ export function hasRecentGroupRematch(teamA: Team, teamB: Team, state: SessionSt
     }
 
     for (const match of round.matches) {
-      if (getMatchGroupKey(match.team_a, match.team_b) === matchGroupKey) return true
-      if (getPlayerOverlap(teamA, teamB, match.team_a, match.team_b) >= nearOverlap) {
+      const overlap = getPlayerOverlap(teamA, teamB, match.team_a, match.team_b)
+      if (overlap === 4) {
+        // Same four players: only an identical-partnerships rematch is blocked. A re-split (fresh
+        // partners) is a fresh lineup and must fall through unblocked, even though it shares all
+        // four players with the recent match.
+        if (hasIdenticalPartnerships(teamA, teamB, match.team_a, match.team_b)) return true
+        continue
+      }
+      if (overlap >= nearOverlap) {
         return true
       }
     }
