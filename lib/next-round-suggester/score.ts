@@ -12,6 +12,10 @@ import type {
 import { getEffectivePvna } from './state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { getAvoidPenalty, AVOID_PARTNER_PENALTY } from './avoid.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { computeQualityCost } from './quality-cost.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
 
 const INFINITY_SCORE: MatchScore = {
   score: Infinity,
@@ -591,6 +595,25 @@ export function scoreMatch(
   const teamB1 = state.players.get(teamB[1])
   if (!teamA0 || !teamA1 || !teamB0 || !teamB1) return INFINITY_SCORE
 
+  // Hard block: avoid pairs as partners. This and the structural checks above are the only two hard
+  // invariants under the quality-cost model — moved up so both the flag-on and flag-off paths share it.
+  if (
+    getAvoidPenalty(teamA0, teamA1, 'partner') === AVOID_PARTNER_PENALTY ||
+    getAvoidPenalty(teamB0, teamB1, 'partner') === AVOID_PARTNER_PENALTY
+  ) {
+    return INFINITY_SCORE
+  }
+
+  if (isQualityCostModelEnabled()) {
+    const tolerance = options.tolerance ?? state.config.pvna_tolerance
+    const result = computeQualityCost(teamA, teamB, state, { tolerance })
+    const stats = emptyStats(result.gap)
+    stats.partner_repeats = getPartnerRepeats(teamA, state) + getPartnerRepeats(teamB, state)
+    stats.opponent_repeats = getOpponentRepeats(teamA, teamB, state)
+    stats.group_bonus = getGroupedPartnerCount(teamA, teamB, state)
+    return { score: result.cost, stats }
+  }
+
   const teamAIntraGap = Math.abs(getEffectivePvna(teamA0) - getEffectivePvna(teamA1))
   const teamBIntraGap = Math.abs(getEffectivePvna(teamB0) - getEffectivePvna(teamB1))
 
@@ -622,14 +645,6 @@ export function scoreMatch(
     ? { partnerCap: options.partnerRepeatCap, opponentCap: options.opponentRepeatCap }
     : undefined
   if (!options.allowRepeatOverflow && hasRepeatOverflow(teamA, teamB, state, repeatCaps)) {
-    return INFINITY_SCORE
-  }
-
-  // Hard block: avoid pairs as partners
-  if (
-    getAvoidPenalty(teamA0, teamA1, 'partner') === AVOID_PARTNER_PENALTY ||
-    getAvoidPenalty(teamB0, teamB1, 'partner') === AVOID_PARTNER_PENALTY
-  ) {
     return INFINITY_SCORE
   }
 
