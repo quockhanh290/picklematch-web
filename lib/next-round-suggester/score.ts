@@ -160,6 +160,11 @@ export function getRecentRepeatCost(
   }
   const partnerPairs = [pairKey(teamA[0], teamA[1]), pairKey(teamB[0], teamB[1])]
   const opponentPairs = teamA.flatMap(playerA => teamB.map(playerB => pairKey(playerA, playerB)))
+  // Flag OFF must stay byte-identical to pre-Task-2 behavior: exact4 fires on any same-four overlap.
+  // Flag ON: team-aware — only identical partnerships (both partner-pairs recur) count as exact4; a
+  // re-split of the same four (partnerHits < 2) is a fresh lineup. See task-2-brief.md Decision 1.
+  const teamAwareExactRematch = isQualityCostModelEnabled()
+  const matchGroupKey = getMatchGroupKey(teamA, teamB)
 
   for (const round of state.rounds) {
     const distance = roundNo - round.round_no
@@ -186,9 +191,10 @@ export function getRecentRepeatCost(
       cost.opponent += opponentHits * weight
       if (playerOverlap === 2) cost.overlap2 += weight
       if (playerOverlap === 3) cost.overlap3 += weight
-      // Both partnerships identical (partnerHits === 2) is the exact-rematch signal — a re-split of
-      // the same four (partnerHits < 2) is a fresh lineup, not a rematch.
-      if (partnerHits === 2) {
+      const isExactRematch = teamAwareExactRematch
+        ? partnerHits === 2
+        : playerOverlap === 4 || getMatchGroupKey(match.team_a, match.team_b) === matchGroupKey
+      if (isExactRematch) {
         cost.exact4 += weight
       }
     }
@@ -239,6 +245,10 @@ export function hasRecentGroupRematch(teamA: Team, teamB: Team, state: SessionSt
   const activeN = [...state.players.values()].filter(p => p.checked_out_at === null).length
   const blockRounds = getRematchBlockRounds(activeN)
   const nearOverlap = getNearRematchMinOverlap(activeN)
+  // Flag OFF must stay byte-identical to pre-Task-2 behavior: any same-four overlap blocks (generic
+  // group-key match). Flag ON: team-aware — a re-split of the same four (fresh partnerships) falls
+  // through unblocked; only an identical-partnerships rematch is blocked. See task-2-brief.md Decision 1.
+  const teamAwareExactRematch = isQualityCostModelEnabled()
   for (const round of state.rounds) {
     if (
       round.status !== 'completed' ||
@@ -249,15 +259,20 @@ export function hasRecentGroupRematch(teamA: Team, teamB: Team, state: SessionSt
     }
 
     for (const match of round.matches) {
-      const overlap = getPlayerOverlap(teamA, teamB, match.team_a, match.team_b)
-      if (overlap === 4) {
-        // Same four players: only an identical-partnerships rematch is blocked. A re-split (fresh
-        // partners) is a fresh lineup and must fall through unblocked, even though it shares all
-        // four players with the recent match.
-        if (hasIdenticalPartnerships(teamA, teamB, match.team_a, match.team_b)) return true
+      if (teamAwareExactRematch) {
+        const overlap = getPlayerOverlap(teamA, teamB, match.team_a, match.team_b)
+        if (overlap === 4) {
+          if (hasIdenticalPartnerships(teamA, teamB, match.team_a, match.team_b)) return true
+          continue
+        }
+        if (overlap >= nearOverlap) {
+          return true
+        }
         continue
       }
-      if (overlap >= nearOverlap) {
+
+      if (getMatchGroupKey(match.team_a, match.team_b) === matchGroupKey) return true
+      if (getPlayerOverlap(teamA, teamB, match.team_a, match.team_b) >= nearOverlap) {
         return true
       }
     }

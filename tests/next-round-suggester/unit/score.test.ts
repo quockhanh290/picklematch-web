@@ -1,8 +1,13 @@
-import { genderPenalty, getRecentRepeatCost, scoreMatch } from '../../../lib/next-round-suggester/score'
+import { genderPenalty, getRecentRepeatCost, hasRecentGroupRematch, scoreMatch } from '../../../lib/next-round-suggester/score'
+import { __setQualityCostModelOverrideForTests } from '../../../lib/next-round-suggester/quality-cost-flag'
 import type { Match } from '../../../lib/next-round-suggester/types'
 import { createPlayer, createState, setOpponentRepeats, setPartnerRepeats } from '../helpers/factories'
 
 describe('scoreMatch', () => {
+  afterEach(() => {
+    __setQualityCostModelOverrideForTests(null)
+  })
+
   it('scores empty history as total-team PVNA diff', () => {
     const state = createState({
       players: [
@@ -190,10 +195,53 @@ describe('scoreMatch', () => {
     expect(cost.partner).toBe(1)
     expect(cost.opponent).toBeCloseTo(1.3)
     expect(cost.overlap2).toBeCloseTo(1)
+    // Flag OFF (default): exact4 is the generic same-four-player signal, not partnership-aware.
+    // Round 1 (p1-p5/p2-p6) shares all 4 players with the new lineup (p1-p2/p5-p6) -> exact4 hit.
+    expect(cost.exact4).toBeCloseTo(0.65)
+    expect(score.score).toBeCloseTo(score.stats.pvna_diff + cost.total)
+  })
+
+  it('team-aware exact4 (flag ON): a re-split of the same four players is not an exact rematch', () => {
+    __setQualityCostModelOverrideForTests(true)
+    const state = {
+      ...createState({
+        currentRound: 3,
+        players: [
+          createPlayer('p1'),
+          createPlayer('p2'),
+          createPlayer('p3'),
+          createPlayer('p4'),
+          createPlayer('p5'),
+          createPlayer('p6'),
+        ],
+      }),
+      rounds: [
+        {
+          session_id: 'session-test',
+          round_no: 2,
+          status: 'completed' as const,
+          matches: [{ court_idx: 0, team_a: ['p1', 'p2'] as [string, string], team_b: ['p3', 'p4'] as [string, string] }],
+          resting: ['p5', 'p6'],
+          started_at: null,
+          ended_at: null,
+        },
+        {
+          session_id: 'session-test',
+          round_no: 1,
+          status: 'completed' as const,
+          matches: [{ court_idx: 0, team_a: ['p1', 'p5'] as [string, string], team_b: ['p2', 'p6'] as [string, string] }],
+          resting: ['p3', 'p4'],
+          started_at: null,
+          ended_at: null,
+        },
+      ],
+    }
+
+    const cost = getRecentRepeatCost(['p1', 'p2'], ['p5', 'p6'], state)
+
     // Round 1 re-partitions the same four players (p1-p5/p2-p6 -> p1-p2/p5-p6): a re-split, not an
     // exact rematch, since neither partnership repeats. Round 2 only overlaps on 1 of 2 partnerships.
     expect(cost.exact4).toBe(0)
-    expect(score.score).toBeCloseTo(score.stats.pvna_diff + cost.total)
   })
 
   it('allows a second partner meeting by default', () => {
@@ -425,7 +473,7 @@ describe('scoreMatch', () => {
     expect(Math.abs(relaxedIntra.score - 1.58)).toBeLessThan(0.01)
   })
 
-  it('blocks a true rematch (same partnerships) for the next two rounds, but allows a re-split of the same four', () => {
+  it('blocks same four-player rematches for the next two rounds even when partners change', () => {
     // Use N=11 players so getRematchBlockRounds(11) = 2 (N > 10)
     const players = [
       createPlayer('p1', { pvna: 3.0 }),
@@ -458,16 +506,57 @@ describe('scoreMatch', () => {
       }],
     }
 
-    // Same partnerships (exact rematch, team sides may swap) -> still blocked.
-    expect(scoreMatch(['p1', 'p2'], ['p3', 'p4'], state).score).toBe(Infinity)
-    expect(scoreMatch(['p3', 'p4'], ['p1', 'p2'], state).score).toBe(Infinity)
-    // Same four players, fresh partnerships (re-split) -> a fresh lineup, not blocked.
-    expect(scoreMatch(['p1', 'p3'], ['p2', 'p4'], state).score).not.toBe(Infinity)
-    // Unrelated players -> not blocked.
+    expect(scoreMatch(['p1', 'p3'], ['p2', 'p4'], state).score).toBe(Infinity)
     expect(scoreMatch(['p1', 'p5'], ['p2', 'p6'], state).score).not.toBe(Infinity)
   })
 
-  it('does not count a re-split of the same four players as an exact rematch in getRecentRepeatCost', () => {
+  it('team-aware (flag ON): blocks a true rematch (same partnerships) for the next two rounds, but allows a re-split of the same four', () => {
+    __setQualityCostModelOverrideForTests(true)
+    // Use N=11 players so getRematchBlockRounds(11) = 2 (N > 10)
+    const players = [
+      createPlayer('p1', { pvna: 3.0 }),
+      createPlayer('p2', { pvna: 3.1 }),
+      createPlayer('p3', { pvna: 3.2 }),
+      createPlayer('p4', { pvna: 3.3 }),
+      createPlayer('p5', { pvna: 3.4 }),
+      createPlayer('p6', { pvna: 3.5 }),
+      createPlayer('p7', { pvna: 3.0 }),
+      createPlayer('p8', { pvna: 3.1 }),
+      createPlayer('p9', { pvna: 3.2 }),
+      createPlayer('p10', { pvna: 3.3 }),
+      createPlayer('p11', { pvna: 3.4 }),
+    ]
+    const previousMatch: Match = {
+      court_idx: 0,
+      team_a: ['p1', 'p2'],
+      team_b: ['p3', 'p4'],
+    }
+    const state = {
+      ...createState({ players, currentRound: 2, pvnaTolerance: 10 }),
+      rounds: [{
+        session_id: 'session-test',
+        round_no: 0,
+        status: 'completed' as const,
+        matches: [previousMatch],
+        resting: [],
+        started_at: null,
+        ended_at: null,
+      }],
+    }
+
+    // scoreMatch's flag-ON path delegates to computeQualityCost before reaching hasRecentGroupRematch
+    // (that early return is out of scope here — see quality-cost.ts for the flag-ON cost model), so
+    // exercise the gated function directly.
+    // Same partnerships (exact rematch, team sides may swap) -> still blocked.
+    expect(hasRecentGroupRematch(['p1', 'p2'], ['p3', 'p4'], state)).toBe(true)
+    expect(hasRecentGroupRematch(['p3', 'p4'], ['p1', 'p2'], state)).toBe(true)
+    // Same four players, fresh partnerships (re-split) -> a fresh lineup, not blocked.
+    expect(hasRecentGroupRematch(['p1', 'p3'], ['p2', 'p4'], state)).toBe(false)
+    // Unrelated players -> not blocked.
+    expect(hasRecentGroupRematch(['p1', 'p5'], ['p2', 'p6'], state)).toBe(false)
+  })
+
+  it('flag OFF (default): getRecentRepeatCost and scoreMatch treat a re-split of the same four as an exact rematch', () => {
     const players = [
       createPlayer('p1', { pvna: 3.0 }),
       createPlayer('p2', { pvna: 3.0 }),
@@ -495,8 +584,8 @@ describe('scoreMatch', () => {
     }
 
     const resplit = getRecentRepeatCost(['p1', 'p3'], ['p2', 'p4'], state)
-    expect(resplit.exact4).toBe(0)
-    expect(scoreMatch(['p1', 'p3'], ['p2', 'p4'], state, { allowRepeatOverflow: true }).score).not.toBe(Infinity)
+    expect(resplit.exact4).toBeGreaterThan(0)
+    expect(scoreMatch(['p1', 'p3'], ['p2', 'p4'], state, { allowRepeatOverflow: true }).score).toBe(Infinity)
 
     const sameLineup = getRecentRepeatCost(['p1', 'p2'], ['p3', 'p4'], state)
     expect(sameLineup.exact4).toBeGreaterThan(0)
@@ -505,6 +594,49 @@ describe('scoreMatch', () => {
     const swappedSides = getRecentRepeatCost(['p3', 'p4'], ['p1', 'p2'], state)
     expect(swappedSides.exact4).toBeGreaterThan(0)
     expect(scoreMatch(['p3', 'p4'], ['p1', 'p2'], state).score).toBe(Infinity)
+  })
+
+  it('team-aware (flag ON): does not count a re-split of the same four players as an exact rematch in getRecentRepeatCost', () => {
+    __setQualityCostModelOverrideForTests(true)
+    const players = [
+      createPlayer('p1', { pvna: 3.0 }),
+      createPlayer('p2', { pvna: 3.0 }),
+      createPlayer('p3', { pvna: 3.0 }),
+      createPlayer('p4', { pvna: 3.0 }),
+      createPlayer('p5', { pvna: 3.0 }),
+      createPlayer('p6', { pvna: 3.0 }),
+    ]
+    const previousMatch: Match = {
+      court_idx: 0,
+      team_a: ['p1', 'p2'],
+      team_b: ['p3', 'p4'],
+    }
+    const state = {
+      ...createState({ players, currentRound: 1, pvnaTolerance: 10 }),
+      rounds: [{
+        session_id: 'session-test',
+        round_no: 0,
+        status: 'completed' as const,
+        matches: [previousMatch],
+        resting: ['p5', 'p6'],
+        started_at: null,
+        ended_at: null,
+      }],
+    }
+
+    // scoreMatch's flag-ON path delegates to computeQualityCost before reaching these gated
+    // functions, so verify getRecentRepeatCost and hasRecentGroupRematch directly.
+    const resplit = getRecentRepeatCost(['p1', 'p3'], ['p2', 'p4'], state)
+    expect(resplit.exact4).toBe(0)
+    expect(hasRecentGroupRematch(['p1', 'p3'], ['p2', 'p4'], state)).toBe(false)
+
+    const sameLineup = getRecentRepeatCost(['p1', 'p2'], ['p3', 'p4'], state)
+    expect(sameLineup.exact4).toBeGreaterThan(0)
+    expect(hasRecentGroupRematch(['p1', 'p2'], ['p3', 'p4'], state)).toBe(true)
+
+    const swappedSides = getRecentRepeatCost(['p3', 'p4'], ['p1', 'p2'], state)
+    expect(swappedSides.exact4).toBeGreaterThan(0)
+    expect(hasRecentGroupRematch(['p3', 'p4'], ['p1', 'p2'], state)).toBe(true)
   })
 
   it('blocks near-rematches with three of the same four players in the recent window', () => {
