@@ -12,10 +12,12 @@ export type QualityCostWeights = {
   repeat2: number; repeat3: number; repeatStep: number; opponentFactor: number;
   genderPartner: number; genderOpponent: number; groupReward: number; groupCap: number; avoidOpponent: number;
 }
-// Illustrative starting values — a later calibration task tunes magnitudes; shapes are fixed.
+// Calibrated via scripts/diagnostics/quality-cost-sim.ts (Task 6 A/B sweep, see that file's header for
+// the before/after table) + the 5 intent-check scenarios in tests/.../quality-cost.test.ts. Shapes are
+// fixed; only balanceOver/repeat2/repeat3/repeatStep moved from the Task 1 illustrative starting values.
 export const DEFAULT_QUALITY_COST_WEIGHTS: QualityCostWeights = {
-  balanceTie: 0.1, balanceOver: 1.3, intraTie: 0.1, intraOver: 1.0,
-  repeat2: 0.8, repeat3: 2.5, repeatStep: 2.0, opponentFactor: 0.7,
+  balanceTie: 0.1, balanceOver: 1.6, intraTie: 0.1, intraOver: 1.0,
+  repeat2: 1.0, repeat3: 3.6, repeatStep: 2.4, opponentFactor: 0.7,
   genderPartner: 0.4, genderOpponent: 0.2, groupReward: 0.3, groupCap: 0.6, avoidOpponent: 4.0,
 }
 const HARD_INTRA = 1.0

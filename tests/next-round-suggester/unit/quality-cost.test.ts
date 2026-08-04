@@ -82,14 +82,17 @@ describe('computeQualityCost — intent scenarios (spec §8)', () => {
     expect(costX).toBeLessThan(costY)
   })
 
-  it('5) prefers a substantial fresh gap (1.3) over an unavoidable severe 3rd-meeting repeat', () => {
-    // X: fresh, gap 1.3 (0.8 over tolerance -> a real, but not extreme, blowout).
+  it('5) prefers the literal spec fresh gap-1.5 over an unavoidable severe 3rd-meeting repeat', () => {
+    // X: fresh, gap 1.5 (1.0 over tolerance -> a real blowout; the literal spec §8 scenario-5 gap).
     // Y: perfectly balanced (gap 0), but a0/b0 have already met twice as opponents (projected 3rd
     // meeting = severe). Both prior meetings are recorded as completed rounds (last round + the one
     // before) so the repeat gets close to full recency weight -- two meetings can never both land at
-    // distance 1 (rounds are sequential), so 0.825 is the maximum achievable recency here; a gap of
-    // 1.3 keeps the intended inequality (avoid the 3rd meeting) comfortably clear of that ceiling.
-    const X = fourPlayerState([3.0, 3.0, 3.65, 3.65])
+    // distance 1 (rounds are sequential), so 0.825 is the maximum achievable recency here. Task 1's
+    // illustrative weights only cleared this at gap 1.3 (a ~0.006 margin at the literal 1.5, i.e. not
+    // reliably on the right side of the inequality); Task 6's calibration raised repeat3 (2.5 -> 3.6)
+    // enough that literal gap 1.5 now holds with a comfortable margin (fresh 1.75 vs repeat ~2.08)
+    // without needing to touch the cost shapes.
+    const X = fourPlayerState([3.0, 3.0, 3.75, 3.75])
     const Y = fourPlayerState([3.0, 3.0, 3.0, 3.0], 2)
     setOpponentRepeats(Y.state.players.get('a0')!, Y.state.players.get('b0')!, 2)
     recordPriorMatch(Y.state, Y.teamA, Y.teamB, 1)
