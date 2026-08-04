@@ -42,6 +42,10 @@ import {
 import { reconstructLiveRounds } from './live-rounds.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { getEffectivePvna } from './state.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { computeQualityCost } from './quality-cost.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
 import type {
   Match,
   PlayerSessionState,
@@ -3325,7 +3329,92 @@ export function buildLiveTradeoffChoices(
 // balanced pick as the recommendation.
 const REPEAT_TRADEOFF_OVER_THRESHOLD = 3
 
-function buildOverThresholdRepeatTradeoff(
+// Generalised (quality-cost model ON) tier-2 tradeoff: instead of the hard repeat>=3 switch point
+// below, offer the host a second candidate whenever it sits within a small cost band of the
+// engine's pick AND trades the balance<->freshness axis in the other direction (one is fresher but
+// more imbalanced, the other more balanced but repeats more) — the host decides the boundary case.
+const BALANCE_FRESHNESS_TRADEOFF_ALT_BAND = 0.6
+
+function computeAlternativeQualityCost(
+  alternative: SuggestionAlternative,
+  state: SessionState,
+  configuredPvnaTolerance: number,
+) {
+  return alternative.matches.reduce((summary, match) => {
+    const result = computeQualityCost(match.team_a, match.team_b, state, { tolerance: configuredPvnaTolerance })
+    return {
+      cost: summary.cost + result.cost,
+      gap: Math.max(summary.gap, result.gap),
+      maxProjectedMeeting: Math.max(summary.maxProjectedMeeting, result.maxProjectedMeeting),
+    }
+  }, { cost: 0, gap: 0, maxProjectedMeeting: 0 })
+}
+
+function buildBalanceFreshnessTradeoff(
+  reference: SuggestionAlternative,
+  alternatives: SuggestionAlternative[],
+  state: SessionState,
+  configuredPvnaTolerance: number,
+): { choices: SuggestionTradeoffChoice[]; recommended: SuggestionTradeoffChoiceId } | null {
+  const referenceKey = getAlternativeMatchKey(reference)
+  const referenceCost = computeAlternativeQualityCost(reference, state, configuredPvnaTolerance)
+  const candidate = alternatives
+    .filter(alternative => alternative.matches.length > 0 && getAlternativeMatchKey(alternative) !== referenceKey)
+    .map(alternative => ({
+      alternative,
+      cost: computeAlternativeQualityCost(alternative, state, configuredPvnaTolerance),
+    }))
+    .filter(({ cost }) => Math.abs(cost.cost - referenceCost.cost) <= BALANCE_FRESHNESS_TRADEOFF_ALT_BAND)
+    .filter(({ cost }) =>
+      (cost.gap > referenceCost.gap && cost.maxProjectedMeeting < referenceCost.maxProjectedMeeting)
+      || (cost.gap < referenceCost.gap && cost.maxProjectedMeeting > referenceCost.maxProjectedMeeting)
+    )
+    .sort((left, right) =>
+      Math.abs(left.cost.cost - referenceCost.cost) - Math.abs(right.cost.cost - referenceCost.cost)
+    )[0]
+  if (!candidate) return null
+
+  const referenceMetrics = getTradeoffChoiceMetrics(reference, state, configuredPvnaTolerance)
+  const candidateMetrics = getTradeoffChoiceMetrics(candidate.alternative, state, configuredPvnaTolerance)
+  // fresher-but-more-imbalanced candidate => "less repeat"; more-balanced-but-repeating => "keep balance"
+  const candidateIsFresher = candidate.cost.maxProjectedMeeting < referenceCost.maxProjectedMeeting
+  const candidateId: SuggestionTradeoffChoiceId = candidateIsFresher ? 'reduce_repeat' : 'keep_pvna'
+  const candidateFallbackLabel = candidateIsFresher ? 'Ít lặp hơn' : 'Ưu tiên cân tài cân sức'
+
+  return {
+    recommended: 'balanced',
+    choices: [
+      {
+        id: 'balanced',
+        label: getTradeoffChoiceLabel('Tốt nhất tổng thể', referenceMetrics),
+        alternative: reference,
+        metrics: referenceMetrics,
+        explanation: buildTradeoffChoiceExplanation('balanced', referenceMetrics, configuredPvnaTolerance),
+      },
+      {
+        id: candidateId,
+        label: getTradeoffChoiceLabel(candidateFallbackLabel, candidateMetrics),
+        alternative: candidate.alternative,
+        metrics: candidateMetrics,
+        explanation: buildTradeoffChoiceExplanation(candidateId, candidateMetrics, configuredPvnaTolerance),
+      },
+    ],
+  }
+}
+
+export function buildOverThresholdRepeatTradeoff(
+  reference: SuggestionAlternative,
+  alternatives: SuggestionAlternative[],
+  state: SessionState,
+  configuredPvnaTolerance: number,
+): { choices: SuggestionTradeoffChoice[]; recommended: SuggestionTradeoffChoiceId } | null {
+  if (isQualityCostModelEnabled()) {
+    return buildBalanceFreshnessTradeoff(reference, alternatives, state, configuredPvnaTolerance)
+  }
+  return buildLegacyOverThresholdRepeatTradeoff(reference, alternatives, state, configuredPvnaTolerance)
+}
+
+function buildLegacyOverThresholdRepeatTradeoff(
   reference: SuggestionAlternative,
   alternatives: SuggestionAlternative[],
   state: SessionState,

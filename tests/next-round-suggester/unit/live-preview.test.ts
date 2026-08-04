@@ -12,6 +12,7 @@ import {
   buildProjectedStateAfterCompletedLiveRound,
   buildProjectedStateAfterLiveMatch,
   buildLiveTradeoffChoices,
+  buildOverThresholdRepeatTradeoff,
   findConditionalLiveQualityRescue,
   findConditionalLiveQualityTradeoff,
   findUnifiedSocialTradeoffRescue,
@@ -30,7 +31,8 @@ import {
 import type { SessionLiveMatchRow, SuggestionAlternative } from '../../../lib/next-round-suggester/types'
 import { Tier } from '../../../lib/next-round-suggester/classify'
 import { getRecentRepeatCost } from '../../../lib/next-round-suggester/score'
-import { createPlayer, createPlayers, createState, setPartnerRepeats } from '../helpers/factories'
+import { createPlayer, createPlayers, createState, setPartnerRepeats, setOpponentRepeats } from '../helpers/factories'
+import { __setQualityCostModelOverrideForTests } from '../../../lib/next-round-suggester/quality-cost-flag'
 
 function alternative(teamA: [string, string], teamB: [string, string], pvnaDiff: number): SuggestionAlternative {
   return {
@@ -2241,5 +2243,63 @@ describe('buildLiveTradeoffChoices', () => {
 
     expect(recommended?.alternative).toBe(smallerPvnaOverflow)
     expect(recommended?.metrics.pvna_over_by).toBeCloseTo(0.1)
+  })
+})
+
+describe('buildOverThresholdRepeatTradeoff — host tier-2 balance/freshness toggle', () => {
+  afterEach(() => {
+    __setQualityCostModelOverrideForTests(null)
+  })
+
+  function balanceFreshnessFixture() {
+    const a = createPlayer('a', { pvna: 3.0 })
+    const b = createPlayer('b', { pvna: 3.0 })
+    const c = createPlayer('c', { pvna: 3.45 })
+    const d = createPlayer('d', { pvna: 3.45 })
+    const e = createPlayer('e', { pvna: 3.0 })
+    const f = createPlayer('f', { pvna: 3.0 })
+    const g = createPlayer('g', { pvna: 3.1 })
+    const h = createPlayer('h', { pvna: 3.1 })
+    setOpponentRepeats(e, g, 1)
+    const state = createState({
+      players: [a, b, c, d, e, f, g, h],
+      pvnaTolerance: 1.0,
+    })
+    // fresh (no prior meetings) but the more imbalanced team gap of the two
+    const fresherMoreImbalanced = alternative(['a', 'b'], ['c', 'd'], 0.9)
+    // a repeat-2 (e/g have met once before), but the more balanced team gap of the two
+    const balancedRepeatTwo = alternative(['e', 'f'], ['g', 'h'], 0.2)
+    return { state, fresherMoreImbalanced, balancedRepeatTwo }
+  }
+
+  it('offers the balanced repeat-2 alternative alongside the fresher pick when the quality-cost model is ON', () => {
+    __setQualityCostModelOverrideForTests(true)
+    const { state, fresherMoreImbalanced, balancedRepeatTwo } = balanceFreshnessFixture()
+
+    const result = buildOverThresholdRepeatTradeoff(
+      fresherMoreImbalanced,
+      [fresherMoreImbalanced, balancedRepeatTwo],
+      state,
+      1.0,
+    )
+
+    expect(result).not.toBeNull()
+    const offeredAlternatives = result?.choices.map(choice => choice.alternative)
+    expect(offeredAlternatives).toContain(fresherMoreImbalanced)
+    expect(offeredAlternatives).toContain(balancedRepeatTwo)
+  })
+
+  it('does not offer a repeat-2 alternative when the quality-cost model is OFF (legacy repeat>=3 gate only)', () => {
+    __setQualityCostModelOverrideForTests(false)
+    const { state, fresherMoreImbalanced, balancedRepeatTwo } = balanceFreshnessFixture()
+
+    const result = buildOverThresholdRepeatTradeoff(
+      fresherMoreImbalanced,
+      [fresherMoreImbalanced, balancedRepeatTwo],
+      state,
+      1.0,
+    )
+
+    expect(result).toBeNull()
   })
 })
