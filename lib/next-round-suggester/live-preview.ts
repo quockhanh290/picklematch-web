@@ -3862,10 +3862,24 @@ export function computeMatchDegradedRescue(input: {
     const player = state.players.get(id)
     return player ? getEffectivePvna(player) : 0
   }
-  const gap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
-  const isBlowout = gap > Math.max(BLOWOUT_DEGRADE_GAP_FLOOR, pvnaTolerance + BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN)
-  const seatedRepeat = getProjectedRepeatSummary(teamA, teamB, state)
-  const isRepeat = seatedRepeat.max_opponent_pair_count >= 3 || seatedRepeat.max_partner_pair_count >= 3
+  // Flag ON: DETECT off the same cost regions computeQualityCost already scores matches by, instead
+  // of the standalone gap/getProjectedRepeatSummary heuristics — `gap` is the identical sum-of-pvna
+  // diff the legacy path computed by hand (same BLOWOUT_DEGRADE_GAP_FLOOR bar), and
+  // `maxProjectedMeeting` folds in the cost model's same-group exclusion (a group replaying a 3rd
+  // time isn't the "degraded" repeat this feature targets). Flag OFF path is untouched below.
+  const useQualityCost = isQualityCostModelEnabled()
+  let isBlowout: boolean
+  let isRepeat: boolean
+  if (useQualityCost) {
+    const seatedCost = computeQualityCost(teamA, teamB, state, { tolerance: pvnaTolerance })
+    isBlowout = seatedCost.gap > Math.max(BLOWOUT_DEGRADE_GAP_FLOOR, pvnaTolerance + BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN)
+    isRepeat = seatedCost.maxProjectedMeeting >= 3
+  } else {
+    const gap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
+    isBlowout = gap > Math.max(BLOWOUT_DEGRADE_GAP_FLOOR, pvnaTolerance + BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN)
+    const seatedRepeat = getProjectedRepeatSummary(teamA, teamB, state)
+    isRepeat = seatedRepeat.max_opponent_pair_count >= 3 || seatedRepeat.max_partner_pair_count >= 3
+  }
   // The DEGRADED flag (repeat/blowout) is a property of the lineup alone — set it whenever the lineup
   // is degraded, INDEPENDENT of whether any live court exists to rescue it. Coupling the flag to
   // liveCourtIdxs.size > 0 cleared genuine repeat-3 lanes whenever the whole board was suggested (no
@@ -3883,7 +3897,14 @@ export function computeMatchDegradedRescue(input: {
       courtIdx,
       busyIds,
       liveCourtPlayers,
+      // A rescue court must clear EVERY cost problem the seated lineup has (else waiting isn't honest).
       isFixed: (ta, tb) => {
+        if (useQualityCost) {
+          const rescuedCost = computeQualityCost(ta, tb, state, { tolerance: pvnaTolerance })
+          if (isBlowout && rescuedCost.gap > pvnaTolerance + RESCUE_FIXED_GAP_CEILING_MARGIN) return false
+          if (isRepeat && rescuedCost.maxProjectedMeeting >= 3) return false
+          return true
+        }
         if (isBlowout) {
           const g = Math.abs(pv(ta[0]) + pv(ta[1]) - pv(tb[0]) - pv(tb[1]))
           if (g > pvnaTolerance + RESCUE_FIXED_GAP_CEILING_MARGIN) return false
