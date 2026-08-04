@@ -33,6 +33,20 @@ describe('scoreMatch — SESSION_QUALITY_COST_MODEL flag', () => {
       expect(balanced.score).toBeLessThan(blowout.score)
     })
 
+    it('fills stats.gender_pref_penalty (not left at the 0 placeholder) for a lineup with a gender-pref violation', () => {
+      const players = [
+        createPlayer('p1', { pvna: 3.0, gender: 'F', partner_gender_pref: 'F' }),
+        createPlayer('p2', { pvna: 3.0, gender: 'M' }),
+        createPlayer('p3', { pvna: 3.0, gender: 'F' }),
+        createPlayer('p4', { pvna: 3.0, gender: 'M' }),
+      ]
+      const state = createState({ players, pvnaTolerance: 10 })
+
+      const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], state)
+
+      expect(result.stats.gender_pref_penalty).toBeGreaterThan(0)
+    })
+
     it('does not block a re-split of a recently-played foursome, even when the caller injects player-set-based recent-group-rematch keys', () => {
       // A re-split ({p1,p3} v {p2,p4}) of a prior {p1,p2} v {p3,p4} match is a fresh lineup (Decision 1,
       // Task 2). But production callers (pair.ts / live-preview.ts) pre-inject "recent group rematch"

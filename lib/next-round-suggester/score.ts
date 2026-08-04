@@ -606,11 +606,17 @@ export function scoreMatch(
 
   if (isQualityCostModelEnabled()) {
     const tolerance = options.tolerance ?? state.config.pvna_tolerance
+    const weights = options.weights ?? state.config.weights
     const result = computeQualityCost(teamA, teamB, state, { tolerance })
     const stats = emptyStats(result.gap)
     stats.partner_repeats = getPartnerRepeats(teamA, state) + getPartnerRepeats(teamB, state)
     stats.opponent_repeats = getOpponentRepeats(teamA, teamB, state)
     stats.group_bonus = getGroupedPartnerCount(teamA, teamB, state)
+    // Display-only: the cost model's ranking already folds gender preference into result.cost via
+    // its own genderPref/weights; this recomputes the host-facing stat in ScoringWeights units
+    // (same helper the flag-OFF path uses) so planner/session-plan.ts -> ScreenComponents.tsx shows
+    // a real number instead of the placeholder 0.
+    stats.gender_pref_penalty = genderPenalty(teamA, teamB, state, weights)
     return { score: result.cost, stats }
   }
 
