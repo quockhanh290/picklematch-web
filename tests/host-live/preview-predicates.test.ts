@@ -171,6 +171,19 @@ describe('computeShouldRequestFullBoardPreview', () => {
     expect(computeShouldRequestFullBoardPreview({ ...base, reusableMatchCount: 0 })).toBe(true)
   })
 
+  it('stays scoped to replace_courts when 0 reusable but the open courts fit mini-recover (live board, one empty lane)', () => {
+    // 5 courts live + 1 empty lane, no pending suggestions -> reusableMatchCount is 0, but the single
+    // open court is recoverable via replace_courts. Forcing full_board here makes the edge re-persist
+    // the live courts' players too -> "already assigned" conflict -> the empty lane stays stuck.
+    expect(computeShouldRequestFullBoardPreview({
+      ...base,
+      reusableMatchCount: 0,
+      shouldRecoverMissingPreviewCourts: true,
+      missingPreviewCourtIdxsForRecoveryCount: 1,
+      replacementMaxCount: 2,
+    })).toBe(false)
+  })
+
   it('requests full board when recovery would exceed the replacement max count', () => {
     expect(computeShouldRequestFullBoardPreview({
       ...base,

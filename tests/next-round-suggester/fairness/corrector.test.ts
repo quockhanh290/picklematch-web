@@ -100,7 +100,9 @@ describe('Corrector (naive)', () => {
     const adjustment = correctForFairness(state)
 
     expect(adjustment.tier_overrides.p2).toBe(Tier.MUST_PLAY)
-    expect(adjustment.config_changes.pvna_tolerance).toBe(Number((state.config.pvna_tolerance + 0.15).toFixed(2)))
+    // rest_violation forces the rester to PLAY but no longer pre-opens pvna tolerance board-wide;
+    // with no rotation room the repeat path also does not relax, so tolerance stays untouched.
+    expect(adjustment.config_changes.pvna_tolerance).toBeUndefined()
     expect(adjustment.config_changes.weights?.partner_repeat).toBe(
       state.config.weights.partner_repeat * 1.5,
     )

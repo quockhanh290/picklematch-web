@@ -31,6 +31,15 @@ export const INTRA_TEAM_PVNA_GAP_LIMIT = 1.0
 // At W=0.15, an intra improvement of 0.33 per team outweighs a pvna_diff increase of 0.05.
 // pvna still dominates for large differences (e.g. pvna=0.4 beats intra_gain=0.7).
 const INTRA_GAP_SOFT_WEIGHT = 0.15
+// A pair meeting (as partners or opponents) for the 3rd+ time (projected count >= 3) is a "severe
+// repeat" — the level that flags degraded='repeat'. This flat penalty per such pair is calibrated to
+// exceed the largest gender-preference penalty (~partner_gender_pref 4 + opponent_gender_pref 2 across
+// 4 players ≈ up to ~30) but stay well below the avoid-pair penalty (300), so the host directive
+// "when it would be repeat-3, prefer breaking the repeat over honouring gender preference" holds. It
+// only changes the ranking when a lineup with NO severe repeat exists (that lineup pays 0 here and
+// wins); if every option is repeat-3 they all pay it and the choice falls back to the usual factors.
+const SEVERE_REPEAT_PROJECTED_THRESHOLD = 3
+const SEVERE_REPEAT_PAIR_PENALTY = 50
 // When allowIntraTeamGapOverflow=true, each unit of gap excess over INTRA_TEAM_PVNA_GAP_LIMIT
 // costs this many score points. W=1 makes the crossover fair: intra excess beats pvna_diff when
 // total excess < pvna_diff, i.e. Stage 6 (cross-split, ~balanced pvna) beats Stage 5.5
@@ -484,6 +493,27 @@ export function genderPenalty(
   return penalty
 }
 
+// Count the partner + opponent pairs in this lineup whose projected meeting count reaches the severe
+// (repeat-3) threshold. Intra-group pairs are exempt — they intentionally play together, and their
+// repeats are already down-weighted elsewhere, so a same-group pairing should never be force-broken.
+function countSevereRepeatPairs(teamA: Team, teamB: Team, state: SessionState): number {
+  let count = 0
+  const partnerPairs: [string, string][] = [[teamA[0], teamA[1]], [teamB[0], teamB[1]]]
+  for (const [idA, idB] of partnerPairs) {
+    const pA = state.players.get(idA)
+    if (areSameGroup(pA, state.players.get(idB))) continue
+    if (((pA?.partner_counts.get(idB) ?? 0) + 1) >= SEVERE_REPEAT_PROJECTED_THRESHOLD) count++
+  }
+  for (const idA of teamA) {
+    for (const idB of teamB) {
+      const pA = state.players.get(idA)
+      if (areSameGroup(pA, state.players.get(idB))) continue
+      if (((pA?.opponent_counts.get(idB) ?? 0) + 1) >= SEVERE_REPEAT_PROJECTED_THRESHOLD) count++
+    }
+  }
+  return count
+}
+
 function computeGroupAwarePartnerPenalty(team: Team, state: SessionState, defaultWeight: number): number {
   const [idA, idB] = team
   const count = state.players.get(idA)?.partner_counts.get(idB) ?? 0
@@ -612,6 +642,11 @@ export function scoreMatch(
 
   const intraGapSoftPenalty = (teamAIntraGap + teamBIntraGap) * INTRA_GAP_SOFT_WEIGHT
 
+  // Host directive: a repeat-3 lineup should lose to any lineup that avoids the severe repeat, even
+  // if that means violating a gender preference. This flat per-severe-pair penalty outranks the
+  // gender-pref penalty, so the engine breaks a 3rd meeting when a fresher pairing exists.
+  const severeRepeatPenalty = countSevereRepeatPairs(teamA, teamB, state) * SEVERE_REPEAT_PAIR_PENALTY
+
   const score =
     pvnaDiff * weights.pvna +
     partnerRepeatScore +
@@ -622,7 +657,8 @@ export function scoreMatch(
     recentRepeatCost.total +
     avoidOpponentPenalty +
     intraGapSoftPenalty +
-    intraOverflowPenalty
+    intraOverflowPenalty +
+    severeRepeatPenalty
 
   return {
     score,

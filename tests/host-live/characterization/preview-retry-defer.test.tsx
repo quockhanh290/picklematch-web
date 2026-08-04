@@ -255,7 +255,10 @@ describe('NextRoundSuggesterScreenV2 characterization: incomplete preview retry 
       await jest.advanceTimersByTimeAsync(80)
     })
     expect(mockApi.fetchLiveMatchesPreview).toHaveBeenCalledTimes(1)
-    expect(mockApi.fetchLiveMatchesPreview.mock.calls[0][1]).toMatchObject({ mode: 'full_board' })
+    // One open lane alongside live courts -> mini-recover it via replace_courts, not full_board
+    // (which would re-persist the live courts' players and conflict). Mode change only; the retry /
+    // cooldown behavior below is unaffected.
+    expect(mockApi.fetchLiveMatchesPreview.mock.calls[0][1]).toMatchObject({ mode: 'replace_courts' })
     // The unfillable lane never renders a suggested card -- it stays open the whole time.
     expect(queryByTestId('nrv2-suggested-card-court-1')).toBeNull()
 
@@ -274,7 +277,7 @@ describe('NextRoundSuggesterScreenV2 characterization: incomplete preview retry 
       await jest.advanceTimersByTimeAsync(80)
     })
     expect(mockApi.fetchLiveMatchesPreview).toHaveBeenCalledTimes(2)
-    expect(mockApi.fetchLiveMatchesPreview.mock.calls[1][1]).toMatchObject({ mode: 'full_board' })
+    expect(mockApi.fetchLiveMatchesPreview.mock.calls[1][1]).toMatchObject({ mode: 'replace_courts' })
 
     // Second incomplete result with the same retry key trips the cap: the client
     // enters a block cooldown instead of scheduling another 900ms retry. Advancing

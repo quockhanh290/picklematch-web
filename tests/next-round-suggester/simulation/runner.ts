@@ -89,6 +89,14 @@ export type SimulationResult = {
   invariant_violations: string[]
 }
 
+// Full-board suggestNextRound với budget mặc định (1000ms) dính false-negative NO_VALID_MATCH đã biết
+// (SCRATCHPAD.md "NO_VALID_MATCH giả khi deadline hết" / F3): ở exact-fill full-board mà strict PVNA
+// vô nghiệm, regular search ăn hết budget → forced rescue pass (suggest.ts:712) bị skip dù nghiệm relaxed
+// tồn tại → sim stall ở vòng 2. Production live KHÔNG dùng path này (nó chạy per-court suggestNextMatch
+// với rescue riêng), nên sim cấp budget rộng để engine có headroom chạy rescue — phản ánh đúng "engine đủ
+// thời gian tìm nghiệm", không phải che lỗi.
+const SIM_SUGGEST_RUNTIME_MS = 5000
+
 export async function runSimulation(config: SimulationConfig): Promise<SimulationResult> {
   const rng = seedrandom(String(config.seed))
   const players = config.initial_players ?? generatePlayers(config, rng)
@@ -123,6 +131,7 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
     const altIdx = roundNo === 1 ? (config.first_round_alt_idx ?? 0) : 0
     const suggestion = suggestNextRound(effectiveState, {
       tier_overrides: adjustment?.tier_overrides ?? {},
+      max_runtime_ms: SIM_SUGGEST_RUNTIME_MS,
     })
     const elapsedMs = performance.now() - startedAt
     totalSuggestTimeMs += elapsedMs
@@ -291,6 +300,7 @@ function previewScoreAfterSuggestion(
   const effectiveState = adjustment ? applyFairnessAdjustment(state, adjustment) : state
   const suggestion = suggestNextRound(effectiveState, {
     tier_overrides: adjustment?.tier_overrides ?? {},
+    max_runtime_ms: SIM_SUGGEST_RUNTIME_MS,
   })
   const alternative = suggestion.alternatives[0]
   if (!alternative) return undefined

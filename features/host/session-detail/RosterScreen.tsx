@@ -11,7 +11,7 @@ import type { SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
 
-import { invokeLiveSessionFunction, syncLiveRosterFromSessionPlayers } from './next-round-v2/api'
+import { invokeLiveSessionFunction, prewarmSuggestFunction, syncLiveRosterFromSessionPlayers } from './next-round-v2/api'
 import { RosterSheet } from './next-round-v2/flow-sheets'
 import { useQueryClient } from '@tanstack/react-query'
 import { liveSessionQueryKeys, useLiveSessionQuery } from './next-round-v2/queries'
@@ -316,6 +316,7 @@ export function RosterScreen({ sessionId, players }: { sessionId: string; player
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <SecondaryNavbar title="NGƯỜI CHƠI" onBackPress={() => {
         queryClient.invalidateQueries({ queryKey: liveSessionQueryKeys.detail(sessionId) })
+        prewarmSuggestFunction(sessionId)
         router.replace({ pathname: '/host/session/[id]/next-round', params: { id: sessionId } } as any)
       }} />
       {error ? (

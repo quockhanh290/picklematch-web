@@ -263,7 +263,10 @@ describe('NextRoundSuggesterScreenV2: wait-rescue banner renders from degraded-m
 
     expect(getByTestId('nrv2-suggested-card-court-1')).toBeTruthy()
     expect(getByText('⏳ Trận này hơi lệch trình')).toBeTruthy()
-    expect(getByText('Chờ Sân 3 xong sẽ cân hơn — hoặc bấm Bắt đầu để chơi luôn.')).toBeTruthy()
+    expect(getByTestId('nrv2-decision-play-1')).toBeTruthy()
+    expect(getByTestId('nrv2-decision-wait-1')).toBeTruthy()
+    expect(getByText('→ Kết quả: Đội hình sạch hơn (cân hơn)')).toBeTruthy()
+    expect(getByText('→ Giá: chờ Sân 3 xong · sân này để trống')).toBeTruthy()
 
     expect(getByText('Vì sao xếp trận này')).toBeTruthy()
     expect(getByText(`• ${EXPLANATIONS[0]}`)).toBeTruthy()
@@ -274,15 +277,17 @@ describe('NextRoundSuggesterScreenV2: wait-rescue banner renders from degraded-m
     expect(getByText('Bắt đầu trận')).toBeTruthy()
   })
 
-  it('degraded_reason "repeat" renders the repeat title and "đỡ trùng" benefit', async () => {
-    const { getByText } = await mountWithDegradedBoard({
+  it('degraded_reason "repeat" renders the repeat title and "đỡ trùng" wait result', async () => {
+    const { getByText, getByTestId } = await mountWithDegradedBoard({
       degraded_reason: 'repeat',
       rescue_court_idxs: [0],
       match_explanations: EXPLANATIONS,
     })
 
     expect(getByText('⏳ Trận này bị trùng người')).toBeTruthy()
-    expect(getByText('Chờ Sân 1 xong sẽ đỡ trùng — hoặc bấm Bắt đầu để chơi luôn.')).toBeTruthy()
+    expect(getByTestId('nrv2-decision-wait-1')).toBeTruthy()
+    expect(getByText('→ Kết quả: Đội hình sạch hơn (đỡ trùng)')).toBeTruthy()
+    expect(getByText('→ Giá: chờ Sân 1 xong · sân này để trống')).toBeTruthy()
   })
 
   it('degraded_reason "both" renders the combined title and "tốt hơn" benefit', async () => {
@@ -293,20 +298,24 @@ describe('NextRoundSuggesterScreenV2: wait-rescue banner renders from degraded-m
     })
 
     expect(getByText('⏳ Trận này hơi lệch & trùng')).toBeTruthy()
-    expect(getByText('Chờ Sân 1 hoặc 3 xong sẽ tốt hơn — hoặc bấm Bắt đầu để chơi luôn.')).toBeTruthy()
+    expect(getByText('→ Kết quả: Đội hình sạch hơn (tốt hơn)')).toBeTruthy()
+    expect(getByText('→ Giá: chờ Sân 1 hoặc 3 xong · sân này để trống')).toBeTruthy()
   })
 
-  it('empty rescue_court_idxs hides the whole wait-rescue banner but keeps the match startable, and still renders the explanations list', async () => {
-    const { getByTestId, getByText, queryByText } = await mountWithDegradedBoard({
+  it('empty rescue_court_idxs hides the wait option but STILL shows the degraded warning + Chơi-luôn panel (unavoidable repeat/blowout), keeps the match startable, and renders the explanations list', async () => {
+    const { getByTestId, getByText, queryByText, queryByTestId } = await mountWithDegradedBoard({
       degraded_reason: 'blowout',
       rescue_court_idxs: [],
       match_explanations: EXPLANATIONS,
     })
 
-    // No court to wait on -> the entire "Chờ Sân..." banner (title included) must not
-    // render, so the host is never told to wait for something that doesn't exist.
-    expect(queryByText('⏳ Trận này hơi lệch trình')).toBeNull()
-    expect(queryByText(/Chờ Sân/)).toBeNull()
+    // No court to wait on -> no "Chờ" option. But the lineup is still degraded, so the panel must
+    // surface the warning (title) + the Chơi-luôn card (whose cost line tells the host it's degraded);
+    // only the dead "Chờ Sân X" option is suppressed, never the warning itself.
+    expect(getByText('⏳ Trận này hơi lệch trình')).toBeTruthy()
+    expect(getByTestId('nrv2-decision-play-1')).toBeTruthy()
+    expect(queryByTestId('nrv2-decision-wait-1')).toBeNull()
+    expect(queryByText(/chờ Sân/)).toBeNull()
 
     // The explanations list is independent of the rescue banner -- it must still render.
     expect(getByText('Vì sao xếp trận này')).toBeTruthy()

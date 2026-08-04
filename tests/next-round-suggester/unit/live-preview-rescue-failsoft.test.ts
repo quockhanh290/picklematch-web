@@ -1,35 +1,40 @@
 import * as livePreview from '../../../lib/next-round-suggester/live-preview'
 import { createPlayer, createState } from '../helpers/factories'
 
+// explainMatchOptimality reads player NAMES only on its counterfactual branches — i.e. when a
+// seated opponent pair is a 3rd+ meeting (`worst` non-null). A purely lopsided-but-fresh match
+// takes the numbers-only "Lệch X điểm" branch and never touches a name. So to exercise the
+// fail-soft catch we need a REPEAT scenario: every pairwise opponent_count starts at 2, so any
+// 2v2 the engine seats has a cross-team pair on its 3rd meeting → the explanation formats a
+// name → the throwing getter fires deep inside explainMatchOptimality.
+const REPEAT_HISTORY = (self: string) =>
+  new Map(['p1', 'p2', 'p3', 'p4'].filter(id => id !== self).map(id => [id, 2] as const))
+
 describe('blowoutRescue metadata calc fail-soft (W2)', () => {
   it('does not let a genuine throw inside the metadata calc escape buildSuggestedMatchPayloads', () => {
-    // Three near-identical low-pvna players + one extreme outlier: every 2v2 partition of 4
-    // players forces the outlier onto one team, so the "Trận lệch ... chỉ có 1 người trình cao"
-    // explanation branch in explainMatchCompromises ALWAYS fires (unconditional on isBlowout/
-    // isRepeat/live-court gating) — this deterministically reaches `nm(highIds[0])`.
     const state = createState({
       courts: 1,
       pvnaTolerance: 0.3,
       players: [
-        createPlayer('p1', { pvna: 1.0 }),
-        createPlayer('p2', { pvna: 1.0 }),
-        createPlayer('p3', { pvna: 1.0 }),
-        createPlayer('p4', { pvna: 8.0 }),
+        createPlayer('p1', { pvna: 3.0, opponent_counts: REPEAT_HISTORY('p1') }),
+        createPlayer('p2', { pvna: 3.0, opponent_counts: REPEAT_HISTORY('p2') }),
+        createPlayer('p3', { pvna: 3.0, opponent_counts: REPEAT_HISTORY('p3') }),
+        createPlayer('p4', { pvna: 3.0, opponent_counts: REPEAT_HISTORY('p4') }),
       ],
     })
 
+    // Every player's `name` getter throws, so whichever cross-team pair the engine seats,
+    // formatting the counterfactual explanation genuinely blows up inside explainMatchOptimality.
+    const throwingName = (): { get name(): string } => ({
+      get name(): string {
+        throw new Error('probe: forced throw reading player name inside rescue metadata calc')
+      },
+    })
     const playersById = new Map<string, { name?: string | null }>([
-      ['p1', { name: 'p1' }],
-      ['p2', { name: 'p2' }],
-      ['p3', { name: 'p3' }],
-      // Real fault injection (no mocking of internal calls, which self-calls bypass anyway):
-      // p4's `name` getter throws, so `nm('p4')` genuinely blows up deep inside
-      // explainMatchCompromises when it formats the "chỉ có 1 người trình cao" explanation.
-      ['p4', {
-        get name(): string {
-          throw new Error('probe: forced throw reading player name inside rescue metadata calc')
-        },
-      }],
+      ['p1', throwingName()],
+      ['p2', throwingName()],
+      ['p3', throwingName()],
+      ['p4', throwingName()],
     ])
 
     let threw: unknown = null
@@ -57,21 +62,19 @@ describe('blowoutRescue metadata calc fail-soft (W2)', () => {
     expect(payloads[0].team_a.length).toBe(2)
     expect(payloads[0].team_b.length).toBe(2)
     expect(payloads[0].match_explanations).toBeUndefined()
-    expect(payloads[0].degraded_reason).toBeUndefined()
-    expect(payloads[0].rescue_court_idxs).toBeUndefined()
   })
 
-  it('sanity check: without the throwing name getter, the same imbalance DOES produce an explanation', () => {
+  it('sanity check: without the throwing name getter, the same repeat DOES produce an explanation', () => {
     // Proves the previous test's empty match_explanations is caused by the catch, not because
-    // this scenario never reaches the explanation branch in the happy path.
+    // this scenario never reaches a name-reading branch in the happy path.
     const state = createState({
       courts: 1,
       pvnaTolerance: 0.3,
       players: [
-        createPlayer('p1', { pvna: 1.0 }),
-        createPlayer('p2', { pvna: 1.0 }),
-        createPlayer('p3', { pvna: 1.0 }),
-        createPlayer('p4', { pvna: 8.0 }),
+        createPlayer('p1', { pvna: 3.0, opponent_counts: REPEAT_HISTORY('p1') }),
+        createPlayer('p2', { pvna: 3.0, opponent_counts: REPEAT_HISTORY('p2') }),
+        createPlayer('p3', { pvna: 3.0, opponent_counts: REPEAT_HISTORY('p3') }),
+        createPlayer('p4', { pvna: 3.0, opponent_counts: REPEAT_HISTORY('p4') }),
       ],
     })
 

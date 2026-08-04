@@ -172,6 +172,11 @@ export type SessionLiveMatchRow = {
   created_at?: string
   updated_at?: string
   suggestion_metadata?: Record<string, unknown> | null
+  // Persisted degraded-suggestion hints (see migration 20260803000001) — carried on a suggested row
+  // so the host "Cách xử lý" panel survives cold load / snapshot hydration / sticky merge.
+  degraded_reason?: 'blowout' | 'repeat' | 'both' | null
+  rescue_court_idxs?: number[] | null
+  match_explanations?: string[] | null
 }
 
 export type HostCheckInRequest = {

@@ -27,7 +27,7 @@ import { getSessionSkillLabel } from '@/lib/skillAssessment'
 
 import type { SessionMatch } from '@/hooks/useSessionDetail'
 import { BrandedFooter } from '@/components/design/BrandedFooter'
-import { syncLiveRosterFromSessionPlayers } from './next-round-v2/api'
+import { prewarmSuggestFunction, syncLiveRosterFromSessionPlayers } from './next-round-v2/api'
 
 interface HostSessionDetailScreenProps {
   id: string
@@ -392,7 +392,7 @@ export function HostSessionDetailScreen({
         {isCheckInCompleted && !isCancelled && !isAfterEnd && (
           <View style={{ gap: 10, marginTop: 12 }}>
             <TouchableOpacity 
-              onPress={() => router.push(`/host/session/${id}/next-round` as any)}
+              onPress={() => { prewarmSuggestFunction(id); router.push(`/host/session/${id}/next-round` as any) }}
               style={{ 
                 flexDirection: 'row', 
                 alignItems: 'center', 

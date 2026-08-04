@@ -72,10 +72,14 @@ export function correctForFairness(state: SessionState): AdjustmentResult {
         break
 
       case 'rest_violation':
+        // Prioritise the rest-starved players to PLAY, but do NOT pre-open the pvna tolerance for the
+        // whole board. Relaxing tolerance globally from one player's rest debt loosened the blowout
+        // guard on every court, so a single rester repeatedly manufactured lopsided matches elsewhere.
+        // Balance is the last thing to give: when a rester genuinely cannot be seated without it, the
+        // per-court relaxation ladder still relaxes tolerance for THAT court as a last resort.
         for (const playerId of warning.affected_players) {
           adjustment.tier_overrides[playerId] = Tier.MUST_PLAY
         }
-        adjustment.config_changes.pvna_tolerance = (state.config.pvna_tolerance ?? 0.5) + 0.15
         adjustment.applied_for_warnings.push(warning.type)
         break
 

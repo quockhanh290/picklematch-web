@@ -33,6 +33,7 @@
     "sim:report": "tsx scripts/run-simulation-report.ts",
     "bench:live-session": "tsx scripts/diagnostics/bench-live-session-flow.ts",
     "bench:v2-full-flow": "tsx scripts/diagnostics/bench-v2-full-flow.ts",
+    "gate:suggest-quality": "tsx scripts/diagnostics/suggest-quality-gate.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:baseline": "node ./scripts/typecheck-baseline.mjs",
     "typecheck:guard": "node ./scripts/typecheck-baseline.mjs --check",

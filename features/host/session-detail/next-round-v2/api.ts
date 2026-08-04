@@ -192,6 +192,19 @@ export async function prewarmLiveSessionVersionGuard(sessionId: string) {
   if (error) throw error
 }
 
+// Boot the suggest edge function's isolate + auth + DB pool ahead of the first real suggest so
+// the host doesn't wait on a ~1-2s cold start at round 1. Fire-and-forget; safe to call repeatedly.
+let lastPrewarmedSessionId: string | null = null
+export function prewarmSuggestFunction(sessionId: string) {
+  if (!sessionId || lastPrewarmedSessionId === sessionId) return
+  lastPrewarmedSessionId = sessionId
+  void invokeLiveSessionFunction('session-live-matches-suggest', sessionId, { warmup: true })
+    .catch(() => {
+      // best-effort; if it fails the real suggest still works, just without the warm-up head start
+      lastPrewarmedSessionId = null
+    })
+}
+
 export async function loadLatestSyncablePlayerIds(
   sessionId: string,
   localFallbackIds: string[],

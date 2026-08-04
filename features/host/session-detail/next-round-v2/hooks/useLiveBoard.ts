@@ -204,6 +204,10 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
   const startingPreviewIdsRef = useRef(new Set<string>())
   const endingLiveMatchIdsRef = useRef(new Set<string>())
   const completedLiveMatchCommitIdsRef = useRef(new Set<string>())
+  // Highest completion-commit nonce already consumed for degraded re-suggest. A degraded suggestion
+  // stays "awaiting rescue" only until the completion that just freed players has been re-suggested
+  // against — set at dispatch so each completion triggers exactly one re-suggest (no render thrash).
+  const rescueHandledNonceRef = useRef(0)
   const cancelingLiveMatchIdsRef = useRef(new Set<string>())
   const [optimisticLiveMatches, setOptimisticLiveMatches] = useState<LiveDisplayMatchRow[]>([])
   const [liveMatchDisplayKeys, setLiveMatchDisplayKeys] = useState<Record<string, string>>({})
@@ -1299,6 +1303,16 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           : row.sequence_no >= previewCountableMatchCount
       ))
   }, [effectiveLiveMatchRows])
+  // A degraded suggestion (blowout/repeat) told the host "chờ Sân X xong sẽ đỡ". The ONLY robust
+  // trigger for re-suggesting it is the completion EVENT itself: rescue_court_idxs get rewritten by
+  // the edge's board-wide pass every request (so the just-completed court is often no longer in the
+  // list), and neither sequence_no nor countable-match-count change when a live match completes —
+  // so every render-time heuristic misses it. completedLiveMatchCommitNonce bumps once per committed
+  // completion; a degraded court is "awaiting rescue" from that bump until we dispatch its re-suggest
+  // (rescueHandledNonceRef caught up), which frees the just-freed players into a cleaner lineup.
+  const isDegradedMatchAwaitingRescue = useCallback((match: SuggestedLiveMatchRow) =>
+    Boolean(match.degraded_reason) && completedLiveMatchCommitNonce > rescueHandledNonceRef.current
+  , [completedLiveMatchCommitNonce])
   const busyLiveMatchPlayerIds = useMemo(() => new Set(
     effectiveLiveMatchRows
       .filter(match => match.status === 'live')
@@ -1419,6 +1433,22 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     const fallbackPreviewCountableMatchCount = effectiveLiveMatchRows
       .filter(match => match.status === 'completed')
       .reduce((max, match) => Math.max(max, (match.sequence_no ?? -1) + 1), 0)
+    // degraded_reason / rescue_court_idxs / match_explanations are NOT persisted (the RPC drops them,
+    // see the edge's reattachDegradedPreviewFields) — a DB-suggested row read back from the snapshot
+    // has none. Rebuilding a persisted lane straight from that row would STRIP the degraded flag the
+    // last edge response set, so the "chờ Sân X" banner (and the completion-driven re-suggest that
+    // keys off degraded_reason) silently dies until the next auto-suggest re-attaches it. Reattach it
+    // from the prior in-memory lane for the same court+lineup, mirroring what the edge does per request.
+    const priorSuggestionByCourtIdx = new Map<number, SuggestedLiveMatchRow>()
+    for (const prior of suggestedLiveMatchesRef.current) {
+      const priorCourtIdx = getSuggestedLaneCourtIdx(prior)
+      if (priorCourtIdx !== null) priorSuggestionByCourtIdx.set(priorCourtIdx, prior)
+    }
+    const sameLineup = (left: SuggestedLiveMatchRow, right: SuggestedLiveMatchRow) => {
+      const leftIds = new Set([...left.team_a, ...left.team_b].map(String))
+      const rightIds = [...right.team_a, ...right.team_b].map(String)
+      return rightIds.length === leftIds.size && rightIds.every(id => leftIds.has(id))
+    }
 
     for (const match of dbSuggestedMatches) {
       const suggestedMatch = match as SuggestedLiveMatchRow
@@ -1436,11 +1466,20 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       if (playerIds.some(playerId => usedPlayerIds.has(playerId))) continue
       playerIds.forEach(playerId => usedPlayerIds.add(playerId))
 
+      const priorForCourt = priorSuggestionByCourtIdx.get(courtIdx)
+      const reattachDegraded = !suggestedMatch.degraded_reason
+        && priorForCourt?.degraded_reason != null
+        && sameLineup(suggestedMatch, priorForCourt)
       const hydratedMatch: SuggestedLiveMatchRow = {
         ...suggestedMatch,
         preview_source: suggestedMatch.preview_source ?? 'edge_committed',
         preview_live_state_version: suggestedMatch.preview_live_state_version ?? fallbackPreviewLiveStateVersion,
         preview_countable_match_count: suggestedMatch.preview_countable_match_count ?? fallbackPreviewCountableMatchCount,
+        ...(reattachDegraded ? {
+          degraded_reason: priorForCourt!.degraded_reason,
+          rescue_court_idxs: priorForCourt!.rescue_court_idxs,
+          match_explanations: priorForCourt!.match_explanations,
+        } : {}),
       }
       hydrated.push(hydratedMatch)
       nextLaneCache.set(courtIdx, hydratedMatch)
@@ -1752,16 +1791,23 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           .map(match => getSuggestedLaneCourtIdx(match))
           .filter((courtIdx): courtIdx is number => courtIdx !== null)
       : []
+    // A degraded suggestion whose rescue court just completed must be re-suggested (replace its
+    // committed DB row), else the persisted lane stays reusable and the board looks "complete".
+    const degradedAwaitingRescueCourtIdxs = currentPreviewBoardForEdge
+      .filter(match => isDegradedMatchAwaitingRescue(match))
+      .map(match => getSuggestedLaneCourtIdx(match))
+      .filter((courtIdx): courtIdx is number => courtIdx !== null)
     const queuedPreviewCourtIdxs = [
       ...pendingReplacementCourts,
       ...missingPreviewCourtIdxsForRecovery,
       ...hardPreviewQualityCourtIdxs,
+      ...degradedAwaitingRescueCourtIdxs,
     ].filter((courtIdx, index, courtIdxs) =>
       courtIdx >= 0
       && courtIdx < queueCourtCount
       && courtIdxs.indexOf(courtIdx) === index
     )
-    if (!pendingPlanAdoption && !hasHardReusableQualityViolation && !missingReplacementCourt && reusableMatches.length >= suggestedQueueCount) {
+    if (!pendingPlanAdoption && !hasHardReusableQualityViolation && !missingReplacementCourt && degradedAwaitingRescueCourtIdxs.length === 0 && reusableMatches.length >= suggestedQueueCount) {
       const newMatches = reusableMatches.slice(0, suggestedQueueCount)
       suggestedPreviewBatchRef.current = { key: previewLaneCacheKey, matches: newMatches }
       setSuggestedLiveMatches(prev => {
@@ -1945,6 +1991,12 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
         .filter(match => !isPersistedSuggestedMatch(match) && hasHardPreviewQualityViolation(match, state, pvnaTolerance))
         .map(match => getSuggestedLaneCourtIdx(match))
         .filter((courtIdx): courtIdx is number => courtIdx !== null)
+      // Degraded suggestions whose rescue court just completed — target them so the edge re-suggests
+      // (replacing the committed row) instead of the client retaining the old locked lineup.
+      const snapDegradedRescueCourtIdxs = effectivePreviewBoard
+        .filter(match => isDegradedMatchAwaitingRescue(match))
+        .map(match => getSuggestedLaneCourtIdx(match))
+        .filter((courtIdx): courtIdx is number => courtIdx !== null)
       const rawRequestedReplacementCourtIdxs = [
         ...getRequestedReplacementCourtIdxs({
           pendingReplacementCourtIdxs: pendingReplacementCourts,
@@ -1952,6 +2004,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           limit: fetchSuggestedCount,
         }),
         ...snapHardPreviewQualityCourtIdxs,
+        ...snapDegradedRescueCourtIdxs,
       ].filter((courtIdx, index, courtIdxs) =>
         courtIdx >= 0
         && courtIdx < snap.queueCourtCount
@@ -1961,6 +2014,17 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
         ? []
         : rawRequestedReplacementCourtIdxs
       const requestedReplacementCourtSet = new Set(requestedReplacementCourtIdxs)
+      // Consume this completion's re-suggest for the degraded lanes ONLY once they actually make it
+      // into the dispatched request — a full-board request re-suggests everything, and a replace_courts
+      // request only covers courts that survived the fetchSuggestedCount slice. Marking it handled when
+      // the lane was sliced out (capped by higher-priority replacements) would drop it until the next
+      // completion; leaving it unhandled lets the next render re-queue it once a slot frees up.
+      if (
+        snapDegradedRescueCourtIdxs.length > 0
+        && (shouldRequestFullBoardPreview || snapDegradedRescueCourtIdxs.some(courtIdx => requestedReplacementCourtSet.has(courtIdx)))
+      ) {
+        rescueHandledNonceRef.current = completedLiveMatchCommitNonce
+      }
       const retainedPreviewBusyRows = effectivePreviewBoard
         .filter(match => {
           const courtIdx = getSuggestedLaneCourtIdx(match)
@@ -2286,6 +2350,14 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
               .filter(match => !startedPreviewIds.has(match.id))
               .filter(match => !startingPreviewIds.has(match.id))
               .filter(match => !startingPreviewIdsRef.current.has(match.id))
+              // A court we explicitly asked the edge to REPLACE (freed lane, hard-quality violation, or
+              // a degraded lane awaiting rescue) must take the FRESH stamped answer, not its stale
+              // cached/committed lineup. Without this the old repeat-3 sticky lane claimed the court
+              // before the fresh non-repeat stamped lane and the re-suggest visibly did nothing.
+              .filter(match => {
+                const courtIdx = getSuggestedLaneCourtIdx(match)
+                return courtIdx === null || !requestedReplacementCourtSet.has(courtIdx)
+              })
               .filter(match =>
                 isPersistedSuggestedMatch(match)
                 || (!match.available_pool_only && !hasHardPreviewQualityViolation(match, state, pvnaTolerance))

@@ -3,6 +3,7 @@ import { useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
 
 import { NextRoundSuggesterScreenV2 } from '@/features/host/session-detail/NextRoundSuggesterScreenV2'
+import { prewarmSuggestFunction } from '@/features/host/session-detail/next-round-v2/api'
 import { resetNextRoundTelemetry } from '@/features/host/session-detail/next-round-v2/telemetry'
 import { useAppTheme } from '@/lib/theme-context'
 
@@ -14,6 +15,9 @@ export default function NextRoundRoute() {
   const firstReadyMsRef = React.useRef<number | null>(null)
 
   if (firstReadyMsRef.current === null) {
+    // Warm the suggest edge function's isolate/auth/DB before the screen's first real suggest.
+    // Deduped in the api, so it is a no-op if a nav handler already fired it with more lead time.
+    prewarmSuggestFunction(id!)
     resetNextRoundTelemetry(id!, {
       bootstrap_variant: useFullBootstrap ? 'full' : 'light',
       optimization_variant: 'next-round-v2-shell',

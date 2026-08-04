@@ -293,6 +293,11 @@ export function computeShouldRequestFullBoardPreview({
   return pendingPlanAdoption
     || hasGenuinePreviewQualityViolation
     || restMissForcesFullBoard
-    || reusableMatchCount === 0
+    // No reusable suggestions normally means "rebuild the board" — but NOT when the only gap is a few
+    // open lanes that mini-recover (replace_courts) can fill. With live matches occupying the other
+    // courts, a full_board re-persists their already-assigned players → "already assigned" conflict →
+    // the empty lane stays stuck. Recover the open lanes in-place instead (still full_board when the
+    // gap is larger than replace_courts can cover, handled by the next clause).
+    || (reusableMatchCount === 0 && !shouldRecoverMissingPreviewCourts)
     || (shouldRecoverMissingPreviewCourts && missingPreviewCourtIdxsForRecoveryCount > replacementMaxCount)
 }

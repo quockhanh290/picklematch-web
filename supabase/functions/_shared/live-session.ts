@@ -236,6 +236,28 @@ async function loadLiveSessionAuditSnapshot(request: Request, sessionId: string)
   }
 }
 
+// Embedded copy of the project's asymmetric (ES256) JWT verification key — the PUBLIC key published
+// at <project>/auth/v1/.well-known/jwks.json. Passing it to getClaims() as options.jwks verifies the
+// host's access token LOCALLY (WebCrypto) with ZERO network round-trip, even on a cold edge isolate
+// where getClaims' in-memory JWKS cache is empty and would otherwise fetch the JWKS every invocation
+// (~90-140ms measured). On key rotation the kid won't match this copy, so getClaims falls through to
+// fetching the live JWKS — correctness is preserved, only that one call pays the network cost.
+const AUTH_JWKS = {
+  keys: [
+    {
+      alg: 'ES256',
+      crv: 'P-256',
+      ext: true,
+      key_ops: ['verify'],
+      kid: '2a173231-5c90-4267-9ce3-84b5c19342db',
+      kty: 'EC',
+      use: 'sig',
+      x: 'v9zPR8NlBKYF7rok21pCDXNLTYHR1hWM6TKzJk7Rrrg',
+      y: 'zxlEtro3Af3T5USKY349_Ey2FkCS0hkeK9gIou7PEUE',
+    },
+  ],
+}
+
 export async function requireHost(request: Request, sessionId: string, traceLabel?: string) {
   const startedAt = Date.now()
   const authorization = request.headers.get('Authorization')
@@ -258,14 +280,43 @@ export async function requireHost(request: Request, sessionId: string, traceLabe
   const supabase = createServiceClient()
   const createClientMs = Date.now() - clientStartedAt
   const token = authorization.replace(/^Bearer\s+/i, '')
+  // Verify the access token LOCALLY against the project's asymmetric (ES256) JWT signing key:
+  // getClaims fetches /.well-known/jwks.json once, caches it, and validates signature + expiry via
+  // WebCrypto with no GoTrue round-trip per request. getUser (a network call to the Auth server) was
+  // p50 124ms but spiked to 5.2s under the live-session polling load — the dominant tail-latency cost.
+  // Fall back to getUser only when local verification is unavailable (JWKS fetch failed, WebCrypto
+  // missing) so correctness never depends on the fast path succeeding.
   const getUserStartedAt = Date.now()
-  const { data: userData, error: userError } = await supabase.auth.getUser(token)
+  let userId: string | null = null
+  let authMethod = 'get_claims'
+  let jwtAlg: string | null = null
+  let getClaimsMs = 0
+  try {
+    const claimsStartedAt = Date.now()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token, { jwks: AUTH_JWKS as any })
+    getClaimsMs = Date.now() - claimsStartedAt
+    if (!claimsError && claimsData?.claims?.sub) {
+      userId = String(claimsData.claims.sub)
+      // ES256/RS256 => verified locally (fast). HS256 => getClaims did a server round-trip (symmetric
+      // secret): the project's asymmetric key exists in JWKS but is not the ACTIVE signing key yet.
+      jwtAlg = typeof claimsData.header?.alg === 'string' ? claimsData.header.alg : null
+    }
+  } catch (_claimsError) {
+    // getClaims threw (e.g. JWKS discovery / network failure) — fall through to the server round-trip.
+  }
+  if (!userId) {
+    authMethod = 'get_user_fallback'
+    const { data: userData, error: userError } = await supabase.auth.getUser(token)
+    if (!userError && userData.user) userId = userData.user.id
+  }
   const getUserMs = Date.now() - getUserStartedAt
 
-  if (userError || !userData.user) {
+  if (!userId) {
     if (traceLabel) {
       console.warn(`[${traceLabel}] requireHost detail`, {
         status: 'invalid_access_token',
+        authMethod,
         createClient: createClientMs,
         getUser: getUserMs,
         total: Date.now() - startedAt,
@@ -278,7 +329,6 @@ export async function requireHost(request: Request, sessionId: string, traceLabe
     }
   }
 
-  const userId = userData.user.id
   const sessionQueryStartedAt = Date.now()
   const { data: session, error: sessionError } = await supabase
     .from('sessions')
@@ -341,6 +391,9 @@ export async function requireHost(request: Request, sessionId: string, traceLabe
   if (traceLabel) {
     console.log(`[${traceLabel}] requireHost detail`, {
       status: 'ok',
+      authMethod,
+      jwtAlg,
+      getClaimsMs,
       createClient: createClientMs,
       getUser: getUserMs,
       sessionQuery: sessionQueryMs,
@@ -352,5 +405,9 @@ export async function requireHost(request: Request, sessionId: string, traceLabe
     error: null,
     supabase,
     userId,
+    authMethod,
+    jwtAlg,
+    getClaimsMs,
+    sessionQueryMs,
   }
 }

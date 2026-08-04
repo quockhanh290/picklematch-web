@@ -269,6 +269,8 @@ const MAX_CANDIDATES_PER_STRATEGY = 60
 const MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY = 8
 export const DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS = 1000
 const RUNTIME_DEADLINE_GUARD_MS = 50
+// Time held back from the regular search so the forced/exhaustive rescue pass can always run.
+const RESCUE_BUDGET_RESERVE_MS = 200
 const DEADLINE_RESCUE_CANDIDATE_BUDGET_MS = 400
 const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
 const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
@@ -580,9 +582,14 @@ export function suggestNextRound(
     startedAt + Math.max(1, maxRuntimeMs - RUNTIME_DEADLINE_GUARD_MS),
     options.force_budget_deadline ?? Number.POSITIVE_INFINITY,
   )
+  // Always leave a reserve for the forced/exhaustive rescue pass. At the default 1000ms budget the
+  // regular deadline used to equal the overall deadline (zero reserve), so a slow/large pool spent the
+  // whole budget on the regular search and the rescue — the ONLY pass that caps the required set and can
+  // seat an over-constrained rester foursome without a blowout — was skipped, surfacing as a false
+  // NO_VALID_MATCH ("stuck"). Reserve a slice so the rescue always gets to run.
   const regularBudgetMs = maxRuntimeMs > DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS
     ? 100
-    : maxRuntimeMs
+    : Math.max(50, maxRuntimeMs - RESCUE_BUDGET_RESERVE_MS)
   const regularSearchDeadline = Math.min(runtimeDeadline, startedAt + regularBudgetMs)
   const timedOut = () => Date.now() >= regularSearchDeadline
   const overallTimedOut = () => Date.now() >= runtimeDeadline

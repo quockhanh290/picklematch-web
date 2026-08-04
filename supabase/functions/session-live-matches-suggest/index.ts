@@ -9,6 +9,8 @@ import {
   buildFinalPreviewBoard,
   getPreviewMatchesToPersist,
   buildSuggestedMatchPayloads,
+  computeMatchDegradedRescue,
+  explainMatchOptimality,
   hasFulfilledPreviewBoardReplacements,
   improvesPreviewBoardPvna,
   needsEarlyFullBoardPvnaRescue,
@@ -834,6 +836,19 @@ Deno.serve(async (request) => {
     stageStartedAt = performance.now()
     const body = await readJson(request)
 
+    // Cold-start prewarm (fired when the host opens the next-round screen). Auth already ran
+    // above; a light read warms the DB connection pool. No engine run, no writes — this just
+    // boots the isolate + auth + DB so the host's FIRST real suggest of the session lands warm
+    // instead of paying the ~1-2s cold-start tax (auth ~480ms + persistence ~320ms observed cold).
+    if (body.warmup === true) {
+      try {
+        await auth.supabase.from('sessions').select('id').eq('id', sessionId).maybeSingle()
+      } catch {
+        // best-effort warm; a failed touch still leaves the isolate + auth warm
+      }
+      return jsonResponse({ ok: true, warmed: true })
+    }
+
     if (!Array.isArray(body.player_rows)) {
       return jsonResponse({ ok: false, error: 'Missing player_rows' }, 400)
     }
@@ -1012,6 +1027,13 @@ Deno.serve(async (request) => {
         : openCourtIdxs
     const replaceAllSuggestions = mode === 'full_board' && explicitTargetCourtIdxs.length === 0
     const rollingPolicyEnabled = planRolloutEnabled('SESSION_PLAN_ROLLING_POLICY', sessionId)
+    // rollingHorizon = the async "completed lane returns to the pool" model. It is
+    // independent of plan-consumption: the noop-steering bug that got plan disabled
+    // lives in rollingPlanTarget (kept gated on rollingPolicyEnabled below), NOT here.
+    // Without this, a disabled plan also disables rolling → the engine falls back to
+    // strict logical-round accounting and leaves lanes empty even with idle players.
+    // Default ON for all sessions. Kill-switch: set secret SESSION_ROLLING_HORIZON=0.
+    const rollingHorizonEnabled = Deno.env.get('SESSION_ROLLING_HORIZON') !== '0'
     // Default ON for all sessions. Kill-switch: set secret SESSION_BLOWOUT_RESCUE=0 to disable instantly.
     const blowoutRescueEnabled = Deno.env.get('SESSION_BLOWOUT_RESCUE') !== '0'
     const activeManualMutationKind = authoritativeLiveMatchRows
@@ -1112,7 +1134,7 @@ Deno.serve(async (request) => {
             deferExtremeTightPool: true,
             blowoutRescue: blowoutRescueEnabled,
             tightPoolQualityDeferUntilByCourt,
-            rollingHorizon: rollingPolicyEnabled,
+            rollingHorizon: rollingHorizonEnabled,
             rollingPlanTarget: rollingPolicyEnabled ? planConsumption.rolling_target : null,
             onIncompleteDump,
             onInstrumentEvent,
@@ -1444,6 +1466,100 @@ Deno.serve(async (request) => {
         : normalizedPersistedMatches
       finalPreviewBoard = reattachDegradedPreviewFields(finalPreviewBoard, prePersistDegradedFieldsByCourtIdx)
     }
+    // Board-wide degraded pass: the fill loop only computes degraded_reason/rescue for the courts it
+    // freshly seated, so RETAINED/committed suggestions (other lanes) lack them and their "Chờ Sân X"
+    // panel never shows. Recompute for every suggested court that still has no degraded_reason, using
+    // ONE shared rescue budget so the (expensive) rescue search stays bounded across the board.
+    if (blowoutRescueEnabled) {
+      const liveCourtPlayers = new Map<number, string[]>()
+      for (const match of liveMatchRows) {
+        if (match.status !== 'live' || completingLiveMatchIds.has(match.id)) continue
+        const courtIdx = Number(match.court_idx)
+        if (!occupiedCourtIdxs.has(courtIdx)) continue
+        liveCourtPlayers.set(courtIdx, [...(match.team_a ?? []), ...(match.team_b ?? [])].map(String))
+      }
+      const checkedInIds = [...state.players.values()]
+        .filter(p => p.checked_out_at === null && !p.opted_rest)
+        .map(p => p.player_id)
+      let boardRescueBudgetMs = 400
+      // Recompute degraded_reason / rescue_court_idxs / match_explanations AUTHORITATIVELY for EVERY
+      // suggested court against its CURRENT lineup — never trust the value carried on the row. A
+      // retained lane's fields come from the client's current_preview_board (which can be stale: a
+      // lineup that changed, or repeat counts that grew), so trusting them produced false flags,
+      // missed flags, and explanations describing an earlier lineup. Overwrite (and CLEAR when the
+      // lineup is no longer degraded) so the flag, rescue, and explanation always match what's shown.
+      for (const payload of finalPreviewBoard as any[]) {
+        if (payload.status !== 'suggested' || payload.court_idx == null) continue
+        // court X's own players return to the pool when we re-fill it; only OTHER placed players are busy.
+        const busyIds = new Set<string>(liveBusyIds)
+        for (const other of finalPreviewBoard as any[]) {
+          if (other === payload || other.status !== 'suggested') continue
+          for (const id of [...(other.team_a ?? []), ...(other.team_b ?? [])]) busyIds.add(String(id))
+        }
+        const result = computeMatchDegradedRescue({
+          teamA: payload.team_a,
+          teamB: payload.team_b,
+          courtIdx: Number(payload.court_idx),
+          state,
+          liveCourtIdxs: occupiedCourtIdxs,
+          liveCourtPlayers,
+          busyIds,
+          pvnaTolerance,
+          budgetMs: boardRescueBudgetMs,
+          nowMsFn: () => performance.now(),
+        })
+        boardRescueBudgetMs -= result.elapsedMs
+        payload.degraded_reason = result.degradedReason ?? undefined
+        payload.rescue_court_idxs = result.degradedReason && result.rescueCourtIdxs.length > 0
+          ? result.rescueCourtIdxs
+          : undefined
+        // Explanation must describe THIS lineup. Recompute (alternatives=[] -> basic but accurate) and
+        // clear it when the recompute yields nothing, so a stale "vì sao" list can never linger.
+        try {
+          const lineupIds = [...payload.team_a, ...payload.team_b].map(String)
+          const availableIds = checkedInIds.filter(id => !busyIds.has(id) || lineupIds.includes(id))
+          const explanations = explainMatchOptimality({
+            teamA: payload.team_a,
+            teamB: payload.team_b,
+            alternatives: [],
+            availableIds,
+            state,
+            playersById,
+            pvnaTolerance,
+          })
+          payload.match_explanations = explanations.length > 0 ? explanations : undefined
+        } catch (_explainError) {
+          payload.match_explanations = undefined
+        }
+      }
+    }
+    // Persist the board-wide degraded/rescue hints onto the committed suggested rows so the host
+    // "Cách xử lý" panel survives cold load / snapshot hydration / sticky merge (the INSERT-time
+    // persist misses rescue_court_idxs, which the board-wide pass above fills in). Best-effort and
+    // hint-only — a sync failure must never fail the suggest response. Updates only changed rows.
+    try {
+      const degradedSyncFields = (finalPreviewBoard as any[])
+        .filter(m => m.status === 'suggested' && m.court_idx != null)
+        .map(m => ({
+          court_idx: Number(m.court_idx),
+          team_a: (m.team_a ?? []).map(String),
+          team_b: (m.team_b ?? []).map(String),
+          degraded_reason: m.degraded_reason ?? null,
+          rescue_court_idxs: Array.isArray(m.rescue_court_idxs) ? m.rescue_court_idxs : null,
+          match_explanations: Array.isArray(m.match_explanations) ? m.match_explanations : null,
+        }))
+      // Only pay the sync round-trip when there is a degraded court to persist rescue for. A board
+      // with no degraded lanes needs nothing: freshly re-suggested lanes already got degraded=null
+      // from the persist INSERT, so there is no stale value to clear.
+      if (degradedSyncFields.some(f => f.degraded_reason != null)) {
+        await auth.supabase.rpc('sync_live_suggestion_degraded_fields', {
+          p_session_id: sessionId,
+          p_fields: degradedSyncFields,
+        })
+      }
+    } catch (_syncError) {
+      // hint-only advisory sync; never block the response on it
+    }
     timingMs.persistence = roundedDuration(stageStartedAt)
 
     const totalTimingMs = roundedDuration(requestStartedAt)
@@ -1452,6 +1568,7 @@ Deno.serve(async (request) => {
     const planConsumptionSummary = {
       enabled: planConsumption.enabled,
       rolling_policy_enabled: rollingPolicyEnabled,
+      rolling_horizon_enabled: rollingHorizonEnabled,
       rolling_target_loaded: planConsumption.rolling_target !== null,
       plan_job_id: planConsumption.job_id,
       plan_version_id: planConsumption.plan_version_id,
@@ -1526,6 +1643,8 @@ Deno.serve(async (request) => {
         preview_source: match?.preview_source ?? undefined,
         preview_live_state_version: match?.preview_live_state_version ?? undefined,
         preview_countable_match_count: match?.preview_countable_match_count ?? undefined,
+        degraded_reason: match?.degraded_reason ?? undefined,
+        rescue_court_idxs: match?.rescue_court_idxs ?? undefined,
       })
       const compactRoundRecords = state.rounds.map(round => ({
         id: round.id ?? null,
@@ -1621,6 +1740,12 @@ Deno.serve(async (request) => {
           real_limited_courts: realLimitedCourts,
           max_courts_with_free_players: Math.floor(freeCount / 4),
           max_courts_with_free_plus_live_busy_players: maxCourtsWithEveryone,
+          blowout_rescue_enabled: blowoutRescueEnabled,
+          degraded_court_count: finalPreviewBoard.filter((m: { degraded_reason?: unknown }) => m.degraded_reason).length,
+          auth_method: (auth as { authMethod?: string }).authMethod ?? null,
+          jwt_alg: (auth as { jwtAlg?: string | null }).jwtAlg ?? null,
+          get_claims_ms: (auth as { getClaimsMs?: number }).getClaimsMs ?? null,
+          session_query_ms: (auth as { sessionQueryMs?: number }).sessionQueryMs ?? null,
           plan_consumption: planConsumptionSummary,
         },
         timing_ms: {

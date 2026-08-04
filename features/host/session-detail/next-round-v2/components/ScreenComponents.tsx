@@ -1577,10 +1577,10 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
                   {emptyLaneIsRecovering
                     ? 'Đang tạo trận tiếp theo...'
                     : emptyLaneStatus_ === 'real'
-                      ? 'Chưa có đội hình thỏa điều kiện'
+                      ? 'Chưa đủ người cho một trận ở sân này'
                       : emptyLaneStatus_ === 'temp'
-                        ? 'Đang chờ trạng thái trận cập nhật'
-                        : 'Đang cập nhật gợi ý'}
+                        ? '⏳ Chưa đủ người sẵn sàng cho sân này — hoàn thành một sân đang chạy, người chơi xong sẽ tự được ghép vào đây.'
+                        : 'Đang cập nhật gợi ý...'}
                 </Text>
               </View>
             )}
@@ -1775,6 +1775,10 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   const [selectedChoiceId, setSelectedChoiceId] = useState<SuggestionTradeoffChoiceId>(
     match.recommended_tradeoff_choice ?? tradeoffChoices[0]?.id ?? 'balanced',
   )
+  // "Chờ Sân X" is a third decision alongside the lineup choices — a passive wait (the card keeps the
+  // current lineup and auto-refreshes when a rescue court completes). Tracked separately because it
+  // has no alternative lineup to swap to.
+  const [waitSelected, setWaitSelected] = useState(false)
   const previousMatchIdRef = useRef(match.id)
   const hostSelectedRef = useRef(false)
   const defaultChoiceIdRef = useRef<SuggestionTradeoffChoiceId>(
@@ -1786,6 +1790,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     previousMatchIdRef.current = match.id
     hostSelectedRef.current = false
     setSelectedChoiceId(defaultChoiceIdRef.current)
+    setWaitSelected(false)
   }, [hasCapTradeoffChoices, match.id])
   useEffect(() => {
     if (tradeoffChoices.length === 0) {
@@ -1905,9 +1910,6 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     : match.degraded_reason === 'both'
       ? 'tốt hơn'
       : 'cân hơn'
-  const degradedRescueLabel = degradedRescueCourtIdxs.length > 0
-    ? `Chờ Sân ${degradedRescueCourtIdxs.map(idx => idx + 1).join(' hoặc ')} xong sẽ ${degradedRescueBenefit}`
-    : ''
   // Phase 3: concrete per-match "vì sao xếp trận này" list (repeat/intra/blowout + reason).
   const matchExplanations = !showingAvailablePoolPreview ? (match.match_explanations ?? []) : []
   const previewTrustIssue = visibleMatch.preview_source === 'local_fallback'
@@ -1917,14 +1919,17 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       : visibleMatch.preview_source == null
         ? 'unknown'
         : null
-  const startDisabled = busy || hasBlockingLivePlayers || previewTrustIssue !== null
+  // Chọn "Chờ" = chủ động chờ sân khác → không cho bắt đầu trận này (muốn chơi thì chọn lại "Chơi luôn").
+  const startDisabled = busy || hasBlockingLivePlayers || previewTrustIssue !== null || waitSelected
   const startDisabledLabel = previewTrustIssue === 'fallback'
     ? 'Đang tạo lại gợi ý'
     : previewTrustIssue === 'partial'
       ? 'Đang đồng bộ board'
       : previewTrustIssue === 'unknown'
         ? 'Cần tạo lại gợi ý'
-        : 'Bắt đầu trận'
+        : waitSelected
+          ? '⏳ Đang chờ sân khác'
+          : 'Bắt đầu trận'
   const lockedPlayerCourtMap = useMemo(() => {
     if (!livePlayerCourtMap || lockedPlayerIds.length === 0) return undefined
     const map = new Map<string, number>()
@@ -1993,6 +1998,68 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     return {
       title: choice.label,
       summary: `PVNA ${formatNumber(choice.metrics.pvna_gap, 2)}, intra ${formatNumber(choice.metrics.intra_team_gap, 2)}, lặp +${choice.metrics.repeat_over_by}`,
+    }
+  }
+  // Unified "Cách xử lý trận này" panel: Chơi luôn / Đổi sang trận khác / Chờ Sân X — một chỗ, mỗi
+  // lựa chọn kèm KẾT QUẢ (được gì) + GIÁ (mất gì). Merge của toggle tradeoff (Chơi/Đổi) và banner Chờ.
+  const recommendedChoiceId = recommendedChoice?.id
+  const swapChoices = tradeoffChoices.filter(choice => choice.id !== recommendedChoiceId)
+  // Show the panel for ANY degraded (repeat/blowout) lineup — not only when a rescue court exists.
+  // A repeat that no finishing court can fix (structural / gender-constrained) still needs the host
+  // to SEE it's degraded (via the Chơi-luôn cost line); the "Chờ sân khác" card stays gated on an
+  // actual rescue court below, so an unavoidable repeat shows the warning without a dead wait option.
+  const showDecisionPanel = !showingAvailablePoolPreview && (swapChoices.length > 0 || isDegradedRescue)
+  const playRepeatCount = recommendedChoice?.metrics.max_opponent_pair ?? 0
+  const playResultText = `Đội hình hiện tại, chênh đội ${formatNumber(pvnaDiff, 2)}`
+  const playCostText = match.degraded_reason === 'blowout'
+    ? 'giữ trận hơi lệch trình'
+    : match.degraded_reason === 'repeat'
+      ? (playRepeatCount >= 3 ? `giữ lặp đối thủ ${playRepeatCount} lần` : 'giữ trận bị trùng người')
+      : match.degraded_reason === 'both'
+        ? 'giữ trận hơi lệch & trùng'
+        : playRepeatCount >= 3
+          ? `giữ lặp đối thủ ${playRepeatCount} lần`
+          : 'không đánh đổi gì'
+  const swapResultCost = (choice: SuggestionTradeoffChoice) => {
+    const m = choice.metrics
+    const before = recommendedChoice?.metrics.max_opponent_pair ?? m.max_opponent_pair
+    const result = m.max_opponent_pair < before
+      ? `Lặp đối thủ ${before} → ${m.max_opponent_pair} lần`
+      : m.max_partner_pair < (recommendedChoice?.metrics.max_partner_pair ?? m.max_partner_pair)
+        ? 'Giảm lặp đồng đội'
+        : 'Ít lặp hơn'
+    const costParts: string[] = []
+    if (m.intra_team_gap > 1.0) costParts.push(`1 đôi lệch trình ${formatNumber(m.intra_team_gap, 1)} (gánh)`)
+    if (m.pvna_gap > pvnaTolerance + 0.4) costParts.push(`chênh đội ${formatNumber(m.pvna_gap, 1)} (lệch)`)
+    else if (m.pvna_over_by > 0) costParts.push(`chênh vượt +${formatNumber(m.pvna_over_by, 2)}`)
+    return { result, cost: costParts.length > 0 ? costParts.join(' · ') : 'gần như không' }
+  }
+  const waitResultText = `Đội hình sạch hơn (${degradedRescueBenefit})`
+  const waitCostText = `chờ Sân ${degradedRescueCourtIdxs.map(idx => idx + 1).join(' hoặc ')} xong · sân này để trống`
+  type DecisionCard = { key: string; testId: string; tone: 'play' | 'swap' | 'wait'; title: string; result: string; cost: string; selected: boolean; onPress: () => void }
+  const decisionCards: DecisionCard[] = []
+  if (showDecisionPanel) {
+    decisionCards.push({
+      key: 'play', testId: `nrv2-decision-play-${cardCourtIdx}`, tone: 'play',
+      title: 'Chơi luôn', result: playResultText, cost: playCostText,
+      selected: !waitSelected && (!recommendedChoiceId || selectedChoiceId === recommendedChoiceId),
+      onPress: () => { hostSelectedRef.current = true; setWaitSelected(false); if (recommendedChoiceId) setSelectedChoiceId(recommendedChoiceId) },
+    })
+    for (const choice of swapChoices) {
+      const rc = swapResultCost(choice)
+      decisionCards.push({
+        key: choice.id, testId: `nrv2-decision-swap-${cardCourtIdx}-${choice.id}`, tone: 'swap',
+        title: `Đổi sang: ${describeChoice(choice).title}`, result: rc.result, cost: rc.cost,
+        selected: !waitSelected && selectedChoiceId === choice.id,
+        onPress: () => { hostSelectedRef.current = true; setWaitSelected(false); setSelectedChoiceId(choice.id) },
+      })
+    }
+    if (showDegradedRescue) {
+      decisionCards.push({
+        key: 'wait', testId: `nrv2-decision-wait-${cardCourtIdx}`, tone: 'wait',
+        title: 'Chờ sân khác xong', result: waitResultText, cost: waitCostText, selected: waitSelected,
+        onPress: () => { hostSelectedRef.current = true; setWaitSelected(true); if (recommendedChoiceId) setSelectedChoiceId(recommendedChoiceId) },
+      })
     }
   }
   const visiblePvnaOverBy = pvnaTradeoff?.over_by ?? pvnaOverBy
@@ -2096,65 +2163,52 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
           <CompactWarningStack testID={`nrv2-warning-list-court-${cardCourtIdx}`} warnings={engineWarnings} />
         </View>
       ) : null}
-      {tradeoffChoices.length > 1 ? (
+      {decisionCards.length > 0 ? (
         <View style={{ paddingHorizontal: 14, paddingBottom: 12, gap: 8 }}>
+          {isDegradedRescue ? (
+            <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12.5, color: theme.warningText, fontWeight: '900' }}>
+              {degradedRescueTitle}
+            </Text>
+          ) : null}
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: theme.outline, fontWeight: '900', textTransform: 'uppercase' }}>
-            Chọn phương án
+            Cách xử lý — chọn 1
           </Text>
           <View style={{ gap: 8 }}>
-            {tradeoffChoices.map(choice => {
-              const selected = choice.id === selectedChoice?.id
-              const overIntraTeam = choice.metrics.intra_team_over_by > 0
-              const overRepeat = choice.metrics.repeat_over_by > 0
-              const choiceCopy = describeChoice(choice)
-              return (
-                <Pressable
-                  key={choice.id}
-                  testID={`nrv2-tradeoff-choice-${cardCourtIdx}-${choice.id}`}
-                  accessibilityState={{ selected }}
-                  onPress={() => {
-                    hostSelectedRef.current = true
-                    setSelectedChoiceId(choice.id)
-                  }}
-                  style={{
-                    borderRadius: RADIUS.sm,
-                    borderWidth: selected ? 1.5 : BORDER.hairline,
-                    borderColor: selected ? theme.primary : theme.outlineVariant,
-                    backgroundColor: selected ? theme.secondaryContainer : theme.surface,
-                    padding: 10,
-                    gap: 5,
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 12, color: selected ? theme.primary : theme.onSurface, fontWeight: '900' }}>
-                      {choiceCopy.title}
-                    </Text>
-                    <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, color: selected ? theme.primary : theme.outline }}>
-                      PVNA {formatNumber(choice.metrics.pvna_gap, 2)}{overIntraTeam ? ` / intra +${formatNumber(choice.metrics.intra_team_over_by, 2)}` : ''}
-                    </Text>
-                  </View>
-                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: selected ? theme.onSurface : theme.outline }}>
-                    {choiceCopy.summary}
+            {decisionCards.map(card => (
+              <Pressable
+                key={card.key}
+                testID={card.testId}
+                accessibilityState={{ selected: card.selected }}
+                onPress={card.onPress}
+                style={{
+                  borderRadius: RADIUS.sm,
+                  borderWidth: card.selected ? 1.5 : BORDER.hairline,
+                  borderColor: card.selected ? theme.primary : theme.outlineVariant,
+                  backgroundColor: card.selected ? theme.secondaryContainer : theme.surface,
+                  padding: 10,
+                  gap: 4,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: card.selected ? 5 : 1.5, borderColor: card.selected ? theme.primary : theme.outline }} />
+                  <Text style={{ flex: 1, fontFamily: SCREEN_FONTS.label, fontSize: 12.5, color: card.selected ? theme.primary : theme.onSurface, fontWeight: '900' }}>
+                    {card.tone === 'wait' ? '⏳ ' : ''}{card.title}
                   </Text>
-                  {overRepeat ? (
-                    <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: selected ? theme.onSurface : theme.outline }}>
-                      Lặp vượt {choice.metrics.repeat_over_by}
-                    </Text>
-                  ) : null}
-                </Pressable>
-              )
-            })}
+                </View>
+                <Text style={{ marginLeft: 24, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: card.selected ? theme.onSurface : theme.outline }}>
+                  → Kết quả: {card.result}
+                </Text>
+                <Text style={{ marginLeft: 24, fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: card.selected ? theme.onSurface : theme.outline }}>
+                  → Giá: {card.cost}
+                </Text>
+              </Pressable>
+            ))}
           </View>
-        </View>
-      ) : null}
-      {showDegradedRescue ? (
-        <View style={{ marginHorizontal: 14, marginBottom: 12, borderRadius: RADIUS.md, borderWidth: BORDER.hairline, borderColor: theme.warningStrong, backgroundColor: theme.warningBg, padding: 12, gap: 4 }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 12.5, color: theme.warningText, fontWeight: '900' }}>
-            {degradedRescueTitle}
-          </Text>
-          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText }}>
-            {degradedRescueLabel} — hoặc bấm Bắt đầu để chơi luôn.
-          </Text>
+          {waitSelected ? (
+            <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
+              ⏳ Đang chờ — sân này để trống, sẽ tự cập nhật đội hình khi sân kia xong. Muốn chơi ngay thì chọn lại Chơi luôn.
+            </Text>
+          ) : null}
         </View>
       ) : null}
       {matchExplanations.length > 0 ? (

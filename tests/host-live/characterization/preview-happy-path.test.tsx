@@ -352,7 +352,12 @@ describe('NextRoundSuggesterScreenV2 characterization: happy-path preview + fill
       await jest.advanceTimersByTimeAsync(80)
     })
     expect(mockApi.fetchLiveMatchesPreview).toHaveBeenCalledTimes(1)
-    expect(mockApi.fetchLiveMatchesPreview.mock.calls[0][1]).toMatchObject({ mode: 'full_board' })
+    // Court 0 is already live and only court 1 is open -> the client mini-recovers the single open
+    // lane via replace_courts (treating the live court as busy) rather than a full_board re-suggest,
+    // which would re-persist court 0's already-assigned players and conflict. (See
+    // computeShouldRequestFullBoardPreview: reusableMatchCount===0 no longer forces full_board while
+    // mini-recover can cover the gap.)
+    expect(mockApi.fetchLiveMatchesPreview.mock.calls[0][1]).toMatchObject({ mode: 'replace_courts', court_idxs: [1] })
 
     // Flush the microtasks from the resolved preview promise (state updates that render the board).
     await act(async () => {

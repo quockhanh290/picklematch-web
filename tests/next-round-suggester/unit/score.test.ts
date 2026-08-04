@@ -22,15 +22,31 @@ describe('scoreMatch', () => {
     const p2 = createPlayer('p2')
     const p3 = createPlayer('p3')
     const p4 = createPlayer('p4')
-    setPartnerRepeats(p1, p2, 2)
-    setPartnerRepeats(p3, p4, 1)
+    setPartnerRepeats(p1, p2, 2) // projected 3rd meeting -> severe repeat (+50 surcharge)
+    setPartnerRepeats(p3, p4, 1) // projected 2nd meeting -> not severe
 
     const result = scoreMatch(['p1', 'p2'], ['p3', 'p4'], createState({ players: [p1, p2, p3, p4] }), {
       allowRepeatOverflow: true,
     })
 
     expect(result.stats.partner_repeats).toBe(3)
-    expect(result.score).toBe(9)
+    // 3 * partner_repeat(3) = 9, plus the +50 severe-repeat surcharge for the p1-p2 pair reaching its 3rd meeting
+    expect(result.score).toBe(59)
+  })
+
+  it('makes a repeat-3 lineup score worse than a gender-pref-violating alternative', () => {
+    // p1-p2 have partnered twice; pairing them again is a 3rd meeting (severe repeat). The alternative
+    // pairs them with fresh partners but violates a gender preference. The severe-repeat lineup must
+    // score HIGHER (worse) so the engine prefers breaking the repeat over honouring the preference.
+    const p1 = createPlayer('p1', { gender: 'F', partner_gender_pref: 'F' })
+    const p2 = createPlayer('p2', { gender: 'F', partner_gender_pref: 'F' })
+    const p3 = createPlayer('p3', { gender: 'M', partner_gender_pref: 'M' })
+    const p4 = createPlayer('p4', { gender: 'M', partner_gender_pref: 'M' })
+    setPartnerRepeats(p1, p2, 2)
+    const state = createState({ players: [p1, p2, p3, p4] })
+    const repeatLineup = scoreMatch(['p1', 'p2'], ['p3', 'p4'], state, { allowRepeatOverflow: true }) // p1-p2 3rd meeting, gender ok
+    const freshButGenderViolating = scoreMatch(['p1', 'p3'], ['p2', 'p4'], state, { allowRepeatOverflow: true }) // no repeat, F-M partners violate prefs
+    expect(freshButGenderViolating.score).toBeLessThan(repeatLineup.score)
   })
 
   it('adds opponent repeat penalty across all four opponent pairs', () => {

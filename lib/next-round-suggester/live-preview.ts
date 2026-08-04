@@ -43,6 +43,7 @@ import { reconstructLiveRounds } from './live-rounds.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { getEffectivePvna } from './state.ts'
 import type {
+  Match,
   PlayerSessionState,
   SessionLiveMatchRow,
   SessionState,
@@ -70,6 +71,10 @@ const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
 const FORCE_RESCUE_TOTAL_MS = 1500
+// One shared budget for ALL degraded courts' rescue-court verification in a batch. Each
+// findRescueCourts runs a suggest per live court, so a per-court budget would multiply latency on
+// multi-court fills. Degraded courts past this budget still seat + explain, just without a rescue list.
+const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 
 // --- Wait-rescue "how lopsided is lopsided" thresholds ---------------------------------------
 // Three separate questions, three separate bars, all measured off the same configuredPvnaTolerance:
@@ -83,17 +88,13 @@ const FORCE_RESCUE_TOTAL_MS = 1500
 //      rescue actually help", not "was the seat bad enough to search" — so it is intentionally not
 //      the same value. Looser than raw tolerance so a near-perfect alt isn't rejected over a trivial
 //      residual gap.
-//   3. EXPLAIN_LOPSIDED_GAP_MARGIN: bar for including a "Trận lệch X điểm" line in the seated
-//      match's compromise list (explainMatchCompromises). Deliberately LOWER than DETECT: that list
-//      surfaces EVERY compromise in the seated lineup (in the same function, a 2nd-meeting repeat
-//      within cap is listed too, well under the >=3 DETECT/isRepeat cap) — it is informational for
-//      any tolerance-exceeding match, not gated to ones severe enough to justify a wait offer. A
-//      "Trận lệch" line appearing without degraded_reason='blowout' is by design, not a threshold bug.
+//   3. explainMatchOptimality only justifies a NOTABLE match (a 3rd+ meeting or a clearly lopsided
+//      board, gap > EXPLAIN_LOPSIDED_MIN_GAP) via counterfactual — a normal 2nd meeting is not
+//      surfaced, so clean early rounds stay uncluttered.
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-const EXPLAIN_LOPSIDED_GAP_MARGIN = 0
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 31
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 50
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -1692,7 +1693,7 @@ function hasRecentRepeatPressure(alternative: SuggestionAlternative | undefined,
   })
 }
 
-function selectRequiredIdsForCourt(
+export function selectRequiredIdsForCourt(
   availableRequiredIds: string[],
   count: number,
   remainingCourtsInRound: number,
@@ -1702,28 +1703,32 @@ function selectRequiredIdsForCourt(
   if (remainingCourtsInRound <= 1 || availableRequiredIds.length <= count) {
     return availableRequiredIds.slice(0, count)
   }
-  const sortedByPvna = [...availableRequiredIds].sort((left, right) =>
-    (state.players.get(right) ? getEffectivePvna(state.players.get(right)!) : 0)
-      - (state.players.get(left) ? getEffectivePvna(state.players.get(left)!) : 0) ||
+  // Seat the highest-priority owed player (availableRequiredIds is already fairness-ordered:
+  // consecutive_rest desc, matches_played asc, ...), then fill this court with the players
+  // CLOSEST in skill to that anchor. Grouping similar PVNA keeps the foursome balanceable
+  // under the intra-team gap rule; the previous max+min bucketing forced a strong+weak
+  // foursome that could only be paired into a blowout.
+  const pvnaOf = (id: string) => {
+    const player = state.players.get(id)
+    return player ? getEffectivePvna(player) : 0
+  }
+  const [anchorId, ...others] = availableRequiredIds
+  const anchorPvna = pvnaOf(anchorId)
+  const nearestBySkill = others.sort((left, right) =>
+    Math.abs(pvnaOf(left) - anchorPvna) - Math.abs(pvnaOf(right) - anchorPvna) ||
     left.localeCompare(right)
   )
-  const buckets = Array.from({ length: remainingCourtsInRound }, () => [] as string[])
-  let bucketIndex = 0
-  while (sortedByPvna.length > 0) {
-    buckets[bucketIndex % remainingCourtsInRound].push(sortedByPvna.shift()!)
-    if (sortedByPvna.length > 0) {
-      buckets[bucketIndex % remainingCourtsInRound].push(sortedByPvna.pop()!)
-    }
-    bucketIndex += 1
-  }
-  const selected = buckets[0].slice(0, count)
-  if (selected.length >= count) return selected
-  for (const playerId of availableRequiredIds) {
-    if (selected.includes(playerId)) continue
-    selected.push(playerId)
-    if (selected.length >= count) break
-  }
-  return selected
+  // Force only the owed players within a balanceable band of the anchor. When the owed pool is bimodal
+  // (a few very low + a few very high, all MUST_PLAY), the nearest-by-skill fill still had to reach past
+  // the band for its last seat, handing pairing a strong+weak foursome that can only relax into a
+  // blowout. A skill-outlier owed player is instead DEFERRED here — buildLiveTierOverrides drops it to
+  // FLEXIBLE, so pairing fills the seat from a near-level pool player (balanced) and the outlier anchors
+  // its own cohesive cluster on the next rolling fill. No-op when the owed set is already cohesive (every
+  // nearest player is within band → the full count is forced exactly as before).
+  const cohesive = nearestBySkill.filter(
+    playerId => Math.abs(pvnaOf(playerId) - anchorPvna) <= INTRA_TEAM_PVNA_GAP_LIMIT,
+  )
+  return [anchorId, ...cohesive.slice(0, count - 1)]
 }
 
 export function deferLowViabilityRequiredIdsForCourt({
@@ -2659,6 +2664,179 @@ function repairPayloadBatchRepeatExposure(
   return current
 }
 
+function getPayloadProjectedMaxMeeting(payload: SuggestedMatchPayload, state: SessionState) {
+  const counts = getPayloadMaxHistoricalPairCount(payload, state)
+  return Math.max(counts.partner, counts.opponent) + 1
+}
+
+// Greedy per-court fill of a multi-court batch can seat a stale cluster into a 3rd meeting even when a
+// fresh player is on the bench: the court filled first grabs players the later court needed, so the
+// later court has only repeat-3 lineups left. Cross-court swaps (repairPayloadBatchRepeatExposure) can't
+// fix this — the fresh player isn't seated anywhere to swap. This pull-from-bench pass swaps a benched
+// player in (re-splitting the foursome) whenever it strictly reduces severe (3rd-meeting) repeat,
+// guarded so it never benches a more-owed player, never worsens pvna/intra past the batch's bounds, and
+// never forms an avoid-pair. A genuinely stuck court (stale same-skill cluster, no compatible fresh
+// player) is left as-is for the degraded-panel to surface.
+export function repairPayloadBatchSevereRepeatFromPool(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+  benchIds: string[],
+) {
+  if (payloads.length === 0 || benchIds.length === 0) return payloads
+  if (!payloads.some(payload => getPayloadProjectedMaxMeeting(payload, state) >= 3)) return payloads
+
+  const splitsOfFour = (four: string[]): Array<[[string, string], [string, string]]> => ([
+    [[four[0], four[1]], [four[2], four[3]]],
+    [[four[0], four[2]], [four[1], four[3]]],
+    [[four[0], four[3]], [four[1], four[2]]],
+  ])
+  const owedRank = (playerId: string) => {
+    const player = state.players.get(playerId)
+    return { rest: player?.consecutive_rest ?? 0, matches: player?.matches_played ?? 0 }
+  }
+  // incoming may replace outgoing only if it is at least as owed a turn: rest-recovery first, then fewer
+  // (or equal) matches played. Never bench a more-owed player just to reduce repeat.
+  const mayReplace = (incomingId: string, outgoingId: string) => {
+    const incoming = owedRank(incomingId)
+    const outgoing = owedRank(outgoingId)
+    if (incoming.rest !== outgoing.rest) return incoming.rest > outgoing.rest
+    return incoming.matches <= outgoing.matches
+  }
+
+  let current = payloads
+  let currentScore = scorePayloadRepeatRepair(current, state)
+  let changed = false
+  for (let pass = 0; pass < 4; pass += 1) {
+    const selectedNow = new Set(current.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+    const bench = benchIds.filter(id => !selectedNow.has(id))
+    if (bench.length === 0) break
+    const currentStats = getPayloadBatchStats(current, state, pvnaTolerance)
+    let best: SuggestedMatchPayload[] | null = null
+    let bestScore = currentScore
+    for (const incomingId of bench) {
+      if (!state.players.get(incomingId)) continue
+      for (let payloadIndex = 0; payloadIndex < current.length; payloadIndex += 1) {
+        const four = [...current[payloadIndex].team_a, ...current[payloadIndex].team_b]
+        for (let outPos = 0; outPos < 4; outPos += 1) {
+          if (!mayReplace(incomingId, four[outPos])) continue
+          const nextFour = four.map((id, idx) => (idx === outPos ? incomingId : id))
+          for (const [teamA, teamB] of splitsOfFour(nextFour)) {
+            const candidatePayload = { ...current[payloadIndex], team_a: teamA, team_b: teamB }
+            if (hasAvoidedPartnerPair([candidatePayload], state)) continue
+            const candidate = current.map((payload, idx) => (idx === payloadIndex ? candidatePayload : payload))
+            const candidateStats = getPayloadBatchStats(candidate, state, pvnaTolerance)
+            if (candidateStats.pvnaOver > currentStats.pvnaOver) continue
+            if (currentStats.pvnaOver === 0 && candidateStats.maxPvna > pvnaTolerance) continue
+            if (candidateStats.intraOverHard > currentStats.intraOverHard) continue
+            if (candidateStats.maxIntra > Math.max(INTRA_TEAM_PVNA_GAP_LIMIT, currentStats.maxIntra)) continue
+            const candidateScore = scorePayloadRepeatRepair(candidate, state)
+            if (candidateScore >= bestScore - 0.01) continue
+            best = candidate
+            bestScore = candidateScore
+          }
+        }
+      }
+    }
+    if (!best) break
+    current = best
+    currentScore = bestScore
+    changed = true
+  }
+  if (!changed) return payloads
+
+  const universe = new Set([...benchIds, ...payloads.flatMap(payload => [...payload.team_a, ...payload.team_b])])
+  const finalSelected = new Set(current.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+  const resting = [...universe].filter(id => !finalSelected.has(id)).sort()
+  return current.map(payload => normalizeRepairedPayload({ ...payload, resting }, state, pvnaTolerance))
+}
+
+// A rolling single-court refill has no other court within THIS request to spread players across, so
+// selectRequiredIdsForCourt and deferLowViabilityRequiredIdsForCourt (both bail when
+// remainingCourtsInRound <= 1) force EVERY owed player onto the one open court. When the owed pool is
+// bimodal (a few very low + a few very high), that foursome can only be a team-total blowout and the
+// engine relaxes pvna tolerance to seat it. This pull-from-bench pass swaps the skill-outlier out for a
+// near-level benched filler (re-splitting) to bring the team gap back within reach. The deferred owed
+// player returns to the pool and the rolling lane seats them next, in a foursome they actually balance —
+// but only if they keep a near-level peer on the bench, so a lone outlier is never stranded (left seated,
+// blowout intact, for the degraded panel to surface). Only touches courts the engine already flagged
+// degraded=blowout; never creates a 3rd meeting or avoid-pair, and never lifts intra past the hard cap.
+export function repairPayloadBatchBlowoutFromPool(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+  benchIds: string[],
+) {
+  if (payloads.length === 0 || benchIds.length === 0) return payloads
+  if (!payloads.some(payload => payload.degraded_reason === 'blowout')) return payloads
+
+  const splitsOfFour = (four: string[]): Array<[[string, string], [string, string]]> => ([
+    [[four[0], four[1]], [four[2], four[3]]],
+    [[four[0], four[2]], [four[1], four[3]]],
+    [[four[0], four[3]], [four[1], four[2]]],
+  ])
+  const pvnaOf = (id: string) => { const player = state.players.get(id); return player ? getEffectivePvna(player) : 0 }
+  // the deferred (benched) player must keep a near-level peer among the remaining bench, so the rolling
+  // lane can seat them in a balanced foursome next — never strand a lone outlier on the bench.
+  const hasNearLevelPeer = (playerId: string, pool: string[]) => {
+    const pv = pvnaOf(playerId)
+    return pool.some(other => other !== playerId && Math.abs(pvnaOf(other) - pv) <= pvnaTolerance)
+  }
+
+  let current = payloads
+  let changed = false
+  for (let pass = 0; pass < 4; pass += 1) {
+    const selectedNow = new Set(current.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+    const bench = benchIds.filter(id => !selectedNow.has(id))
+    if (bench.length === 0) break
+    let best: SuggestedMatchPayload[] | null = null
+    let bestCost = Infinity
+    for (let payloadIndex = 0; payloadIndex < current.length; payloadIndex += 1) {
+      if (current[payloadIndex].degraded_reason !== 'blowout') continue
+      const four = [...current[payloadIndex].team_a, ...current[payloadIndex].team_b]
+      const currentGap = getPayloadPvnaGap(current[payloadIndex], state)
+      // Stop once the court is balanced within tolerance — deferring further owed players to shave a
+      // gap that's already acceptable trades fairness for no real gain.
+      if (currentGap <= pvnaTolerance) continue
+      const currentMeeting = getPayloadProjectedMaxMeeting(current[payloadIndex], state)
+      for (const incomingId of bench) {
+        if (!state.players.get(incomingId)) continue
+        for (let outPos = 0; outPos < 4; outPos += 1) {
+          const outgoingId = four[outPos]
+          const remainingBench = [...bench.filter(id => id !== incomingId), outgoingId]
+          if (!hasNearLevelPeer(outgoingId, remainingBench)) continue
+          const nextFour = four.map((id, idx) => (idx === outPos ? incomingId : id))
+          for (const [teamA, teamB] of splitsOfFour(nextFour)) {
+            const candidatePayload = { ...current[payloadIndex], team_a: teamA, team_b: teamB }
+            if (hasAvoidedPartnerPair([candidatePayload], state)) continue
+            if (getPayloadIntraTeamGap(candidatePayload, state) > INTRA_TEAM_PVNA_GAP_LIMIT) continue
+            // don't fix a blowout by creating a 3rd meeting the court didn't already have
+            if (getPayloadProjectedMaxMeeting(candidatePayload, state) >= 3 && currentMeeting < 3) continue
+            const candidateGap = getPayloadPvnaGap(candidatePayload, state)
+            if (candidateGap >= currentGap - 0.01) continue
+            // Among swaps that reduce the blowout, prefer landing within tolerance, then the fewest
+            // repeats (don't trade a blowout for a needless rematch), then the tightest gap.
+            const candidateMeeting = getPayloadProjectedMaxMeeting(candidatePayload, state)
+            const cost = Math.max(0, candidateGap - pvnaTolerance) * 100 + candidateMeeting * 10 + candidateGap
+            if (cost >= bestCost - 1e-6) continue
+            best = current.map((payload, idx) => (idx === payloadIndex ? candidatePayload : payload))
+            bestCost = cost
+          }
+        }
+      }
+    }
+    if (!best) break
+    current = best
+    changed = true
+  }
+  if (!changed) return payloads
+
+  const universe = new Set([...benchIds, ...payloads.flatMap(payload => [...payload.team_a, ...payload.team_b])])
+  const finalSelected = new Set(current.flatMap(payload => [...payload.team_a, ...payload.team_b]))
+  const resting = [...universe].filter(id => !finalSelected.has(id)).sort()
+  return current.map(payload => normalizeRepairedPayload({ ...payload, resting }, state, pvnaTolerance))
+}
+
 function normalizeRepairedPayload(
   payload: SuggestedMatchPayload,
   state: SessionState,
@@ -3137,6 +3315,63 @@ export function buildLiveTradeoffChoices(
   }
 }
 
+// When the seated match keeps an over-threshold repeat purely to stay balanced, the gated tradeoff
+// builders above suppress the repeat-avoiding alternative (it worsens PVNA/intra, so it fails their
+// "must not sacrifice balance" filter). But breaking a 3rd+ meeting is often structurally impossible
+// WITHOUT a cost — every avoiding lineup is either a carry (high intra) or a blowout (high inter).
+// The host asked to still see the LEAST-BAD avoiding option and decide for themselves, with the
+// metrics visible. So surface the best repeat-reducing alternative regardless of how imbalanced it
+// is (prefer a competitive match — lowest team gap — over matched partners), and keep the engine's
+// balanced pick as the recommendation.
+const REPEAT_TRADEOFF_OVER_THRESHOLD = 3
+
+function buildOverThresholdRepeatTradeoff(
+  reference: SuggestionAlternative,
+  alternatives: SuggestionAlternative[],
+  state: SessionState,
+  configuredPvnaTolerance: number,
+): { choices: SuggestionTradeoffChoice[]; recommended: SuggestionTradeoffChoiceId } | null {
+  const referenceMetrics = getTradeoffChoiceMetrics(reference, state, configuredPvnaTolerance)
+  const seatedRepeat = Math.max(referenceMetrics.max_opponent_pair, referenceMetrics.max_partner_pair)
+  if (seatedRepeat < REPEAT_TRADEOFF_OVER_THRESHOLD) return null
+  const referenceKey = getAlternativeMatchKey(reference)
+  const best = alternatives
+    .filter(alternative => alternative.matches.length > 0 && getAlternativeMatchKey(alternative) !== referenceKey)
+    .map(alternative => ({ alternative, metrics: getTradeoffChoiceMetrics(alternative, state, configuredPvnaTolerance) }))
+    .filter(({ metrics }) =>
+      metrics.max_opponent_pair < referenceMetrics.max_opponent_pair
+      || metrics.max_partner_pair < referenceMetrics.max_partner_pair
+    )
+    .sort((left, right) => {
+      const leftRepeat = Math.max(left.metrics.max_opponent_pair, left.metrics.max_partner_pair)
+      const rightRepeat = Math.max(right.metrics.max_opponent_pair, right.metrics.max_partner_pair)
+      if (leftRepeat !== rightRepeat) return leftRepeat - rightRepeat
+      // "least bad" = keep the match competitive first (lowest team gap), then reduce carrying (intra)
+      if (left.metrics.pvna_gap !== right.metrics.pvna_gap) return left.metrics.pvna_gap - right.metrics.pvna_gap
+      return left.metrics.intra_team_gap - right.metrics.intra_team_gap
+    })[0]
+  if (!best) return null
+  return {
+    recommended: 'balanced',
+    choices: [
+      {
+        id: 'balanced',
+        label: getTradeoffChoiceLabel('Tốt nhất tổng thể', referenceMetrics),
+        alternative: reference,
+        metrics: referenceMetrics,
+        explanation: buildTradeoffChoiceExplanation('balanced', referenceMetrics, configuredPvnaTolerance),
+      },
+      {
+        id: 'reduce_repeat',
+        label: getTradeoffChoiceLabel('Ít lặp hơn', best.metrics),
+        alternative: best.alternative,
+        metrics: best.metrics,
+        explanation: buildTradeoffChoiceExplanation('reduce_repeat', best.metrics, configuredPvnaTolerance),
+      },
+    ],
+  }
+}
+
 export function resolveLivePreviewFinalChoice({
   finalAlternatives,
   baselineForConditionalSearch,
@@ -3167,14 +3402,15 @@ export function resolveLivePreviewFinalChoice({
     finalGuardedAlternative &&
     getAlternativeMatchKey(baselineForConditionalSearch) === getAlternativeMatchKey(finalGuardedAlternative),
   )
-  const tradeoffChoices = canUseConditionalTradeoff && conditionalQualityTradeoff
+  const tradeoffChoices = (canUseConditionalTradeoff && conditionalQualityTradeoff
     ? buildConditionalLiveQualityTradeoffChoices(
         finalGuardedAlternative,
         conditionalQualityTradeoff,
         state,
         configuredPvnaTolerance,
       )
-    : buildLiveTradeoffChoices(finalAlternatives, state, configuredPvnaTolerance)
+    : buildLiveTradeoffChoices(finalAlternatives, state, configuredPvnaTolerance))
+    ?? buildOverThresholdRepeatTradeoff(finalGuardedAlternative, finalAlternatives, state, configuredPvnaTolerance)
   const selectedTradeoffChoice = finalGuardedAlternative
     ? tradeoffChoices?.choices.find(choice =>
         getAlternativeMatchKey(choice.alternative) === getAlternativeMatchKey(finalGuardedAlternative),
@@ -3483,13 +3719,30 @@ function findRescueCourts(input: {
   for (const [liveCourt, players] of input.liveCourtPlayers) {
     if (input.nowMsFn() - startedAt > input.budgetMs) break
     const freedBusy = new Set([...input.busyIds].filter(id => !players.includes(id)))
-    const result = suggestNextMatch(input.state, {
+    // A finishing court does not hand ALL its players to the degraded lane — it ALSO re-fills, and
+    // typically re-claims its own just-freed players. Simulate that re-fill FIRST so those players
+    // aren't double-counted as available, then check the degraded lane can STILL be fixed from what's
+    // left. The old check gave the degraded lane every freed player, so it over-promised any court
+    // whose players merely re-fill their own lane (e.g. "chờ Sân 1 hoặc 2" when only Sân 2 helps).
+    const refill = suggestNextMatch(input.state, {
       busy_player_ids: [...freedBusy],
+      court_idx: liveCourt,
+      max_runtime_ms: input.perCourtRuntimeMs,
+    })
+    const refillMatch = refill.alternatives?.[0]?.matches?.[0]
+    const busyAfterRefill = new Set(freedBusy)
+    if (refillMatch) {
+      for (const id of [...refillMatch.team_a, ...refillMatch.team_b]) busyAfterRefill.add(String(id))
+    }
+    const result = suggestNextMatch(input.state, {
+      busy_player_ids: [...busyAfterRefill],
       court_idx: input.courtIdx,
       max_runtime_ms: input.perCourtRuntimeMs,
     })
     const candidate = result.alternatives?.[0]?.matches?.[0]
     if (!candidate) continue
+    // Freeing this court only helped if the degraded lane's fixed lineup actually uses a player the
+    // court freed AND the court's own re-fill left behind (i.e. after the re-fill claimed its share).
     const usesFreed = [...candidate.team_a, ...candidate.team_b].some(id => players.includes(id))
     if (usesFreed && input.isFixed(candidate.team_a as Team, candidate.team_b as Team)) {
       rescue.push(liveCourt)
@@ -3498,116 +3751,159 @@ function findRescueCourts(input: {
   return rescue.sort((left, right) => left - right)
 }
 
-// Phase 3b (counterfactual, ONLY for a degraded single-court refill so cost is 1 extra suggest):
-// find the best lineup that AVOIDS the over-cap repeat pair, and report what that alternative costs.
-function computeRepeatCounterfactual(input: {
+// Degraded-match detection + rescue-court search for a SINGLE match, reusable outside the per-court
+// fill loop. The edge runs this board-wide (over EVERY suggested court, including retained/committed
+// ones the fill loop didn't recompute) so the "Chờ Sân X" panel appears on all degraded courts, not
+// just the one just refilled. Rescue search is the expensive part — the caller passes a shared budget
+// (elapsedMs is returned so it can decrement it across courts) and gets [] when the budget is spent.
+export function computeMatchDegradedRescue(input: {
   teamA: Team
   teamB: Team
-  state: SessionState
-  busyIds: Set<string>
   courtIdx: number
-  seatedGap: number
-  runtimeMs: number
-}): string | undefined {
-  let pair: [string, string] | null = null
-  for (const a of input.teamA) {
-    for (const b of input.teamB) {
-      const projected = (input.state.players.get(a)?.opponent_counts.get(b) ?? 0) + 1
-      if (projected >= 3) { pair = [a, b]; break }
-    }
-    if (pair) break
-  }
-  if (!pair) return undefined
-  const [pa, pb] = pair
-  const result = suggestNextMatch(input.state, {
-    busy_player_ids: [...input.busyIds],
-    court_idx: input.courtIdx,
-    max_alternatives: 16,
-    max_runtime_ms: input.runtimeMs,
-  })
-  const opposes = (teamA: readonly string[], teamB: readonly string[]) =>
-    (teamA.includes(pa) && teamB.includes(pb)) || (teamA.includes(pb) && teamB.includes(pa))
-  const clean = (result.alternatives ?? [])
-    .map(alt => alt.matches?.[0])
-    .find((match): match is NonNullable<typeof match> => !!match && !opposes(match.team_a, match.team_b))
-  if (!clean) return 'nếu tránh cặp này thì không còn cách ghép hợp lý nào từ người đang rảnh'
+  state: SessionState
+  liveCourtIdxs: Set<number>
+  liveCourtPlayers: Map<number, string[]>
+  busyIds: Set<string>
+  pvnaTolerance: number
+  budgetMs: number
+  nowMsFn: () => number
+}): { degradedReason: SuggestedMatchPayload['degraded_reason']; rescueCourtIdxs: number[]; elapsedMs: number } {
+  const { teamA, teamB, courtIdx, state, liveCourtIdxs, liveCourtPlayers, busyIds, pvnaTolerance, budgetMs, nowMsFn } = input
   const pv = (id: string) => {
-    const player = input.state.players.get(id)
+    const player = state.players.get(id)
     return player ? getEffectivePvna(player) : 0
   }
-  const altGap = Math.abs(pv(clean.team_a[0]) + pv(clean.team_a[1]) - pv(clean.team_b[0]) - pv(clean.team_b[1]))
-  if (altGap > input.seatedGap + 0.5) return `nếu tránh cặp này thì trận sẽ lệch ${altGap.toFixed(1)} điểm`
-  const altRepeat = getProjectedRepeatSummary(clean.team_a as Team, clean.team_b as Team, input.state)
-  if (altRepeat.max_opponent_pair_count >= 3) return `nếu tránh cặp này thì lại có cặp khác gặp lần ${altRepeat.max_opponent_pair_count}`
-  return undefined
+  const gap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
+  const isBlowout = gap > Math.max(BLOWOUT_DEGRADE_GAP_FLOOR, pvnaTolerance + BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN)
+  const seatedRepeat = getProjectedRepeatSummary(teamA, teamB, state)
+  const isRepeat = seatedRepeat.max_opponent_pair_count >= 3 || seatedRepeat.max_partner_pair_count >= 3
+  // The DEGRADED flag (repeat/blowout) is a property of the lineup alone — set it whenever the lineup
+  // is degraded, INDEPENDENT of whether any live court exists to rescue it. Coupling the flag to
+  // liveCourtIdxs.size > 0 cleared genuine repeat-3 lanes whenever the whole board was suggested (no
+  // live courts), so the host lost the repeat warning. Only the rescue SEARCH needs a live court.
+  if (!(isBlowout || isRepeat)) {
+    return { degradedReason: undefined, rescueCourtIdxs: [], elapsedMs: 0 }
+  }
+  const degradedReason: SuggestedMatchPayload['degraded_reason'] = isBlowout && isRepeat ? 'both' : isBlowout ? 'blowout' : 'repeat'
+  let rescueCourtIdxs: number[] = []
+  let elapsedMs = 0
+  if (budgetMs > 0 && liveCourtIdxs.size > 0) {
+    const startedAt = nowMsFn()
+    rescueCourtIdxs = findRescueCourts({
+      state,
+      courtIdx,
+      busyIds,
+      liveCourtPlayers,
+      isFixed: (ta, tb) => {
+        if (isBlowout) {
+          const g = Math.abs(pv(ta[0]) + pv(ta[1]) - pv(tb[0]) - pv(tb[1]))
+          if (g > pvnaTolerance + RESCUE_FIXED_GAP_CEILING_MARGIN) return false
+        }
+        if (isRepeat) {
+          const rescued = getProjectedRepeatSummary(ta, tb, state)
+          if (rescued.max_opponent_pair_count >= 3 || rescued.max_partner_pair_count >= 3) return false
+        }
+        return true
+      },
+      perCourtRuntimeMs: 100,
+      budgetMs,
+      nowMsFn,
+    })
+    elapsedMs = nowMsFn() - startedAt
+  }
+  return { degradedReason, rescueCourtIdxs, elapsedMs }
 }
 
-// Phase 3: concrete, per-match explanation of every compromise in a seated lineup (incl. a 2nd
-// meeting that is still within cap), with the derived binding reason. Pure (no engine calls).
-export function explainMatchCompromises(input: {
+const EXPLAIN_LOPSIDED_MIN_GAP = 1.0
+
+// PROVE the seated lineup is the best available, by counterfactual — reusing the alternatives the
+// engine ALREADY evaluated for this court (FREE, no extra suggest). Runs ONLY for a NOTABLE
+// compromise (a 3rd+ meeting, or a clearly lopsided match) — NOT a normal 2nd meeting, so it does
+// not clutter clean early rounds. Shows what the best lineup avoiding the compromise would cost.
+// Never merely re-describes the lineup on screen.
+export function explainMatchOptimality(input: {
   teamA: Team
   teamB: Team
+  alternatives: SuggestionAlternative[]
+  availableIds: string[]
   state: SessionState
   playersById: Map<string, { name?: string | null }>
-  availableIds: string[]
   pvnaTolerance: number
 }): string[] {
-  const { teamA, teamB, state, playersById, availableIds, pvnaTolerance } = input
-  const out: string[] = []
+  const { teamA, teamB, alternatives, availableIds, state, playersById, pvnaTolerance } = input
   const nm = (id: string) => playersById.get(id)?.name || id.slice(0, 4)
   const pv = (id: string) => {
     const player = state.players.get(id)
     return player ? getEffectivePvna(player) : 0
   }
-  const availOthers = Math.max(0, availableIds.length - 1)
-  // Concrete reason for a repeat: name how many of the currently-free players this person has
-  // ALREADY faced/partnered — that is what actually forces re-pairing (derived, no guessing).
-  const metOppCount = (id: string) => availableIds.filter(o => o !== id && (state.players.get(id)?.opponent_counts.get(o) ?? 0) >= 1).length
-  const metPartnerCount = (id: string) => availableIds.filter(o => o !== id && (state.players.get(id)?.partner_counts.get(o) ?? 0) >= 1).length
-  const whyFromMet = (id: string, met: number, verb: string) => {
-    if (availOthers > 0 && met >= availOthers) return ` — vì ${nm(id)} đã ${verb} với tất cả người đang rảnh`
-    if (availOthers >= 4 && met >= availOthers - 1) return ` — vì ${nm(id)} đã ${verb} với gần hết người rảnh (${met}/${availOthers})`
-    return availableIds.length <= 6 ? ' — vì chỉ còn ' + availableIds.length + ' người rảnh, khó tránh' : ''
-  }
+  const gapOf = (a: readonly string[], b: readonly string[]) => Math.abs(pv(a[0]) + pv(a[1]) - pv(b[0]) - pv(b[1]))
+  const seatedGap = gapOf(teamA, teamB)
 
+  let worst: { a: string; b: string; count: number } | null = null
   for (const a of teamA) {
     for (const b of teamB) {
-      const prev = state.players.get(a)?.opponent_counts.get(b) ?? 0
-      if (prev >= 1) out.push(`${nm(a)} & ${nm(b)} đấu lại lần ${prev + 1}${whyFromMet(a, metOppCount(a), 'đấu')}`)
+      const count = (state.players.get(a)?.opponent_counts.get(b) ?? 0) + 1
+      if (count >= 3 && (!worst || count > worst.count)) worst = { a, b, count }
     }
   }
-  for (const team of [teamA, teamB]) {
-    const prev = state.players.get(team[0])?.partner_counts.get(team[1]) ?? 0
-    if (prev >= 1) out.push(`${nm(team[0])} & ${nm(team[1])} chung đội lần ${prev + 1}${whyFromMet(team[0], metPartnerCount(team[0]), 'chung đội')}`)
-  }
-  const totalGap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
-  const teamsAreBalanced = totalGap <= pvnaTolerance + 0.5
-  for (const team of [teamA, teamB]) {
-    const g = Math.abs(pv(team[0]) - pv(team[1]))
-    // Only claim "để cân tổng" when the totals ARE balanced (that is when the strong+weak pairing
-    // actually served balance). If the match is lopsided, the blowout line below explains it instead.
-    if (g > PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT && teamsAreBalanced) {
-      const strong = pv(team[0]) >= pv(team[1]) ? team[0] : team[1]
-      const weak = strong === team[0] ? team[1] : team[0]
-      out.push(`${nm(strong)}(${pv(strong).toFixed(1)}) + ${nm(weak)}(${pv(weak).toFixed(1)}) cùng đội để cân tổng 2 đội`)
+  const lopsided = seatedGap > EXPLAIN_LOPSIDED_MIN_GAP
+  if (!worst && !lopsided) return []
+
+  // Alternatives the engine already considered for this court (free), excluding the seated one.
+  const seatedKey = [...teamA, ...teamB].map(String).sort().join('|')
+  const others: Match[] = alternatives
+    .map(alt => alt.matches[0])
+    .filter((m): m is Match => !!m && [...m.team_a, ...m.team_b].map(String).sort().join('|') !== seatedKey)
+
+  if (worst) {
+    const opposes = (m: Match) =>
+      (m.team_a.includes(worst!.a) && m.team_b.includes(worst!.b)) ||
+      (m.team_a.includes(worst!.b) && m.team_b.includes(worst!.a))
+    const avoiding = others.find(m => !opposes(m))
+    if (!avoiding) {
+      // No lineup avoids the pair. Give the host a VERIFIABLE reason (they can read the PVNAs / count
+      // the free players), not just an unfalsifiable "trust me".
+      const byPvnaDesc = [...availableIds].sort((x, y) => pv(y) - pv(x))
+      const top2 = new Set(byPvnaDesc.slice(0, 2))
+      const bottom2 = new Set(byPvnaDesc.slice(-2))
+      if (top2.has(worst.a) && top2.has(worst.b)) {
+        return [`${nm(worst.a)} (${pv(worst.a).toFixed(1)}) & ${nm(worst.b)} (${pv(worst.b).toFixed(1)}) là 2 người MẠNH nhất còn rảnh — phải chia về 2 đội cho cân, nên thành đối thủ. Ghép chung đội thì đội đó áp đảo.`]
+      }
+      if (bottom2.has(worst.a) && bottom2.has(worst.b)) {
+        return [`${nm(worst.a)} (${pv(worst.a).toFixed(1)}) & ${nm(worst.b)} (${pv(worst.b).toFixed(1)}) là 2 người YẾU nhất còn rảnh — phải chia về 2 đội cho cân, nên thành đối thủ.`]
+      }
+      return [`Chỉ còn ${availableIds.length} người rảnh lúc này — không đủ để tách ${nm(worst.a)} & ${nm(worst.b)} mà vẫn giữ trận cân.`]
     }
-  }
-  if (totalGap > pvnaTolerance + EXPLAIN_LOPSIDED_GAP_MARGIN) {
-    const lowIds = availableIds.filter(id => pv(id) <= 3.0)
-    const highIds = availableIds.filter(id => pv(id) >= 4.0)
-    let why = ''
-    if (lowIds.length <= 1 && highIds.length >= 3) {
-      why = lowIds.length === 1
-        ? ` — vì trong ${availableIds.length} người rảnh chỉ có 1 người trình thấp (${nm(lowIds[0])} ${pv(lowIds[0]).toFixed(1)})`
-        : ` — vì cả ${availableIds.length} người rảnh đều trình cao, không có người yếu để cân`
-    } else if (highIds.length <= 1 && lowIds.length >= 3) {
-      why = highIds.length === 1
-        ? ` — vì trong ${availableIds.length} người rảnh chỉ có 1 người trình cao (${nm(highIds[0])} ${pv(highIds[0]).toFixed(1)})`
-        : ` — vì cả ${availableIds.length} người rảnh đều trình thấp`
+    const altGap = gapOf(avoiding.team_a, avoiding.team_b)
+    const altRepeat = getProjectedRepeatSummary(avoiding.team_a as Team, avoiding.team_b as Team, state).max_opponent_pair_count
+    if (altGap > seatedGap + 0.3) {
+      return [`Tách ${nm(worst.a)} & ${nm(worst.b)} ra thì trận cân nhất còn lại lệch ${altGap.toFixed(1)} (kém hơn ${seatedGap.toFixed(1)} bây giờ) — nên giữ lần gặp này để trận cân.`]
     }
-    out.push(`Trận lệch ${totalGap.toFixed(1)} điểm${why}`)
+    if (altRepeat >= worst.count) {
+      return [`Tách ${nm(worst.a)} & ${nm(worst.b)} thì lại có cặp khác đối đầu ${altRepeat} lần — không đỡ hơn.`]
+    }
+    // The best avoiding lineup isn't more lopsided and doesn't worsen this repeat — name the concrete
+    // downside that made the engine keep the repeat: benching an under-played player, or a partner repeat.
+    const playedOf = (id: string) => state.players.get(id)?.matches_played ?? 0
+    const avoidingPlayers = [...avoiding.team_a, ...avoiding.team_b]
+    const maxPlayedIn = Math.max(...avoidingPlayers.map(playedOf))
+    const owedBenched = [...teamA, ...teamB]
+      .filter(id => !avoidingPlayers.includes(id) && playedOf(id) < maxPlayedIn)
+      .sort((x, y) => playedOf(x) - playedOf(y))[0]
+    if (owedBenched) {
+      return [`Tách ${nm(worst.a)} & ${nm(worst.b)} ra thì ${nm(owedBenched)} (mới ${playedOf(owedBenched)} trận) phải nghỉ thêm — kém công bằng hơn.`]
+    }
+    const altPartner = getProjectedRepeatSummary(avoiding.team_a as Team, avoiding.team_b as Team, state).max_partner_pair_count
+    if (altPartner >= 2) {
+      return [`Tách ${nm(worst.a)} & ${nm(worst.b)} ra thì có cặp phải chung đội lần ${altPartner} — không đỡ hơn.`]
+    }
+    return [`${nm(worst.a)} & ${nm(worst.b)} gặp lần ${worst.count} — mọi cách tách ra đều kém hơn về cân trình/công bằng.`]
   }
-  return out
+  const minGap = others.reduce((min, m) => Math.min(min, gapOf(m.team_a, m.team_b)), seatedGap)
+  if (minGap >= seatedGap - 0.05) {
+    return [`Lệch ${seatedGap.toFixed(1)} điểm — nhưng đây là cách ghép CÂN nhất có thể từ người đang rảnh.`]
+  }
+  return []
 }
 
 export function buildSuggestedMatchPayloads({
@@ -3626,6 +3922,7 @@ export function buildSuggestedMatchPayloads({
 }: BuildSuggestedMatchPayloadsParams): SuggestedMatchPayload[] {
   const batchStartedAt = nowMs()
   const forceBudgetDeadline = nowMs() + FORCE_RESCUE_TOTAL_MS
+  let rescueSearchBudgetRemainingMs = LIVE_RESCUE_TOTAL_BUDGET_MS
   const baseSuggestionState = options.stateOverride ?? state
   let suggestionState = applyFairnessAdjustment(baseSuggestionState, {
     type: fairnessAdjustment.config_changes && Object.keys(fairnessAdjustment.config_changes).length > 0
@@ -4605,7 +4902,6 @@ export function buildSuggestedMatchPayloads({
     )
     let degradedReason: SuggestedMatchPayload['degraded_reason']
     let rescueCourtIdxs: number[] = []
-    let degradedCounterfactual: string | undefined
     if (options.blowoutRescue === true) {
       try {
         // Never silently defer. If the only available lineup is degraded (Phase 1: blowout / Phase 2:
@@ -4617,53 +4913,47 @@ export function buildSuggestedMatchPayloads({
         )
         const seatedRepeat = getProjectedRepeatSummary(match.team_a, match.team_b, suggestionStateForCourt)
         const isRepeat = seatedRepeat.max_opponent_pair_count >= 3 || seatedRepeat.max_partner_pair_count >= 3
-        if ((isBlowout || isRepeat) && count === 1 && liveCourtIdxs.size > 0) {
-          const liveCourtPlayers = new Map<number, string[]>()
-          for (const [playerId, playerCourtIdx] of liveLockedPlayerCourtIdxs) {
-            if (!liveCourtIdxs.has(playerCourtIdx)) continue
-            const players = liveCourtPlayers.get(playerCourtIdx) ?? []
-            players.push(playerId)
-            liveCourtPlayers.set(playerCourtIdx, players)
-          }
-          // Dedicated budget: the per-court budget is already spent by the seated suggest above, so
-          // draw from the (still-ample on a single-court refill) batch budget instead.
-          const rescueBudgetMs = Math.max(120, Math.min(400, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)))
-          rescueCourtIdxs = findRescueCourts({
-            state: suggestionStateForCourt,
-            courtIdx,
-            busyIds,
-            liveCourtPlayers,
-            // A rescue court must fix EVERY problem the seated lineup has (else waiting isn't honest).
-            isFixed: (teamA, teamB) => {
-              if (isBlowout) {
-                const pv = (id: string) => {
-                  const player = suggestionStateForCourt.players.get(id)
-                  return player ? getEffectivePvna(player) : 0
-                }
-                const gap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
-                if (gap > configuredPvnaTolerance + RESCUE_FIXED_GAP_CEILING_MARGIN) return false
-              }
-              if (isRepeat) {
-                const rescued = getProjectedRepeatSummary(teamA, teamB, suggestionStateForCourt)
-                if (rescued.max_opponent_pair_count >= 3 || rescued.max_partner_pair_count >= 3) return false
-              }
-              return true
-            },
-            perCourtRuntimeMs: 100,
-            budgetMs: rescueBudgetMs,
-            nowMsFn: nowMs,
-          })
+        // Fire for EVERY court being filled (not just single-court refills) so a degraded court in a
+        // multi-court board is flagged too. degraded_reason is cheap; the expensive rescue search
+        // below is bounded by one shared batch budget.
+        if ((isBlowout || isRepeat) && liveCourtIdxs.size > 0) {
           degradedReason = isBlowout && isRepeat ? 'both' : isBlowout ? 'blowout' : 'repeat'
-          if (isRepeat) {
-            degradedCounterfactual = computeRepeatCounterfactual({
-              teamA: match.team_a as Team,
-              teamB: match.team_b as Team,
+          if (rescueSearchBudgetRemainingMs > 0) {
+            const liveCourtPlayers = new Map<number, string[]>()
+            for (const [playerId, playerCourtIdx] of liveLockedPlayerCourtIdxs) {
+              if (!liveCourtIdxs.has(playerCourtIdx)) continue
+              const players = liveCourtPlayers.get(playerCourtIdx) ?? []
+              players.push(playerId)
+              liveCourtPlayers.set(playerCourtIdx, players)
+            }
+            const rescueBudgetMs = Math.max(80, Math.min(rescueSearchBudgetRemainingMs, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)))
+            const rescueStartedAt = nowMs()
+            rescueCourtIdxs = findRescueCourts({
               state: suggestionStateForCourt,
-              busyIds,
               courtIdx,
-              seatedGap: pvnaDiff,
-              runtimeMs: Math.max(60, Math.min(150, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt) - 50)),
+              busyIds,
+              liveCourtPlayers,
+              // A rescue court must fix EVERY problem the seated lineup has (else waiting isn't honest).
+              isFixed: (teamA, teamB) => {
+                if (isBlowout) {
+                  const pv = (id: string) => {
+                    const player = suggestionStateForCourt.players.get(id)
+                    return player ? getEffectivePvna(player) : 0
+                  }
+                  const gap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
+                  if (gap > configuredPvnaTolerance + RESCUE_FIXED_GAP_CEILING_MARGIN) return false
+                }
+                if (isRepeat) {
+                  const rescued = getProjectedRepeatSummary(teamA, teamB, suggestionStateForCourt)
+                  if (rescued.max_opponent_pair_count >= 3 || rescued.max_partner_pair_count >= 3) return false
+                }
+                return true
+              },
+              perCourtRuntimeMs: 100,
+              budgetMs: rescueBudgetMs,
+              nowMsFn: nowMs,
             })
+            rescueSearchBudgetRemainingMs -= (nowMs() - rescueStartedAt)
           }
           try {
             options.onInstrumentEvent?.({
@@ -4680,7 +4970,6 @@ export function buildSuggestedMatchPayloads({
         // without degraded metadata rather than aborting the whole batch (edge 500).
         degradedReason = undefined
         rescueCourtIdxs = []
-        degradedCounterfactual = undefined
         try {
           options.onInstrumentEvent?.({
             event: 'repair',
@@ -4760,14 +5049,15 @@ export function buildSuggestedMatchPayloads({
     let matchExplanations: string[] = []
     if (options.blowoutRescue === true) {
       try {
-        matchExplanations = explainMatchCompromises({
+        matchExplanations = explainMatchOptimality({
           teamA: match.team_a as Team,
           teamB: match.team_b as Team,
+          alternatives: finalAlternatives,
+          availableIds: [...suggestionStateForCourt.players.values()]
+            .filter(player => player.checked_out_at === null && !player.opted_rest && !busyIds.has(player.player_id) && !liveLockedPlayerIds.has(player.player_id))
+            .map(player => player.player_id),
           state: suggestionStateForCourt,
           playersById,
-          availableIds: [...suggestionStateForCourt.players.values()]
-            .filter(player => player.checked_out_at === null && !player.opted_rest && !busyIds.has(player.player_id))
-            .map(player => player.player_id),
           pvnaTolerance: configuredPvnaTolerance,
         })
       } catch {
@@ -4776,7 +5066,6 @@ export function buildSuggestedMatchPayloads({
         matchExplanations = []
       }
     }
-    if (degradedCounterfactual) matchExplanations.push(degradedCounterfactual)
     payloads.push({
       court_idx: courtIdx,
       team_a: match.team_a,
@@ -4935,17 +5224,53 @@ export function buildSuggestedMatchPayloads({
     && effectiveCount >= 2
     ? repairAllIdlePayloadBatchParticipation(repairedPayloads, repairState, pvnaTolerance)
     : repairedPayloads
+  // Pull-from-bench repair for the multi-court greedy-steal repeat-3 (see
+  // repairPayloadBatchSevereRepeatFromPool). Needs ≥2 courts in one request and a live board for the
+  // steal to occur; the function no-ops unless a payload is at a 3rd meeting with a fresh player benched.
+  const benchIdsForRepeatRepair = participationRepairedPayloads.length >= 2
+    ? (() => {
+        const selected = new Set(participationRepairedPayloads.flatMap(pl => [...pl.team_a, ...pl.team_b]))
+        return [...repairState.players.values()]
+          .filter(player => player.checked_out_at === null && !player.opted_rest && !selected.has(player.player_id))
+          .map(player => player.player_id)
+      })()
+    : []
+  const repeatPoolRepairedPayloads = benchIdsForRepeatRepair.length > 0
+    ? repairPayloadBatchSevereRepeatFromPool(participationRepairedPayloads, repairState, pvnaTolerance, benchIdsForRepeatRepair)
+    : participationRepairedPayloads
+  // Pull-from-bench repair for the rolling single-court blowout (see repairPayloadBatchBlowoutFromPool).
+  // Applies to any court the engine flagged degraded=blowout — including a single-court refill — so its
+  // bench is recomputed independently of the repeat pass's ≥2-court gate.
+  const benchIdsForBlowoutRepair = (() => {
+    const selected = new Set(repeatPoolRepairedPayloads.flatMap(pl => [...pl.team_a, ...pl.team_b]))
+    return [...repairState.players.values()]
+      .filter(player => player.checked_out_at === null && !player.opted_rest && !selected.has(player.player_id))
+      .map(player => player.player_id)
+  })()
+  const blowoutPoolRepairedPayloads = benchIdsForBlowoutRepair.length > 0
+    ? repairPayloadBatchBlowoutFromPool(repeatPoolRepairedPayloads, repairState, pvnaTolerance, benchIdsForBlowoutRepair)
+    : repeatPoolRepairedPayloads
   const selectedPlayerKey = (items: SuggestedMatchPayload[]) => items
     .flatMap(payload => [...payload.team_a, ...payload.team_b])
     .sort()
     .join('|')
   const invariantSafePayloads = getActiveRollingInvariantTarget(repairState, options.rollingPlanTarget)
-    && selectedPlayerKey(participationRepairedPayloads) !== selectedPlayerKey(payloads)
+    && selectedPlayerKey(blowoutPoolRepairedPayloads) !== selectedPlayerKey(payloads)
     ? payloads
-    : participationRepairedPayloads
+    : blowoutPoolRepairedPayloads
   if (
+    blowoutPoolRepairedPayloads !== repeatPoolRepairedPayloads
+    && invariantSafePayloads === blowoutPoolRepairedPayloads
+  ) {
+    onRepairInstrument?.('swap')
+  } else if (
+    repeatPoolRepairedPayloads !== participationRepairedPayloads
+    && invariantSafePayloads === blowoutPoolRepairedPayloads
+  ) {
+    onRepairInstrument?.('repeat')
+  } else if (
     participationRepairedPayloads !== repairedPayloads
-    && invariantSafePayloads === participationRepairedPayloads
+    && invariantSafePayloads === blowoutPoolRepairedPayloads
   ) {
     onRepairInstrument?.('participation')
   }
