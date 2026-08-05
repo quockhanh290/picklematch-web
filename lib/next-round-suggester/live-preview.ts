@@ -46,6 +46,8 @@ import { getEffectivePvna } from './state.ts'
 import { computeQualityCost, jointRepartition, type Foursome } from './quality-cost.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { buildTradeoffEndpoints, simulateWaitWouldClean } from './forced-tradeoff.ts'
 import type {
   Match,
   PlayerSessionState,
@@ -361,6 +363,12 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   rescue_court_idxs?: number[]
   // Phase 3: concrete per-match explanations of each compromise (repeat/intra/blowout) + reason.
   match_explanations?: string[]
+  // Quality-cost-model: when this court's lineup is a forced tradeoff (no clean split exists in the
+  // eligible pool), the two Pareto-optimal endpoints — advisory data for the host toggle, not the
+  // displayed lineup (which stays the engine's existing pick).
+  forced_tradeoff?: { acceptRepeat: { team_a: Team; team_b: Team }; acceptImbalance: { team_a: Team; team_b: Team } }
+  // Live courts whose completion, simulated, would let this pool build a clean (non-forced) lineup.
+  wait_rescue_options?: { court_idx: number; started_at: string | null }[]
 }
 
 export type LiveDisplayMatchRow = SessionLiveMatchRow & {
@@ -372,7 +380,7 @@ export type SuggestedPreviewBatch = {
   matches: SuggestedLiveMatchRow[]
 }
 
-export type SuggestedMatchPayload = Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context' | 'locked_player_ids' | 'degraded_reason' | 'rescue_court_idxs' | 'match_explanations'>
+export type SuggestedMatchPayload = Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context' | 'locked_player_ids' | 'degraded_reason' | 'rescue_court_idxs' | 'match_explanations' | 'forced_tradeoff' | 'wait_rescue_options'>
 
 export type PreviewBoardMode = 'full_board' | 'replace_courts'
 
@@ -5204,6 +5212,54 @@ export function buildSuggestedMatchPayloads({
         matchExplanations = []
       }
     }
+    let forcedTradeoff: SuggestedMatchPayload['forced_tradeoff']
+    let waitRescueOptions: SuggestedMatchPayload['wait_rescue_options']
+    if (isQualityCostModelEnabled(state)) {
+      try {
+        const forcedTradeoffPoolIds = [...suggestionStateForCourt.players.values()]
+          .filter(player =>
+            player.checked_out_at === null
+            && !player.opted_rest
+            && !busyIds.has(player.player_id)
+            && (
+              !liveLockedPlayerIds.has(player.player_id)
+              || liveLockedPlayerCourtIdxs.get(player.player_id) === courtIdx
+            ),
+          )
+          .map(player => player.player_id)
+        const tradeoff = buildTradeoffEndpoints(forcedTradeoffPoolIds, suggestionStateForCourt, configuredPvnaTolerance)
+        if (tradeoff.isForced) {
+          forcedTradeoff = {
+            acceptRepeat: { team_a: tradeoff.acceptRepeat.team_a, team_b: tradeoff.acceptRepeat.team_b },
+            acceptImbalance: { team_a: tradeoff.acceptImbalance.team_a, team_b: tradeoff.acceptImbalance.team_b },
+          }
+          const liveCourtsForSim = liveMatchRows
+            .filter(row =>
+              row.status === 'live'
+              && !completingLiveMatchIds.has(row.id)
+              && row.court_idx !== null
+              && row.court_idx !== undefined
+              && Number(row.court_idx) !== courtIdx,
+            )
+            .map(row => ({
+              court_idx: Number(row.court_idx),
+              player_ids: [...row.team_a, ...row.team_b],
+              started_at: row.started_at,
+            }))
+          waitRescueOptions = simulateWaitWouldClean(
+            forcedTradeoffPoolIds,
+            liveCourtsForSim,
+            suggestionStateForCourt,
+            configuredPvnaTolerance,
+          )
+        }
+      } catch {
+        // Metadata-only failure — fail soft, seat the match without tradeoff metadata rather than
+        // aborting the whole batch (edge 500).
+        forcedTradeoff = undefined
+        waitRescueOptions = undefined
+      }
+    }
     payloads.push({
       court_idx: courtIdx,
       team_a: match.team_a,
@@ -5230,6 +5286,8 @@ export function buildSuggestedMatchPayloads({
       degraded_reason: degradedReason,
       rescue_court_idxs: rescueCourtIdxs.length > 0 ? rescueCourtIdxs : undefined,
       match_explanations: matchExplanations.length > 0 ? matchExplanations : undefined,
+      forced_tradeoff: forcedTradeoff,
+      wait_rescue_options: waitRescueOptions,
     })
 
     if (debugOut && debugEligible) {
