@@ -146,3 +146,26 @@ export function computeQualityCost(
 
   return { cost, gap, maxProjectedMeeting: maxMeeting }
 }
+
+export type Foursome = [string, string, string, string]
+
+// The 3 distinct ways to split 4 players into two pairs. Fixed order = deterministic tie-break.
+const SPLIT_INDICES: readonly [readonly [number, number], readonly [number, number]][] = [
+  [[0, 1], [2, 3]],
+  [[0, 2], [1, 3]],
+  [[0, 3], [1, 2]],
+]
+
+export function bestSplitForFoursome(
+  four: Foursome, state: SessionState,
+  opts: { tolerance: number; weights?: Partial<QualityCostWeights> },
+): { cost: number; team_a: Team; team_b: Team } {
+  let best: { cost: number; team_a: Team; team_b: Team } | null = null
+  for (const [sa, sb] of SPLIT_INDICES) {
+    const team_a: Team = [four[sa[0]], four[sa[1]]]
+    const team_b: Team = [four[sb[0]], four[sb[1]]]
+    const { cost } = computeQualityCost(team_a, team_b, state, opts)
+    if (best === null || cost < best.cost) best = { cost, team_a, team_b }
+  }
+  return best!
+}
