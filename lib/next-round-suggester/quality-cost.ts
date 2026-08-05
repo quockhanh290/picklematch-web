@@ -16,7 +16,7 @@ export type QualityCostWeights = {
 // the before/after table) + the 5 intent-check scenarios in tests/.../quality-cost.test.ts. Shapes are
 // fixed; only balanceOver/repeat2/repeat3/repeatStep moved from the Task 1 illustrative starting values.
 export const DEFAULT_QUALITY_COST_WEIGHTS: QualityCostWeights = {
-  balanceTie: 0.1, balanceOver: 1.6, intraTie: 0.1, intraOver: 1.0,
+  balanceTie: 0.1, balanceOver: 1.6, intraTie: 0.1, intraOver: 4.0,
   repeat2: 1.0, repeat3: 3.6, repeatStep: 2.4, opponentFactor: 0.7,
   genderPartner: 0.4, genderOpponent: 0.2, groupReward: 0.3, groupCap: 0.6, avoidOpponent: 4.0,
 }
