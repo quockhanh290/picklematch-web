@@ -1,0 +1,28 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`buildSuggestedMatchPayloads — joint pass properties flag OFF: deterministic baseline lineup 1`] = `
+[
+  [
+    0,
+    [
+      "p1",
+      "p2",
+    ],
+    [
+      "p3",
+      "q4",
+    ],
+  ],
+  [
+    1,
+    [
+      "p4",
+      "q1",
+    ],
+    [
+      "q2",
+      "q3",
+    ],
+  ],
+]
+`;

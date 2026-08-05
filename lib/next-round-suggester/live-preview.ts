@@ -43,7 +43,7 @@ import { reconstructLiveRounds } from './live-rounds.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { getEffectivePvna } from './state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { computeQualityCost } from './quality-cost.ts'
+import { computeQualityCost, jointRepartition, type Foursome } from './quality-cost.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
 import type {
@@ -2841,6 +2841,31 @@ export function repairPayloadBatchBlowoutFromPool(
   return current.map(payload => normalizeRepairedPayload({ ...payload, resting }, state, pvnaTolerance))
 }
 
+// Bounded joint re-partition (flag-gated). Holds the seated set fixed; re-assigns those players across
+// the >=2 courts in this batch + re-splits each foursome to minimise total quality-cost. Never-worse
+// under computeQualityCost. Single-court or flag-off => identity (kill-switch clean).
+export function applyJointRepartition(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+  onRepairInstrument?: (tag: string) => void,
+): SuggestedMatchPayload[] {
+  if (!isQualityCostModelEnabled() || payloads.length < 2) return payloads
+  if (payloads.some(pl => pl.court_idx === null)) return payloads
+  const courts = payloads.map(pl => ({
+    court_idx: pl.court_idx as number,
+    four: [pl.team_a[0], pl.team_a[1], pl.team_b[0], pl.team_b[1]] as Foursome,
+  }))
+  const { splits, changed } = jointRepartition(courts, state, { tolerance: pvnaTolerance })
+  if (!changed) return payloads
+  onRepairInstrument?.('joint')
+  const byCourt = new Map(splits.map(s => [s.court_idx, s]))
+  return payloads.map(pl => {
+    const s = byCourt.get(pl.court_idx as number)
+    return s ? { ...pl, team_a: s.team_a, team_b: s.team_b } : pl
+  })
+}
+
 function normalizeRepairedPayload(
   payload: SuggestedMatchPayload,
   state: SessionState,
@@ -5318,7 +5343,7 @@ export function buildSuggestedMatchPayloads({
     })
   }
   const onRepairInstrument = options.onInstrumentEvent
-    ? (detail: 'swap' | 'early' | 'repeat' | 'participation') => {
+    ? (detail: string) => {
         try { options.onInstrumentEvent!({ event: 'repair', detail, court_count: courtCount, available: availableForBatch }) } catch { /* noop */ }
       }
     : undefined
@@ -5386,7 +5411,10 @@ export function buildSuggestedMatchPayloads({
   }
   // Derive warnings from the exact lineups returned to persistence. Rescue and
   // repair paths must not leave over-cap quality metadata stale.
-  return invariantSafePayloads.map(payload => normalizeRepairedPayload(
+  const jointRepartitionedPayloads = applyJointRepartition(
+    invariantSafePayloads, repairState, pvnaTolerance, onRepairInstrument,
+  )
+  return jointRepartitionedPayloads.map(payload => normalizeRepairedPayload(
     payload,
     repairState,
     pvnaTolerance,
