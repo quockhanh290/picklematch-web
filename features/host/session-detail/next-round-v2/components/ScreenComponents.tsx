@@ -1779,6 +1779,11 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   // current lineup and auto-refreshes when a rescue court completes). Tracked separately because it
   // has no alternative lineup to swap to.
   const [waitSelected, setWaitSelected] = useState(false)
+  // Forced-court (no clean lineup) 3-way decision, sourced from the engine's Pareto endpoints
+  // instead of tradeoff_choices. Default = "Chịu lặp" (accept the balanced-but-repeats lineup).
+  const forced = match.forced_tradeoff
+  const forcedWait = match.wait_rescue_options ?? []
+  const [forcedSelection, setForcedSelection] = useState<'accept_repeat' | 'accept_imbalance' | 'wait'>('accept_repeat')
   const previousMatchIdRef = useRef(match.id)
   const hostSelectedRef = useRef(false)
   const defaultChoiceIdRef = useRef<SuggestionTradeoffChoiceId>(
@@ -1791,6 +1796,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     hostSelectedRef.current = false
     setSelectedChoiceId(defaultChoiceIdRef.current)
     setWaitSelected(false)
+    setForcedSelection('accept_repeat')
   }, [hasCapTradeoffChoices, match.id])
   useEffect(() => {
     if (tradeoffChoices.length === 0) {
@@ -1804,7 +1810,15 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     setSelectedChoiceId(defaultChoiceIdRef.current)
   }, [selectedChoiceId, tradeoffChoices])
   const selectedChoice = tradeoffChoices.find(choice => choice.id === selectedChoiceId) ?? tradeoffChoices[0]
+  // "wait" keeps the default lineup (acceptRepeat) pending the re-suggest — it has no lineup of
+  // its own, unlike the swap-to-alternative choices below.
+  const forcedLineup = forced
+    ? (forcedSelection === 'accept_imbalance' ? forced.acceptImbalance : forced.acceptRepeat)
+    : null
   const activeMatch = useMemo<SuggestedLiveMatchRow>(() => {
+    if (forcedLineup) {
+      return { ...match, team_a: forcedLineup.team_a, team_b: forcedLineup.team_b }
+    }
     if (!selectedChoice) return match
     const selected = selectedChoice.alternative
     const selectedMatch = selected.matches[0]
@@ -1818,7 +1832,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       tradeoffs: selected.tradeoffs,
       approval_required: selected.approval_required,
     }
-  }, [match, selectedChoice])
+  }, [match, selectedChoice, forcedLineup])
   const visibleMatch: SuggestedLiveMatchRow = showingAvailablePoolPreview && availablePoolPreview !== 'loading'
     ? availablePoolPreview as SuggestedLiveMatchRow
     : activeMatch
@@ -1920,14 +1934,15 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
         ? 'unknown'
         : null
   // Chọn "Chờ" = chủ động chờ sân khác → không cho bắt đầu trận này (muốn chơi thì chọn lại "Chơi luôn").
-  const startDisabled = busy || hasBlockingLivePlayers || previewTrustIssue !== null || waitSelected
+  const isWaitingOnForcedRescue = forcedSelection === 'wait'
+  const startDisabled = busy || hasBlockingLivePlayers || previewTrustIssue !== null || waitSelected || isWaitingOnForcedRescue
   const startDisabledLabel = previewTrustIssue === 'fallback'
     ? 'Đang tạo lại gợi ý'
     : previewTrustIssue === 'partial'
       ? 'Đang đồng bộ board'
       : previewTrustIssue === 'unknown'
         ? 'Cần tạo lại gợi ý'
-        : waitSelected
+        : waitSelected || isWaitingOnForcedRescue
           ? '⏳ Đang chờ sân khác'
           : 'Bắt đầu trận'
   const lockedPlayerCourtMap = useMemo(() => {
@@ -2036,9 +2051,48 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   }
   const waitResultText = `Đội hình sạch hơn (${degradedRescueBenefit})`
   const waitCostText = `chờ Sân ${degradedRescueCourtIdxs.map(idx => idx + 1).join(' hoặc ')} xong · sân này để trống`
+  // Forced-court (no clean lineup) decision costs: derived from the same pvna/repeat helpers the
+  // rest of the card uses (getTeamPvna, getRepeatDetailLines), applied to the engine's two Pareto
+  // endpoints rather than to tradeoff_choices.
+  const forcedAcceptRepeatGap = forced
+    ? Math.abs(getTeamPvna(forced.acceptRepeat.team_a, state) - getTeamPvna(forced.acceptRepeat.team_b, state))
+    : 0
+  const forcedAcceptImbalanceGap = forced
+    ? Math.abs(getTeamPvna(forced.acceptImbalance.team_a, state) - getTeamPvna(forced.acceptImbalance.team_b, state))
+    : 0
+  const forcedRepeatDetail = forced
+    ? getRepeatDetailLines({ court_idx: cardCourtIdx, team_a: forced.acceptRepeat.team_a, team_b: forced.acceptRepeat.team_b }, state, playersById)
+    : null
+  const forcedRepeatPair = forcedRepeatDetail?.opponentPairs[0] ?? forcedRepeatDetail?.partnerPairs[0]
+  const forcedRepeatCost = forcedRepeatPair
+    ? `${playerName(forcedRepeatPair.playerA, playersById)} gặp lại ${playerName(forcedRepeatPair.playerB, playersById)} lần ${forcedRepeatPair.projectedCount}`
+    : 'có người gặp lại'
   type DecisionCard = { key: string; testId: string; tone: 'play' | 'swap' | 'wait'; title: string; result: string; cost: string; selected: boolean; onPress: () => void }
   const decisionCards: DecisionCard[] = []
-  if (showDecisionPanel) {
+  if (forced) {
+    decisionCards.push({
+      key: 'accept_repeat', testId: `nrv2-decision-accept_repeat-${cardCourtIdx}`, tone: 'play',
+      title: 'Chịu lặp', result: `Cân (chênh ${formatNumber(forcedAcceptRepeatGap, 2)})`, cost: forcedRepeatCost,
+      selected: forcedSelection === 'accept_repeat',
+      onPress: () => { hostSelectedRef.current = true; setForcedSelection('accept_repeat') },
+    })
+    decisionCards.push({
+      key: 'accept_imbalance', testId: `nrv2-decision-accept_imbalance-${cardCourtIdx}`, tone: 'swap',
+      title: 'Chịu lệch', result: 'Tươi (không lặp)', cost: `Đội lệch ${formatNumber(forcedAcceptImbalanceGap, 2)}`,
+      selected: forcedSelection === 'accept_imbalance',
+      onPress: () => { hostSelectedRef.current = true; setForcedSelection('accept_imbalance') },
+    })
+    if (forcedWait.length > 0) {
+      decisionCards.push({
+        key: 'wait', testId: `nrv2-decision-wait-${cardCourtIdx}`, tone: 'wait',
+        title: `Chờ Sân ${forcedWait[0].court_idx + 1}`, result: 'Xong sẽ xếp sạch được', cost: 'sân này để trống',
+        selected: forcedSelection === 'wait',
+        // Task 2 wires the actual re-suggest-on-completion request; for now this just parks the
+        // card in a non-started "waiting" state (see startDisabled / isWaitingOnForcedRescue).
+        onPress: () => { hostSelectedRef.current = true; setForcedSelection('wait') },
+      })
+    }
+  } else if (showDecisionPanel) {
     decisionCards.push({
       key: 'play', testId: `nrv2-decision-play-${cardCourtIdx}`, tone: 'play',
       title: 'Chơi luôn', result: playResultText, cost: playCostText,
@@ -2204,7 +2258,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
               </Pressable>
             ))}
           </View>
-          {waitSelected ? (
+          {waitSelected || isWaitingOnForcedRescue ? (
             <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: theme.warningText }}>
               ⏳ Đang chờ — sân này để trống, sẽ tự cập nhật đội hình khi sân kia xong. Muốn chơi ngay thì chọn lại Chơi luôn.
             </Text>
