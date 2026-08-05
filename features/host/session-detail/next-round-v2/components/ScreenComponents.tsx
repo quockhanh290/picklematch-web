@@ -1909,7 +1909,10 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   // Degraded-rescue (Phase 1 blowout / Phase 2 repeat): the lineup is seated & startable ("Chơi
   // luôn"); if waiting for a specific live court would give a better match, surface it as an
   // optional, non-blocking hint.
-  const isDegradedRescue = (match.degraded_reason === 'blowout' || match.degraded_reason === 'repeat' || match.degraded_reason === 'both')
+  // When the new forced-court 3-way panel is showing, suppress the legacy degraded-rescue banner so the
+  // two don't stack (both fields can co-occur on the same match — degraded_reason from the always-on
+  // blowoutRescue path, forced_tradeoff from the quality-cost flag). The forced panel supersedes it.
+  const isDegradedRescue = !forced && (match.degraded_reason === 'blowout' || match.degraded_reason === 'repeat' || match.degraded_reason === 'both')
   const degradedRescueCourtIdxs = isDegradedRescue && !showingAvailablePoolPreview
     ? (match.rescue_court_idxs ?? [])
     : []
