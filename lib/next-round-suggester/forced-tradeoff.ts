@@ -35,25 +35,35 @@ function candidateLineups(four: string[], state: SessionState): TradeoffLineup[]
   return out
 }
 
+// A pool this large is near-guaranteed to contain a clean foursome (empirically, forced-tradeoff
+// pools stay small — a handful of stragglers on an odd court). Skip the C(n,4)x3 enumeration above
+// this size rather than pay an O(n^4) cost for a case that fails soft to "not forced" either way.
+const FORCED_TRADEOFF_MAX_POOL = 28
+
 export function buildTradeoffEndpoints(
   poolIds: string[], state: SessionState, tolerance: number,
 ): ForcedTradeoff {
   if (poolIds.length < 4) return { isForced: false, clean: null }
+  if (poolIds.length > FORCED_TRADEOFF_MAX_POOL) return { isForced: false, clean: null }
   const cost = (lu: TradeoffLineup) => computeQualityCost(lu.team_a, lu.team_b, state, { tolerance }).cost
   const all: TradeoffLineup[] = []
   const ids = poolIds
+  // Single pass: collect every candidate into `all` (needed for the Pareto endpoints below), but
+  // return the instant a clean lineup turns up — callers only ever check isForced/clean existence,
+  // never which clean lineup was chosen, so there's no need to keep enumerating for a min-cost pick.
   for (let i = 0; i < ids.length; i += 1)
     for (let j = i + 1; j < ids.length; j += 1)
       for (let k = j + 1; k < ids.length; k += 1)
-        for (let l = k + 1; l < ids.length; l += 1)
-          all.push(...candidateLineups([ids[i], ids[j], ids[k], ids[l]], state))
+        for (let l = k + 1; l < ids.length; l += 1) {
+          const lineups = candidateLineups([ids[i], ids[j], ids[k], ids[l]], state)
+          for (const lu of lineups) {
+            all.push(lu)
+            if (lu.gap <= tolerance && lu.maxMeeting < 3) return { isForced: false, clean: lu }
+          }
+        }
   if (all.length === 0) return { isForced: false, clean: null }
-  const clean = all.filter(lu => lu.gap <= tolerance && lu.maxMeeting < 3)
-  if (clean.length > 0) {
-    const best = clean.reduce((m, lu) => (cost(lu) < cost(m) ? lu : m))
-    return { isForced: false, clean: best }
-  }
-  // lexicographic pickers with computeQualityCost tie-break
+  // No clean lineup exists anywhere in the pool — build the two Pareto endpoints via lexicographic
+  // pickers, each with a computeQualityCost tie-break.
   const lexMin = (primary: (lu: TradeoffLineup) => number, secondary: (lu: TradeoffLineup) => number) =>
     all.reduce((m, lu) => {
       if (primary(lu) !== primary(m)) return primary(lu) < primary(m) ? lu : m

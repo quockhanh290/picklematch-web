@@ -1,7 +1,7 @@
 import { buildSuggestedMatchPayloads } from '../../../lib/next-round-suggester/live-preview'
 import { __setQualityCostModelOverrideForTests } from '../../../lib/next-round-suggester/quality-cost-flag'
 import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
-import type { SessionState } from '../../../lib/next-round-suggester/types'
+import type { SessionLiveMatchRow, SessionState } from '../../../lib/next-round-suggester/types'
 
 // Forced-pool fixture (mirrors forced-tradeoff.test.ts): lo1/lo2 vs hi1/hi2 is a gap-~1.6 blowout,
 // while every lo×hi cross-pair is partner-saturated (2 prior meetings) so a balanced split forces a
@@ -38,17 +38,62 @@ function buildCleanState(): SessionState {
   return createState({ players, courts: 1, pvnaTolerance: 0.5 })
 }
 
+// Same forced lo/hi fixture as buildForcedState, plus a fresh balanced foursome (m1-m4) already
+// playing live on court_idx 1 — courts:2 so the forced court (idx 0) gets suggested while court 1
+// stays occupied. Exercises the liveMatchRows → liveCourtsForSim mapping in live-preview.ts, which
+// the other tests here never touch (they all pass liveMatchRows: []).
+function buildForcedStateWithLiveCourt(): { state: SessionState; liveMatchRows: SessionLiveMatchRow[] } {
+  const players = [
+    createPlayer('lo1', { pvna: 2.0 }),
+    createPlayer('lo2', { pvna: 2.1 }),
+    createPlayer('hi1', { pvna: 3.6 }),
+    createPlayer('hi2', { pvna: 3.7 }),
+    createPlayer('m1', { pvna: 3.0 }),
+    createPlayer('m2', { pvna: 3.0 }),
+    createPlayer('m3', { pvna: 3.0 }),
+    createPlayer('m4', { pvna: 3.0 }),
+  ]
+  const state = createState({ players, courts: 2, pvnaTolerance: 0.5, currentRound: 3 })
+  const lo1 = state.players.get('lo1')!
+  const lo2 = state.players.get('lo2')!
+  const hi1 = state.players.get('hi1')!
+  const hi2 = state.players.get('hi2')!
+  setPartnerRepeats(lo1, hi1, 2)
+  setPartnerRepeats(lo1, hi2, 2)
+  setPartnerRepeats(lo2, hi1, 2)
+  setPartnerRepeats(lo2, hi2, 2)
+  const liveMatchRows: SessionLiveMatchRow[] = [
+    {
+      id: 'live-court-1',
+      session_id: state.session_id,
+      sequence_no: 1,
+      round_no: 3,
+      court_idx: 1,
+      status: 'live',
+      team_a: ['m1', 'm2'],
+      team_b: ['m3', 'm4'],
+      resting: [],
+      score_a: 0,
+      score_b: 0,
+      suggested_at: '2026-08-05T06:55:00Z',
+      started_at: '2026-08-05T07:00:00Z',
+      ended_at: null,
+    },
+  ]
+  return { state, liveMatchRows }
+}
+
 const PLAYERS_BY_ID = new Map(
-  ['lo1', 'lo2', 'hi1', 'hi2', 'a', 'b', 'c', 'd'].map(id => [id, { name: id }]),
+  ['lo1', 'lo2', 'hi1', 'hi2', 'a', 'b', 'c', 'd', 'm1', 'm2', 'm3', 'm4'].map(id => [id, { name: id }]),
 )
 
-function callHarness(state: SessionState) {
+function callHarness(state: SessionState, liveMatchRows: SessionLiveMatchRow[] = [], courtCount = 1) {
   return buildSuggestedMatchPayloads({
     count: 1,
     sessionId: 'forced-tradeoff-integration',
-    courtCount: 1,
+    courtCount,
     state,
-    rows: { liveMatchRows: [], liveStateVersion: null },
+    rows: { liveMatchRows, liveStateVersion: null },
     completingLiveMatchIds: new Set(),
     fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
     fairnessWarnings: [],
@@ -91,5 +136,17 @@ describe('buildSuggestedMatchPayloads — forced_tradeoff / wait_rescue_options 
     expect(payloads.length).toBeGreaterThan(0)
     expect(payloads[0].forced_tradeoff).toBeUndefined()
     expect(payloads[0].wait_rescue_options).toBeUndefined()
+  })
+
+  it('flag ON + a live court present: a forced court populates wait_rescue_options via the liveMatchRows mapping', () => {
+    __setQualityCostModelOverrideForTests(true)
+    const { state, liveMatchRows } = buildForcedStateWithLiveCourt()
+    const payloads = callHarness(state, liveMatchRows, 2)
+    const forcedPayload = payloads.find(p => p.forced_tradeoff !== undefined)
+    expect(forcedPayload).toBeDefined()
+    // m1-m4 are a fresh, balanced foursome live on court 1 — returning them yields a clean split,
+    // so this exercises the verified-clean path (not just "array is defined").
+    expect(Array.isArray(forcedPayload!.wait_rescue_options)).toBe(true)
+    expect(forcedPayload!.wait_rescue_options!.map(o => o.court_idx)).toContain(1)
   })
 })
