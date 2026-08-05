@@ -88,6 +88,9 @@ export type SessionState = {
     planned_total_rounds?: number
     court_preset?: 'balanced' | 'play_more' | 'relaxed'
     avoid_pairs?: AvoidPair[]
+    // Session-scoped quality-cost rollout flag, resolved at the request boundary
+    // (resolveQualityCostEnabledForSession). Undefined → engine falls back to the global env flag.
+    quality_cost_enabled?: boolean
   }
   players: Map<string, PlayerSessionState>
   rounds: RoundRecord[]

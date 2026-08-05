@@ -163,7 +163,7 @@ export function getRecentRepeatCost(
   // Flag OFF must stay byte-identical to pre-Task-2 behavior: exact4 fires on any same-four overlap.
   // Flag ON: team-aware — only identical partnerships (both partner-pairs recur) count as exact4; a
   // re-split of the same four (partnerHits < 2) is a fresh lineup. See task-2-brief.md Decision 1.
-  const teamAwareExactRematch = isQualityCostModelEnabled()
+  const teamAwareExactRematch = isQualityCostModelEnabled(state)
   const matchGroupKey = getMatchGroupKey(teamA, teamB)
 
   for (const round of state.rounds) {
@@ -248,7 +248,7 @@ export function hasRecentGroupRematch(teamA: Team, teamB: Team, state: SessionSt
   // Flag OFF must stay byte-identical to pre-Task-2 behavior: any same-four overlap blocks (generic
   // group-key match). Flag ON: team-aware — a re-split of the same four (fresh partnerships) falls
   // through unblocked; only an identical-partnerships rematch is blocked. See task-2-brief.md Decision 1.
-  const teamAwareExactRematch = isQualityCostModelEnabled()
+  const teamAwareExactRematch = isQualityCostModelEnabled(state)
   for (const round of state.rounds) {
     if (
       round.status !== 'completed' ||
@@ -619,7 +619,7 @@ export function scoreMatch(
     return INFINITY_SCORE
   }
 
-  if (isQualityCostModelEnabled()) {
+  if (isQualityCostModelEnabled(state)) {
     const tolerance = options.tolerance ?? state.config.pvna_tolerance
     const weights = options.weights ?? state.config.weights
     const result = computeQualityCost(teamA, teamB, state, { tolerance })

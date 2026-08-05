@@ -2853,7 +2853,7 @@ export function applyJointRepartition(
   pvnaTolerance: number,
   onRepairInstrument?: (tag: string) => void,
 ): SuggestedMatchPayload[] {
-  if (!isQualityCostModelEnabled() || payloads.length < 2) return payloads
+  if (!isQualityCostModelEnabled(state) || payloads.length < 2) return payloads
   if (payloads.some(pl => pl.court_idx === null)) return payloads
   const courts = payloads.map(pl => ({
     court_idx: pl.court_idx as number,
@@ -3436,7 +3436,7 @@ export function buildOverThresholdRepeatTradeoff(
   state: SessionState,
   configuredPvnaTolerance: number,
 ): { choices: SuggestionTradeoffChoice[]; recommended: SuggestionTradeoffChoiceId } | null {
-  if (isQualityCostModelEnabled()) {
+  if (isQualityCostModelEnabled(state)) {
     return buildBalanceFreshnessTradeoff(reference, alternatives, state, configuredPvnaTolerance)
   }
   return buildLegacyOverThresholdRepeatTradeoff(reference, alternatives, state, configuredPvnaTolerance)
@@ -3895,7 +3895,7 @@ export function computeMatchDegradedRescue(input: {
   // diff the legacy path computed by hand (same BLOWOUT_DEGRADE_GAP_FLOOR bar), and
   // `maxProjectedMeeting` folds in the cost model's same-group exclusion (a group replaying a 3rd
   // time isn't the "degraded" repeat this feature targets). Flag OFF path is untouched below.
-  const useQualityCost = isQualityCostModelEnabled()
+  const useQualityCost = isQualityCostModelEnabled(state)
   let isBlowout: boolean
   let isRepeat: boolean
   if (useQualityCost) {

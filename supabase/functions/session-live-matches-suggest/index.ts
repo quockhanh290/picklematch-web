@@ -19,6 +19,7 @@ import {
   LIVE_PREVIEW_ALGORITHM_VERSION,
 } from '../../../lib/next-round-suggester/live-preview.ts'
 import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state.ts'
+import { resolveQualityCostEnabledForSession } from '../../../lib/next-round-suggester/quality-cost-flag.ts'
 import {
   plannedBoardEqualsLiveBoard,
   plannedMatchEqualsLiveMatch,
@@ -917,6 +918,10 @@ Deno.serve(async (request) => {
         avoid_pairs: avoidPairs,
       },
     })
+    // Session-scoped quality-cost rollout: resolve once at the request boundary and carry it on config
+    // so every engine gate (scoring + joint) reads the same per-session decision. Strict allowlist
+    // (SESSION_QUALITY_COST_MODEL=1 AND SESSION_QUALITY_COST_SESSION_IDS lists the session or '*').
+    state.config.quality_cost_enabled = resolveQualityCostEnabledForSession(sessionId)
     const completedRoundsCount = state.rounds.filter(round => round.status === 'completed').length
     timingMs.state_build = roundedDuration(stageStartedAt)
     if (plannedTotalRounds != null && completedRoundsCount >= plannedTotalRounds) {

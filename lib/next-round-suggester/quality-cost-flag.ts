@@ -13,10 +13,30 @@ function readEnvValue(name: string): string | undefined {
   return undefined
 }
 
-export function isQualityCostModelEnabled(): boolean {
+// Reads the resolved flag. Precedence: test override > the session-scoped flag carried on state.config
+// (set at the request boundary by resolveQualityCostEnabledForSession) > the global env var (back-compat
+// and for callers that have no state, e.g. isolated scoring tests). Structural param avoids importing
+// SessionState (this module is imported by the central score.ts).
+export function isQualityCostModelEnabled(state?: { config?: { quality_cost_enabled?: boolean } }): boolean {
   if (testOverride !== null) return testOverride
+  const scoped = state?.config?.quality_cost_enabled
+  if (scoped != null) return scoped
   const value = readEnvValue('SESSION_QUALITY_COST_MODEL')
   return value === '1' || value === 'true'
+}
+
+// Resolve the flag for one session at the request boundary (edge handler). Strict allowlist: the global
+// flag must be '1'/'true' AND the session must be listed in SESSION_QUALITY_COST_SESSION_IDS (comma-
+// separated) or the list must contain '*'. An empty allowlist enables NO session. Mirrors the edge's
+// planRolloutEnabled pattern. The result is stored on state.config.quality_cost_enabled.
+export function resolveQualityCostEnabledForSession(sessionId: string): boolean {
+  const flag = readEnvValue('SESSION_QUALITY_COST_MODEL')
+  if (flag !== '1' && flag !== 'true') return false
+  const allowlist = (readEnvValue('SESSION_QUALITY_COST_SESSION_IDS') ?? '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean)
+  return allowlist.includes('*') || allowlist.includes(sessionId)
 }
 
 // Test-only hook: force the flag on/off, or pass null to restore env-driven reads.
