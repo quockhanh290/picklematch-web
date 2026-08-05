@@ -86,17 +86,25 @@ batch under its own objective.
 ## Integration
 
 **File:** `lib/next-round-suggester/live-preview.ts`, inside
-`buildSuggestedMatchPayloads`, immediately after `blowoutPoolRepairedPayloads`
-is computed (line ~5362) and before the `invariantSafePayloads` gate (~5367).
+`buildSuggestedMatchPayloads`, applied to `invariantSafePayloads` — i.e. **after**
+the existing #70 invariant gate resolves (~5367) and the existing repair-tag
+instrument block, immediately **before** the final `normalizeRepairedPayload`
+map (~5389). Placing it last leaves the existing swap/repeat/participation
+instrument tags untouched.
 
 ```
 blowoutPoolRepairedPayloads            (existing — all repairs applied)
+  → invariantSafePayloads              (existing #70 gate)
+  → existing repair-tag instrument     (existing — unchanged)
   → jointRepartitionedPayloads         (NEW: flag ON && length>=2, else identity)
-  → invariantSafePayloads              (existing #70 gate — selectedPlayerKey
-                                        unchanged by joint, so never reverts)
+  → normalizeRepairedPayload map       (existing — recomputes warnings/metadata)
 ```
 
-- **Gate:** `isQualityCostModelEnabled() && blowoutPoolRepairedPayloads.length >= 2`.
+Running last is still invariant-safe: the joint pass holds the seated set fixed,
+so it cannot reintroduce a participation change the #70 gate just guarded
+against (`selectedPlayerKey` is preserved either way).
+
+- **Gate:** `isQualityCostModelEnabled() && invariantSafePayloads.length >= 2`.
   Flag OFF **or** single-court → return the input array unchanged (byte-identical
   to today; kill-switch clean).
 - The new pass lives in `quality-cost.ts` as a pure exported function operating
