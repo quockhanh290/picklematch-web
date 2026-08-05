@@ -2043,6 +2043,12 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   }
   // Unified "Cách xử lý trận này" panel: Chơi luôn / Đổi sang trận khác / Chờ Sân X — một chỗ, mỗi
   // lựa chọn kèm KẾT QUẢ (được gì) + GIÁ (mất gì). Merge của toggle tradeoff (Chơi/Đổi) và banner Chờ.
+  // NOT dead code: swapChoices still fires for non-forced courts via the engine's repeat>=3 "Ít lặp
+  // hơn" offer (buildOverThresholdRepeatTradeoff / buildBalanceFreshnessTradeoff in live-preview.ts) —
+  // a live-path finalAlternatives array with 1 item (the common case) yields tradeoffChoices=[] here,
+  // so this branch is a no-op then, but it is NOT superseded by forced_tradeoff: forced_tradeoff only
+  // populates when the pool has NO clean lineup at all (mutually exclusive with `if (forced)` above).
+  // Verified via a real canary dump + no characterization test exercises the swap cards — retained.
   const recommendedChoiceId = recommendedChoice?.id
   const swapChoices = tradeoffChoices.filter(choice => choice.id !== recommendedChoiceId)
   // Show the panel for ANY degraded (repeat/blowout) lineup — not only when a rescue court exists.
