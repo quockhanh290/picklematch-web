@@ -15,7 +15,7 @@
 //   testIDs: nrv2-decision-accept_repeat-${courtIdx}, nrv2-decision-accept_imbalance-${courtIdx},
 //   nrv2-decision-wait-${courtIdx}.
 
-import { act, fireEvent } from '@testing-library/react-native'
+import { act, fireEvent, waitFor } from '@testing-library/react-native'
 import { getLevelIdForElo } from '@/lib/eloSystem'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import type { SessionLiveMatchRow, SessionPlayerStateRow } from '@/lib/next-round-suggester/types'
@@ -324,3 +324,133 @@ describe('SuggestedLiveMatchCard: forced-court decision panel from forced_tradeo
     expect(queryByTestId('nrv2-decision-wait-1')).toBeNull()
   })
 })
+
+// Task 2 (forced-court-tradeoff-client): wires "Chờ Sân Y" to useLiveBoard's wait-rescue
+// re-suggest (generalizing isDegradedMatchAwaitingRescue -> also isForcedWaitAwaitingRescue,
+// armed via setForcedWaitSelection from the card's wait decision, sourced from
+// match.wait_rescue_options instead of rescue_court_idxs) and persists the host's forced
+// choice on Start (SuggestedLiveMatchCard's activeMatch stamps preview_source:
+// 'forced_tradeoff_manual' whenever the displayed lineup no longer matches what the server
+// already committed, routing Start through persistAndStartLiveMatch instead of the
+// match_id-only startPersistedLiveMatch fast path). Modeled on
+// tests/host-live/characterization/wait-rescue-resuggest.test.tsx for the re-suggest half.
+describe('Task 2: Chờ Sân Y wires the verified wait re-suggest + persists the forced choice on start', () => {
+  it('tapping Chờ Sân 1 parks the court in a waiting state, does not start, and arms a re-suggest that fires when court 0 completes', async () => {
+    const deferredComplete = makeDeferred<{ data: unknown; error: null }>()
+    mockSupabaseRpc.mockImplementation(async (fn: string) => {
+      if (fn === 'get_live_session_snapshot_versioned') {
+        return { data: buildSnapshot(), error: null }
+      }
+      if (fn === 'complete_live_session_match_versioned') {
+        return deferredComplete.promise
+      }
+      return { data: null, error: null }
+    })
+    mockApi.fetchLiveMatchesPreview.mockResolvedValueOnce(
+      buildForcedPreviewResponse({ wait_rescue_options: [{ court_idx: 0, started_at: CHECKED_IN_AT }] }),
+    )
+    jest.useFakeTimers()
+
+    const { getByTestId } = renderHostLiveScreen({
+      sessionId: SESSION_ID,
+      players: PLAYERS,
+      courts: 2,
+    })
+
+    await act(async () => { await jest.advanceTimersByTimeAsync(0) })
+    await act(async () => { await jest.advanceTimersByTimeAsync(80) })
+    await act(async () => { await jest.advanceTimersByTimeAsync(0) })
+
+    // court_idx 0 -> "Sân 1" (1-indexed display) -- the live court this forced court is waiting on.
+    expect(getByTestId('nrv2-decision-wait-1')).toHaveTextContent('Chờ Sân 1', { exact: false })
+
+    await act(async () => {
+      fireEvent.press(getByTestId('nrv2-decision-wait-1'))
+    })
+
+    expect(getByTestId('nrv2-decision-wait-1').props.accessibilityState.selected).toBe(true)
+    expect(getByTestId('nrv2-start-match-court-1').props.accessibilityState.disabled).toBe(true)
+
+    mockApi.fetchLiveMatchesPreview.mockResolvedValueOnce({
+      ok: true as const,
+      live_state_version: 2,
+      live_state_version_used: 2,
+      payloads: [] as unknown[],
+      final_preview_board: [] as unknown[],
+    })
+
+    fireEvent.press(getByTestId('nrv2-complete-match-court-0'))
+
+    await waitFor(() => {
+      expect(mockSupabaseRpc).toHaveBeenCalledWith(
+        'complete_live_session_match_versioned',
+        expect.objectContaining({ p_match_id: 'live-match-court-0' }),
+      )
+    }, { timeout: 10000 })
+
+    deferredComplete.resolve({
+      data: {
+        match: { ...LIVE_MATCH_COURT_0, status: 'completed', ended_at: new Date().toISOString() },
+        changed_player_state: [],
+        changed_pair_history: [],
+        live_state_version: 2,
+      },
+      error: null,
+    })
+
+    // The completion fires a follow-up preview request that MUST target court 1 -- the forced
+    // court the host is explicitly waiting on -- so it gets re-suggested (Plan 1 guarantees the
+    // wait was verified-clean, so the panel disappears once the fresh lineup lands).
+    await waitFor(() => {
+      expect(mockApi.fetchLiveMatchesPreview).toHaveBeenCalledTimes(2)
+    }, { timeout: 10000 })
+    const requestBody = mockApi.fetchLiveMatchesPreview.mock.calls[1][1] as { mode: string; court_idxs?: number[] }
+    if (requestBody.mode === 'replace_courts') {
+      expect(requestBody.court_idxs).toEqual(expect.arrayContaining([1]))
+    } else {
+      expect(requestBody.mode).toBe('full_board')
+    }
+  }, 25000)
+
+  it('starting after picking Chịu lệch persists + starts the acceptImbalance lineup (not acceptRepeat)', async () => {
+    const { getByTestId } = await mountWithPreview(buildForcedPreviewResponse({ wait_rescue_options: [] }))
+
+    await act(async () => {
+      fireEvent.press(getByTestId('nrv2-decision-accept_imbalance-1'))
+    })
+    expect(getByTestId('nrv2-decision-accept_imbalance-1').props.accessibilityState.selected).toBe(true)
+
+    fireEvent.press(getByTestId('nrv2-start-match-court-1'))
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(50)
+    })
+
+    expect(mockApi.persistAndStartLiveMatch).toHaveBeenCalledTimes(1)
+    expect(mockApi.startPersistedLiveMatch).not.toHaveBeenCalled()
+    const [sessionIdArg, payloadArg] = mockApi.persistAndStartLiveMatch.mock.calls[0]
+    expect(sessionIdArg).toBe(SESSION_ID)
+    expect(payloadArg.match.team_a).toEqual(ACCEPT_IMBALANCE.team_a)
+    expect(payloadArg.match.team_b).toEqual(ACCEPT_IMBALANCE.team_b)
+  })
+
+  it('starting with the default Chịu lặp selection uses the already-committed persisted-start path', async () => {
+    const { getByTestId } = await mountWithPreview(buildForcedPreviewResponse({ wait_rescue_options: [] }))
+
+    fireEvent.press(getByTestId('nrv2-start-match-court-1'))
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(50)
+    })
+
+    expect(mockApi.startPersistedLiveMatch).toHaveBeenCalledTimes(1)
+    expect(mockApi.persistAndStartLiveMatch).not.toHaveBeenCalled()
+    expect(mockApi.startPersistedLiveMatch.mock.calls[0][1]).toMatchObject({
+      match_id: 'edge-court-1-forced-match',
+    })
+  })
+})
+
+function makeDeferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(res => { resolve = res })
+  return { promise, resolve }
+}

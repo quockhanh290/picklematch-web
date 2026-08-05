@@ -303,6 +303,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     activeLiveMatches,
     completedLiveMatches,
     queueCourtCount,
+    setForcedWaitSelection,
     startLiveMatch,
     fetchAvailablePoolPreview,
     confirmStartNow,
@@ -642,6 +643,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
                 onOpenSettings={() => setSheet('settings')}
                 onOpenSwap={(match) => { setSuggestedSwapMatch(match); setSwapFromPlayerId(null); setSheet('swap') }}
                 courtShortageBreakdown={courtShortageBreakdown}
+                onForcedWaitSelectionChange={setForcedWaitSelection}
               />
               {planningInProgress ? (
                 <PlanningRoundCard syncingRoster={busy === 'sync' || isSuggestingPreview} />

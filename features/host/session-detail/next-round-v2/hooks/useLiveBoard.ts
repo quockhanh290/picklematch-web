@@ -225,6 +225,21 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
   // Courts the engine is holding back this pass to avoid a lopsided blowout — waiting for a court to
   // finish (freeing better-matched players), not stuck. Surfaced so the host sees a clear reason.
   const [qualityDeferredCourts, setQualityDeferredCourts] = useState<number[]>([])
+  // Suggested-match ids the host explicitly parked in "Chờ Sân Y" on the forced-court 3-way panel
+  // (SuggestedLiveMatchCard). Keyed by match id (not court idx) so a re-suggest that replaces the
+  // match naturally drops the stale registration. Drives isForcedWaitAwaitingRescue below, which
+  // generalizes the degraded-rescue re-suggest trigger to forced_tradeoff courts the host is
+  // actively waiting on (targeting the verified wait_rescue_options list, not rescue_court_idxs).
+  const [forcedWaitSelectedMatchIds, setForcedWaitSelectedMatchIds] = useState<Set<string>>(() => new Set())
+  const setForcedWaitSelection = useCallback((matchId: string, waiting: boolean) => {
+    setForcedWaitSelectedMatchIds(current => {
+      if (current.has(matchId) === waiting) return current
+      const next = new Set(current)
+      if (waiting) next.add(matchId)
+      else next.delete(matchId)
+      return next
+    })
+  }, [])
   const completingLiveMatchPlaceholdersRef = useRef(completingLiveMatchPlaceholders)
   useEffect(() => {
     markNextRoundStage(sessionId, 'screen_shell_paint', {
@@ -287,6 +302,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     setEndingLiveMatchIds(new Set())
     setCompletingLiveMatchIds(new Set())
     setCreatingNextMatchIds(new Set())
+    setForcedWaitSelectedMatchIds(new Set())
     setCompletingLiveMatchPlaceholders(new Map())
     setIsSuggestingPreview(false)
     setLiveMatchDisplayKeys({})
@@ -473,6 +489,12 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       setError('Gợi ý vừa cũ hoặc chưa được xác nhận từ server. Đang tạo lại gợi ý an toàn hơn.')
     }
     const isManualAvailablePoolStart = match.preview_source === 'manual_available_pool' && match.available_pool_only === true
+    // The forced-court panel (SuggestedLiveMatchCard) stamps this preview_source when the host's
+    // displayed lineup (forcedLineup) no longer matches what the server already persisted for this
+    // match id (e.g. picked "Chịu lệch"/acceptImbalance while only acceptRepeat was committed) — the
+    // server has no record of the swapped team_a/team_b, so it must go through the manual
+    // persist-then-start path (persistAndStartPayload, below) instead of the match_id-only lookup.
+    const isForcedTradeoffManualStart = match.preview_source === 'forced_tradeoff_manual'
     const usePersistedMatchStart = isServerPersistedPreviewSource(match.preview_source) && !isManualAvailablePoolStart
     const committedBatch = suggestedPreviewBatchRef.current
     const committedLane = startedCourtIdx === null ? null : suggestedLaneCacheRef.current.get(startedCourtIdx)
@@ -483,7 +505,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       committedLaneMatchId: committedLane?.id,
       persistedSuggestedMatchId: persistedSuggestedMatchIds.has(match.id) ? match.id : null,
     })
-    if (!isManualAvailablePoolStart && !isCommittedEdgeStart) {
+    if (!isManualAvailablePoolStart && !isForcedTradeoffManualStart && !isCommittedEdgeStart) {
       blockUntrustedStart('preview_not_committed', {
         committed_batch_key: committedBatch?.key ?? null,
         committed_batch_match_count: committedBatch?.matches.length ?? 0,
@@ -1313,6 +1335,18 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
   const isDegradedMatchAwaitingRescue = useCallback((match: SuggestedLiveMatchRow) =>
     Boolean(match.degraded_reason) && completedLiveMatchCommitNonce > rescueHandledNonceRef.current
   , [completedLiveMatchCommitNonce])
+  // Forced-court (no clean lineup) analogue of isDegradedMatchAwaitingRescue: the host explicitly
+  // picked "Chờ Sân Y" (forcedWaitSelectedMatchIds, set via setForcedWaitSelection from the card's
+  // wait decision) on a match whose forced_tradeoff/wait_rescue_options say a completion CAN clean
+  // it up (Plan 1 guarantees wait_rescue_options only lists verified-clean waits, unlike the
+  // degraded case's rescue_court_idxs). Reuses the same completion-nonce trigger — any live match
+  // completing re-suggests this court, replacing the persisted forced lineup with a fresh one.
+  const isForcedWaitAwaitingRescue = useCallback((match: SuggestedLiveMatchRow) =>
+    Boolean(match.forced_tradeoff)
+    && (match.wait_rescue_options?.length ?? 0) > 0
+    && forcedWaitSelectedMatchIds.has(match.id)
+    && completedLiveMatchCommitNonce > rescueHandledNonceRef.current
+  , [forcedWaitSelectedMatchIds, completedLiveMatchCommitNonce])
   const busyLiveMatchPlayerIds = useMemo(() => new Set(
     effectiveLiveMatchRows
       .filter(match => match.status === 'live')
@@ -1793,8 +1827,9 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       : []
     // A degraded suggestion whose rescue court just completed must be re-suggested (replace its
     // committed DB row), else the persisted lane stays reusable and the board looks "complete".
+    // Also covers a forced-court the host is explicitly waiting on (isForcedWaitAwaitingRescue).
     const degradedAwaitingRescueCourtIdxs = currentPreviewBoardForEdge
-      .filter(match => isDegradedMatchAwaitingRescue(match))
+      .filter(match => isDegradedMatchAwaitingRescue(match) || isForcedWaitAwaitingRescue(match))
       .map(match => getSuggestedLaneCourtIdx(match))
       .filter((courtIdx): courtIdx is number => courtIdx !== null)
     const queuedPreviewCourtIdxs = [
@@ -1992,9 +2027,10 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
         .map(match => getSuggestedLaneCourtIdx(match))
         .filter((courtIdx): courtIdx is number => courtIdx !== null)
       // Degraded suggestions whose rescue court just completed — target them so the edge re-suggests
-      // (replacing the committed row) instead of the client retaining the old locked lineup.
+      // (replacing the committed row) instead of the client retaining the old locked lineup. Also
+      // targets a forced-court the host is explicitly waiting on (isForcedWaitAwaitingRescue).
       const snapDegradedRescueCourtIdxs = effectivePreviewBoard
-        .filter(match => isDegradedMatchAwaitingRescue(match))
+        .filter(match => isDegradedMatchAwaitingRescue(match) || isForcedWaitAwaitingRescue(match))
         .map(match => getSuggestedLaneCourtIdx(match))
         .filter((courtIdx): courtIdx is number => courtIdx !== null)
       const rawRequestedReplacementCourtIdxs = [
@@ -3122,6 +3158,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     activeLiveMatches,
     completedLiveMatches,
     queueCourtCount,
+    setForcedWaitSelection,
     startLiveMatch,
     fetchAvailablePoolPreview,
     confirmStartNow,

@@ -1376,6 +1376,7 @@ type LiveMatchBoardProps = {
   onOpenSettings: () => void
   onOpenSwap: (match: SuggestedLiveMatchRow) => void
   courtShortageBreakdown?: { temp: number; real: number } | null
+  onForcedWaitSelectionChange: (matchId: string, waiting: boolean) => void
 }
 
 export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoard({
@@ -1405,6 +1406,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
   onOpenSettings,
   onOpenSwap,
   courtShortageBreakdown,
+  onForcedWaitSelectionChange,
 }: LiveMatchBoardProps) {
   const theme = useAppTheme()
 
@@ -1557,6 +1559,7 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
                 onOpenSwap={() => onOpenSwap(suggestedMatch)}
                 livePlayerCourtMap={livePlayerCourtMap}
                 suppressRepeatCapReachedInfo={showRepeatCapBoardNotice}
+                onForcedWaitSelectionChange={onForcedWaitSelectionChange}
               />
             ) : (
               <View
@@ -1743,6 +1746,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   onOpenSwap,
   livePlayerCourtMap,
   suppressRepeatCapReachedInfo,
+  onForcedWaitSelectionChange,
 }: {
   match: SuggestedLiveMatchRow
   busy: boolean
@@ -1760,6 +1764,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   onOpenSwap: (match: SuggestedLiveMatchRow) => void
   livePlayerCourtMap?: Map<string, number>
   suppressRepeatCapReachedInfo?: boolean
+  onForcedWaitSelectionChange: (matchId: string, waiting: boolean) => void
 }) {
   const theme = useAppTheme()
   const cancelBusy = false
@@ -1792,12 +1797,15 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   defaultChoiceIdRef.current = match.recommended_tradeoff_choice ?? tradeoffChoices[0]?.id ?? 'balanced'
   useEffect(() => {
     if (previousMatchIdRef.current === match.id) return
+    // The old match id is gone from the board (re-suggested/started/etc) — un-arm its forced-wait
+    // registration so a stale entry doesn't keep matching against a court that no longer shows it.
+    onForcedWaitSelectionChange(previousMatchIdRef.current, false)
     previousMatchIdRef.current = match.id
     hostSelectedRef.current = false
     setSelectedChoiceId(defaultChoiceIdRef.current)
     setWaitSelected(false)
     setForcedSelection('accept_repeat')
-  }, [hasCapTradeoffChoices, match.id])
+  }, [hasCapTradeoffChoices, match.id, onForcedWaitSelectionChange])
   useEffect(() => {
     if (tradeoffChoices.length === 0) {
       if (selectedChoiceId === defaultChoiceIdRef.current) return
@@ -1815,9 +1823,24 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   const forcedLineup = forced
     ? (forcedSelection === 'accept_imbalance' ? forced.acceptImbalance : forced.acceptRepeat)
     : null
+  // The server only ever persists ONE forced-court lineup (whatever team_a/team_b the edge committed
+  // — normally acceptRepeat). If the host's displayed choice differs from that persisted pair, Start
+  // must not take the match_id-only "already committed" fast path (useLiveBoard's usePersistedMatchStart)
+  // — it would silently start the persisted lineup instead of the host's pick. Stamping preview_source
+  // here routes it through the manual persist-then-start path instead (see startLiveMatch).
+  const teamsMatchUnordered = (a: readonly string[], b: readonly string[]) =>
+    a.length === b.length && a.every(id => b.includes(id))
+  const forcedLineupIsPersisted = !forcedLineup || (
+    teamsMatchUnordered(forcedLineup.team_a, match.team_a) && teamsMatchUnordered(forcedLineup.team_b, match.team_b)
+  )
   const activeMatch = useMemo<SuggestedLiveMatchRow>(() => {
     if (forcedLineup) {
-      return { ...match, team_a: forcedLineup.team_a, team_b: forcedLineup.team_b }
+      return {
+        ...match,
+        team_a: forcedLineup.team_a,
+        team_b: forcedLineup.team_b,
+        ...(forcedLineupIsPersisted ? {} : { preview_source: 'forced_tradeoff_manual' as const }),
+      }
     }
     if (!selectedChoice) return match
     const selected = selectedChoice.alternative
@@ -1832,7 +1855,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       tradeoffs: selected.tradeoffs,
       approval_required: selected.approval_required,
     }
-  }, [match, selectedChoice, forcedLineup])
+  }, [match, selectedChoice, forcedLineup, forcedLineupIsPersisted])
   const visibleMatch: SuggestedLiveMatchRow = showingAvailablePoolPreview && availablePoolPreview !== 'loading'
     ? availablePoolPreview as SuggestedLiveMatchRow
     : activeMatch
@@ -2077,22 +2100,34 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       key: 'accept_repeat', testId: `nrv2-decision-accept_repeat-${cardCourtIdx}`, tone: 'play',
       title: 'Chịu lặp', result: `Cân (chênh ${formatNumber(forcedAcceptRepeatGap, 2)})`, cost: forcedRepeatCost,
       selected: forcedSelection === 'accept_repeat',
-      onPress: () => { hostSelectedRef.current = true; setForcedSelection('accept_repeat') },
+      onPress: () => {
+        hostSelectedRef.current = true
+        setForcedSelection('accept_repeat')
+        onForcedWaitSelectionChange(match.id, false)
+      },
     })
     decisionCards.push({
       key: 'accept_imbalance', testId: `nrv2-decision-accept_imbalance-${cardCourtIdx}`, tone: 'swap',
       title: 'Chịu lệch', result: 'Tươi (không lặp)', cost: `Đội lệch ${formatNumber(forcedAcceptImbalanceGap, 2)}`,
       selected: forcedSelection === 'accept_imbalance',
-      onPress: () => { hostSelectedRef.current = true; setForcedSelection('accept_imbalance') },
+      onPress: () => {
+        hostSelectedRef.current = true
+        setForcedSelection('accept_imbalance')
+        onForcedWaitSelectionChange(match.id, false)
+      },
     })
     if (forcedWait.length > 0) {
       decisionCards.push({
         key: 'wait', testId: `nrv2-decision-wait-${cardCourtIdx}`, tone: 'wait',
         title: `Chờ Sân ${forcedWait[0].court_idx + 1}`, result: 'Xong sẽ xếp sạch được', cost: 'sân này để trống',
         selected: forcedSelection === 'wait',
-        // Task 2 wires the actual re-suggest-on-completion request; for now this just parks the
-        // card in a non-started "waiting" state (see startDisabled / isWaitingOnForcedRescue).
-        onPress: () => { hostSelectedRef.current = true; setForcedSelection('wait') },
+        // Arms useLiveBoard's isForcedWaitAwaitingRescue: the next live-match completion re-suggests
+        // this court, targeting the verified wait_rescue_options list (Plan 1 guarantees a clean fill).
+        onPress: () => {
+          hostSelectedRef.current = true
+          setForcedSelection('wait')
+          onForcedWaitSelectionChange(match.id, true)
+        },
       })
     }
   } else if (showDecisionPanel) {
