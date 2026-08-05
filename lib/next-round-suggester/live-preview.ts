@@ -319,6 +319,9 @@ export type BuildSuggestedMatchOptions = {
   rollingPlanTarget?: RollingPlanTarget | null
   onIncompleteDump?: (dump: IncompleteDump) => void
   onInstrumentEvent?: (event: EngineInstrumentEvent) => void
+  // Diagnostic/validation only: skip the flag-gated joint re-partition pass so its contribution can be
+  // measured (scoring-only vs scoring+joint). Undefined/false = normal behaviour.
+  disableJointRepartition?: boolean
 }
 
 export type LiveQualityPolicy =
@@ -5411,9 +5414,9 @@ export function buildSuggestedMatchPayloads({
   }
   // Derive warnings from the exact lineups returned to persistence. Rescue and
   // repair paths must not leave over-cap quality metadata stale.
-  const jointRepartitionedPayloads = applyJointRepartition(
-    invariantSafePayloads, repairState, pvnaTolerance, onRepairInstrument,
-  )
+  const jointRepartitionedPayloads = options.disableJointRepartition
+    ? invariantSafePayloads
+    : applyJointRepartition(invariantSafePayloads, repairState, pvnaTolerance, onRepairInstrument)
   return jointRepartitionedPayloads.map(payload => normalizeRepairedPayload(
     payload,
     repairState,
