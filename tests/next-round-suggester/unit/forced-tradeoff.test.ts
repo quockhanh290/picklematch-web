@@ -1,4 +1,4 @@
-import { buildTradeoffEndpoints } from '../../../lib/next-round-suggester/forced-tradeoff'
+import { buildTradeoffEndpoints, simulateWaitWouldClean } from '../../../lib/next-round-suggester/forced-tradeoff'
 import type { SessionState } from '../../../lib/next-round-suggester/types'
 import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
 
@@ -77,5 +77,70 @@ describe('buildTradeoffEndpoints', () => {
   it('pool smaller than 4 → not forced, clean null (caller falls back)', () => {
     const state = stateWith({ a: 3.0, b: 3.0, c: 3.0 })
     expect(buildTradeoffEndpoints(['a', 'b', 'c'], state, 0.5)).toEqual({ isForced: false, clean: null })
+  })
+})
+
+describe('simulateWaitWouldClean', () => {
+  it('offers a court whose players, when returned, enable a clean fill', () => {
+    // pool of 4 that is forced: every lo×hi cross-pair is partner-saturated (2 prior meetings), so
+    // both balanced (lo+hi vs lo+hi) splits are 3rd-meeting repeats — only the lo-vs-hi blowout is fresh.
+    // A live court holds fresh mid/x players that, added to the pool, allow a clean balanced fresh split
+    // among themselves (mid+x vs mid+x, gap ~0.1, no history).
+    const state = stateWith({ lo1: 2.0, lo2: 2.1, hi1: 3.7, hi2: 3.8, mid1: 2.9, mid2: 3.0, x1: 4.0, x2: 4.0 }, 3)
+    const lo1 = state.players.get('lo1')!
+    const lo2 = state.players.get('lo2')!
+    const hi1 = state.players.get('hi1')!
+    const hi2 = state.players.get('hi2')!
+    setPartnerRepeats(lo1, hi1, 2)
+    setPartnerRepeats(lo1, hi2, 2)
+    setPartnerRepeats(lo2, hi1, 2)
+    setPartnerRepeats(lo2, hi2, 2)
+    const pool = ['lo1', 'lo2', 'hi1', 'hi2']
+    expect(buildTradeoffEndpoints(pool, state, 0.5).isForced).toBe(true)
+    const live = [
+      { court_idx: 3, player_ids: ['mid1', 'mid2', 'x1', 'x2'], started_at: '2026-08-05T07:00:00Z' },
+    ]
+    const res = simulateWaitWouldClean(pool, live, state, 0.5)
+    expect(res.map(r => r.court_idx)).toContain(3)
+  })
+
+  it('offers nothing when no single court completion yields a clean fill', () => {
+    // Every pair among the 8 players (pool + live court) is partner-saturated (2 prior meetings), so
+    // ANY team assembled from any two of them is a 3rd-meeting repeat — no split of any 4-subset of the
+    // enlarged pool can ever be clean, regardless of skill balance. This is a genuinely-forced-even-
+    // after-adding case, not just "adding fresh balanced players" (which would trivially go clean).
+    const state = stateWith({ lo1: 2.0, lo2: 2.1, hi1: 3.7, hi2: 3.8, a: 2.0, b: 2.05, c: 3.65, d: 3.75 }, 3)
+    const ids = ['lo1', 'lo2', 'hi1', 'hi2', 'a', 'b', 'c', 'd']
+    for (let i = 0; i < ids.length; i += 1) {
+      for (let j = i + 1; j < ids.length; j += 1) {
+        setPartnerRepeats(state.players.get(ids[i])!, state.players.get(ids[j])!, 2)
+      }
+    }
+    const pool = ['lo1', 'lo2', 'hi1', 'hi2']
+    expect(buildTradeoffEndpoints(pool, state, 0.5).isForced).toBe(true)
+    const live = [{ court_idx: 3, player_ids: ['a', 'b', 'c', 'd'], started_at: '2026-08-05T07:00:00Z' }]
+    expect(simulateWaitWouldClean(pool, live, state, 0.5)).toEqual([])
+  })
+
+  it('sorts qualifying courts longest-running first (earliest started_at)', () => {
+    const state = stateWith({ lo1: 2.0, lo2: 2.1, hi1: 3.7, hi2: 3.8, m1: 3.0, m2: 3.0, m3: 3.0, m4: 3.0, n1: 3.0, n2: 3.0, n3: 3.0, n4: 3.0 }, 3)
+    const lo1 = state.players.get('lo1')!
+    const lo2 = state.players.get('lo2')!
+    const hi1 = state.players.get('hi1')!
+    const hi2 = state.players.get('hi2')!
+    setPartnerRepeats(lo1, hi1, 2)
+    setPartnerRepeats(lo1, hi2, 2)
+    setPartnerRepeats(lo2, hi1, 2)
+    setPartnerRepeats(lo2, hi2, 2)
+    const pool = ['lo1', 'lo2', 'hi1', 'hi2']
+    expect(buildTradeoffEndpoints(pool, state, 0.5).isForced).toBe(true)
+    // both m1-m4 and n1-n4 are internally uniform-skill and fresh (each qualifies on its own), so
+    // this genuinely exercises the sort rather than depending on only one court qualifying.
+    const live = [
+      { court_idx: 1, player_ids: ['m1', 'm2', 'm3', 'm4'], started_at: '2026-08-05T07:10:00Z' },
+      { court_idx: 2, player_ids: ['n1', 'n2', 'n3', 'n4'], started_at: '2026-08-05T07:00:00Z' }, // earlier
+    ]
+    const res = simulateWaitWouldClean(pool, live, state, 0.5)
+    expect(res.map(r => r.court_idx)).toEqual([2, 1])
   })
 })

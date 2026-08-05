@@ -64,3 +64,24 @@ export function buildTradeoffEndpoints(
   const acceptImbalance = lexMin(lu => lu.maxMeeting, lu => lu.gap)
   return { isForced: true, acceptRepeat, acceptImbalance }
 }
+
+export type WaitRescueOption = { court_idx: number; started_at: string | null }
+
+export function simulateWaitWouldClean(
+  poolIds: string[],
+  liveCourts: { court_idx: number; player_ids: string[]; started_at: string | null }[],
+  state: SessionState, tolerance: number,
+): WaitRescueOption[] {
+  const poolSet = new Set(poolIds)
+  const qualifying: WaitRescueOption[] = []
+  for (const court of liveCourts) {
+    const enlarged = [...poolIds, ...court.player_ids.filter(id => !poolSet.has(id))]
+    const res = buildTradeoffEndpoints(enlarged, state, tolerance)
+    if (res.isForced === false && res.clean) qualifying.push({ court_idx: court.court_idx, started_at: court.started_at })
+  }
+  return qualifying.sort((a, b) => {
+    const ta = a.started_at ? Date.parse(a.started_at) : Infinity
+    const tb = b.started_at ? Date.parse(b.started_at) : Infinity
+    return ta - tb || a.court_idx - b.court_idx
+  })
+}
