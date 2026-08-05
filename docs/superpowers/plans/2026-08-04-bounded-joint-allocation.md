@@ -265,7 +265,7 @@ git commit -m "feat(joint-alloc): jointRepartition — bounded seated-fixed hill
 
 **Interfaces:**
 - Consumes: `jointRepartition`, `Foursome`, `JointSplit` (Task 2); `isQualityCostModelEnabled` (from `quality-cost-flag.ts`); existing `SuggestedMatchPayload`, `normalizeRepairedPayload`, `getActiveRollingInvariantTarget`, `onRepairInstrument`.
-- Produces: internal `applyJointRepartition(payloads, state, pvnaTolerance, onRepairInstrument?)`; no new public export from live-preview.
+- Produces: `applyJointRepartition(payloads, state, pvnaTolerance, onRepairInstrument?)`. **Exported** (controller-authorized 2026-08-04) — it is a pure helper, exported so the gate/map/instrument logic can be unit-tested directly, since a clean ≥2-court fixture is already optimally grouped by greedy (joint is a provable no-op there) and real-dump end-to-end divergence is proven by the Task 4 replay instead of a committed test.
 
 - [ ] **Step 1: Add imports**
 
