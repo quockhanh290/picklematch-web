@@ -143,7 +143,8 @@ export function jointRepartition(
 ): { splits: JointSplit[]; changed: boolean; totalCostBefore: number; totalCostAfter: number }
 ```
 
-Live-preview adapter (not exported): maps
+Live-preview adapter `applyJointRepartition` (exported — controller-authorized
+2026-08-04 for direct unit-testing; pure helper): maps
 `SuggestedMatchPayload[] → courts → jointRepartition → SuggestedMatchPayload[]`,
 copying every non-lineup field from the matching `court_idx` payload.
 
@@ -195,3 +196,44 @@ prototype already showed this; the shipped path must match).
 The joint pass changes suggested lineups only when the flag is ON, so
 `LIVE_PREVIEW_ALGORITHM_VERSION` does not need a bump for a flag-OFF deploy. Bump
 it in the same change that flips the flag ON for A/B (not in this build).
+
+## Replay results (2026-08-04)
+
+Measured with `scratch/joint-experiment.ts` (now delegating to the shipped
+`bestSplitForFoursome` / `jointRepartition`) across the collected real session
+dumps. To isolate the joint pass's contribution the engine's internal joint was
+temporarily gated off (`DISABLE_JOINT=1`, a throwaway diagnostic edit, reverted)
+so we could compare **engine scoring-only** vs **engine scoring+joint** on the
+authoritative `repairState` — not the harness's own reconstruction.
+
+Multi-court dumps only (metrics = summed team-gap / #blowouts>1.5 / #repeat≥3 / #intra-stacks>1.0):
+
+| dump | courts | scoring-only | scoring+joint | joint effect |
+|---|---|---|---|---|
+| fb48 | 2 | gap2.80 **blow1** rep0 intra2 | gap**0.92 blow0** rep1 intra2 | **removes the blowout**, gap 2.8→0.92, +1 repeat |
+| 938b9bde | 3 | gap0.35 blow0 **rep2** intra0 | gap1.07 blow0 **rep0** intra3 | −2 repeats, gap+intra ↑ (both stay sub-blowout) |
+| 14f2e11a | 6 | gap1.04 blow0 rep0 **intra5** | gap3.62 blow0 rep0 **intra1** | −4 stacks, gap ↑ (no blowout created) |
+| 4907967c | 6 | gap2.32 blow0 rep0 intra1 | gap2.40 blow0 rep0 intra3 | ~neutral visible; trades for gender/group (invisible term) |
+| e945f825 | 6 | gap2.13 blow0 rep0 intra3 | gap2.19 blow0 rep0 intra3 | marginal |
+| 9356 | 2 | gap0.40 blow0 rep2 intra0 | *(no-op)* | no cost-reducing swap on engine state |
+| f24a11c1 | 2 | gap0.76 blow0 rep0 intra2 | *(no-op)* | no cost-reducing swap on engine state |
+
+**Conclusion:** the engine joint pass fires on 5/7 multi-court dumps and behaves
+as designed — it **never increased the blowout count on any dump** (removed one
+on fb48) and reduced repeats (938b9bde 2→0) and intra-stacks (14f2e11a 5→1),
+trading only sub-blowout gap increases. This is consistent with the host's
+stated priority (avoid-blowout > diversity > pref). 4907967c trades a little
+visible balance for an invisible gender/group gain (cost strictly dropped, no
+blowout) — mild and defensible.
+
+**Caveats:**
+- The harness reconstructs state (`freshState`) which drifts slightly from the
+  engine's live `repairState` (recency/counts), so the harness's *own* inline
+  joint can occasionally find a phantom improvement the engine correctly skips
+  (e.g. 9356). The authoritative **never-worse** guarantee comes from the Task 2
+  unit test + construction (hill-climb from greedy, strictly-improving swaps
+  only), not from the harness numbers.
+- Whether the cost weighting matches this host's taste (objective-fit) is not
+  decidable offline — it needs a host A/B with the flag flipped ON. This replay
+  only confirms the mechanism does what the objective says and creates no
+  blowout regressions.
