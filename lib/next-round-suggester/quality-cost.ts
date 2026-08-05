@@ -169,3 +169,44 @@ export function bestSplitForFoursome(
   }
   return best!
 }
+
+export type JointSplit = { court_idx: number; team_a: Team; team_b: Team }
+export const JOINT_MAX_ITERATIONS = 4000
+
+export function jointRepartition(
+  courts: { court_idx: number; four: Foursome }[], state: SessionState,
+  opts: { tolerance: number; weights?: Partial<QualityCostWeights>; maxIterations?: number },
+): { splits: JointSplit[]; changed: boolean; totalCostBefore: number; totalCostAfter: number } {
+  const maxIterations = opts.maxIterations ?? JOINT_MAX_ITERATIONS
+  const work = courts.map(c => [...c.four] as string[])
+  const split = work.map(four => bestSplitForFoursome(four as Foursome, state, opts))
+  const totalCostBefore = split.reduce((sum, c) => sum + c.cost, 0)
+  let total = totalCostBefore
+  let improved = true
+  let iters = 0
+  while (improved && iters < maxIterations) {
+    improved = false
+    iters += 1
+    for (let ci = 0; ci < work.length && !improved; ci += 1) {
+      for (let cj = ci + 1; cj < work.length && !improved; cj += 1) {
+        for (let pi = 0; pi < 4 && !improved; pi += 1) {
+          for (let pj = 0; pj < 4 && !improved; pj += 1) {
+            const tmp = work[ci][pi]; work[ci][pi] = work[cj][pj]; work[cj][pj] = tmp
+            const nci = bestSplitForFoursome(work[ci] as Foursome, state, opts)
+            const ncj = bestSplitForFoursome(work[cj] as Foursome, state, opts)
+            const delta = (nci.cost + ncj.cost) - (split[ci].cost + split[cj].cost)
+            if (delta < -1e-6) {
+              split[ci] = nci; split[cj] = ncj; total += delta; improved = true
+            } else {
+              const undo = work[ci][pi]; work[ci][pi] = work[cj][pj]; work[cj][pj] = undo
+            }
+          }
+        }
+      }
+    }
+  }
+  const splits: JointSplit[] = courts.map((c, i) => ({
+    court_idx: c.court_idx, team_a: split[i].team_a, team_b: split[i].team_b,
+  }))
+  return { splits, changed: total < totalCostBefore - 1e-9, totalCostBefore, totalCostAfter: total }
+}
