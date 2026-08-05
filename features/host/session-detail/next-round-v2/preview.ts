@@ -67,6 +67,10 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   degraded_reason?: 'blowout' | 'repeat' | 'both'
   rescue_court_idxs?: number[]
   match_explanations?: string[]
+  // Forced-court 3-way decision data (Plan 1 engine), rehydrated from suggestion_metadata by
+  // mergePersistedSuggestionMetadata. Present only for a court with no clean lineup (flag-gated).
+  forced_tradeoff?: { acceptRepeat: { team_a: [string, string]; team_b: [string, string] }; acceptImbalance: { team_a: [string, string]; team_b: [string, string] } }
+  wait_rescue_options?: { court_idx: number; started_at: string | null }[]
 }
 
 export type LiveDisplayMatchRow = SessionLiveMatchRow & {
