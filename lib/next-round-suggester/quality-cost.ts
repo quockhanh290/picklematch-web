@@ -3,7 +3,7 @@ import type { GenderPreference, PlayerSessionState, SessionState, Team } from '.
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { getEffectivePvna } from './state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { getAvoidPenalty } from './avoid.ts'
+import { getAvoidPenalty, AVOID_PARTNER_PENALTY } from './avoid.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { RECENT_REPEAT_PENALTY_WINDOW } from './score.ts'
 
@@ -160,11 +160,17 @@ export function bestSplitForFoursome(
   four: Foursome, state: SessionState,
   opts: { tolerance: number; weights?: Partial<QualityCostWeights> },
 ): { cost: number; team_a: Team; team_b: Team } {
+  const P = (id: string) => state.players.get(id)!
   let best: { cost: number; team_a: Team; team_b: Team } | null = null
   for (const [sa, sb] of SPLIT_INDICES) {
     const team_a: Team = [four[sa[0]], four[sa[1]]]
     const team_b: Team = [four[sb[0]], four[sb[1]]]
-    const { cost } = computeQualityCost(team_a, team_b, state, opts)
+    // Hard block: avoid pairs as partners — mirrors scoreMatch's feasibility floor (score.ts) so
+    // bestSplitForFoursome/jointRepartition inherit the same hard invariant as the greedy path.
+    const isInfeasible =
+      getAvoidPenalty(P(team_a[0]), P(team_a[1]), 'partner') === AVOID_PARTNER_PENALTY ||
+      getAvoidPenalty(P(team_b[0]), P(team_b[1]), 'partner') === AVOID_PARTNER_PENALTY
+    const cost = isInfeasible ? Infinity : computeQualityCost(team_a, team_b, state, opts).cost
     if (best === null || cost < best.cost) best = { cost, team_a, team_b }
   }
   return best!
