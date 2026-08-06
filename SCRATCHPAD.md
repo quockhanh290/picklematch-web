@@ -1,3 +1,25 @@
+# GOTCHAS — FIX non-determinism single-court (2026-08-06)
+
+## Gotchas
+- **Chẩn đoán non-determinism engine = so 2 dump cùng sân, verify byte-identical.** Cách chứng minh engine không tất định: lấy 2 debug_dump của cùng court (target giống nhau), reconstruct + so SÁT: 7 người eligible, mọi partner/opponent count, mọi field priority (matches_played/consecutive_rest), sân live, THỨ TỰ input snapshot. Nếu tất cả identical mà seating khác → non-determinism (không phải state đổi). Scratch: diag-compare-dumps.ts, diag-full-state-cmp.ts.
+- **debug_dumps CHỈ ghi khi env `VERIFY_DUMP=1`** (suggest.ts:1090, `if (verifyDumpEnabled)`); full-dump khi `VERIFY_DUMP_FULL=1` hoặc anomaly (missingTargetCourts). Secrets đọc qua Management API `/secrets` trả **HASH SHA256** không phải value (hash của "1" = `6b86b273...`).
+- **Client "refresh" thường là NOOP re-persist** (không chạy lại engine) — `persisted_preview_noop`, chỉ bump updated_at. Để ÉP engine chạy lại thật (sinh dump + re-attach): **XÓA row `status='suggested'` của court đó** → lần suggest sau không noop được. (Đừng chỉ bảo host refresh.)
+- **forced_debug instrument** (v229, live-preview.ts debugOut → compactSelectionDebug → selection_debug_lite): đọc `pool_size/seated_meet/fresher_meet/attached/error` để biết forced-block quyết gì. Giữ lại phục vụ QA.
+- **selection_debug eligible_players = pool ENGINE seat được thật** (ví dụ busy_count 26 → chỉ 7 eligible), KHÁC "free_playable" (13) trong derived_state_summary. Reconstruct offline phải dùng eligible thật, đừng dùng free-pool rộng → sai kết luận.
+- **Exhaustive fallback (`suggestNextMatchExhaustiveFallback`) ĐẮT**: makeAlternative 8-stage/combo ~0.45ms → C(16,4)=1820 combo chạm trần internal 2500ms; cheap-scan (computeQualityCost, KHÔNG makeAlternative) nhanh ~50×. Đo: bench-exhaustive-fallback.ts vs bench-cheap-scan.ts.
+
+## Decisions
+- **Fairness = hard-filter TRƯỚC** (host directive): requiredPlayerIds (consecutive_rest≥1, MUST_PLAY, forced_required, ranked-cap 4) luôn có mặt; chỉ tối ưu lặp/balance trong tự do còn lại. findMinCostFoursome nhận requiredIds làm hard-filter.
+- **Fix chỉ scope 1 sân (count==1 / slots===4)**, không đụng multi-court suggestNextRound. Pool cap ≤20 dùng fast-path tất định; >20 giữ legacy timed loop (hiếm, vòng-1-1-sân).
+- **Bỏ deadline cho fast-path count==1** an toàn vì candidate cap (MAX_CANDIDATES_PER_STRATEGY=60) → full-search plateau ~110ms; engine chỉ là phần nhỏ của ~600ms tổng (auth+snapshot mới lớn).
+
+## Rejected approaches
+- **Bỏ timeout exhaustive fallback hẳn**: KHÔNG — C(40,4)=91K combo × makeAlternative = giây. Phải cheap-scan + cap ≤20.
+- **Cap combination số K trên fallback cũ**: pre-sort theo balance nên clean-lineup (ít lặp, kém balance) có thể rank > K → bỏ sót. Dùng cheap-scan full thay vì cap.
+- **Pass allow_recent_group_rematch xuống fast-path makeAlternative**: rủi ro (findMinCostFoursome không model rematch). Thay vào đó GATE fast-path off khi rematch (nhánh suggestNextMatch:898 trả fallback trực tiếp KHÔNG có mappedResult safety-net → bail rỗng làm chết rescue). BÀI HỌC: thêm early-return/bail phải soi MỌI caller, nhất là caller không có safety-net.
+
+---
+
 # BUGS PHÁT HIỆN TRONG REFACTOR host-live (KHÔNG fix trong đợt tách logic — PR riêng)
 
 - **Hydrate-stomp sau mini-recover** (phát hiện task A2, 2026-07-28): effect hydrate `suggestedLiveMatches` từ DB rows (NextRoundSuggesterScreenV2.tsx:2185-2247) unconditionally overwrite state khi computed key khác, có `activeLiveMatches` trong deps → sau khi mini-recover (replace_courts) fetch bản ephemeral cho sân vừa trống, effect này có thể ĐÈ mất bản đó (chỉ giữ DB-persisted rows). Hệ quả: sân vừa trống có thể không hiện gợi ý thay thế vừa fetch. Chưa verify mức độ ảnh hưởng thật (test A2 chỉ pin request shape, không pin nội dung sân trống). Cần điều tra riêng.
