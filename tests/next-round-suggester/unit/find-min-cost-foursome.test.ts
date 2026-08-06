@@ -47,18 +47,17 @@ describe('findMinCostFoursome', () => {
 
   it('uses pairing as tie-break when cost, maxMeeting, and gap are identical', () => {
     // 4 uniform-skill players with no history: all splits have identical cost, maxMeeting, and gap.
-    // The tie-break on the actual pairing should pick a stable, deterministic winner.
-    const state = poolState({ p1: 3.0, p2: 3.0, p3: 3.0, p4: 3.0 })
-    const res = findMinCostFoursome(['p1', 'p2', 'p3', 'p4'], new Set(), state, 0.5)
+    // Pool ids chosen so the lexicographically-smallest pairing key is SPLITS[1], NOT SPLITS[0].
+    // SPLITS[0]: team_a=[c,b], team_b=[a,d] → key='c,b|a,d'
+    // SPLITS[1]: team_a=[c,a], team_b=[b,d] → key='c,a|b,d' (lexicographically smallest)
+    // SPLITS[2]: team_a=[c,d], team_b=[b,a] → key='c,d|b,a'
+    // Old buggy code (ids.join tie-break) would return SPLITS[0] (iteration order).
+    // New code (pairing-key tie-break) returns SPLITS[1] (lexicographically smallest).
+    // This test fails under the buggy implementation and passes under the fixed one.
+    const state = poolState({ c: 3.0, b: 3.0, a: 3.0, d: 3.0 })
+    const res = findMinCostFoursome(['c', 'b', 'a', 'd'], new Set(), state, 0.5)
     expect(res).not.toBeNull()
-    expect(res!.ids).toEqual(expect.arrayContaining(['p1', 'p2', 'p3', 'p4']))
-    // Call multiple times to verify the tie-break is deterministic and always returns the same pairing
-    const first = res
-    for (let i = 0; i < 3; i++) {
-      const other = findMinCostFoursome(['p1', 'p2', 'p3', 'p4'], new Set(), state, 0.5)
-      expect(other).not.toBeNull()
-      expect(other!.team_a).toEqual(first!.team_a)
-      expect(other!.team_b).toEqual(first!.team_b)
-    }
+    expect(res!.team_a).toEqual(['c', 'a'])
+    expect(res!.team_b).toEqual(['b', 'd'])
   })
 })
