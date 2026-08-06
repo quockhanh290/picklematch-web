@@ -33,6 +33,8 @@ import {
   getProjectedRepeatSummary,
   // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 } from './score.ts'
+// @ts-ignore Node's strip-only test runner needs the local .ts extension.
+import { findMinCostFoursome } from './forced-tradeoff.ts'
 
 export type EngineInstrumentEvent = {
   event: 'stage_resolved' | 'rescue' | 'repair' | 'forced_pass' | 'rolling_horizon'
@@ -930,10 +932,12 @@ export function suggestNextMatch(
     )
   )
   if (!shouldCheckFallback) return mappedResult
+  // A single match always runs the fallback (bounded & deterministic for small pools via the
+  // findMinCostFoursome fast path below) — the remaining budget is kept only as a safety net for
+  // the legacy > 20-player timed combo loop.
   const remainingRuntimeMs = options.max_runtime_ms === undefined
     ? undefined
-    : options.max_runtime_ms - (Date.now() - startedAt)
-  if (remainingRuntimeMs !== undefined && remainingRuntimeMs <= 100) return mappedResult
+    : Math.max(0, options.max_runtime_ms - (Date.now() - startedAt))
 
   const diag: ExhaustiveFallbackDiagnostic = {
     ran: false, timedOut: false, eligibleCount: 0,
@@ -1081,11 +1085,40 @@ function suggestNextMatchExhaustiveFallback(
     warnings.push('MUST_PLAY_OVER_CAPACITY')
   }
 
-  const maxAlternatives = Math.max(1, Math.floor(options.max_alternatives ?? 1))
   const courtIdx = Math.max(0, Math.floor(options.court_idx ?? 0))
   const partitioningCache = options.partition_cache === false
     ? undefined
     : createPartitioningRuntimeCache()
+
+  // Deterministic fast path for realistic single-court pools: pick the min-quality-cost foursome by a
+  // cheap exhaustive scan (no wall-clock, no per-combo makeAlternative), then materialize it once. This
+  // removes the timing-dependent truncation that let a repeat-3 slip through when a clean lineup exists.
+  if (eligiblePlayers.length >= 4 && eligiblePlayers.length <= 20) {
+    const tolerance = state.config.pvna_tolerance ?? 0.5
+    const eligibleIds = eligiblePlayers.map((p) => p.player_id)
+    const best = findMinCostFoursome(eligibleIds, requiredPlayerIds, state, tolerance)
+    if (best) {
+      const selected = best.ids.map((id) => state.players.get(id)!).filter(Boolean)
+      const alternative = makeAlternative(
+        selected, eligiblePlayers, state, warnings, undefined, partitioningCache, true, true, false,
+        options.preview_seed, thresholds,
+      )
+      if (alternative) {
+        return {
+          alternatives: [{
+            ...alternative,
+            matches: alternative.matches.slice(0, 1).map((match) => ({ ...match, court_idx: courtIdx })),
+          }],
+          warnings,
+          should_end: false,
+        }
+      }
+    }
+    // best === null (over cap handled by the > 20 branch; < 4 impossible here) or unmaterializable:
+    // fall through to the legacy timed loop.
+  }
+
+  const maxAlternatives = Math.max(1, Math.floor(options.max_alternatives ?? 1))
   const alternatives: SuggestionAlternative[] = []
   const seen = new Set<string>()
   let combinationsEvaluated = 0
