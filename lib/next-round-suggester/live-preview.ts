@@ -3610,6 +3610,7 @@ export type CourtSelectionDebug = {
   busy_count: number
   required_for_court: string[]
   outcome?: 'selected' | 'no_match'
+  forced_debug?: Record<string, unknown>
   eligible_players: Array<{
     id: string
     pvna: number
@@ -5214,6 +5215,7 @@ export function buildSuggestedMatchPayloads({
     }
     let forcedTradeoff: SuggestedMatchPayload['forced_tradeoff']
     let waitRescueOptions: SuggestedMatchPayload['wait_rescue_options']
+    let forcedDebugInfo: Record<string, unknown> | undefined
     if (isQualityCostModelEnabled(state)) {
       try {
         const forcedTradeoffPoolIds = [...suggestionStateForCourt.players.values()]
@@ -5239,14 +5241,25 @@ export function buildSuggestedMatchPayloads({
           seatedRepeatSummary.max_partner_pair_count,
           seatedRepeatSummary.max_opponent_pair_count,
         )
-        const fresherLineup = (degradedReason === 'repeat' || degradedReason === 'both')
+        const isRepeatDegraded = degradedReason === 'repeat' || degradedReason === 'both'
+        const fresherLineup = isRepeatDegraded
           ? buildFreshestLineup(forcedTradeoffPoolIds, suggestionStateForCourt, configuredPvnaTolerance)
           : null
+        forcedDebugInfo = {
+          qce: true,
+          degraded: degradedReason ?? null,
+          pool_size: forcedTradeoffPoolIds.length,
+          seated_meet: seatedMaxMeeting,
+          fresher_meet: fresherLineup ? fresherLineup.maxMeeting : null,
+          fresher_gap: fresherLineup ? Number(fresherLineup.gap.toFixed(2)) : null,
+          attached: false,
+        }
         if (fresherLineup && fresherLineup.maxMeeting < seatedMaxMeeting) {
           forcedTradeoff = {
             acceptRepeat: { team_a: match.team_a, team_b: match.team_b },
             acceptImbalance: { team_a: fresherLineup.team_a, team_b: fresherLineup.team_b },
           }
+          forcedDebugInfo.attached = true
           const liveCourtsForSim = liveMatchRows
             .filter(row =>
               row.status === 'live'
@@ -5260,18 +5273,26 @@ export function buildSuggestedMatchPayloads({
               player_ids: [...row.team_a, ...row.team_b],
               started_at: row.started_at,
             }))
-          waitRescueOptions = simulateWaitWouldClean(
-            forcedTradeoffPoolIds,
-            liveCourtsForSim,
-            suggestionStateForCourt,
-            configuredPvnaTolerance,
-          )
+          // Own try: a wait-sim failure must degrade to "no wait options", never erase the (already-built)
+          // forced_tradeoff panel — the two are independent, and losing the panel is the worse failure.
+          try {
+            waitRescueOptions = simulateWaitWouldClean(
+              forcedTradeoffPoolIds,
+              liveCourtsForSim,
+              suggestionStateForCourt,
+              configuredPvnaTolerance,
+            )
+          } catch (waitError) {
+            waitRescueOptions = []
+            forcedDebugInfo.wait_sim_error = String(waitError).slice(0, 120)
+          }
         }
-      } catch {
+      } catch (forcedError) {
         // Metadata-only failure — fail soft, seat the match without tradeoff metadata rather than
         // aborting the whole batch (edge 500).
         forcedTradeoff = undefined
         waitRescueOptions = undefined
+        forcedDebugInfo = { qce: true, error: String(forcedError).slice(0, 160) }
       }
     }
     payloads.push({
@@ -5310,6 +5331,7 @@ export function buildSuggestedMatchPayloads({
         busy_count: busyIds.size,
         required_for_court: requiredForThisCourt,
         outcome: 'selected',
+        forced_debug: forcedDebugInfo,
         eligible_players: debugEligible,
         selected: [
           ...match.team_a.map(id => {

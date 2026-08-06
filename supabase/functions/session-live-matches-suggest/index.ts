@@ -1690,6 +1690,7 @@ Deno.serve(async (request) => {
         court_idx: court.court_idx,
         busy_count: court.busy_count,
         required_for_court: [...(court.required_for_court ?? [])],
+        forced_debug: court.forced_debug ?? null,
         eligible_players: (court.eligible_players ?? []).map((player: any) => ({
           id: player.id,
           pvna: player.pvna,
