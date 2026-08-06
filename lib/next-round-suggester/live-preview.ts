@@ -47,7 +47,7 @@ import { computeQualityCost, jointRepartition, type Foursome } from './quality-c
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { buildTradeoffEndpoints, simulateWaitWouldClean } from './forced-tradeoff.ts'
+import { buildFreshestLineup, simulateWaitWouldClean } from './forced-tradeoff.ts'
 import type {
   Match,
   PlayerSessionState,
@@ -100,7 +100,7 @@ const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 51
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 52
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -5227,11 +5227,25 @@ export function buildSuggestedMatchPayloads({
             ),
           )
           .map(player => player.player_id)
-        const tradeoff = buildTradeoffEndpoints(forcedTradeoffPoolIds, suggestionStateForCourt, configuredPvnaTolerance)
-        if (tradeoff.isForced) {
+        // Trigger on the engine's OWN "this lineup is bad" signal (a repeat-degraded seated lineup) rather
+        // than a pool-wide clean-check: the idle pool almost always contains SOME clean 4-some, so
+        // buildTradeoffEndpoints reported not-forced even when the engine had to seat a repeat for THIS
+        // court under its rest/required-player constraints (that clean 4-some used players the court could
+        // not actually seat). ② acceptRepeat = the seated lineup (accept its repeat); ③ acceptImbalance =
+        // the freshest achievable alternative from the idle pool. Attach only when a genuinely fresher
+        // lineup exists, so the host has a real choice.
+        const seatedRepeatSummary = getProjectedRepeatSummary(match.team_a, match.team_b, suggestionStateForCourt)
+        const seatedMaxMeeting = Math.max(
+          seatedRepeatSummary.max_partner_pair_count,
+          seatedRepeatSummary.max_opponent_pair_count,
+        )
+        const fresherLineup = (degradedReason === 'repeat' || degradedReason === 'both')
+          ? buildFreshestLineup(forcedTradeoffPoolIds, suggestionStateForCourt, configuredPvnaTolerance)
+          : null
+        if (fresherLineup && fresherLineup.maxMeeting < seatedMaxMeeting) {
           forcedTradeoff = {
-            acceptRepeat: { team_a: tradeoff.acceptRepeat.team_a, team_b: tradeoff.acceptRepeat.team_b },
-            acceptImbalance: { team_a: tradeoff.acceptImbalance.team_a, team_b: tradeoff.acceptImbalance.team_b },
+            acceptRepeat: { team_a: match.team_a, team_b: match.team_b },
+            acceptImbalance: { team_a: fresherLineup.team_a, team_b: fresherLineup.team_b },
           }
           const liveCourtsForSim = liveMatchRows
             .filter(row =>

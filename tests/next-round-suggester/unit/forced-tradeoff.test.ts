@@ -1,4 +1,4 @@
-import { buildTradeoffEndpoints, simulateWaitWouldClean } from '../../../lib/next-round-suggester/forced-tradeoff'
+import { buildTradeoffEndpoints, buildFreshestLineup, simulateWaitWouldClean } from '../../../lib/next-round-suggester/forced-tradeoff'
 import type { SessionState } from '../../../lib/next-round-suggester/types'
 import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
 
@@ -142,5 +142,40 @@ describe('simulateWaitWouldClean', () => {
     ]
     const res = simulateWaitWouldClean(pool, live, state, 0.5)
     expect(res.map(r => r.court_idx)).toEqual([2, 1])
+  })
+})
+
+describe('buildFreshestLineup', () => {
+  it('returns the min-repeat lineup (freshest), then min-gap on ties', () => {
+    // 4 players where the only balanced split (lo1+hi1 vs lo2+hi2) is partner-saturated → a 3rd meeting,
+    // while the fresh split (lo1+lo2 vs hi1+hi2) has no history. Freshest = the fresh split (meet 1).
+    const state = stateWith({ lo1: 2.0, lo2: 2.1, hi1: 3.6, hi2: 3.7 }, 3)
+    setPartnerRepeats(state.players.get('lo1')!, state.players.get('hi1')!, 2)
+    setPartnerRepeats(state.players.get('lo1')!, state.players.get('hi2')!, 2)
+    setPartnerRepeats(state.players.get('lo2')!, state.players.get('hi1')!, 2)
+    setPartnerRepeats(state.players.get('lo2')!, state.players.get('hi2')!, 2)
+    const fresh = buildFreshestLineup(['lo1', 'lo2', 'hi1', 'hi2'], state, 0.5)
+    expect(fresh).not.toBeNull()
+    expect(fresh!.maxMeeting).toBe(1)
+    // the fresh split pairs the two lows together and the two highs together
+    const teamSet = [[...fresh!.team_a].sort(), [...fresh!.team_b].sort()].map(t => t.join(','))
+    expect(teamSet).toContain('lo1,lo2')
+    expect(teamSet).toContain('hi1,hi2')
+  })
+
+  it('prefers a fresher lineup over a more-balanced repeat (min-repeat dominates min-gap)', () => {
+    // A larger pool where a perfectly balanced split exists but repeats, and a fresh split is slightly
+    // less balanced — buildFreshestLineup must pick the fresh one (repeat is the primary axis).
+    const state = stateWith({ a: 3.0, b: 3.0, c: 3.0, d: 3.0, e: 2.6, f: 3.4 }, 3)
+    // saturate a-b and c-d as partners so the a+b vs c+d split (gap 0) is a 3rd meeting
+    setPartnerRepeats(state.players.get('a')!, state.players.get('b')!, 2)
+    setPartnerRepeats(state.players.get('c')!, state.players.get('d')!, 2)
+    const fresh = buildFreshestLineup(['a', 'b', 'c', 'd', 'e', 'f'], state, 0.5)
+    expect(fresh!.maxMeeting).toBeLessThan(3)
+  })
+
+  it('returns null for a pool smaller than 4', () => {
+    const state = stateWith({ a: 3.0, b: 3.0, c: 3.0 })
+    expect(buildFreshestLineup(['a', 'b', 'c'], state, 0.5)).toBeNull()
   })
 })

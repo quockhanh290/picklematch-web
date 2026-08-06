@@ -75,6 +75,30 @@ export function buildTradeoffEndpoints(
   return { isForced: true, acceptRepeat, acceptImbalance }
 }
 
+// The single freshest lineup over the pool: lexicographic min(maxMeeting, then gap), computeQualityCost
+// tie-break. Used as the "accept-imbalance / swap to a fresher lineup" alternative to a degraded seated
+// lineup. Unlike buildTradeoffEndpoints (which short-circuits on any clean lineup), this always scans the
+// full pool for the min-repeat candidate. Returns null if pool < 4 or over the size cap.
+export function buildFreshestLineup(
+  poolIds: string[], state: SessionState, tolerance: number,
+): TradeoffLineup | null {
+  if (poolIds.length < 4 || poolIds.length > FORCED_TRADEOFF_MAX_POOL) return null
+  const cost = (lu: TradeoffLineup) => computeQualityCost(lu.team_a, lu.team_b, state, { tolerance }).cost
+  let best: TradeoffLineup | null = null
+  const ids = poolIds
+  for (let i = 0; i < ids.length; i += 1)
+    for (let j = i + 1; j < ids.length; j += 1)
+      for (let k = j + 1; k < ids.length; k += 1)
+        for (let l = k + 1; l < ids.length; l += 1)
+          for (const lu of candidateLineups([ids[i], ids[j], ids[k], ids[l]], state)) {
+            if (best === null) { best = lu; continue }
+            if (lu.maxMeeting !== best.maxMeeting) { if (lu.maxMeeting < best.maxMeeting) best = lu; continue }
+            if (lu.gap !== best.gap) { if (lu.gap < best.gap) best = lu; continue }
+            if (cost(lu) < cost(best)) best = lu
+          }
+  return best
+}
+
 export type WaitRescueOption = { court_idx: number; started_at: string | null }
 
 export function simulateWaitWouldClean(

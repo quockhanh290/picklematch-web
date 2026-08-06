@@ -99,22 +99,25 @@ function callHarness(state: SessionState, liveMatchRows: SessionLiveMatchRow[] =
     fairnessWarnings: [],
     playersById: PLAYERS_BY_ID as any,
     pvnaTolerance: 0.5,
-    options: {},
+    options: { blowoutRescue: true },
   })
 }
 
 describe('buildSuggestedMatchPayloads — forced_tradeoff / wait_rescue_options integration', () => {
   afterEach(() => __setQualityCostModelOverrideForTests(null))
 
-  it('flag ON: a forced bad court emits forced_tradeoff with distinct accept-repeat + accept-imbalance endpoints', () => {
+  it('flag ON: a forced (repeat-degraded) court emits forced_tradeoff with distinct accept-repeat + accept-imbalance endpoints', () => {
+    // forced_tradeoff now triggers on the engine's OWN degraded=repeat signal (the seated lineup it
+    // couldn't avoid), not a pool-wide clean-check. buildForcedStateWithLiveCourt seats a repeat lineup on
+    // the refilled court while a fresher alternative exists in the idle pool, so the endpoints attach.
     __setQualityCostModelOverrideForTests(true)
-    const payloads = callHarness(buildForcedState())
-    expect(payloads.length).toBeGreaterThan(0)
-    const p = payloads[0]
-    expect(p.forced_tradeoff).toBeDefined()
-    expect(p.forced_tradeoff!.acceptRepeat).not.toEqual(p.forced_tradeoff!.acceptImbalance)
-    expect(p.forced_tradeoff!.acceptRepeat.team_a.length).toBe(2)
-    expect(p.forced_tradeoff!.acceptImbalance.team_a.length).toBe(2)
+    const { state, liveMatchRows } = buildForcedStateWithLiveCourt()
+    const payloads = callHarness(state, liveMatchRows, 2)
+    const p = payloads.find(payload => payload.forced_tradeoff !== undefined)
+    expect(p).toBeDefined()
+    expect(p!.forced_tradeoff!.acceptRepeat).not.toEqual(p!.forced_tradeoff!.acceptImbalance)
+    expect(p!.forced_tradeoff!.acceptRepeat.team_a.length).toBe(2)
+    expect(p!.forced_tradeoff!.acceptImbalance.team_a.length).toBe(2)
   })
 
   it('flag OFF: no forced_tradeoff / wait_rescue_options attached', () => {
