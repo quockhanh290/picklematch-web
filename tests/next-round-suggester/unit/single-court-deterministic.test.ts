@@ -78,4 +78,42 @@ describe('single-court deterministic lineup', () => {
     expect(diag.combinationsEvaluated).toBe(0) // the legacy stage loop never ran a single combo
     expect(res.warnings).not.toContain('EXHAUSTIVE_FALLBACK') // the legacy loop's alternatives never materialized
   })
+
+  it('bails deterministically when the fast-path foursome cannot be materialized, never falling into the timed legacy loop', () => {
+    // findMinCostFoursome (forced-tradeoff.ts) never checks recent-group-rematch, but makeAlternative's
+    // bestPartitioning hard-rejects it (allowRecentGroupRematch is fixed false in the fast path) at every
+    // relaxation stage, since "same 4 players regrouped" is a group-level block independent of the team
+    // split chosen. With exactly 4 players present, findMinCostFoursome's only candidate foursome is
+    // this exact rematch group, so it selects it — and makeAlternative then fails to materialize any of
+    // its 3 splits. This is the realistic shape of the "best found but unmaterializable" gap: a case
+    // findMinCostFoursome doesn't screen for that makeAlternative's own (stricter) invariants reject.
+    const players = [
+      createPlayer('a', { pvna: 3.5, matches_played: 1, consecutive_rest: 0 }),
+      createPlayer('b', { pvna: 3.5, matches_played: 1, consecutive_rest: 0 }),
+      createPlayer('c', { pvna: 3.5, matches_played: 1, consecutive_rest: 0 }),
+      createPlayer('d', { pvna: 3.5, matches_played: 1, consecutive_rest: 0 }),
+    ]
+    const state = createState({ players, courts: 1, pvnaTolerance: 0.5, currentRound: 2 })
+    state.rounds.push({
+      session_id: state.session_id,
+      round_no: 1,
+      status: 'completed',
+      matches: [{ court_idx: 0, team_a: ['a', 'b'], team_b: ['c', 'd'] }],
+      resting: [],
+      started_at: new Date('2026-05-14T12:00:00.000Z'),
+      ended_at: new Date('2026-05-14T12:15:00.000Z'),
+    })
+    const diag: ExhaustiveFallbackDiagnostic = {
+      ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+    }
+    // Ample budget (well over the 100ms fast-fail threshold) — this must resolve via the deterministic
+    // fast path's own bail, not by falling through to spend that budget in the legacy timed loop.
+    const res = suggestNextMatch(state, {
+      court_idx: 0, max_alternatives: 1, max_runtime_ms: 100000, _exhaustiveDiag: diag,
+    })
+    expect(diag.deterministicFastPath).toBe(true) // fast path ran (materialize attempt or bail), not the legacy loop
+    expect(diag.combinationsEvaluated).toBe(0) // legacy stage loop never evaluated a single combo
+    expect(res.alternatives).toEqual([]) // deterministic bail: no lineup materialized for the blocked group
+  })
 })

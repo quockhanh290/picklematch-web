@@ -1103,7 +1103,7 @@ function suggestNextMatchExhaustiveFallback(
     if (best) {
       const selected = best.ids.map((id) => state.players.get(id)!).filter(Boolean)
       const alternative = makeAlternative(
-        selected, eligiblePlayers, state, warnings, undefined, partitioningCache, true, true, false,
+        selected, presentPlayers, state, warnings, undefined, partitioningCache, true, true, false,
         options.preview_seed, thresholds,
       )
       if (alternative) {
@@ -1130,13 +1130,34 @@ function suggestNextMatchExhaustiveFallback(
           should_end: false,
         }
       }
+      // best was non-null (a min-cost foursome was found) but makeAlternative couldn't materialize it —
+      // e.g. the foursome is a recent-group-rematch (same 4 regrouped within the block window):
+      // candidateLineups (forced-tradeoff.ts) never checks recent-group-rematch, but bestPartitioning
+      // hard-rejects it for every split (allowRecentGroupRematch is fixed false here, and the block is
+      // group-level — independent of which split is tried). Bail deterministically to the greedy result
+      // instead of falling into the wall-clock-timed legacy loop, which would reintroduce the very
+      // timing-dependent non-determinism this fast path exists to remove.
+      if (options._exhaustiveDiag) {
+        Object.assign(options._exhaustiveDiag, {
+          ran: true,
+          timedOut: false,
+          eligibleCount: eligiblePlayers.length,
+          combinationsEvaluated: 0,
+          bestPvnaDiff: null,
+          bestHasTradeoffs: false,
+          elapsedMs: 0,
+          deterministicFastPath: true,
+        })
+      }
+      return { alternatives: [], warnings, should_end: false }
     }
-    // best === null (over cap handled by the > 20 branch; < 4 impossible here) or unmaterializable:
-    // fall through to the legacy timed loop.
+    // best === null: pool shape genuinely unhandled by findMinCostFoursome (over its internal cap, or no
+    // subset contains every required id) — fall through to the legacy timed loop.
   }
 
-  // The deterministic fast path above is budget-independent, but pools > 20 (or an unmaterializable
-  // fast-path pick) fall through to the legacy timed loop below. That loop's own budget check
+  // The deterministic fast path above is budget-independent, but pools > 20 (or a pool shape
+  // findMinCostFoursome genuinely can't handle — over its internal cap, or no subset contains every
+  // required id) fall through to the legacy timed loop below. That loop's own budget check
   // (`options.max_runtime_ms && options.max_runtime_ms > 0`) treats an exhausted budget of exactly
   // `0` as falsy and silently balloons to the full 2500ms default — fail fast here instead, mirroring
   // the near-zero-budget bail that suggestNextMatch used to do before this always called the fallback.
