@@ -105,14 +105,17 @@ export type MinCostFoursome = {
   cost: number; maxMeeting: number; gap: number
 }
 
-// Deterministic total order over candidate lineups: cost → maxMeeting → gap → joined-id string.
-// The id-string final tie-break guarantees a single winner with zero dependence on iteration or
-// insertion order (so the result never varies between runs on identical state).
+// Deterministic total order over candidate lineups: cost → maxMeeting → gap → pairing string.
+// The pairing (team_a|team_b) final tie-break keys on the actual split chosen, not the unordered
+// subset, ensuring distinct splits of the same 4-subset that tie on cost/maxMeeting/gap
+// compare deterministically. Zero dependence on iteration or insertion order.
 function foursomeLessThan(a: MinCostFoursome, b: MinCostFoursome): boolean {
   if (a.cost !== b.cost) return a.cost < b.cost
   if (a.maxMeeting !== b.maxMeeting) return a.maxMeeting < b.maxMeeting
   if (a.gap !== b.gap) return a.gap < b.gap
-  return a.ids.join(',') < b.ids.join(',')
+  const aPairing = `${a.team_a.join(',')}|${a.team_b.join(',')}`
+  const bPairing = `${b.team_a.join(',')}|${b.team_b.join(',')}`
+  return aPairing < bPairing
 }
 
 // The min-quality-cost foursome over the pool, respecting a fairness hard-filter (requiredIds must all
