@@ -99,6 +99,50 @@ export function buildFreshestLineup(
   return best
 }
 
+export type MinCostFoursome = {
+  ids: [string, string, string, string]
+  team_a: Team; team_b: Team
+  cost: number; maxMeeting: number; gap: number
+}
+
+// Deterministic total order over candidate lineups: cost → maxMeeting → gap → joined-id string.
+// The id-string final tie-break guarantees a single winner with zero dependence on iteration or
+// insertion order (so the result never varies between runs on identical state).
+function foursomeLessThan(a: MinCostFoursome, b: MinCostFoursome): boolean {
+  if (a.cost !== b.cost) return a.cost < b.cost
+  if (a.maxMeeting !== b.maxMeeting) return a.maxMeeting < b.maxMeeting
+  if (a.gap !== b.gap) return a.gap < b.gap
+  return a.ids.join(',') < b.ids.join(',')
+}
+
+// The min-quality-cost foursome over the pool, respecting a fairness hard-filter (requiredIds must all
+// be in the chosen four) and avoid-pairs (via candidateLineups, which drops avoid-partner splits).
+// Pure — no Date.now/Math.random, no makeAlternative. Returns null for pool < 4, pool >
+// FORCED_TRADEOFF_MAX_POOL, or when no subset contains every required id.
+export function findMinCostFoursome(
+  poolIds: string[], requiredIds: Set<string>, state: SessionState, tolerance: number,
+): MinCostFoursome | null {
+  if (poolIds.length < 4 || poolIds.length > FORCED_TRADEOFF_MAX_POOL) return null
+  const required = [...requiredIds]
+  const ids = poolIds
+  let best: MinCostFoursome | null = null
+  for (let i = 0; i < ids.length; i += 1)
+    for (let j = i + 1; j < ids.length; j += 1)
+      for (let k = j + 1; k < ids.length; k += 1)
+        for (let l = k + 1; l < ids.length; l += 1) {
+          const four: [string, string, string, string] = [ids[i], ids[j], ids[k], ids[l]]
+          if (required.length > 0 && !required.every(id => four.includes(id))) continue
+          for (const lu of candidateLineups(four, state)) {
+            const cost = computeQualityCost(lu.team_a, lu.team_b, state, { tolerance }).cost
+            const cand: MinCostFoursome = {
+              ids: four, team_a: lu.team_a, team_b: lu.team_b, cost, maxMeeting: lu.maxMeeting, gap: lu.gap,
+            }
+            if (best === null || foursomeLessThan(cand, best)) best = cand
+          }
+        }
+  return best
+}
+
 export type WaitRescueOption = { court_idx: number; started_at: string | null }
 
 export function simulateWaitWouldClean(
