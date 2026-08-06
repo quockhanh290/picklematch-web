@@ -1096,7 +1096,13 @@ function suggestNextMatchExhaustiveFallback(
   // removes the timing-dependent truncation that let a repeat-3 slip through when a clean lineup exists.
   // Budget-independent by design — runs regardless of options.max_runtime_ms, since it's bounded and
   // cheap on its own; do not gate this block on the caller's remaining budget.
-  if (eligiblePlayers.length >= 4 && eligiblePlayers.length <= 20) {
+  // Skipped when allow_recent_group_rematch is true: that's the rare escape-hatch rescue path (e.g.
+  // live-preview.ts's unified social tradeoff), called from suggestNextMatch's early branch that has NO
+  // mappedResult safety net — if the fast path's min-cost pick can only materialize as a recent-group
+  // rematch, makeAlternative (fixed allowRecentGroupRematch=false here) would return null and the fast
+  // path's deterministic bail would surface as an empty result instead of falling through to the legacy
+  // loop, whose stages do honor allow_recent_group_rematch and can materialize the rescue.
+  if (options.allow_recent_group_rematch !== true && eligiblePlayers.length >= 4 && eligiblePlayers.length <= 20) {
     const tolerance = state.config.pvna_tolerance ?? 0.5
     const eligibleIds = eligiblePlayers.map((p) => p.player_id)
     const best = findMinCostFoursome(eligibleIds, requiredPlayerIds, state, tolerance)

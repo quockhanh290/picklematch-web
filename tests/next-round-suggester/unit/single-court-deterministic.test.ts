@@ -116,4 +116,35 @@ describe('single-court deterministic lineup', () => {
     expect(diag.combinationsEvaluated).toBe(0) // legacy stage loop never evaluated a single combo
     expect(res.alternatives).toEqual([]) // deterministic bail: no lineup materialized for the blocked group
   })
+
+  it('still materializes an allow_recent_group_rematch rescue when only a rematch lineup is possible', () => {
+    // suggestNextMatch's allow_recent_group_rematch===true branch calls suggestNextMatchExhaustiveFallback
+    // directly and returns its result AS-IS — there is no mappedResult safety net on this branch (unlike
+    // the default path). Reuses the exact same forced-rematch pool as the previous test: findMinCostFoursome
+    // would pick this foursome as its only candidate, and the deterministic fast path's makeAlternative call
+    // is fixed allowRecentGroupRematch=false, so if the fast path ran here it would bail to an empty result
+    // and this rare rescue call would silently return nothing. The fast path must be gated off whenever
+    // allow_recent_group_rematch is true, letting the legacy loop's allowRecentGroupRematch-aware stages
+    // materialize the rescue lineup instead.
+    const players = [
+      createPlayer('a', { pvna: 3.5, matches_played: 1, consecutive_rest: 0 }),
+      createPlayer('b', { pvna: 3.5, matches_played: 1, consecutive_rest: 0 }),
+      createPlayer('c', { pvna: 3.5, matches_played: 1, consecutive_rest: 0 }),
+      createPlayer('d', { pvna: 3.5, matches_played: 1, consecutive_rest: 0 }),
+    ]
+    const state = createState({ players, courts: 1, pvnaTolerance: 0.5, currentRound: 2 })
+    state.rounds.push({
+      session_id: state.session_id,
+      round_no: 1,
+      status: 'completed',
+      matches: [{ court_idx: 0, team_a: ['a', 'b'], team_b: ['c', 'd'] }],
+      resting: [],
+      started_at: new Date('2026-05-14T12:00:00.000Z'),
+      ended_at: new Date('2026-05-14T12:15:00.000Z'),
+    })
+    const res = suggestNextMatch(state, {
+      court_idx: 0, max_alternatives: 1, allow_recent_group_rematch: true,
+    })
+    expect(res.alternatives.length).toBeGreaterThan(0) // the rescue still materializes via the legacy loop
+  })
 })
