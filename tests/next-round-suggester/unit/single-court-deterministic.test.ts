@@ -1,5 +1,5 @@
-import { suggestNextMatch } from '../../../lib/next-round-suggester/suggest'
-import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
+import { suggestNextMatch, type ExhaustiveFallbackDiagnostic } from '../../../lib/next-round-suggester/suggest'
+import { createPlayer, createState } from '../helpers/factories'
 import type { SessionState } from '../../../lib/next-round-suggester/types'
 
 // A single-court pool where the greedy/fairness top pairs a partner-saturated foursome (a repeat-3),
@@ -50,5 +50,32 @@ describe('single-court deterministic lineup', () => {
     const res = suggestNextMatch(state, { court_idx: 5, max_alternatives: 1, max_runtime_ms: 1 })
     const ids = [...res.alternatives[0].matches[0].team_a, ...res.alternatives[0].matches[0].team_b]
     expect(ids).toContain('hu')
+  })
+
+  it('fails fast for a > 20-player pool under a near-zero budget instead of ballooning to the legacy loop\'s 2500ms default', () => {
+    // A required outlier (must-play via consecutive_rest) whose pvna is far outside the tight tolerance
+    // forces the primary pick into tradeoffs, so shouldCheckFallback is true — but the pool (24) is over
+    // the deterministic fast path's 20-player cap, so this exercises the legacy loop's budget guard.
+    const outlier = createPlayer('outlier', { pvna: 1.0, matches_played: 3, consecutive_rest: 2 })
+    const rest = Array.from({ length: 23 }, (_, i) =>
+      createPlayer(`p${i}`, { pvna: 3.5, matches_played: 3, consecutive_rest: 0 }),
+    )
+    const state = createState({
+      players: [outlier, ...rest], courts: 6, pvnaTolerance: 0.2, currentRound: 4,
+    })
+    const diag: ExhaustiveFallbackDiagnostic = {
+      ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+    }
+    const res = suggestNextMatch(state, {
+      court_idx: 5, max_alternatives: 1, max_runtime_ms: 1, _exhaustiveDiag: diag,
+    })
+    // diag.timedOut flips true only inside the exhaustive fallback's near-zero-budget bail, so this also
+    // proves the fallback was actually invoked (shouldCheckFallback was true) rather than the assertions
+    // below passing vacuously off the diag's untouched initial values.
+    expect(diag.timedOut).toBe(true)
+    expect(diag.ran).toBe(false)
+    expect(diag.combinationsEvaluated).toBe(0) // the legacy stage loop never ran a single combo
+    expect(res.warnings).not.toContain('EXHAUSTIVE_FALLBACK') // the legacy loop's alternatives never materialized
   })
 })

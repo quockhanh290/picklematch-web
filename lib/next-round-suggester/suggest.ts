@@ -70,6 +70,7 @@ export type ExhaustiveFallbackDiagnostic = {
   bestPvnaDiff: number | null
   bestHasTradeoffs: boolean
   elapsedMs: number
+  deterministicFastPath?: boolean
   _seenAfterStage1?: number
   _altsAfterStage1?: number
   _combosAfterStage1?: number
@@ -1093,6 +1094,8 @@ function suggestNextMatchExhaustiveFallback(
   // Deterministic fast path for realistic single-court pools: pick the min-quality-cost foursome by a
   // cheap exhaustive scan (no wall-clock, no per-combo makeAlternative), then materialize it once. This
   // removes the timing-dependent truncation that let a repeat-3 slip through when a clean lineup exists.
+  // Budget-independent by design — runs regardless of options.max_runtime_ms, since it's bounded and
+  // cheap on its own; do not gate this block on the caller's remaining budget.
   if (eligiblePlayers.length >= 4 && eligiblePlayers.length <= 20) {
     const tolerance = state.config.pvna_tolerance ?? 0.5
     const eligibleIds = eligiblePlayers.map((p) => p.player_id)
@@ -1104,6 +1107,20 @@ function suggestNextMatchExhaustiveFallback(
         options.preview_seed, thresholds,
       )
       if (alternative) {
+        if (options._exhaustiveDiag) {
+          Object.assign(options._exhaustiveDiag, {
+            ran: true,
+            timedOut: false,
+            eligibleCount: eligiblePlayers.length,
+            // Not iterated combo-by-combo here (findMinCostFoursome scans internally) — 0 signals
+            // "the deterministic path ran", distinguish via deterministicFastPath below.
+            combinationsEvaluated: 0,
+            bestPvnaDiff: alternative.matches[0]?.stats?.pvna_diff ?? null,
+            bestHasTradeoffs: (alternative.tradeoffs?.length ?? 0) > 0,
+            elapsedMs: 0,
+            deterministicFastPath: true,
+          })
+        }
         return {
           alternatives: [{
             ...alternative,
@@ -1116,6 +1133,26 @@ function suggestNextMatchExhaustiveFallback(
     }
     // best === null (over cap handled by the > 20 branch; < 4 impossible here) or unmaterializable:
     // fall through to the legacy timed loop.
+  }
+
+  // The deterministic fast path above is budget-independent, but pools > 20 (or an unmaterializable
+  // fast-path pick) fall through to the legacy timed loop below. That loop's own budget check
+  // (`options.max_runtime_ms && options.max_runtime_ms > 0`) treats an exhausted budget of exactly
+  // `0` as falsy and silently balloons to the full 2500ms default — fail fast here instead, mirroring
+  // the near-zero-budget bail that suggestNextMatch used to do before this always called the fallback.
+  if (options.max_runtime_ms !== undefined && options.max_runtime_ms <= 100) {
+    if (options._exhaustiveDiag) {
+      Object.assign(options._exhaustiveDiag, {
+        ran: false,
+        timedOut: true,
+        eligibleCount: eligiblePlayers.length,
+        combinationsEvaluated: 0,
+        bestPvnaDiff: null,
+        bestHasTradeoffs: false,
+        elapsedMs: 0,
+      })
+    }
+    return { alternatives: [], warnings, should_end: false }
   }
 
   const maxAlternatives = Math.max(1, Math.floor(options.max_alternatives ?? 1))
