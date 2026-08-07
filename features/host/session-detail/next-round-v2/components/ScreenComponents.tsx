@@ -2181,6 +2181,16 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
           ) : null}
         </View>
       ) : null}
+      {forcedDecision?.explanation ? (
+        <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 2 }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: colors.textSecondary, fontWeight: '700' }}>
+            {forcedDecision.explanation.heading}
+          </Text>
+          <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11, lineHeight: 15, color: colors.textSecondary }}>
+            {forcedDecision.explanation.text}
+          </Text>
+        </View>
+      ) : null}
       {matchExplanations.length > 0 ? (
         <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 2 }}>
           <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 11, color: colors.textSecondary, fontWeight: '700' }}>

@@ -106,9 +106,11 @@ export function buildForcedDecision(
   forcedLineup: { team_a: [string, string]; team_b: [string, string] } | null
   cards: ForcedDecisionCard[]
   startMatch: SuggestedLiveMatchRow
+  explanation: { heading: string; text: string } | null
 } | null {
   const forced = match.forced_tradeoff
   if (!forced) return null
+  const isBlowout = forced.kind === 'blowout'
   const forcedWait = match.wait_rescue_options ?? []
   // "wait" keeps the default lineup (acceptRepeat) pending the re-suggest — it has no lineup of
   // its own, unlike the swap-to-alternative choices below.
@@ -147,18 +149,38 @@ export function buildForcedDecision(
     ? `${playerName(forcedRepeatPair.playerA, playersById)} gặp lại ${playerName(forcedRepeatPair.playerB, playersById)} lần ${forcedRepeatPair.projectedCount}`
     : 'có người gặp lại'
 
-  const cards: ForcedDecisionCard[] = [
-    {
-      key: 'accept_repeat', testId: `nrv2-decision-accept_repeat-${cardCourtIdx}`, tone: 'play',
-      title: 'Chịu lặp', result: `Cân (chênh ${formatNumber(forcedAcceptRepeatGap, 2)})`, cost: forcedRepeatCost,
-      selected: selection === 'accept_repeat',
-    },
-    {
-      key: 'accept_imbalance', testId: `nrv2-decision-accept_imbalance-${cardCourtIdx}`, tone: 'swap',
-      title: 'Chịu lệch', result: 'Tươi (không lặp)', cost: `Đội lệch ${formatNumber(forcedAcceptImbalanceGap, 2)}`,
-      selected: selection === 'accept_imbalance',
-    },
-  ]
+  // Blowout: acceptRepeat is the seated lineup carrying the PVNA outlier ("Chịu lệch" — play it as
+  // is); acceptImbalance is the balanced four with the outlier benched ("Cho nghỉ tiếp"). Repeat
+  // (default): acceptRepeat carries the repeated pair ("Chịu lặp"); acceptImbalance is the fresh,
+  // more-PVNA-lopsided alternative ("Chịu lệch"). Same slot mapping (accept_repeat=②/accept_imbalance=③)
+  // in both kinds — only the copy differs.
+  const cards: ForcedDecisionCard[] = isBlowout
+    ? [
+        {
+          key: 'accept_repeat', testId: `nrv2-decision-accept_repeat-${cardCourtIdx}`, tone: 'play',
+          title: 'Chịu lệch', result: `Chơi luôn (chênh ${formatNumber(forcedAcceptRepeatGap, 2)})`,
+          cost: `Đội lệch ${formatNumber(forcedAcceptRepeatGap, 2)}`,
+          selected: selection === 'accept_repeat',
+        },
+        {
+          key: 'accept_imbalance', testId: `nrv2-decision-accept_imbalance-${cardCourtIdx}`, tone: 'swap',
+          title: 'Cho nghỉ tiếp', result: `Cân hơn (chênh ${formatNumber(forcedAcceptImbalanceGap, 2)})`,
+          cost: 'Người lệch trình nghỉ thêm',
+          selected: selection === 'accept_imbalance',
+        },
+      ]
+    : [
+        {
+          key: 'accept_repeat', testId: `nrv2-decision-accept_repeat-${cardCourtIdx}`, tone: 'play',
+          title: 'Chịu lặp', result: `Cân (chênh ${formatNumber(forcedAcceptRepeatGap, 2)})`, cost: forcedRepeatCost,
+          selected: selection === 'accept_repeat',
+        },
+        {
+          key: 'accept_imbalance', testId: `nrv2-decision-accept_imbalance-${cardCourtIdx}`, tone: 'swap',
+          title: 'Chịu lệch', result: 'Tươi (không lặp)', cost: `Đội lệch ${formatNumber(forcedAcceptImbalanceGap, 2)}`,
+          selected: selection === 'accept_imbalance',
+        },
+      ]
   if (forcedWait.length > 0) {
     cards.push({
       key: 'wait', testId: `nrv2-decision-wait-${cardCourtIdx}`, tone: 'wait',
@@ -167,5 +189,9 @@ export function buildForcedDecision(
     })
   }
 
-  return { forcedLineup, cards, startMatch }
+  const explanation = isBlowout && forced.explanation
+    ? { heading: 'Vì sao lệch', text: forced.explanation }
+    : null
+
+  return { forcedLineup, cards, startMatch, explanation }
 }
