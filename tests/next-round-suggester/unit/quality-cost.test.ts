@@ -207,3 +207,67 @@ describe('bestSplitForFoursome — within-tol-first (joint lexicographic)', () =
     expect(best.gap).toBeLessThanOrEqual(0.5)
   })
 })
+
+describe('jointRepartition — never introduces over-tol (a1ce regression)', () => {
+  // Reconstructed from session a1cef762 round-1 clean greedy seed (scratch/dump-a1ce-fixture.ts).
+  // Pre-fix jointRepartition pushes 2 courts over tol (gaps 0.65 / 0.67) to satisfy gender prefs.
+  const PLAYERS: Array<{ id: string; pvna: number; gender: 'M' | 'F'; pp: any; op: any }> = [
+    { id: 'p1', pvna: 2.31, gender: 'F', pp: 'M', op: 'any' }, { id: 'p2', pvna: 2.88, gender: 'F', pp: 'F', op: 'M' },
+    { id: 'p4', pvna: 4.06, gender: 'M', pp: 'any', op: 'any' }, { id: 'p5', pvna: 3.47, gender: 'F', pp: 'any', op: 'M' },
+    { id: 'p6', pvna: 3.84, gender: 'M', pp: 'M', op: 'any' }, { id: 'p7', pvna: 2.59, gender: 'F', pp: 'M', op: 'any' },
+    { id: 'p8', pvna: 3.03, gender: 'M', pp: 'M', op: 'F' }, { id: 'p9', pvna: 2.03, gender: 'F', pp: 'any', op: 'any' },
+    { id: 'p10', pvna: 2.64, gender: 'F', pp: 'any', op: 'any' }, { id: 'p11', pvna: 4.47, gender: 'F', pp: 'any', op: 'any' },
+    { id: 'p12', pvna: 2.34, gender: 'M', pp: 'F', op: 'F' }, { id: 'p13', pvna: 4.6, gender: 'F', pp: 'any', op: 'any' },
+    { id: 'p14', pvna: 2.97, gender: 'F', pp: 'any', op: 'any' }, { id: 'p15', pvna: 3.85, gender: 'M', pp: 'any', op: 'any' },
+    { id: 'p18', pvna: 4.51, gender: 'F', pp: 'any', op: 'F' }, { id: 'p20', pvna: 2.08, gender: 'M', pp: 'M', op: 'F' },
+    { id: 'p22', pvna: 3.63, gender: 'M', pp: 'M', op: 'F' }, { id: 'p23', pvna: 2.31, gender: 'M', pp: 'any', op: 'any' },
+    { id: 'p25', pvna: 2.96, gender: 'F', pp: 'any', op: 'any' }, { id: 'p27', pvna: 3.54, gender: 'M', pp: 'any', op: 'F' },
+    { id: 'p28', pvna: 2.66, gender: 'M', pp: 'M', op: 'any' }, { id: 'p29', pvna: 4.69, gender: 'M', pp: 'any', op: 'any' },
+    { id: 'p30', pvna: 2.0, gender: 'M', pp: 'any', op: 'F' }, { id: 'p31', pvna: 2.35, gender: 'F', pp: 'M', op: 'any' },
+  ]
+  const SEED: string[][] = [
+    ['p30', 'p12', 'p9', 'p31'], ['p23', 'p1', 'p20', 'p7'], ['p15', 'p6', 'p22', 'p4'],
+    ['p5', 'p14', 'p8', 'p27'], ['p13', 'p11', 'p18', 'p29'], ['p2', 'p10', 'p25', 'p28'],
+  ]
+  const buildState = () => {
+    const players = PLAYERS.map(p => createPlayer(p.id, {
+      pvna: p.pvna, gender: p.gender, partner_gender_pref: p.pp, opponent_gender_pref: p.op,
+    }))
+    return createState({ players, courts: 6, pvnaTolerance: 0.5 })
+  }
+  const gapOf = (state: SessionState, s: { team_a: Team; team_b: Team }) =>
+    Math.abs(getEffectivePvna(state.players.get(s.team_a[0])!) + getEffectivePvna(state.players.get(s.team_a[1])!)
+      - getEffectivePvna(state.players.get(s.team_b[0])!) - getEffectivePvna(state.players.get(s.team_b[1])!))
+
+  it('leaves zero courts over tolerance', () => {
+    const state = buildState()
+    const courts = SEED.map((four, i) => ({ court_idx: i, four: four as [string, string, string, string] }))
+    const { splits } = jointRepartition(courts, state, { tolerance: 0.5 })
+    const over = splits.filter(s => gapOf(state, s) > 0.5).length
+    expect(over).toBe(0)
+  })
+})
+
+describe('jointRepartition — still optimizes within tolerance (preservation)', () => {
+  it('applies a within-tol cross-court swap that removes an unavoidable in-court opponent repeat', () => {
+    // Two courts, all PVNA 3.0 (every arrangement is gap 0 -> always within tol). a0 has met BOTH
+    // a2 and a3 as opponents, so whichever partner a0 takes, one opponent is a repeat. Swapping a
+    // repeated opponent out to the fresh court B removes it — a within-tol improvement joint must keep.
+    const players = [
+      createPlayer('a0', { pvna: 3.0 }), createPlayer('a1', { pvna: 3.0 }),
+      createPlayer('a2', { pvna: 3.0 }), createPlayer('a3', { pvna: 3.0 }),
+      createPlayer('b0', { pvna: 3.0 }), createPlayer('b1', { pvna: 3.0 }),
+      createPlayer('b2', { pvna: 3.0 }), createPlayer('b3', { pvna: 3.0 }),
+    ]
+    const state = createState({ players, courts: 6, pvnaTolerance: 0.5 })
+    setOpponentRepeats(state.players.get('a0')!, state.players.get('a2')!, 2)
+    setOpponentRepeats(state.players.get('a0')!, state.players.get('a3')!, 2)
+    const courts = [
+      { court_idx: 0, four: ['a0', 'a1', 'a2', 'a3'] as [string, string, string, string] },
+      { court_idx: 1, four: ['b0', 'b1', 'b2', 'b3'] as [string, string, string, string] },
+    ]
+    const res = jointRepartition(courts, state, { tolerance: 0.5 })
+    expect(res.changed).toBe(true)
+    expect(res.totalCostAfter).toBeLessThan(res.totalCostBefore)
+  })
+})
