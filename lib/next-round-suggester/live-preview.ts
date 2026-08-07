@@ -1746,6 +1746,18 @@ export function selectRequiredIdsForCourt(
   return [anchorId, ...cohesive.slice(0, count - 1)]
 }
 
+export function hasNearLevelPeerInActiveRoster(outlierId: string, state: SessionState, tolerance: number): boolean {
+  const outlier = state.players.get(outlierId)
+  if (!outlier) return false
+  const outPv = getEffectivePvna(outlier)
+  for (const p of state.players.values()) {
+    if (p.player_id === outlierId) continue
+    if (p.checked_out_at !== null || p.opted_rest) continue
+    if (Math.abs(getEffectivePvna(p) - outPv) <= tolerance) return true
+  }
+  return false
+}
+
 export function deferLowViabilityRequiredIdsForCourt({
   requiredForThisCourt,
   availableRequiredIds,
@@ -1761,11 +1773,32 @@ export function deferLowViabilityRequiredIdsForCourt({
   minimumRequiredCount?: number
   state: SessionState
 }) {
-  if (requiredForThisCourt.length === 0 || remainingCourtsInRound <= 1) {
-    return requiredForThisCourt
+  if (requiredForThisCourt.length === 0) return requiredForThisCourt
+  const tolerance = state.config.pvna_tolerance
+  if (remainingCourtsInRound <= 1) {
+    // Last court: the anti-blowout cohesion pass was skipped, so a lone weak owed player can be forced into
+    // a blowout. Defer that ONE outlier ONLY when it is safe and useful: it has rested 0 rounds (so deferring
+    // never causes a 2nd consecutive rest), it has a near-level peer somewhere in the active roster (so a
+    // future rolling fill can seat it balanced — never strand a truly unique-weak player), and dropping it
+    // still leaves ≥3 required so the court fills four from a near-level pool player. rest>0 outliers are NOT
+    // auto-deferred here — Branch B surfaces a host decision instead.
+    const pvnaOf = (id: string) => { const pl = state.players.get(id); return pl ? getEffectivePvna(pl) : 0 }
+    const reqPv = requiredForThisCourt.map(pvnaOf)
+    const spread = reqPv.length === 0 ? 0 : Math.max(...reqPv) - Math.min(...reqPv)
+    if (spread <= tolerance) return requiredForThisCourt
+    // outlier = required player whose pvna is furthest from the median of the required set (deterministic)
+    const sorted = [...reqPv].sort((a, b) => a - b)
+    const median = sorted[Math.floor(sorted.length / 2)]
+    const outlierId = [...requiredForThisCourt].sort((a, b) =>
+      Math.abs(pvnaOf(b) - median) - Math.abs(pvnaOf(a) - median) || a.localeCompare(b))[0]
+    const outlier = state.players.get(outlierId)
+    const canDefer = !!outlier && outlier.consecutive_rest === 0
+      && hasNearLevelPeerInActiveRoster(outlierId, state, tolerance)
+      && requiredForThisCourt.length - 1 >= Math.max(0, minimumRequiredCount)
+      && requiredForThisCourt.length - 1 >= 3
+    return canDefer ? requiredForThisCourt.filter(id => id !== outlierId) : requiredForThisCourt
   }
 
-  const tolerance = state.config.pvna_tolerance
   const requiredPvnas = requiredForThisCourt
     .map(playerId => {
       const player = state.players.get(playerId)
