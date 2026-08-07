@@ -47,7 +47,7 @@ import { computeQualityCost, jointRepartition, type Foursome } from './quality-c
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { buildFreshestLineup, simulateWaitWouldClean } from './forced-tradeoff.ts'
+import { buildFreshestLineup, findMinCostFoursome, simulateWaitWouldClean } from './forced-tradeoff.ts'
 import type {
   Match,
   PlayerSessionState,
@@ -100,7 +100,7 @@ const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 53
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 54
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -366,7 +366,12 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   // Quality-cost-model: when this court's lineup is a forced tradeoff (no clean split exists in the
   // eligible pool), the two Pareto-optimal endpoints — advisory data for the host toggle, not the
   // displayed lineup (which stays the engine's existing pick).
-  forced_tradeoff?: { acceptRepeat: { team_a: Team; team_b: Team }; acceptImbalance: { team_a: Team; team_b: Team } }
+  forced_tradeoff?: {
+    kind?: 'repeat' | 'blowout'
+    explanation?: string
+    acceptRepeat: { team_a: Team; team_b: Team }
+    acceptImbalance: { team_a: Team; team_b: Team }
+  }
   // Live courts whose completion, simulated, would let this pool build a clean (non-forced) lineup.
   wait_rescue_options?: { court_idx: number; started_at: string | null }[]
 }
@@ -4086,6 +4091,30 @@ export function explainMatchOptimality(input: {
   return []
 }
 
+// Branch B (blowout host-decide) explanation: the seated lineup forces a rest>0 owed outlier into a
+// skill blowout because their only near-level peer is busy elsewhere. Names the outlier, its PVNA vs
+// the cluster it's blowing out, and how many rounds it has already rested — the host reads this to
+// judge ② play now (blowout) vs ③ rest again (balanced four).
+function buildBlowoutExplanation(
+  outlierId: string,
+  match: { team_a: readonly string[]; team_b: readonly string[] },
+  state: SessionState,
+  playersById: Map<string, { name?: string | null }>,
+): string {
+  const nm = (id: string) => playersById.get(id)?.name || id.slice(0, 4)
+  const pv = (id: string) => {
+    const player = state.players.get(id)
+    return player ? getEffectivePvna(player) : 0
+  }
+  const seatedIds = [...match.team_a, ...match.team_b]
+  const others = seatedIds.filter(id => id !== outlierId)
+  const clusterPvna = others.length > 0
+    ? others.reduce((sum, id) => sum + pv(id), 0) / others.length
+    : 0
+  const restRounds = state.players.get(outlierId)?.consecutive_rest ?? 0
+  return `${nm(outlierId)} (${pv(outlierId).toFixed(1)}) yếu hơn nhóm đang rảnh (~${clusterPvna.toFixed(1)}); bạn cùng trình đang bận; đã nghỉ ${restRounds} vòng.`
+}
+
 export function buildSuggestedMatchPayloads({
   count,
   sessionId,
@@ -5318,6 +5347,56 @@ export function buildSuggestedMatchPayloads({
           } catch (waitError) {
             waitRescueOptions = []
             forcedDebugInfo.wait_sim_error = String(waitError).slice(0, 120)
+          }
+        }
+        // Blowout host-decide (Branch B): the seated last-court lineup is a forced blowout containing
+        // an owed outlier who has ALREADY rested (rest>0, so Branch A's auto-defer did not apply).
+        // Offer the host ② play them now (seated) vs ③ rest them again (a balanced four), with an
+        // explanation — never auto-rest a rested player. Only when the repeat path above didn't
+        // already attach a forced_tradeoff (repeat takes priority; a court is never both).
+        if (!forcedTradeoff && degradedReason === 'blowout') {
+          const seatedIds = [...match.team_a, ...match.team_b]
+          const pvOf = (id: string) => {
+            const player = suggestionStateForCourt.players.get(id)
+            return player ? getEffectivePvna(player) : 0
+          }
+          // outlier = a seated, required, rest>0 player whose PVNA is furthest from the mean of the
+          // OTHER three seated players (the cluster it blows out); deterministic id tie-break.
+          const distFromCluster = (id: string) => {
+            const others = seatedIds.filter(x => x !== id).map(pvOf)
+            const mean = others.length > 0 ? others.reduce((sum, v) => sum + v, 0) / others.length : 0
+            return Math.abs(pvOf(id) - mean)
+          }
+          const outlierId = seatedIds
+            .filter(id => requiredForThisCourtIds.has(id))
+            .filter(id => (suggestionStateForCourt.players.get(id)?.consecutive_rest ?? 0) > 0)
+            .sort((a, b) => distFromCluster(b) - distFromCluster(a) || a.localeCompare(b))[0]
+          if (outlierId && hasNearLevelPeerInActiveRoster(outlierId, suggestionStateForCourt, configuredPvnaTolerance)) {
+            const poolWithoutOutlier = forcedTradeoffPoolIds.filter(id => id !== outlierId)
+            const requiredMinusOutlier = new Set(
+              [...requiredForThisCourtIds].filter(id => id !== outlierId),
+            )
+            const seatedGap = Math.abs(
+              pvOf(match.team_a[0]) + pvOf(match.team_a[1]) - pvOf(match.team_b[0]) - pvOf(match.team_b[1]),
+            )
+            const balanced = findMinCostFoursome(
+              poolWithoutOutlier, requiredMinusOutlier, suggestionStateForCourt, configuredPvnaTolerance,
+            )
+            if (balanced && balanced.gap <= configuredPvnaTolerance && balanced.gap < seatedGap) {
+              forcedTradeoff = {
+                kind: 'blowout',
+                explanation: buildBlowoutExplanation(outlierId, match, suggestionStateForCourt, playersById),
+                acceptRepeat: { team_a: match.team_a, team_b: match.team_b },
+                acceptImbalance: { team_a: balanced.team_a, team_b: balanced.team_b },
+              }
+              forcedDebugInfo = {
+                ...forcedDebugInfo,
+                blowout_outlier: outlierId,
+                blowout_seated_gap: Number(seatedGap.toFixed(2)),
+                blowout_balanced_gap: Number(balanced.gap.toFixed(2)),
+                attached: true,
+              }
+            }
           }
         }
       } catch (forcedError) {
