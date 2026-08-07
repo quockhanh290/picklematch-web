@@ -4,7 +4,14 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
-### Phiên 2026-08-07 (FIX last-court blowout owed-outlier) — DONE build (SDD 3 task SHIP), CHỜ deploy v233 + client rebuild
+### Phiên 2026-08-07 (Gender-gap round-1 → lộ ENGINE FRAGMENTED) — MỞ, CHƯA fix, cần bàn chiến lược
+Host hỏi "sao vòng 1 đã 2 sân vượt gap" (a1cef762). Đào ra vấn đề lớn hơn — chi tiết + repro ở memory [[project-engine-fragmentation-gender-gap]].
+- [x] Verify: gap-only FEASIBLE (partition all-within-tol tồn tại); `suggestNextRound` toàn cục cùng scoring ra all-within-tol 105ms; prod full-board (549ms) ra 2 over-tol → prod dùng PATH khác/tệ hơn, KHÔNG phải gender-scoring/time-bound đơn thuần.
+- [x] Kết luận: **engine FRAGMENTED** — 2 hệ scoring (score.ts gender4 ở pair.ts / quality-cost 0.4 elsewhere) + nhiều path sinh trận khác kết quả + search bound Date.now. 3 bug session này (determinism/blowout/gender-gap) = triệu chứng cùng gốc chắp vá.
+- [ ] **QUYẾT ĐỊNH CHIẾN LƯỢC (session sau):** CONSOLIDATION (1 scoring + 1 path partition toàn cục tất định within-tol-first, retire path thừa) vs vá tiếp per-path. Bước tiếp: xác định CHÍNH XÁC path prod dùng cho full-board round-1 (vì sao khác suggestNextRound).
+- Host directive: "gender chỉ là bonus" (không đẩy sân qua gap-tol) — nhưng fix đúng ở PATH/partition, không phải gender-weight.
+
+### Phiên 2026-08-07 (FIX last-court blowout owed-outlier) — DONE, deployed v233 ALGO 54
 Root cause (session bbf721bd Sân 2, verify data): owed skill-outlier (Bùi Long 2.0 giữa nhóm 4.5) bị ép vào blowout gap 2.43 ở SÂN CUỐI vì `selectRequiredIdsForCourt`+`deferLowViabilityRequiredIdsForCourt` **bail khi remainingCourtsInRound≤1**, và blowout-repair không bench được (peer của outlier đang busy → `hasNearLevelPeer` chặn). Roster có 5 người yếu nhưng đều busy lúc sân cuối. [[project-blowout-required-selection]] [[project-rolling-single-court-blowout-defer]]
 - [x] Spec+plan (brainstorm→writing-plans, docs/superpowers/{specs,plans}/2026-08-07-last-court-blowout-outlier-defer*).
 - [x] **SDD 3 task (commits b71a414/79c00ae/84ebf27, final review SHIP, 7/7 cross-task invariant vững):**

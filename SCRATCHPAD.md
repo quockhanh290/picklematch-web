@@ -1,3 +1,18 @@
+# GOTCHAS — blowout-defer + gender-gap + fragmentation (2026-08-07)
+
+## Gotchas
+- **Client "refresh" = NOOP re-persist, KHÔNG chạy lại engine.** Preview cũ trong DB (`session_live_matches status='suggested'`) hiện lại y nguyên dù đã deploy edge mới. Để ÉP engine chạy lại 1 sân: **XÓA row `status='suggested'` court đó** (DELETE) → lần load sau engine re-run thật. Đã dùng cho 1db29119 c5 + bbf721bd c1. (Rebuild client chỉ đổi CODE client, không refresh suggestion.)
+- **Secret allowlist đọc = HASH** (Management API `/secrets` trả SHA256, không phải value). Muốn biết value hiện tại: hash các candidate rồi so khớp. Append session mới: dựng chuỗi mới đầy đủ → POST → verify hash → **redeploy edge** (isolate cũ cache env). SESSION_QUALITY_COST_SESSION_IDS hiện: ae50a374,1db29119,bbf721bd,a1cef762 (v235).
+- **`npm run sim` perf-targets FAIL trên máy dev này** (medium avg 633ms vs target 150, large 515 vs 500; run ~25 PHÚT) = targets calibrate cho CI/máy nhanh, máy dev chậm ~4× → **KHÔNG phải regression** khi sửa engine nhẹ. Gate thật để xét = **sanity/fairness suite** (correctness), không phải perf-targets. Đừng block fix vì perf-targets fail; verify bằng sanity.
+- **Subagent background-limbo:** implementer đôi khi launch `npm run sim` ở background rồi RETURN sớm (chưa commit/report) — lặp 2 lần ở Task 1 blowout. Controller phải tự chạy sim foreground (verification) + commit code đã test. Dặn subagent "chạy FOREGROUND, không return tới khi commit xong".
+- **Chẩn đoán gender-vs-gap:** feasibility search random (gap-only vs gender+gap) phân biệt "skill-forced" vs "gender-forced". Repro `suggestNextRound(active_courts,budget lớn)` = partition toàn cục → so với board prod để biết prod có dùng path tối ưu không. scratch/diag-a1ce-*.ts.
+
+## Rejected approaches (2026-08-07)
+- **Quy gender-gap cho "migration dang dở / gender weight 4":** SAI (đã đính chính). Ngay cả quality-cost gender 0.4 vẫn ưu tiên gender-over-gap ở ca này; và suggestNextRound toàn cục (cùng gender) ra all-within-tol. Gốc là PATH prod khác, không phải weight.
+- **Chỉnh gender-weight / step-penalty within-tol>over-tol:** hoãn — repro cho thấy path toàn cục đã đúng; fix nên ở path/partition, không phải scoring. Chờ bàn consolidation.
+
+---
+
 # GOTCHAS — FIX non-determinism single-court (2026-08-06)
 
 ## Gotchas
