@@ -159,9 +159,9 @@ const SPLIT_INDICES: readonly [readonly [number, number], readonly [number, numb
 export function bestSplitForFoursome(
   four: Foursome, state: SessionState,
   opts: { tolerance: number; weights?: Partial<QualityCostWeights> },
-): { cost: number; team_a: Team; team_b: Team } {
+): { cost: number; gap: number; overTol: boolean; team_a: Team; team_b: Team } {
   const P = (id: string) => state.players.get(id)!
-  let best: { cost: number; team_a: Team; team_b: Team } | null = null
+  let best: { cost: number; gap: number; overTol: boolean; team_a: Team; team_b: Team } | null = null
   for (const [sa, sb] of SPLIT_INDICES) {
     const team_a: Team = [four[sa[0]], four[sa[1]]]
     const team_b: Team = [four[sb[0]], four[sb[1]]]
@@ -170,8 +170,16 @@ export function bestSplitForFoursome(
     const isInfeasible =
       getAvoidPenalty(P(team_a[0]), P(team_a[1]), 'partner') === AVOID_PARTNER_PENALTY ||
       getAvoidPenalty(P(team_b[0]), P(team_b[1]), 'partner') === AVOID_PARTNER_PENALTY
-    const cost = isInfeasible ? Infinity : computeQualityCost(team_a, team_b, state, opts).cost
-    if (best === null || cost < best.cost) best = { cost, team_a, team_b }
+    const qc = computeQualityCost(team_a, team_b, state, opts)
+    const cost = isInfeasible ? Infinity : qc.cost
+    // Infeasible splits rank as "worst" on BOTH keys so a feasible split always wins.
+    const overTol = isInfeasible ? true : qc.gap > opts.tolerance
+    // Lexicographic within-tol-first: prefer a within-tolerance split; among splits with the same
+    // over-tolerance status, prefer lower cost. Gender/repeat (soft costs) may only break ties WITHIN
+    // the tolerance band — they can never make an over-tol split win over a within-tol one.
+    const better = best === null
+      || (overTol !== best.overTol ? (!overTol && best.overTol) : cost < best.cost)
+    if (better) best = { cost, gap: qc.gap, overTol, team_a, team_b }
   }
   return best!
 }

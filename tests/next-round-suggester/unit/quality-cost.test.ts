@@ -1,4 +1,6 @@
 import { computeQualityCost, DEFAULT_QUALITY_COST_WEIGHTS } from '../../../lib/next-round-suggester/quality-cost'
+import { bestSplitForFoursome, jointRepartition } from '../../../lib/next-round-suggester/quality-cost'
+import { getEffectivePvna } from '../../../lib/next-round-suggester/state'
 import type { RoundRecord, SessionState, Team } from '../../../lib/next-round-suggester/types'
 import { createPlayer, createState, setOpponentRepeats } from '../helpers/factories'
 
@@ -179,5 +181,29 @@ describe('computeQualityCost — gender preference (ported from score.ts genderP
     // penalty, so compare against the ungrouped violation directly for the halving ratio.
     const groupedGenderOnly = grouped + Math.min(DEFAULT_QUALITY_COST_WEIGHTS.groupCap, DEFAULT_QUALITY_COST_WEIGHTS.groupReward)
     expect(groupedGenderOnly - notGrouped).toBeCloseTo(-DEFAULT_QUALITY_COST_WEIGHTS.genderPartner * 0.5, 5)
+  })
+})
+
+describe('bestSplitForFoursome — within-tol-first (joint lexicographic)', () => {
+  // Two low equal-PVNA females who both want a female partner, plus two high equal-PVNA males.
+  // The only gender-clean split (females paired together) is a blowout (gap 1.0); the balanced
+  // splits (gap 0) each break both gender prefs. Under raw cost the blowout is cheaper (its over²
+  // penalty is small) — the fix must still refuse to cross the tolerance for a gender bonus.
+  const gapOfTeams = (state: SessionState, a: Team, b: Team) =>
+    Math.abs(getEffectivePvna(state.players.get(a[0])!) + getEffectivePvna(state.players.get(a[1])!)
+      - getEffectivePvna(state.players.get(b[0])!) - getEffectivePvna(state.players.get(b[1])!))
+
+  it('prefers a within-tol split over a cheaper over-tol gender-satisfying split', () => {
+    const players = [
+      createPlayer('x0', { pvna: 2.0, gender: 'F', partner_gender_pref: 'F' }),
+      createPlayer('x1', { pvna: 2.0, gender: 'F', partner_gender_pref: 'F' }),
+      createPlayer('x2', { pvna: 2.5, gender: 'M' }),
+      createPlayer('x3', { pvna: 2.5, gender: 'M' }),
+    ]
+    const state = createState({ players, courts: 6, pvnaTolerance: 0.5 })
+    const best = bestSplitForFoursome(['x0', 'x1', 'x2', 'x3'], state, { tolerance: 0.5 })
+    expect(gapOfTeams(state, best.team_a, best.team_b)).toBeLessThanOrEqual(0.5)
+    expect(best.overTol).toBe(false)
+    expect(best.gap).toBeLessThanOrEqual(0.5)
   })
 })
