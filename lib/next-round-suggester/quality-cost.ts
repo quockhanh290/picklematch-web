@@ -196,8 +196,17 @@ export function jointRepartition(
   const split = work.map(four => bestSplitForFoursome(four as Foursome, state, opts))
   const overCount = (items: typeof split) => items.reduce((n, s) => n + (s.overTol ? 1 : 0), 0)
   const totalCostBefore = split.reduce((sum, c) => sum + c.cost, 0)
-  const overBefore = overCount(split)
+  const seedOver = overCount(split)
   let total = totalCostBefore
+  // Converged-result guard: the per-swap acceptance is the ORIGINAL free cost-only hill-climb, so the
+  // search can freely traverse transient over-tolerance states (a 2-swap sequence to a strictly-better
+  // all-within-tol board is not blocked by an intermediate that crosses tolerance). The over-tol
+  // guarantee is enforced on the CONVERGED result instead: we snapshot the lowest-cost board seen whose
+  // global over-count is <= the (clean) seed's, and return that snapshot rather than the raw converged
+  // split. Seed is always a candidate, so totalCostAfter <= totalCostBefore and over-count never rises.
+  let bestOver = seedOver
+  let bestCost = totalCostBefore
+  let bestTeams = split.map(s => ({ team_a: s.team_a, team_b: s.team_b }))
   let improved = true
   let iters = 0
   while (improved && iters < maxIterations) {
@@ -210,17 +219,19 @@ export function jointRepartition(
             const tmp = work[ci][pi]; work[ci][pi] = work[cj][pj]; work[cj][pj] = tmp
             const nci = bestSplitForFoursome(work[ci] as Foursome, state, opts)
             const ncj = bestSplitForFoursome(work[cj] as Foursome, state, opts)
-            // Lexicographic (over-tol count, cost) on the two courts touched by this swap: never
-            // accept a swap that increases how many of them exceed gap-tolerance; within an equal
-            // over-tol count, accept only a strict cost reduction. A swap can never raise the local
-            // over count, so the global over count never rises above the (clean) seed.
-            const oldOver = (split[ci].overTol ? 1 : 0) + (split[cj].overTol ? 1 : 0)
-            const newOver = (nci.overTol ? 1 : 0) + (ncj.overTol ? 1 : 0)
             const oldCost = split[ci].cost + split[cj].cost
             const newCost = nci.cost + ncj.cost
-            const accept = newOver < oldOver || (newOver === oldOver && newCost < oldCost - 1e-6)
-            if (accept) {
-              split[ci] = nci; split[cj] = ncj; total += newCost - oldCost; improved = true
+            const delta = newCost - oldCost
+            if (delta < -1e-6) {
+              split[ci] = nci; split[cj] = ncj; total += delta; improved = true
+              // Snapshot the best clean-enough board (over-count <= seed). Accepted swaps strictly lower
+              // total, so the latest clean-enough board is also the lowest-cost one seen so far.
+              const curOver = overCount(split)
+              if (curOver <= seedOver && (curOver < bestOver || (curOver === bestOver && total < bestCost - 1e-9))) {
+                bestOver = curOver
+                bestCost = total
+                bestTeams = split.map(s => ({ team_a: s.team_a, team_b: s.team_b }))
+              }
             } else {
               const undo = work[ci][pi]; work[ci][pi] = work[cj][pj]; work[cj][pj] = undo
             }
@@ -229,11 +240,11 @@ export function jointRepartition(
       }
     }
   }
-  const overAfter = overCount(split)
   const splits: JointSplit[] = courts.map((c, i) => ({
-    court_idx: c.court_idx, team_a: split[i].team_a, team_b: split[i].team_b,
+    court_idx: c.court_idx, team_a: bestTeams[i].team_a, team_b: bestTeams[i].team_b,
   }))
-  const changed = overAfter < overBefore
-    || (overAfter === overBefore && total < totalCostBefore - 1e-9)
-  return { splits, changed, totalCostBefore, totalCostAfter: total }
+  // totalCostAfter <= totalCostBefore always (seed is a snapshot candidate); `changed` can be true with
+  // equal cost only when the returned board dropped the global over-tol count below the seed's.
+  const changed = bestOver < seedOver || (bestOver === seedOver && bestCost < totalCostBefore - 1e-9)
+  return { splits, changed, totalCostBefore, totalCostAfter: bestCost }
 }
