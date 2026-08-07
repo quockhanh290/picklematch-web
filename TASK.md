@@ -4,6 +4,17 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
+### Phiên 2026-08-07 (FIX last-court blowout owed-outlier) — DONE build (SDD 3 task SHIP), CHỜ deploy v233 + client rebuild
+Root cause (session bbf721bd Sân 2, verify data): owed skill-outlier (Bùi Long 2.0 giữa nhóm 4.5) bị ép vào blowout gap 2.43 ở SÂN CUỐI vì `selectRequiredIdsForCourt`+`deferLowViabilityRequiredIdsForCourt` **bail khi remainingCourtsInRound≤1**, và blowout-repair không bench được (peer của outlier đang busy → `hasNearLevelPeer` chặn). Roster có 5 người yếu nhưng đều busy lúc sân cuối. [[project-blowout-required-selection]] [[project-rolling-single-court-blowout-defer]]
+- [x] Spec+plan (brainstorm→writing-plans, docs/superpowers/{specs,plans}/2026-08-07-last-court-blowout-outlier-defer*).
+- [x] **SDD 3 task (commits b71a414/79c00ae/84ebf27, final review SHIP, 7/7 cross-task invariant vững):**
+  - **A (rest=0):** nới bail sân-cuối trong `deferLowViabilityRequiredIdsForCourt` → tự defer 1 outlier rest=0 CÓ peer trong roster active (guard: spread>tol, rest===0, peer, fill-floor≥3) → sân cân, outlier nghỉ vòng này chơi vòng sau. `hasNearLevelPeerInActiveRoster` mới.
+  - **B (rest>0):** metadata-only — gắn `forced_tradeoff {kind:'blowout', explanation, ②seated/③balanced-rest}` để host quyết ②Chịu lệch/③Cho nghỉ tiếp; KHÔNG auto-rest người đã nghỉ (chống starve). ALGO 53→54.
+  - **Client:** `buildForcedDecision` + panel nhận kind='blowout' (②Chịu lệch/③Cho nghỉ tiếp + "Vì sao lệch"). Logic ở forced-decision.ts, component chỉ render.
+- [x] Invariants giữ: sân đủ 4 (defer degrade thành no-op re-seat nếu pool chật), tối đa 1 vòng nghỉ do defer, không starve (rest>0→host quyết), tất định, không regress ALGO 37/48.
+- Note: **sim perf-targets fail trên máy dev này** (medium 633ms vs 150, run ~25 phút) = pre-existing (targets calibrate CI/máy nhanh), KHÔNG phải regression — sanity/fairness PASS. Xem SCRATCHPAD.
+- [ ] **CHỜ ANH DUYỆT: deploy edge v233 (engine A+B, ALGO 54) + REBUILD client (panel Task 3).** Sau đó QA bbf721bd: sân cuối outlier rest=0 → cân (hết blowout); outlier rest>0 → panel 3-nhánh blowout + giải thích.
+
 ### Phiên 2026-08-06 (FIX non-determinism single-court) — DONE build, CHỜ deploy v230
 Root cause (verify byte-identical state, 2 dump session 1db29119 court 5): engine KHÔNG tất định — `suggestNextMatch` search có deadline `Date.now()`, chiến lược tránh-lặp (diversity/group) chạy cuối bị timeout starve + exhaustive fallback bị skip khi budget<100ms → cùng bench khi thì seat sạch khi thì lặp-3. [[project-suggest-nondeterministic-search-budget]]
 - [x] Spec + plan (brainstorm→writing-plans, docs/superpowers/{specs,plans}/2026-08-06-single-court-deterministic-lineup*).
