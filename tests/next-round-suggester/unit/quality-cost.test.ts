@@ -210,7 +210,12 @@ describe('bestSplitForFoursome — within-tol-first (joint lexicographic)', () =
 
 describe('jointRepartition — never introduces over-tol (a1ce regression)', () => {
   // Reconstructed from session a1cef762 round-1 clean greedy seed (scratch/dump-a1ce-fixture.ts).
-  // Pre-fix jointRepartition pushes 2 courts over tol (gaps 0.65 / 0.67) to satisfy gender prefs.
+  // Coarse guard, NOT fail-first for this task: on this branch, Task 1's within-tol-first
+  // bestSplitForFoursome already neutralizes this exact seed's initial over-tol condition (all 6
+  // courts start within tol here), so this test passes even without this task's lexicographic
+  // jointRepartition fix (verified: reverting just the swap-accept rule still leaves this green).
+  // The fail-first regression coverage for THIS task is the differential fixture below
+  // ('lexicographic swap acceptance').
   const PLAYERS: Array<{ id: string; pvna: number; gender: 'M' | 'F'; pp: any; op: any }> = [
     { id: 'p1', pvna: 2.31, gender: 'F', pp: 'M', op: 'any' }, { id: 'p2', pvna: 2.88, gender: 'F', pp: 'F', op: 'M' },
     { id: 'p4', pvna: 4.06, gender: 'M', pp: 'any', op: 'any' }, { id: 'p5', pvna: 3.47, gender: 'F', pp: 'any', op: 'M' },
@@ -269,5 +274,44 @@ describe('jointRepartition — still optimizes within tolerance (preservation)',
     const res = jointRepartition(courts, state, { tolerance: 0.5 })
     expect(res.changed).toBe(true)
     expect(res.totalCostAfter).toBeLessThan(res.totalCostBefore)
+  })
+})
+
+describe('jointRepartition — lexicographic swap acceptance (differential fixture)', () => {
+  // Court A is unavoidably over-tol: 3 low-PVNA + 1 high-PVNA -> every one of the 3 possible 2v2
+  // splits has gap 4.0 (>> the 0.5 tolerance), no swap-free arrangement of A alone fixes it.
+  // Court B starts within-tol (best split gap 0.0) but carries a severe opponent-repeat that no
+  // split of B alone can avoid: b0 has met BOTH b2 and b3 three times as an opponent, so whichever
+  // partner b0 takes on B, the other one of {b2, b3} is still a severe (4th-meeting) repeat opponent.
+  // A cost-only accept rule has an incentive to trade a B player for an A player specifically to
+  // shed that severe-repeat cost (partnering b0 with the repeat target it would otherwise face) —
+  // but the only split that removes it lands B's own gap at 2.0, i.e. it turns a within-tol court
+  // into a second over-tol court to save cost. This is the exact defect this task's lexicographic
+  // (over-tol count, cost) accept rule fixes: verified fail-first against the old cost-only rule
+  // (see task-2-report.md fix-report addendum for the RED/GREEN proof).
+  it('never lets the seed over-tol count rise, and keeps court B within tol', () => {
+    const players = [
+      createPlayer('a0', { pvna: 1.0 }), createPlayer('a1', { pvna: 1.0 }),
+      createPlayer('a2', { pvna: 1.0 }), createPlayer('a3', { pvna: 5.0 }),
+      createPlayer('b0', { pvna: 3.0 }), createPlayer('b1', { pvna: 3.0 }),
+      createPlayer('b2', { pvna: 3.0 }), createPlayer('b3', { pvna: 3.0 }),
+    ]
+    const state = createState({ players, courts: 6, pvnaTolerance: 0.5 })
+    setOpponentRepeats(state.players.get('b0')!, state.players.get('b2')!, 3)
+    setOpponentRepeats(state.players.get('b0')!, state.players.get('b3')!, 3)
+    const courts = [
+      { court_idx: 0, four: ['a0', 'a1', 'a2', 'a3'] as [string, string, string, string] },
+      { court_idx: 1, four: ['b0', 'b1', 'b2', 'b3'] as [string, string, string, string] },
+    ]
+    const gapOf = (s: { team_a: Team; team_b: Team }) =>
+      Math.abs(getEffectivePvna(state.players.get(s.team_a[0])!) + getEffectivePvna(state.players.get(s.team_a[1])!)
+        - getEffectivePvna(state.players.get(s.team_b[0])!) - getEffectivePvna(state.players.get(s.team_b[1])!))
+    const seedOverCount = 1 // court A only; court B's natural (b0/b2 partners) split is gap 0
+
+    const { splits } = jointRepartition(courts, state, { tolerance: 0.5 })
+    const overAfter = splits.filter(s => gapOf(s) > 0.5).length
+    expect(overAfter).toBeLessThanOrEqual(seedOverCount)
+    const courtB = splits.find(s => s.court_idx === 1)!
+    expect(gapOf(courtB)).toBeLessThanOrEqual(0.5)
   })
 })
