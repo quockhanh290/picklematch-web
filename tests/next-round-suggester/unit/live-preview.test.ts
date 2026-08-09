@@ -1430,7 +1430,15 @@ describe('projected live match state', () => {
     expect(payloads[0].warnings ?? []).toContain('LIVE_REPLACEMENT_RECYCLE_HARD_RELAXED')
   })
 
-  it('waits instead of creating a fifth consecutive match', () => {
+  // PRODUCT CHANGE, not a stale test. This used to expect zero payloads: the engine held the streaked
+  // player back and returned nothing. The anti-fatigue rule itself is unchanged and still wins by
+  // default — only its presentation moved, from a silent empty court the host could not distinguish
+  // from a broken engine, to a panel that names the streak and lets them override it.
+  //
+  // Here nothing is live, so no completion can ever free a substitute. Waiting would stall forever,
+  // so the panel points at playing instead; the wait-by-default case is covered in
+  // live-preview-fatigue-panel.test.ts, where a live court exists to wait for.
+  it('surfaces a fifth consecutive match as a choice instead of a silent empty court', () => {
     const state = createState({
       courts: 1,
       players: [
@@ -1454,7 +1462,10 @@ describe('projected live match state', () => {
       pvnaTolerance: 0.5,
     })
 
-    expect(payloads).toHaveLength(0)
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].forced_tradeoff?.kind).toBe('fatigue')
+    expect(payloads[0].forced_tradeoff?.recommended).toBe('accept_repeat')
+    expect(payloads[0].wait_rescue_options ?? []).toHaveLength(0)
   })
 
   it('relaxes the absolute consecutive-play guard when no substitute exists', () => {

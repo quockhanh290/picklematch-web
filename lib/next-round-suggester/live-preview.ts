@@ -100,7 +100,7 @@ const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 58
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 59
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -299,10 +299,15 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   // eligible pool), the two Pareto-optimal endpoints — advisory data for the host toggle, not the
   // displayed lineup (which stays the engine's existing pick).
   forced_tradeoff?: {
-    kind?: 'repeat' | 'blowout'
+    kind?: 'repeat' | 'blowout' | 'fatigue'
     explanation?: string
     acceptRepeat: { team_a: Team; team_b: Team }
-    acceptImbalance: { team_a: Team; team_b: Team }
+    // Absent for 'fatigue': the alternative there is not another lineup but waiting for a court to
+    // free someone up, which wait_rescue_options carries. Three players cannot be re-split into four.
+    acceptImbalance?: { team_a: Team; team_b: Team }
+    // Which branch the panel should land on before the host touches anything. 'fatigue' defaults to
+    // waiting so the anti-fatigue rule still holds unless the host deliberately overrides it.
+    recommended?: 'wait' | 'accept_repeat' | 'accept_imbalance'
   }
   // Live courts whose completion, simulated, would let this pool build a clean (non-forced) lineup.
   wait_rescue_options?: { court_idx: number; started_at: string | null }[]
@@ -1008,6 +1013,16 @@ export function buildLiveSelectionGuard({
       {
         protectedIds: new Set(absoluteRecycleProtectedIds),
         warnings: absoluteWarnings,
+      },
+      // Last resort: protect nobody. Holding back everyone at the absolute consecutive-play limit is
+      // right whenever four others are left, and this ladder already tried that. When it is not, the
+      // court used to come back empty with no reason attached — a deliberate wait the host could not
+      // tell apart from a broken engine (debug_dumps 2ce7a8de, dd89d049). Seating here does not decide
+      // for the host: LIVE_RECYCLE_ABSOLUTE_RELAXED turns the lineup into a fatigue panel whose default
+      // branch is still "wait".
+      {
+        protectedIds: new Set<string>(),
+        warnings: [...absoluteWarnings, 'LIVE_RECYCLE_ABSOLUTE_RELAXED'],
       },
     ],
   }
@@ -4303,6 +4318,7 @@ export function buildSuggestedMatchPayloads({
     ])
   }
   const queuedCourtIdxs = new Set(liveCourtIdxs)
+  const attemptedCourtIdxs = new Set<number>()
   const batchBusyIds = new Set(baseBusyIds)
   // Cap courts to what the available player pool can physically fill.
   // When many courts complete simultaneously, available players drop below courts×4.
@@ -4364,9 +4380,17 @@ export function buildSuggestedMatchPayloads({
     const requestedCourtIdx = options.courtIdxs?.[index] ?? options.courtIdx
     const openCourtIdxs = Array.from({ length: courtCapacity }, (_, idx) => idx)
       .filter(idx => !queuedCourtIdxs.has(idx))
-    const nextCourtIdx = openCourtIdxs.find(idx => !roundCourtIdxs.has(idx)) ?? openCourtIdxs[0]
+    // Only seating marks a court handled, so one that failed stays open and would be picked again
+    // while courts behind it never get a turn (prod 828b7010: six iterations, three on court 3,
+    // courts 4 and 5 never attempted — and they had MORE eligible players, since eligibility follows
+    // each court's own round). Retrying is still allowed once every open court has had a turn: later
+    // iterations carry a bigger slice of the batch budget, so a court can fail thin and seat fat.
+    const untriedCourtIdxs = openCourtIdxs.filter(idx => !attemptedCourtIdxs.has(idx))
+    const pickableCourtIdxs = untriedCourtIdxs.length > 0 ? untriedCourtIdxs : openCourtIdxs
+    const nextCourtIdx = pickableCourtIdxs.find(idx => !roundCourtIdxs.has(idx)) ?? pickableCourtIdxs[0]
     const courtIdx = requestedCourtIdx ?? nextCourtIdx
     if (courtIdx === undefined) break
+    attemptedCourtIdxs.add(courtIdx)
     const courtLastCompletedRound = lastCompletedRoundByCourtIdx.get(courtIdx)
     const payloadRoundNo = courtLastCompletedRound !== undefined
       ? courtLastCompletedRound + 1
@@ -5342,6 +5366,40 @@ export function buildSuggestedMatchPayloads({
         forcedTradeoff = undefined
         waitRescueOptions = undefined
         forcedDebugInfo = { qce: true, error: String(forcedError).slice(0, 160) }
+      }
+    }
+    // Fatigue panel. This lineup only exists because the ladder had to drop the guard that keeps a
+    // player off a fifth consecutive match — every less drastic stage left fewer than four playable.
+    // The court is worth offering, but not worth deciding: default to waiting, and let the host spend
+    // that player if they would rather keep the court running. Not flag-gated — the anti-fatigue rule
+    // is not part of the quality-cost model.
+    if (!forcedTradeoff && alternative.warnings?.includes('LIVE_RECYCLE_ABSOLUTE_RELAXED')) {
+      const seatedIds = [...match.team_a, ...match.team_b]
+      const tiredIds = seatedIds.filter(id =>
+        (suggestionStateForCourt.players.get(id)?.consecutive_play ?? 0)
+          >= LIVE_RECYCLE_ABSOLUTE_CONSECUTIVE_PLAY_LIMIT,
+      )
+      if (tiredIds.length > 0) {
+        const nameOf = (id: string) => playersById.get(id)?.name ?? id
+        const streakOf = (id: string) => suggestionStateForCourt.players.get(id)?.consecutive_play ?? 0
+        const rescueCourts = liveMatchRows
+          .filter(row => row.status === 'live' && row.court_idx !== null && row.court_idx !== undefined)
+          .map(row => ({ court_idx: Number(row.court_idx), started_at: row.started_at ?? null }))
+        const streak = Math.max(...tiredIds.map(streakOf))
+        // Waiting is the default only when something is running that can end and free a substitute.
+        // With no live court there is nothing to wait for, and recommending it would park the session
+        // forever — the exact silent stall this panel exists to end.
+        forcedTradeoff = {
+          kind: 'fatigue',
+          recommended: rescueCourts.length > 0 ? 'wait' : 'accept_repeat',
+          explanation: rescueCourts.length > 0
+            ? `${tiredIds.map(nameOf).join(', ')} đã chơi ${streak} trận liên tiếp.`
+              + ' Chờ một sân xong để có người thay, hoặc cho đánh tiếp.'
+            : `${tiredIds.map(nameOf).join(', ')} đã chơi ${streak} trận liên tiếp,`
+              + ' nhưng không còn sân nào đang chạy để chờ người thay.',
+          acceptRepeat: { team_a: match.team_a, team_b: match.team_b },
+        }
+        waitRescueOptions = waitRescueOptions ?? rescueCourts
       }
     }
     payloads.push({
