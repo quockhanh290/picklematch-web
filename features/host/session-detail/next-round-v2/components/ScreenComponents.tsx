@@ -1969,7 +1969,12 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
         ? 'giữ trận hơi lệch & trùng'
         : playRepeatCount >= 3
           ? `giữ lặp đối thủ ${playRepeatCount} lần`
-          : 'không đánh đổi gì'
+          // A lineup can be over tolerance without earning a degraded_reason — the blowout flag only
+          // fires past a 1.5 gap floor, so the whole band between the tolerance and that floor used to
+          // read "không đánh đổi gì" while the line right above it said the teams were 0,85 apart.
+          : pvnaCapExceeded
+            ? `giữ trận chênh ${formatNumber(pvnaOverBy, 2)} quá mức cân`
+            : 'không đánh đổi gì'
   const swapResultCost = (choice: SuggestionTradeoffChoice) => {
     const m = choice.metrics
     const before = recommendedChoice?.metrics.max_opponent_pair ?? m.max_opponent_pair
