@@ -1143,10 +1143,41 @@ function suggestNextMatchExhaustiveFallback(
       // best was non-null (a min-cost foursome was found) but makeAlternative couldn't materialize it —
       // e.g. the foursome is a recent-group-rematch (same 4 regrouped within the block window):
       // candidateLineups (forced-tradeoff.ts) never checks recent-group-rematch, but bestPartitioning
-      // hard-rejects it for every split (allowRecentGroupRematch is fixed false here, and the block is
-      // group-level — independent of which split is tried). Bail deterministically to the greedy result
-      // instead of falling into the wall-clock-timed legacy loop, which would reintroduce the very
-      // timing-dependent non-determinism this fast path exists to remove.
+      // hard-rejects it for every split, and the block is group-level, so no split can escape it.
+      //
+      // Seat it anyway with the block relaxed, flagged. A court the host asked us to fill comes back
+      // with a lineup or an explicit reason, never silently empty: these four are the only people free,
+      // and "you four again" is a worse answer than a clean match but a far better one than an empty
+      // court nobody can explain. Relaxing here rather than falling through to the legacy timed loop
+      // keeps the determinism this fast path exists for — the loop honours the same relaxation, but on
+      // a wall-clock budget.
+      const relaxed = makeAlternative(
+        selected, presentPlayers, state, warnings, undefined, partitioningCache, true, true, true,
+        options.preview_seed, thresholds,
+      )
+      if (relaxed) {
+        if (options._exhaustiveDiag) {
+          Object.assign(options._exhaustiveDiag, {
+            ran: true,
+            timedOut: false,
+            eligibleCount: eligiblePlayers.length,
+            combinationsEvaluated: 0,
+            bestPvnaDiff: relaxed.matches[0]?.stats?.pvna_diff ?? null,
+            bestHasTradeoffs: (relaxed.tradeoffs?.length ?? 0) > 0,
+            elapsedMs: 0,
+            deterministicFastPath: true,
+          })
+        }
+        return {
+          alternatives: [{
+            ...relaxed,
+            warnings: [...new Set([...relaxed.warnings, 'RECENT_GROUP_REMATCH_RELAXED'])],
+            matches: relaxed.matches.slice(0, 1).map((match) => ({ ...match, court_idx: courtIdx })),
+          }],
+          warnings,
+          should_end: false,
+        }
+      }
       if (options._exhaustiveDiag) {
         Object.assign(options._exhaustiveDiag, {
           ran: true,
