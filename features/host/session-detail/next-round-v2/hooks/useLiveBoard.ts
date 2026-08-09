@@ -279,7 +279,10 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     previewRequestSerialRef.current += 1
     previewRequestInFlightRef.current = false
     previewRequestInFlightSerialRef.current = null
-    if (sessionChanged) liveStateVersionRef.current = null
+    if (sessionChanged) {
+      if (__DEV__) console.log('[stuck-diag] liveStateVersion -> NULL (session/mount reset)', { sessionId, generation: sessionGenerationRef.current })
+      liveStateVersionRef.current = null
+    }
     autoRepairStateAttemptedRef.current = false
     suggestedPreviewBatchRef.current = null
     suggestedLaneCacheRef.current.clear()
@@ -1564,6 +1567,31 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     const merged = [...hydrated, ...retainedEphemeral].sort(sortByCourtIdx)
     const currentKey = [...current].sort(sortByCourtIdx).map(laneKeyOf).join('|')
     const mergedKey = merged.map(laneKeyOf).join('|')
+    if (__DEV__) {
+      // TEMP flicker-diag: log when a suggested lane the board is currently showing drops out of the
+      // rebuilt list for a court that did NOT become live — this is what surfaces "Đang cập nhật gợi ý...".
+      const mergedCourts = new Set(merged.map(m => getSuggestedLaneCourtIdx(m)))
+      for (const prior of current) {
+        const cIdx = getSuggestedLaneCourtIdx(prior)
+        if (cIdx === null || mergedCourts.has(cIdx) || occupiedCourts.has(cIdx)) continue
+        const rowForId = rows.liveMatchRows.find(r => r.id === prior.id)
+        const priorIds = getMatchPlayerIds(prior)
+        console.log('[flicker-diag] suggested lane dropped', {
+          courtIdx: cIdx,
+          matchId: prior.id,
+          wasPersisted: isPersistedSuggestedMatch(prior),
+          rowPresentInRows: Boolean(rowForId),
+          rowStatus: rowForId?.status ?? 'ABSENT_FROM_ROWS',
+          startedPreview: startedPreviewIds.has(prior.id),
+          invalidatedByCompleted: isPreviewInvalidatedByCompletedMatch(prior),
+          playerCollisionWithLive: priorIds.some(id => usedPlayerIds.has(id)),
+          coveredByNewHydrate: nextLaneCache.has(cIdx),
+          dbSuggestedCount: dbSuggestedMatches.length,
+          rowsCount: rows.liveMatchRows.length,
+          hydratedCount: hydrated.length,
+        })
+      }
+    }
     if (currentKey !== mergedKey) setSuggestedLiveMatches(merged)
   }, [
     activeLiveMatches,
@@ -2077,6 +2105,23 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
         : requestedReplacementCourtIdxs.length > 0
           ? 'replace_courts'
           : 'full_board'
+      if (__DEV__) {
+        // Busy-set staleness probe: the version + live courts this request tells the engine to treat as
+        // occupied. If liveVersionRef is null, or these live courts lag the real board, the engine can
+        // seat a now-live player -> persist assignment-conflict -> stuck. Compare to the actual DB state.
+        const busyLiveCourts = (snap.effectiveLiveMatchRows ?? [])
+          .filter((m: SessionLiveMatchRow) => m.status === 'live')
+          .map((m: SessionLiveMatchRow) => m.court_idx)
+        console.log('[stuck-diag] preview request build', {
+          previewMode,
+          target_courts: requestedReplacementCourtIdxs,
+          request_version: snapshotLiveStateVersion,
+          liveVersionRef: liveStateVersionRef.current,
+          snap_version: snap.liveStateVersion,
+          busy_live_courts: busyLiveCourts,
+          busy_live_count: busyLiveCourts.length,
+        })
+      }
       const body = {
         mode: previewMode,
         count: fetchSuggestedCount,
@@ -2991,11 +3036,18 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
                 classification.authoritativeVersion,
               )
             }
+            // A persist assignment-conflict means the cached suggestion is invalid against committed
+            // state (a player it seats is now live/assigned). Retrying the SAME cached batch just
+            // re-persists the same conflict -> thrash -> terminal cooldown -> permanently stuck lane.
+            // Drop the cached batch for EVERY assignment-conflict (not only when the version advanced)
+            // so the retry regenerates a fresh lineup from the authoritative snapshot, which excludes
+            // the now-blocked players. Without this, a conflict whose live_state_version did not advance
+            // (or is null) reuses the conflicting batch every retry and never recovers.
+            suggestedPreviewBatchRef.current = null
+            suggestedLaneCacheRef.current.clear()
+            setSuggestedLiveMatches(current => current.length === 0 ? current : [])
             if (classification.stateAdvanced) {
               previewAssignmentConflictRetryRef.current = { key: '', count: 0 }
-              suggestedPreviewBatchRef.current = null
-              suggestedLaneCacheRef.current.clear()
-              setSuggestedLiveMatches(current => current.length === 0 ? current : [])
               previewUnblockNonceRef.current += 1
               telemetry.trace('client_preview_persist_assignment_conflict_state_advanced', {
                 requestId: previewClientRequestId,
