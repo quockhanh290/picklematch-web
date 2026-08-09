@@ -4,7 +4,6 @@ import type { SessionLiveMatchRow } from './types.ts'
 export type ReconstructedLiveRounds = {
   matches: SessionLiveMatchRow[]
   roundByMatchId: Map<string, number>
-  canonicalCycleNoAvailable: boolean
   persistedRoundNoReliable: boolean
 }
 
@@ -32,14 +31,6 @@ function hasReliablePersistedRounds(matches: SessionLiveMatchRow[], roundSize: n
   return true
 }
 
-function hasCanonicalCycles(matches: SessionLiveMatchRow[]) {
-  return matches.every(match => {
-    if (match.cycle_no === null || match.cycle_no === undefined) return false
-    const cycleNo = Number(match.cycle_no)
-    return Number.isInteger(cycleNo) && cycleNo >= 0
-  })
-}
-
 export function reconstructLiveRounds(
   inputMatches: SessionLiveMatchRow[],
   roundSize: number,
@@ -57,19 +48,15 @@ export function reconstructLiveRounds(
     if (left.sequence_no !== right.sequence_no) return left.sequence_no - right.sequence_no
     return left.id.localeCompare(right.id)
   })
-  const canonicalCycleNoAvailable = hasCanonicalCycles(matches)
-  const persistedRoundNoReliable = canonicalCycleNoAvailable
-    || hasReliablePersistedRounds(matches, safeRoundSize)
+  const persistedRoundNoReliable = hasReliablePersistedRounds(matches, safeRoundSize)
   const roundByMatchId = new Map(matches.map((match, index) => [
     match.id,
-    canonicalCycleNoAvailable
-      ? Number(match.cycle_no)
-      : persistedRoundNoReliable
-        ? Number(match.round_no)
-        : Math.floor(index / safeRoundSize),
+    persistedRoundNoReliable
+      ? Number(match.round_no)
+      : Math.floor(index / safeRoundSize),
   ]))
 
-  return { matches, roundByMatchId, canonicalCycleNoAvailable, persistedRoundNoReliable }
+  return { matches, roundByMatchId, persistedRoundNoReliable }
 }
 
 export function getNextLiveRoundByCourt(

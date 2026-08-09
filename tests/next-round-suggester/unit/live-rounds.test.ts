@@ -29,30 +29,6 @@ function liveMatch(
 }
 
 describe('reconstructLiveRounds', () => {
-  it('prefers canonical cycle identity over dirty legacy round numbers', () => {
-    const result = reconstructLiveRounds([
-      liveMatch('m1', 1, 0, 0, 'completed', 0),
-      liveMatch('m2', 2, 0, 1, 'completed', 0),
-      liveMatch('m3', 3, 0, 0, 'completed', 1),
-    ], 2)
-
-    expect(result.canonicalCycleNoAvailable).toBe(true)
-    expect(result.persistedRoundNoReliable).toBe(true)
-    expect([...result.roundByMatchId.values()]).toEqual([0, 0, 1])
-  })
-
-  it('does not mix partial canonical data with legacy rows', () => {
-    const result = reconstructLiveRounds([
-      liveMatch('m1', 1, 0, 0, 'completed', 4),
-      liveMatch('m2', 2, 0, 1),
-      liveMatch('m3', 3, 0, 0),
-    ], 2)
-
-    expect(result.canonicalCycleNoAvailable).toBe(false)
-    expect(result.persistedRoundNoReliable).toBe(false)
-    expect([...result.roundByMatchId.values()]).toEqual([0, 0, 1])
-  })
-
   it('keeps valid persisted round numbers', () => {
     const result = reconstructLiveRounds([
       liveMatch('m1', 1, 3, 0),

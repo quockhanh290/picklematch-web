@@ -245,13 +245,6 @@ function createClientRequestId(action: 'start' | 'end' | 'match') {
 
 type ActionResult = {
   reload?: boolean
-  reconcileAfterMs?: number
-  reconcile?: {
-    action: 'start' | 'end'
-    expectedLiveStateVersion?: number | null
-    expectedRoundNo?: number | null
-    expectedRoundStatus?: 'active' | 'completed'
-  }
 }
 
 type BuildSuggestedMatchOptions = {

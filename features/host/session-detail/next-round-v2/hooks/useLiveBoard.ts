@@ -19,7 +19,6 @@ import { useFocusEffect } from 'expo-router'
 
 import {
 } from '@/lib/next-round-suggester/score'
-import { suggestNextMatch } from '@/lib/next-round-suggester/suggest'
 import {
 } from '@/lib/next-round-suggester/fairness/audit'
 import {
@@ -47,20 +46,12 @@ import { usePreviewTelemetry, STUCK_THRESHOLD_MS } from './usePreviewTelemetry'
 import { toUserSafeActionError } from '../action-error'
 type ActionResult = {
   reload?: boolean
-  reconcileAfterMs?: number
   targetReachedAfterMatch?: boolean
-  reconcile?: {
-    action: 'start' | 'end'
-    expectedLiveStateVersion?: number | null
-    expectedRoundNo?: number | null
-    expectedRoundStatus?: 'active' | 'completed'
-  }
 }
 type LiveDisplayMatchRow = SessionLiveMatchRow & {
   client_preview_id?: string
 }
 
-const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
 const LIVE_PREVIEW_REPLACEMENT_MAX_COUNT = 2
 const LIVE_PREVIEW_FULL_BOARD_MAX_COUNT = 6
 const LIVE_PREVIEW_SOFT_TIMEOUT_MS = 12000
@@ -104,11 +95,6 @@ function withPreviewSoftTimeout<T>(promise: Promise<T>, onSoftTimeout?: () => vo
     if (timer) clearTimeout(timer)
   })
 }
-function isLocalPreviewFallbackEnabled() {
-  const isDevRuntime = typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production'
-  if (isDevRuntime) return true
-  return process.env.EXPO_PUBLIC_ENABLE_LOCAL_PREVIEW_FALLBACK === '1'
-}
 type SuggestedPreviewBatch = {
   key: string
   matches: SuggestedLiveMatchRow[]
@@ -126,7 +112,6 @@ type UseLiveBoardDeps = {
   queryClient: ReturnType<typeof useQueryClient>
   startMatchMutation: ReturnType<typeof useStartMatchMutation>
   completeMatchMutation: ReturnType<typeof useCompleteMatchMutation>
-  scheduleReconcile: (result: ActionResult) => void
   runAction: (
     key: string,
     action: () => Promise<ActionResult | void>,
@@ -136,7 +121,6 @@ type UseLiveBoardDeps = {
   suggestedSwapMatch: SuggestedLiveMatchRow | null
   setSuggestedSwapMatch: React.Dispatch<React.SetStateAction<SuggestedLiveMatchRow | null>>
   autoSyncAttemptedRef: React.MutableRefObject<boolean>
-  reconcileTimeoutsRef: React.MutableRefObject<ReturnType<typeof setTimeout>[]>
 }
 
 export function useLiveBoard(deps: UseLiveBoardDeps) {
@@ -147,13 +131,11 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     queryClient,
     startMatchMutation,
     completeMatchMutation,
-    scheduleReconcile,
     runAction,
     syncRoster,
     suggestedSwapMatch,
     setSuggestedSwapMatch,
     autoSyncAttemptedRef,
-    reconcileTimeoutsRef,
   } = deps
   const {
     setError,
@@ -224,7 +206,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
   const [courtShortageBreakdown, setCourtShortageBreakdown] = useState<{ temp: number; real: number } | null>(null)
   // Courts the engine is holding back this pass to avoid a lopsided blowout — waiting for a court to
   // finish (freeing better-matched players), not stuck. Surfaced so the host sees a clear reason.
-  const [qualityDeferredCourts, setQualityDeferredCourts] = useState<number[]>([])
   // Suggested-match ids the host explicitly parked in "Chờ Sân Y" on the forced-court 3-way panel
   // (SuggestedLiveMatchCard). Keyed by match id (not court idx) so a re-suggest that replaces the
   // match naturally drops the stale registration. Drives isForcedWaitAwaitingRescue below, which
@@ -378,8 +359,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     })
   }, [rows.liveMatchRows])
   React.useEffect(() => () => {
-    reconcileTimeoutsRef.current.forEach(clearTimeout)
-    reconcileTimeoutsRef.current = []
     completingCleanupTimeoutsRef.current.forEach(clearTimeout)
     completingCleanupTimeoutsRef.current.clear()
     previewRetryTimeoutsRef.current.forEach(clearTimeout)
@@ -473,7 +452,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     })
     return () => sub.remove()
   }, [loadLiveState])
-  // buildSuggestedMatchPayloads has been moved to Edge Function
   const startLiveMatch = async (match: SuggestedLiveMatchRow) => {
     const startT0 = nowMs()
     if (startingPreviewIdsRef.current.has(match.id) || startedPreviewIds.has(match.id)) return
@@ -619,7 +597,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
             ])
             applyLiveMatches([alreadyLive], cached?.liveStateVersion)
             if (__DEV__) console.log('[NextRoundSuggesterV2] start match already live (idempotency), aborting retry', { matchId: match.id, liveId: alreadyLive.id })
-            return { reload: false, reconcileAfterMs: 600 }
+            return { reload: false }
           }
         }
 
@@ -698,7 +676,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           })
           return {
             reload: false,
-            reconcileAfterMs: 600,
           }
         } catch (err: unknown) {
           if (attempt === 0 && String((err as any)?.message ?? '').includes('Session changed')) {
@@ -728,7 +705,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       if (result?.reload !== false) {
         await loadLiveState()
       } else {
-        scheduleReconcile(result)
       }
     } catch (err: any) {
       startingPreviewIdsRef.current.delete(match.id)
@@ -1001,7 +977,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
             setCompletedLiveMatchCommitNonce(value => value + 1)
             setOptimisticLiveMatches(current => current.filter(row => row.id !== alreadyCompleted.id))
             if (__DEV__) console.log('[NextRoundSuggesterV2] complete match already committed (idempotency), aborting retry', { matchId: match.id })
-            return { reload: false, reconcileAfterMs: 600, targetReachedAfterMatch }
+            return { reload: false, targetReachedAfterMatch }
           }
         }
 
@@ -1088,7 +1064,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           })
           return {
             reload: false,
-            reconcileAfterMs: 600,
             targetReachedAfterMatch,
           }
         } catch (err: unknown) {
@@ -1113,7 +1088,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       if (result?.reload !== false) {
         await loadLiveState()
       } else {
-        scheduleReconcile(result)
       }
       setEndingLiveMatchIds(current => {
         if (!current.has(match.id)) return current
@@ -1254,7 +1228,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       })
       return {
         reload: false,
-        reconcileAfterMs: 600,
       }
     }, { alreadyAppliedOnError: (rows: any) => cancelAlreadyApplied(rows?.liveMatchRows ?? [], match.id) })
   }
@@ -2141,65 +2114,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
         current_courts: snap.queueCourtCount,
         avoid_pairs: snap.avoidPairs.length > 0 ? snap.avoidPairs : undefined,
       }
-      const buildLocalFallbackPreview = (): SuggestedLiveMatchRow[] => {
-        const fallbackCourtIdx = requestedReplacementCourtIdxs[0]
-          ?? missingPreviewCourtIdxs[0]
-          ?? effectivePreviewBoard[0]?.court_idx
-          ?? 0
-        const busyPlayerIds = new Set<string>()
-        for (const match of [...snap.effectiveLiveMatchRows, ...effectivePreviewBoard]) {
-          if (
-            match.status === 'cancelled'
-            || (match.status === 'completed' && !snap.completingLiveMatchIds.has(match.id))
-          ) {
-            continue
-          }
-          if (Number(match.court_idx ?? -1) === Number(fallbackCourtIdx) && snap.completingLiveMatchIds.has(match.id)) {
-            continue
-          }
-          match.team_a.forEach(playerId => busyPlayerIds.add(String(playerId)))
-          match.team_b.forEach(playerId => busyPlayerIds.add(String(playerId)))
-        }
-        const localResult = suggestNextMatch(state, {
-          tier_overrides: fairnessAdjustment.tier_overrides,
-          busy_player_ids: busyPlayerIds,
-          court_idx: Number(fallbackCourtIdx),
-          max_alternatives: LIVE_TRADEOFF_ALTERNATIVE_LIMIT,
-        })
-        const alternative = localResult.alternatives[0]
-        const localMatch = alternative?.matches[0]
-        if (!alternative || !localMatch) return []
-        const fallbackMatch: SuggestedLiveMatchRow = {
-          id: `preview-local-${fallbackCourtIdx}-${localMatch.team_a.join('-')}-${localMatch.team_b.join('-')}`,
-          session_id: sessionId,
-          sequence_no: snapshotCountableMatchCount,
-          round_no: Math.floor(snapshotCountableMatchCount / Math.max(1, snap.queueCourtCount)),
-          court_idx: Number(fallbackCourtIdx),
-          status: 'suggested',
-          team_a: localMatch.team_a,
-          team_b: localMatch.team_b,
-          resting: alternative.resting ?? [],
-          score_a: 0,
-          score_b: 0,
-          suggested_at: new Date().toISOString(),
-          started_at: null,
-          ended_at: null,
-          preview_live_state_version: snapshotLiveStateVersion,
-          preview_countable_match_count: snapshotCompletedMatchCount,
-          preview_source: 'local_fallback',
-          preview_request_key: incompleteRequestKey,
-          preview_request_serial: requestSerial,
-          warnings: alternative.warnings,
-          tradeoffs: alternative.tradeoffs,
-          approval_required: alternative.approval_required,
-          configured_pvna_tolerance: snap.pvnaTolerance,
-          effective_pvna_tolerance: state.config.pvna_tolerance,
-        }
-        return [
-          ...effectivePreviewBoard.filter(match => Number(match.court_idx) !== Number(fallbackCourtIdx)),
-          fallbackMatch,
-        ].sort((left, right) => Number(left.court_idx ?? 0) - Number(right.court_idx ?? 0))
-      }
       if (__DEV__) console.log('[NextRoundSuggesterV2] preview request board', {
         mode: previewMode,
         effectivePreviewCourts: effectivePreviewBoard.map(match => getSuggestedLaneCourtIdx(match)),
@@ -2303,7 +2217,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
             previewScheduledRetryKeysRef.current.clear()
             setSuggestedLiveMatches(current => current.length === 0 ? current : [])
             setCourtShortageBreakdown(null)
-            setQualityDeferredCourts([])
             setShowSessionReport(true)
             telemetry.trace('client_preview_target_reached', {
               requestId: previewClientRequestId,
@@ -2343,13 +2256,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
               })
             })
           }
-          // Deferred courts must surface even when the edge returns an empty board: the anti-blowout
-          // defer produces no lineup, so edgeReturnedFinalBoard is false below and the board branch is
-          // skipped. Set this here, before that branch, so the "waiting for a balanced match" banner
-          // shows on the exact response it describes instead of only when a board comes back.
-          setQualityDeferredCourts(Array.isArray(res.quality_deferred_courts)
-            ? res.quality_deferred_courts.filter((court: unknown): court is number => typeof court === 'number')
-            : [])
           const edgeReturnedFinalBoard = Array.isArray(res.final_preview_board) && res.final_preview_board.length > 0
           const responsePayloads = edgeReturnedFinalBoard
             ? res.final_preview_board.filter((match: any) => isStartablePreviewRow(match))
@@ -2995,27 +2901,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           const isPersistAssignmentConflict = errMsg.includes('Could not persist live match suggestions')
             && errMsg.includes('already assigned or already played')
           telemetry.lastStuckHintRef.current = { kind: hintKind, courtIdxs: requestedReplacementCourtIdxs }
-          const fallbackMatches = isLocalPreviewFallbackEnabled() ? buildLocalFallbackPreview() : []
-          if (fallbackMatches.length > 0) {
-            telemetry.trace('client_preview_fallback_not_committed', {
-              requestId: previewClientRequestId,
-              responsePayload: {
-                fallback_match_count: fallbackMatches.length,
-                fallback_courts: fallbackMatches.map(match => getSuggestedLaneCourtIdx(match)),
-              },
-              detail: {
-                incomplete_request_key: incompleteTraceKey,
-                incomplete_request_key_bytes: incompleteRequestKey.length,
-                error_kind: hintKind,
-                error: errMsg,
-                requested_replacement_courts: requestedReplacementCourtIdxs,
-                total_ms: Math.round(nowMs() - previewT0),
-              },
-            })
-            previewBlockedIncompleteKeysRef.current.delete(incompleteRequestKey)
-            setEdgeDebug(`LOCAL_FALLBACK_NOT_COMMITTED: ${err.message || 'edge suggest failed'}`)
-            if (__DEV__) console.warn('[NextRoundSuggesterV2] edge preview failed; local fallback was not committed', err)
-          }
           setIsSuggestingPreview(false)
           previewBlockedIncompleteKeysRef.current.delete(incompleteRequestKey)
           if (isPersistAssignmentConflict) {
@@ -3208,7 +3093,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     creatingNextMatchIds,
     isSuggestingPreview,
     courtShortageBreakdown,
-    qualityDeferredCourts,
     effectiveLiveMatchRows,
     activeLiveMatches,
     completedLiveMatches,

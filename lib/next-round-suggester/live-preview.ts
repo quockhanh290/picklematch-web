@@ -86,7 +86,7 @@ const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 // Three separate questions, three separate bars, all measured off the same configuredPvnaTolerance:
 //   1. DETECT (BLOWOUT_DEGRADE_GAP_FLOOR / _TOLERANCE_MARGIN): is the SEATED lineup bad enough to
 //      seat-degrade (degraded_reason='blowout') and offer a "Chờ Sân X" wait button? Bar is HIGH —
-//      mirrors the "genuine blowout" concept in shouldDeferTightPoolSuggestion's persistentOutlier
+//      mirrors the "genuine blowout" concept used by degraded rescue
 //      check above (same floor/margin values, different feature/caller — not shared on purpose,
 //      keep them independently editable).
 //   2. RESCUE_FIXED_GAP_CEILING_MARGIN: once a wait-rescue search finds an alternative lineup, is
@@ -189,72 +189,6 @@ export function getLivePreviewCourtBudgetMs(remainingBatchMs: number, remainingC
   )
 }
 
-export function shouldDeferTightPoolSuggestion(input: {
-  enabled: boolean
-  waitActive?: boolean
-  activeLiveCourtCount: number
-  availablePlayerCount: number
-  pvnaGap: number
-  intraTeamGap: number
-  configuredPvnaTolerance: number
-}) {
-  if (!input.enabled || input.activeLiveCourtCount === 0) return false
-  if (input.waitActive === false) return false
-  // Defer only on a real team-TOTAL imbalance (a genuine blowout). A high intra-team gap with a
-  // balanced total is a mixed-strength but competitive court — a GOOD outcome (see 286f79c), not a
-  // reason to hold the lane empty for up to TIGHT_POOL_QUALITY_WAIT_MS waiting for a "cleaner"
-  // pairing. Deferring on intra alone left fillable courts stuck until the host completed another
-  // court (which changed the pool), even though the available match was perfectly balanced.
-  const persistentOutlier = input.pvnaGap > Math.max(1.5, input.configuredPvnaTolerance + 1)
-  if (persistentOutlier) return true
-  // A MODERATE imbalance is only worth waiting on when the pool is genuinely TIGHT — few players
-  // free, so a court completing would materially change the available pairings. With a healthy pool
-  // a moderate gap is the structural best available, so holding the lane for up to
-  // TIGHT_POOL_QUALITY_WAIT_MS just adds latency for no real quality gain. Observed cause of the
-  // "suggest returns slowly" complaint: gap ~1.3 lanes deferred ~30s with 12-14 players still free.
-  if (input.availablePlayerCount > MODERATE_TIGHT_POOL_MAX_AVAILABLE) return false
-  return input.pvnaGap > Math.max(1.25, input.configuredPvnaTolerance + 0.75)
-}
-// Above this many free players the pool is not "tight": a completion would not meaningfully improve
-// a moderate-gap match, so we fill immediately instead of holding the lane for a marginal gain.
-const MODERATE_TIGHT_POOL_MAX_AVAILABLE = 8
-
-export const TIGHT_POOL_QUALITY_WAIT_MS = 30_000
-
-export function buildTightPoolQualityDeferUntilByCourt(
-  liveMatchRows: SessionLiveMatchRow[],
-  courtIdxs: number[] | undefined,
-  waitMs = TIGHT_POOL_QUALITY_WAIT_MS,
-) {
-  const requestedCourts = new Set((courtIdxs ?? []).filter(Number.isFinite))
-  const latestCompletedAtByCourt = new Map<number, number>()
-
-  for (const row of liveMatchRows) {
-    const courtIdx = Number(row.court_idx)
-    if (row.status !== 'completed' || !requestedCourts.has(courtIdx) || !row.ended_at) continue
-    const endedAtMs = Date.parse(row.ended_at)
-    if (!Number.isFinite(endedAtMs)) continue
-    latestCompletedAtByCourt.set(
-      courtIdx,
-      Math.max(latestCompletedAtByCourt.get(courtIdx) ?? 0, endedAtMs),
-    )
-  }
-
-  return Object.fromEntries(
-    [...latestCompletedAtByCourt].map(([courtIdx, endedAtMs]) => [courtIdx, endedAtMs + waitMs]),
-  ) as Record<number, number>
-}
-
-export function isTightPoolQualityWaitActive(
-  deferUntilByCourt: Record<number, number> | undefined,
-  courtIdx: number,
-  nowMs = Date.now(),
-) {
-  if (deferUntilByCourt === undefined) return true
-  const deferUntilMs = deferUntilByCourt[courtIdx]
-  return deferUntilMs !== undefined && nowMs < deferUntilMs
-}
-
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_INTRA_TEAM_GAP_COST_WEIGHT = 8
 const BALANCED_REPEAT_COST_WEIGHT = 15
@@ -311,8 +245,6 @@ export type BuildSuggestedMatchOptions = {
   liveQualityPolicy?: LiveQualityPolicy
   forcedRequiredPlayerIds?: string[]
   ignoreCapacityLock?: boolean
-  deferExtremeTightPool?: boolean
-  tightPoolQualityDeferUntilByCourt?: Record<number, number>
   // Phase 1: when true, a single-court refill that can only produce a blowout is SEATED (startable)
   // instead of silently deferred, and the host is offered rescue courts to optionally wait for.
   blowoutRescue?: boolean
@@ -5126,19 +5058,12 @@ export function buildSuggestedMatchPayloads({
     }
     const effectivePvnaTolerance = suggestionState.config.pvna_tolerance
     const pvnaDiff = match.stats?.pvna_diff ?? 0
-    const selectedIntraTeamGap = getAlternativeIntraTeamGap(alternative, suggestionStateForCourt)
     const availablePlayerCount = [...suggestionStateForCourt.players.values()].filter(player =>
       player.checked_out_at === null
       && !player.opted_rest
       && !batchBusyIds.has(player.player_id)
       && !courtRoundBusyIds.has(player.player_id)
     ).length
-    const tightPoolDeferUntilMs = options.tightPoolQualityDeferUntilByCourt?.[courtIdx]
-    const tightPoolWaitIsActive = isTightPoolQualityWaitActive(
-      options.tightPoolQualityDeferUntilByCourt,
-      courtIdx,
-      options.nowMs,
-    )
     let degradedReason: SuggestedMatchPayload['degraded_reason']
     let rescueCourtIdxs: number[] = []
     if (options.blowoutRescue === true) {
@@ -5218,24 +5143,6 @@ export function buildSuggestedMatchPayloads({
           })
         } catch { /* noop */ }
       }
-    } else if (shouldDeferTightPoolSuggestion({
-      enabled: options.deferExtremeTightPool === true && count === 1,
-      waitActive: tightPoolWaitIsActive,
-      activeLiveCourtCount: liveCourtIdxs.size,
-      availablePlayerCount,
-      pvnaGap: pvnaDiff,
-      intraTeamGap: selectedIntraTeamGap,
-      configuredPvnaTolerance,
-    })) {
-      try {
-        options.onInstrumentEvent?.({
-          event: 'repair',
-          detail: `rolling_quality_deferred:court=${courtIdx};available=${availablePlayerCount};pvna=${pvnaDiff.toFixed(2)};intra=${selectedIntraTeamGap.toFixed(2)};until=${tightPoolDeferUntilMs ?? 'unbounded'}`,
-          court_count: courtCount,
-          available: availablePlayerCount,
-        })
-      } catch { /* noop */ }
-      continue
     }
     const displayPvnaOverBy = Math.max(0, pvnaDiff - configuredPvnaTolerance)
     const hasEnginePvnaTradeoff = alternative.tradeoffs?.some(tradeoff => tradeoff.type === 'pvna_tolerance_relaxed') ?? false

@@ -1,6 +1,5 @@
 import {
   buildPreviewBatchKey,
-  buildTightPoolQualityDeferUntilByCourt,
   buildSuggestedMatchPayloads,
   buildFinalPreviewBoard,
   getPreviewMatchesToPersist,
@@ -19,14 +18,12 @@ import {
   findStrictCleanLiveAlternative,
   hasFulfilledPreviewBoardReplacements,
   improvesPreviewBoardPvna,
-  isTightPoolQualityWaitActive,
   needsEarlyFullBoardPvnaRescue,
   repairAllIdlePayloadBatchParticipation,
   repairSuggestedPayloadBatch,
   resolvePreviewPersistenceScope,
   resolveLivePreviewFinalChoice,
   shouldRunReplacementFullBoardRescue,
-  shouldDeferTightPoolSuggestion,
 } from '../../../lib/next-round-suggester/live-preview'
 import type { SessionLiveMatchRow, SuggestionAlternative } from '../../../lib/next-round-suggester/types'
 import { Tier } from '../../../lib/next-round-suggester/classify'
@@ -63,125 +60,6 @@ function alternative(teamA: [string, string], teamB: [string, string], pvnaDiff:
     },
   }
 }
-
-describe('Edge rolling quality defer policy', () => {
-  it('defers a real team-total blowout while another court can release players', () => {
-    const base = { enabled: true, activeLiveCourtCount: 5, availablePlayerCount: 4, configuredPvnaTolerance: 0.5 }
-    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 2.18, intraTeamGap: 0.4 })).toBe(true)
-    // A high intra-team gap with a BALANCED total is a mixed-strength but competitive court — a good
-    // outcome (aligned with 286f79c), never a reason to hold the lane empty. Must NOT defer.
-    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.4, intraTeamGap: 2.75 })).toBe(false)
-    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.5, intraTeamGap: 0.8 })).toBe(false)
-    expect(shouldDeferTightPoolSuggestion({
-      ...base,
-      availablePlayerCount: 13,
-      pvnaGap: 2.18,
-      intraTeamGap: 0.4,
-    })).toBe(true)
-  })
-
-  it('only defers a moderate gap when the pool is genuinely tight', () => {
-    const tol = { enabled: true, activeLiveCourtCount: 5, configuredPvnaTolerance: 0.5, intraTeamGap: 0.4 }
-    // Tight pool (few free): a completion could materially improve a moderate gap → worth waiting.
-    expect(shouldDeferTightPoolSuggestion({ ...tol, availablePlayerCount: 4, pvnaGap: 1.4 })).toBe(true)
-    // Healthy pool (many free): a moderate gap is the structural best; fill now instead of holding
-    // the lane ~30s for a marginal gain (this was the "suggest returns slowly" latency source).
-    expect(shouldDeferTightPoolSuggestion({ ...tol, availablePlayerCount: 13, pvnaGap: 1.4 })).toBe(false)
-    // A real blowout still defers regardless of pool size.
-    expect(shouldDeferTightPoolSuggestion({ ...tol, availablePlayerCount: 13, pvnaGap: 2.0 })).toBe(true)
-  })
-
-  it('never defers when disabled or no live court can release players', () => {
-    const base = { enabled: true, activeLiveCourtCount: 5, availablePlayerCount: 4, configuredPvnaTolerance: 0.5, pvnaGap: 2.18, intraTeamGap: 0.4 }
-    expect(shouldDeferTightPoolSuggestion({ ...base, enabled: false })).toBe(false)
-    expect(shouldDeferTightPoolSuggestion({ ...base, activeLiveCourtCount: 0 })).toBe(false)
-  })
-
-  it('serves the best feasible match after the normal wait expires, including catastrophic outliers', () => {
-    const base = {
-      enabled: true,
-      waitActive: false,
-      activeLiveCourtCount: 2,
-      availablePlayerCount: 13,
-      configuredPvnaTolerance: 0.5,
-    }
-    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 1.4, intraTeamGap: 1 })).toBe(false)
-    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 2.18, intraTeamGap: 1 })).toBe(false)
-    expect(shouldDeferTightPoolSuggestion({ ...base, pvnaGap: 0.5, intraTeamGap: 2.75 })).toBe(false)
-  })
-
-  it('uses the latest completion on each requested court as a stable 30-second deadline', () => {
-    const rows = [
-      { ...liveRow('old-court-1', 1, 'completed', ['p1', 'p2'], ['p3', 'p4']), ended_at: '2026-07-12T12:00:10.000Z' },
-      { ...liveRow('new-court-1', 1, 'completed', ['p5', 'p6'], ['p7', 'p8']), ended_at: '2026-07-12T12:01:00.000Z' },
-      { ...liveRow('court-2', 2, 'completed', ['p1', 'p3'], ['p2', 'p4']), ended_at: '2026-07-12T12:02:00.000Z' },
-    ]
-
-    expect(buildTightPoolQualityDeferUntilByCourt(rows, [1], 30_000)).toEqual({
-      1: Date.parse('2026-07-12T12:01:30.000Z'),
-    })
-  })
-
-  it('stops waiting exactly when the per-court quality deadline expires', () => {
-    const deadline = Date.parse('2026-07-12T12:01:30.000Z')
-    expect(isTightPoolQualityWaitActive({ 1: deadline }, 1, deadline - 1)).toBe(true)
-    expect(isTightPoolQualityWaitActive({ 1: deadline }, 1, deadline)).toBe(false)
-    expect(isTightPoolQualityWaitActive({ 1: deadline }, 2, deadline - 1)).toBe(false)
-  })
-
-  it('does not wait indefinitely when a requested court has no deadline', () => {
-    expect(isTightPoolQualityWaitActive({}, 1, Date.parse('2026-07-12T12:01:00.000Z'))).toBe(false)
-  })
-
-  it('releases a catastrophic tight-pool match when the court deadline expires', () => {
-    const freePlayers = [
-      createPlayer('free-1', { pvna: 1 }),
-      createPlayer('free-2', { pvna: 1 }),
-      createPlayer('free-3', { pvna: 1 }),
-      createPlayer('free-4', { pvna: 4 }),
-    ]
-    const busyPlayers = Array.from({ length: 20 }, (_, index) =>
-      createPlayer(`busy-${index + 1}`, { pvna: 3 }),
-    )
-    const state = createState({
-      courts: 6,
-      pvnaTolerance: 0.5,
-      players: [...freePlayers, ...busyPlayers],
-    })
-    const liveRows = [0, 1, 3, 4, 5].map((courtIdx, rowIndex) =>
-      liveRow(
-        `live-${courtIdx}`,
-        courtIdx,
-        'live',
-        [`busy-${rowIndex * 4 + 1}`, `busy-${rowIndex * 4 + 2}`],
-        [`busy-${rowIndex * 4 + 3}`, `busy-${rowIndex * 4 + 4}`],
-      ),
-    )
-    const now = Date.parse('2026-07-12T12:01:00.000Z')
-    const build = (deadline: number) => buildSuggestedMatchPayloads({
-      count: 1,
-      sessionId: state.session_id,
-      courtCount: 6,
-      state,
-      rows: { liveMatchRows: liveRows, liveStateVersion: 1 },
-      completingLiveMatchIds: new Set(),
-      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
-      fairnessWarnings: [],
-      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
-      pvnaTolerance: 0.5,
-      options: {
-        courtIdxs: [2],
-        deferExtremeTightPool: true,
-        tightPoolQualityDeferUntilByCourt: { 2: deadline },
-        nowMs: now,
-        rollingHorizon: true,
-      },
-    })
-
-    expect(build(now + 1)).toHaveLength(0)
-    expect(build(now)).toHaveLength(1)
-  })
-})
 
 function liveMatch(teamA: [string, string], teamB: [string, string], roundNo = 0): SessionLiveMatchRow {
   return {

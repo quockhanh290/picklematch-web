@@ -65,14 +65,7 @@ const LiveMatchBoardComponent = CourtLaneLiveMatchBoard
 
 type ActionResult = {
   reload?: boolean
-  reconcileAfterMs?: number
   targetReachedAfterMatch?: boolean
-  reconcile?: {
-    action: 'start' | 'end'
-    expectedLiveStateVersion?: number | null
-    expectedRoundNo?: number | null
-    expectedRoundStatus?: 'active' | 'completed'
-  }
 }
 
 
@@ -90,7 +83,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
   const actionInFlightRef = useRef(false)
   const autoSyncAttemptedRef = useRef(false)
   const lateArrivalInFlightRef = useRef(new Set<string>())
-  const reconcileTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const telemetry = usePreviewTelemetry(sessionId)
   const model = useNextRoundModel({ sessionId, players, courts, initialShowReport })
   const [finishingSession, setFinishingSession] = useState(false)
@@ -177,51 +169,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
 
 
 
-  const scheduleReconcile = useCallback((result: ActionResult) => {
-    if (!result.reconcile) return
-    const delayMs = result.reconcileAfterMs ?? 600
-    const expected = result.reconcile
-    const timeoutId = setTimeout(() => {
-      void loadLiveState().then((serverRows) => {
-        if (!serverRows) return
-        const mismatches: Record<string, unknown> = {}
-        if (
-          expected.expectedLiveStateVersion != null
-          && Number.isFinite(expected.expectedLiveStateVersion)
-          && serverRows.liveStateVersion !== expected.expectedLiveStateVersion
-        ) {
-          mismatches.live_state_version = {
-            expected: expected.expectedLiveStateVersion,
-            actual: serverRows.liveStateVersion,
-          }
-        }
-        if (expected.expectedRoundNo != null && Number.isFinite(expected.expectedRoundNo) && expected.expectedRoundStatus) {
-          const serverRound = serverRows.roundRows.find(round => round.round_no === expected.expectedRoundNo)
-          if (!serverRound || serverRound.status !== expected.expectedRoundStatus) {
-            mismatches.round = {
-              round_no: expected.expectedRoundNo,
-              expected_status: expected.expectedRoundStatus,
-              actual_status: serverRound?.status ?? null,
-            }
-          }
-        }
-        if (Object.keys(mismatches).length > 0) {
-          console.warn('[NextRoundSuggesterV2] background reconcile mismatch', {
-            action: expected.action,
-            sessionId,
-            ...mismatches,
-          })
-        }
-      }).catch((error) => {
-        if (__DEV__) console.warn('[NextRoundSuggesterV2] background reconcile failed', error)
-      })
-    }, delayMs)
-    reconcileTimeoutsRef.current.push(timeoutId)
-  }, [loadLiveState, sessionId])
-
-
-
-
   const openRoster = useCallback(() => {
     router.push({ pathname: '/host/session/[id]/roster', params: { id: sessionId } } as any)
   }, [sessionId])
@@ -243,9 +190,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       const result = await action()
       if (result?.reload !== false) {
         await loadLiveState()
-      }
-      if (result?.reload === false) {
-        scheduleReconcile(result)
       }
     } catch (err: any) {
       const safeMessage = toUserSafeActionError(err)
@@ -274,7 +218,7 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
       actionInFlightRef.current = false
       setBusy(null)
     }
-  }, [busy, loadLiveState, scheduleReconcile])
+  }, [busy, loadLiveState])
 
   const syncRoster = useCallback(async () => {
     await runAction('sync', async () => {
@@ -298,7 +242,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     creatingNextMatchIds,
     isSuggestingPreview,
     courtShortageBreakdown,
-    qualityDeferredCourts,
     effectiveLiveMatchRows,
     activeLiveMatches,
     completedLiveMatches,
@@ -318,13 +261,11 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
     queryClient,
     startMatchMutation,
     completeMatchMutation,
-    scheduleReconcile,
     runAction,
     syncRoster,
     suggestedSwapMatch,
     setSuggestedSwapMatch,
     autoSyncAttemptedRef,
-    reconcileTimeoutsRef,
   })
 
 
@@ -606,16 +547,6 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
                 onSetCourtCount={setCourtCount}
                 onOpenSwapForPlayer={openSwapForPlayer}
               />
-              {qualityDeferredCourts.length > 0 ? (
-                <Card style={{ padding: 12, marginBottom: 12, backgroundColor: theme.warningBg }}>
-                  <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12.5, color: theme.warningText }}>
-                    Sân {qualityDeferredCourts.map(court => court + 1).join(', ')} đang chờ ghép cân (tránh trận lệch)
-                  </Text>
-                  <Text style={{ fontFamily: SCREEN_FONTS.body, fontSize: 11.5, lineHeight: 16, color: theme.warningText, marginTop: 2 }}>
-                    Người còn rảnh lúc này chỉ ghép được trận chênh lệch nhiều. Để mở khóa NGAY: hoàn thành một sân đang chạy để giải phóng người cân hơn — hoặc chờ chút, engine sẽ tự ghép khi đủ người. Đây là chờ CÓ CHỦ ĐÍCH, không phải lỗi.
-                  </Text>
-                </Card>
-              ) : null}
               <LiveMatchBoardComponent
                 liveMatches={activeLiveMatches}
                 suggestedMatches={suggestedLiveMatches}
