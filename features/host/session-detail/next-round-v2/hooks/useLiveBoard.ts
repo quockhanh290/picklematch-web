@@ -240,6 +240,17 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       return next
     })
   }, [])
+  const abortPreviewRequest = useCallback(() => {
+    previewRequestSerialRef.current += 1
+    previewRequestInFlightRef.current = false
+    previewRequestInFlightSerialRef.current = null
+    previewPendingRequestKeysRef.current.clear()
+    previewRetryTimeoutsRef.current.forEach(clearTimeout)
+    previewRetryTimeoutsRef.current.clear()
+    previewScheduledRetryKeysRef.current.clear()
+    setIsSuggestingPreview(false)
+    setPreviewRefreshNonce(value => value + 1)
+  }, [])
   const completingLiveMatchPlaceholdersRef = useRef(completingLiveMatchPlaceholders)
   useEffect(() => {
     markNextRoundStage(sessionId, 'screen_shell_paint', {
@@ -488,7 +499,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
         setSuggestedLiveMatches(current => current.filter(row => row.id !== match.id))
       }
       suggestedPreviewBatchRef.current = null
-      setPreviewRefreshNonce(value => value + 1)
+      abortPreviewRequest()
       setError('Gợi ý vừa cũ hoặc chưa được xác nhận từ server. Đang tạo lại gợi ý an toàn hơn.')
     }
     const isManualAvailablePoolStart = match.preview_source === 'manual_available_pool' && match.available_pool_only === true
@@ -550,7 +561,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       if (startedCourtIdx !== null) suggestedLaneCacheRef.current.delete(startedCourtIdx)
       setSuggestedLiveMatches(current => current.filter(row => row.id !== match.id))
       suggestedPreviewBatchRef.current = null
-      setPreviewRefreshNonce(value => value + 1)
+      abortPreviewRequest()
       setError('Gợi ý vừa cũ sau khi có trận kết thúc. Đang tạo lại trận phù hợp hơn.')
       return
     }
@@ -770,7 +781,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
         if (startedCourtIdx !== null) suggestedLaneCacheRef.current.delete(startedCourtIdx)
         setSuggestedLiveMatches(current => withoutRowsById(current, new Set([match.id])))
         suggestedPreviewBatchRef.current = null
-        setPreviewRefreshNonce(value => value + 1)
+        abortPreviewRequest()
         const safeMessage = toUserSafeActionError(err)
         console.warn('[NextRoundSuggesterV2] start match failed (stale preview)', err)
         setError(safeMessage)
@@ -806,7 +817,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     const snapshotCompletedMatchCount = snap.effectiveLiveMatchRows
       .filter(match => match.status === 'completed')
       .reduce((max, match) => Math.max(max, (match.sequence_no ?? -1) + 1), 0)
-    previewRequestSerialRef.current += 1
+    abortPreviewRequest()
     const availablePoolRequestId = createClientTraceId('preview-available-pool')
     telemetry.trace('client_available_pool_preview_start', {
       requestId: availablePoolRequestId,
@@ -1043,13 +1054,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           )
           const applyMs = nowMs() - applyT0
           // Any in-flight preview was built from the pre-completion player/pair state.
-          previewRequestSerialRef.current += 1
-          previewRequestInFlightRef.current = false
-          previewRequestInFlightSerialRef.current = null
-          previewRetryTimeoutsRef.current.forEach(clearTimeout)
-          previewRetryTimeoutsRef.current.clear()
-          previewScheduledRetryKeysRef.current.clear()
-          setIsSuggestingPreview(false)
+          abortPreviewRequest()
           completedLiveMatchCommitIdsRef.current.add(match.id)
           setCompletedLiveMatchCommitNonce(value => value + 1)
           suggestedPreviewBatchRef.current = null
@@ -1066,7 +1071,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
             )) return false
             return true
           }))
-          setPreviewRefreshNonce(value => value + 1)
           if (__DEV__) console.log('[NextRoundSuggesterV2] complete live match timing', {
             matchId: match.id,
             courtIdx: match.court_idx,
@@ -1164,7 +1168,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           next.delete(match.id)
           return next
         })
-        setPreviewRefreshNonce(value => value + 1)
+        abortPreviewRequest()
         void loadLiveState()
       }, 3000)
       completingCleanupTimeoutsRef.current.set(match.id, cleanupId)
@@ -1221,7 +1225,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     suggestedPreviewBatchRef.current = null
     suggestedLaneCacheRef.current.clear()
     setStartedPreviewIds(new Set())
-    setPreviewRefreshNonce(value => value + 1)
+    abortPreviewRequest()
     await runAction(`cancel-match-${match.id}`, async () => {
       const expectedVersion = liveStateVersionRef.current
       if (expectedVersion === null) throw new Error('Session changed')
@@ -2078,17 +2082,9 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
         ? []
         : rawRequestedReplacementCourtIdxs
       const requestedReplacementCourtSet = new Set(requestedReplacementCourtIdxs)
-      // Consume this completion's re-suggest for the degraded lanes ONLY once they actually make it
-      // into the dispatched request — a full-board request re-suggests everything, and a replace_courts
-      // request only covers courts that survived the fetchSuggestedCount slice. Marking it handled when
-      // the lane was sliced out (capped by higher-priority replacements) would drop it until the next
-      // completion; leaving it unhandled lets the next render re-queue it once a slot frees up.
-      if (
-        snapDegradedRescueCourtIdxs.length > 0
-        && (shouldRequestFullBoardPreview || snapDegradedRescueCourtIdxs.some(courtIdx => requestedReplacementCourtSet.has(courtIdx)))
-      ) {
-        rescueHandledNonceRef.current = completedLiveMatchCommitNonce
-      }
+      const requestedRescueCourtIdxs = snapDegradedRescueCourtIdxs.filter(courtIdx =>
+        shouldRequestFullBoardPreview || requestedReplacementCourtSet.has(courtIdx)
+      )
       const retainedPreviewBusyRows = effectivePreviewBoard
         .filter(match => {
           const courtIdx = getSuggestedLaneCourtIdx(match)
@@ -2529,6 +2525,12 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
             const replacementCourts = new Set(
               [...replacementCourtIdxs].filter(courtIdx => nextLaneCache.has(courtIdx)),
             )
+            if (
+              requestedRescueCourtIdxs.length > 0
+              && requestedRescueCourtIdxs.some(courtIdx => replacementCourts.has(courtIdx))
+            ) {
+              rescueHandledNonceRef.current = completedLiveMatchCommitNonce
+            }
             completingLiveMatchPlaceholdersRef.current.forEach((match, matchId) => {
               if (!replacementCourts.has(Number(match.court_idx ?? -1))) return
               const watchdog = completingCleanupTimeoutsRef.current.get(matchId)
@@ -3191,10 +3193,11 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       }
       if (requestStarted && isCurrentPreviewRequest()) {
         previewAbortReason = 'cleanup'
+        abortPreviewRequest()
         previewAbortController?.abort()
       }
     }
-  }, [phase, previewLaneCacheKey, previewRequestKey, queryClient, rows.playerRows.length, sessionId, settingsHydrated, suggestedQueueCount, telemetry.trace])
+  }, [abortPreviewRequest, phase, previewLaneCacheKey, previewRequestKey, queryClient, rows.playerRows.length, sessionId, settingsHydrated, suggestedQueueCount, telemetry.trace])
 
   return {
     suggestedLiveMatches,
