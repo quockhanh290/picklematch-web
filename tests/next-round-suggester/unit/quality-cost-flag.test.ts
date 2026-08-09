@@ -55,10 +55,10 @@ describe('isQualityCostModelEnabled — precedence: override > state.config > en
     expect(isQualityCostModelEnabled({ config: { quality_cost_enabled: true } } as never)).toBe(true)
   })
 
-  it('falls back to env when neither override nor state flag set (back-compat)', () => {
+  it('treats missing state/config as OFF, even when the env flag is set', () => {
     expect(isQualityCostModelEnabled()).toBe(false)
     process.env[ENV] = '1'
-    expect(isQualityCostModelEnabled()).toBe(true)
-    expect(isQualityCostModelEnabled({ config: {} } as never)).toBe(true)
+    expect(isQualityCostModelEnabled()).toBe(false)
+    expect(isQualityCostModelEnabled({ config: {} } as never)).toBe(false)
   })
 })

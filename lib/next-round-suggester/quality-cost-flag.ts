@@ -13,16 +13,14 @@ function readEnvValue(name: string): string | undefined {
   return undefined
 }
 
-// Reads the resolved flag. Precedence: test override > the session-scoped flag carried on state.config
-// (set at the request boundary by resolveQualityCostEnabledForSession) > the global env var (back-compat
-// and for callers that have no state, e.g. isolated scoring tests). Structural param avoids importing
-// SessionState (this module is imported by the central score.ts).
+// Reads the resolved flag. Precedence: test override > the session-scoped flag carried on state.config.
+// Missing state/config is OFF: request boundaries must resolve the per-session allowlist explicitly.
+// Structural param avoids importing SessionState (this module is imported by the central score.ts).
 export function isQualityCostModelEnabled(state?: { config?: { quality_cost_enabled?: boolean } }): boolean {
   if (testOverride !== null) return testOverride
   const scoped = state?.config?.quality_cost_enabled
   if (scoped != null) return scoped
-  const value = readEnvValue('SESSION_QUALITY_COST_MODEL')
-  return value === '1' || value === 'true'
+  return false
 }
 
 // Resolve the flag for one session at the request boundary (edge handler). Strict allowlist: the global

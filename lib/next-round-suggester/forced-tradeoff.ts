@@ -3,7 +3,7 @@ import type { SessionState, Team } from './types.ts'
 // @ts-ignore
 import { getEffectivePvna } from './state.ts'
 // @ts-ignore
-import { getProjectedRepeatSummary } from './score.ts'
+import { getProjectedRepeatSummary, scoreMatch } from './score.ts'
 // @ts-ignore
 import { computeQualityCost } from './quality-cost.ts'
 // @ts-ignore
@@ -136,7 +136,13 @@ export function findMinCostFoursome(
           const four: [string, string, string, string] = [ids[i], ids[j], ids[k], ids[l]]
           if (required.length > 0 && !required.every(id => four.includes(id))) continue
           for (const lu of candidateLineups(four, state)) {
-            const cost = computeQualityCost(lu.team_a, lu.team_b, state, { tolerance }).cost
+            // Rank with whichever model the session's flag selects. Determinism (the exhaustive scan)
+            // and the scoring model are separate concerns: every session should get the deterministic
+            // scan, but a session outside the quality-cost allowlist must still be ranked by the legacy
+            // model, or the kill-switch does not actually switch anything off. scoreMatch already
+            // dispatches on the flag, and carries the tolerance barrier on its cost branch.
+            const scored = scoreMatch(lu.team_a, lu.team_b, state, { tolerance })
+            const cost = typeof scored === 'number' ? scored : scored.score
             const cand: MinCostFoursome = {
               ids: four, team_a: lu.team_a, team_b: lu.team_b, cost, maxMeeting: lu.maxMeeting, gap: lu.gap,
             }

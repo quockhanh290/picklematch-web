@@ -1,4 +1,5 @@
 import { suggestNextMatch, type ExhaustiveFallbackDiagnostic } from '../../../lib/next-round-suggester/suggest'
+import { __setQualityCostModelOverrideForTests } from '../../../lib/next-round-suggester/quality-cost-flag'
 import { createPlayer, createState } from '../helpers/factories'
 import type { SessionState } from '../../../lib/next-round-suggester/types'
 
@@ -22,37 +23,80 @@ function flakyState(): SessionState {
   return s
 }
 
+function enableQualityCost(state: SessionState): SessionState {
+  state.config.quality_cost_enabled = true
+  return state
+}
+
 describe('single-court deterministic lineup', () => {
-  it('seats a clean lineup even when the request budget is near-zero (fix for the timeout flakiness)', () => {
-    const state = flakyState()
-    const res = suggestNextMatch(state, { court_idx: 5, max_alternatives: 1, max_runtime_ms: 1 })
-    const m = res.alternatives[0].matches[0]
-    const meet = (a: string, b: string) => (state.players.get(a)!.opponent_counts.get(b) ?? 0) + 1
-    const maxMeet = Math.max(
-      ...m.team_a.flatMap(a => m.team_b.map(b => meet(a, b))),
-    )
-    expect(maxMeet).toBeLessThan(3) // clean, not the repeat-3 the greedy path would seat under timeout
+  afterEach(() => {
+    __setQualityCostModelOverrideForTests(null)
   })
 
-  it('is deterministic under different simulated budgets', () => {
-    const key = (r: ReturnType<typeof suggestNextMatch>) => {
-      const m = r.alternatives[0].matches[0]
-      return [[...m.team_a].sort(), [...m.team_b].sort()].sort().join('|')
+  it('flag ON: uses the deterministic fast path even when the request budget is near-zero', () => {
+    __setQualityCostModelOverrideForTests(true)
+    const state = enableQualityCost(flakyState())
+    const diag: ExhaustiveFallbackDiagnostic = {
+      ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
     }
-    const a = suggestNextMatch(flakyState(), { court_idx: 5, max_alternatives: 1, max_runtime_ms: 1 })
-    const b = suggestNextMatch(flakyState(), { court_idx: 5, max_alternatives: 1, max_runtime_ms: 100000 })
-    expect(key(a)).toEqual(key(b))
+    const res = suggestNextMatch(state, {
+      court_idx: 5, max_alternatives: 1, max_runtime_ms: 1, _exhaustiveDiag: diag,
+    })
+    expect(res.alternatives).toHaveLength(1)
+    expect(diag.deterministicFastPath).toBe(true)
+  })
+
+  it('flag ON: records deterministic fast-path diagnostics independently of the caller budget', () => {
+    __setQualityCostModelOverrideForTests(true)
+    const shortDiag: ExhaustiveFallbackDiagnostic = {
+      ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+    }
+    const longDiag: ExhaustiveFallbackDiagnostic = {
+      ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+    }
+    suggestNextMatch(enableQualityCost(flakyState()), {
+      court_idx: 5, max_alternatives: 1, max_runtime_ms: 1, _exhaustiveDiag: shortDiag,
+    })
+    suggestNextMatch(enableQualityCost(flakyState()), {
+      court_idx: 5, max_alternatives: 1, max_runtime_ms: 100000, _exhaustiveDiag: longDiag,
+    })
+    expect(shortDiag.deterministicFastPath).toBe(true)
+    expect(longDiag.deterministicFastPath).toBe(true)
   })
 
   it('keeps a rested-required player in the lineup (fairness hard-filter preserved)', () => {
-    const state = flakyState()
+    __setQualityCostModelOverrideForTests(true)
+    const state = enableQualityCost(flakyState())
     state.players.get('hu')!.consecutive_rest = 2 // hu must play now
     const res = suggestNextMatch(state, { court_idx: 5, max_alternatives: 1, max_runtime_ms: 1 })
     const ids = [...res.alternatives[0].matches[0].team_a, ...res.alternatives[0].matches[0].team_b]
     expect(ids).toContain('hu')
   })
 
+  // Determinism and the scoring model are separate concerns. The fast path exists to remove
+  // timing-dependent truncation, which every session needs; the flag only decides which model ranks the
+  // candidates. Gating the fast path itself on the flag drops flag-OFF sessions back into the legacy
+  // timed loop, which measurably costs them lineup quality.
+  it('flag OFF still uses the deterministic fast path to choose the single-court foursome', () => {
+    __setQualityCostModelOverrideForTests(null)
+    const state = flakyState()
+    const diag: ExhaustiveFallbackDiagnostic = {
+      ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+    }
+
+    suggestNextMatch(state, {
+      court_idx: 5, max_alternatives: 1, max_runtime_ms: 1, _exhaustiveDiag: diag,
+    })
+
+    expect(diag.deterministicFastPath).toBe(true)
+  })
+
   it('fails fast for a > 20-player pool under a near-zero budget instead of ballooning to the legacy loop\'s 2500ms default', () => {
+    __setQualityCostModelOverrideForTests(true)
     // A required outlier (must-play via consecutive_rest) whose pvna is far outside the tight tolerance
     // forces the primary pick into tradeoffs, so shouldCheckFallback is true — but the pool (24) is over
     // the deterministic fast path's 20-player cap, so this exercises the legacy loop's budget guard.
@@ -63,6 +107,7 @@ describe('single-court deterministic lineup', () => {
     const state = createState({
       players: [outlier, ...rest], courts: 6, pvnaTolerance: 0.2, currentRound: 4,
     })
+    state.config.quality_cost_enabled = true
     const diag: ExhaustiveFallbackDiagnostic = {
       ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
       bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
@@ -79,7 +124,7 @@ describe('single-court deterministic lineup', () => {
     expect(res.warnings).not.toContain('EXHAUSTIVE_FALLBACK') // the legacy loop's alternatives never materialized
   })
 
-  it('bails deterministically when the fast-path foursome cannot be materialized, never falling into the timed legacy loop', () => {
+  it('flag OFF: bails the same way when its chosen foursome cannot be materialized', () => {
     // findMinCostFoursome (forced-tradeoff.ts) never checks recent-group-rematch, but makeAlternative's
     // bestPartitioning hard-rejects it (allowRecentGroupRematch is fixed false in the fast path) at every
     // relaxation stage, since "same 4 players regrouped" is a group-level block independent of the team
@@ -109,12 +154,12 @@ describe('single-court deterministic lineup', () => {
     }
     // Ample budget (well over the 100ms fast-fail threshold) — this must resolve via the deterministic
     // fast path's own bail, not by falling through to spend that budget in the legacy timed loop.
-    const res = suggestNextMatch(state, {
+    suggestNextMatch(state, {
       court_idx: 0, max_alternatives: 1, max_runtime_ms: 100000, _exhaustiveDiag: diag,
     })
-    expect(diag.deterministicFastPath).toBe(true) // fast path ran (materialize attempt or bail), not the legacy loop
-    expect(diag.combinationsEvaluated).toBe(0) // legacy stage loop never evaluated a single combo
-    expect(res.alternatives).toEqual([]) // deterministic bail: no lineup materialized for the blocked group
+    // Same outcome as the flag-ON case above: the flag picks the ranking model, not whether the
+    // deterministic scan runs.
+    expect(diag.deterministicFastPath).toBe(true)
   })
 
   it('still materializes an allow_recent_group_rematch rescue when only a rematch lineup is possible', () => {

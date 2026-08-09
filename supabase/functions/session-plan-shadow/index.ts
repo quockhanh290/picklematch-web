@@ -7,6 +7,7 @@ import {
   requireHost,
 } from '../_shared/live-session.ts'
 import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state.ts'
+import { resolveQualityCostEnabledForSession } from '../../../lib/next-round-suggester/quality-cost-flag.ts'
 import {
   buildPrecomputedSessionPlan,
   buildPrecomputedSessionPlanChunk,
@@ -191,6 +192,7 @@ Deno.serve(async (request) => {
       planned_total_rounds: configuredRounds,
       court_preset: preset,
       avoid_pairs: avoidPairRows ?? [],
+      quality_cost_enabled: resolveQualityCostEnabledForSession(sessionId),
     }
     const frontier = buildPlanningFrontier(
       loadedState,

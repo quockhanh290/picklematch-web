@@ -13,7 +13,7 @@ import { getEffectivePvna } from './state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { getAvoidPenalty, AVOID_PARTNER_PENALTY } from './avoid.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { computeQualityCost } from './quality-cost.ts'
+import { computeQualityCost, lineupRankingCost } from './quality-cost.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
 
@@ -632,7 +632,7 @@ export function scoreMatch(
     // (same helper the flag-OFF path uses) so planner/session-plan.ts -> ScreenComponents.tsx shows
     // a real number instead of the placeholder 0.
     stats.gender_pref_penalty = genderPenalty(teamA, teamB, state, weights)
-    return { score: result.cost, stats }
+    return { score: lineupRankingCost(result, tolerance), stats }
   }
 
   const teamAIntraGap = Math.abs(getEffectivePvna(teamA0) - getEffectivePvna(teamA1))

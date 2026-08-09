@@ -2,6 +2,7 @@
 import { getSessionId, handleCorsPreflight, jsonResponse, readJson, requireHost } from '../_shared/live-session.ts'
 import { loadSessionState } from '../../../lib/next-round-suggester/state.ts'
 import { suggestNextRound } from '../../../lib/next-round-suggester/suggest.ts'
+import { resolveQualityCostEnabledForSession } from '../../../lib/next-round-suggester/quality-cost-flag.ts'
 import {
   applyFairnessAdjustment,
   correctForFairness,
@@ -33,6 +34,7 @@ Deno.serve(async (request) => {
       courts: optionalNumber(body.courts),
       pvnaTolerance: optionalNumber(body.pvna_tolerance),
     })
+    state.config.quality_cost_enabled = resolveQualityCostEnabledForSession(sessionId)
     const adjustment = correctForFairness(state)
     const adjustedState = applyFairnessAdjustment(state, adjustment)
     const suggestion = suggestNextRound(adjustedState, {

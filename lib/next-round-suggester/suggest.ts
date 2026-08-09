@@ -1095,7 +1095,7 @@ function suggestNextMatchExhaustiveFallback(
     ? undefined
     : createPartitioningRuntimeCache()
 
-  // Deterministic fast path for realistic single-court pools: pick the min-quality-cost foursome by a
+  // Deterministic fast path for realistic single-court pools: pick the best foursome by a
   // cheap exhaustive scan (no wall-clock, no per-combo makeAlternative), then materialize it once. This
   // removes the timing-dependent truncation that let a repeat-3 slip through when a clean lineup exists.
   // Budget-independent by design — runs regardless of options.max_runtime_ms, since it's bounded and

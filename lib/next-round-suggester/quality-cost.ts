@@ -24,6 +24,21 @@ const HARD_INTRA = 1.0
 
 export type QualityCostResult = { cost: number; gap: number; maxProjectedMeeting: number }
 
+// Balance tolerance is a threshold, not a price. Soft costs (gender preference, repeats, group bonus)
+// may only order lineups WITHIN the same tolerance status — they can never buy a lineup past it.
+//
+// Expressed as a barrier on the cost scale rather than a gate, for two reasons. It survives being
+// summed across courts, so a board with fewer over-tolerance courts beats one with more whatever the
+// soft costs say. And it is self-relaxing: when every candidate is over tolerance they all carry the
+// same barrier and cost decides again, so this can never leave a court unseated. That is why it takes
+// no "allow overflow" escape hatch — reading the legacy relaxation options here would tie the cost
+// model back to the 8-stage ladder it is meant to replace.
+export const OVER_TOLERANCE_BARRIER = 1e6
+
+export function lineupRankingCost(result: QualityCostResult, tolerance: number): number {
+  return result.gap > tolerance ? result.cost + OVER_TOLERANCE_BARRIER : result.cost
+}
+
 const sameGroup = (x: PlayerSessionState, y: PlayerSessionState) =>
   x.group_id != null && x.group_id === y.group_id
 
@@ -161,7 +176,8 @@ export function bestSplitForFoursome(
   opts: { tolerance: number; weights?: Partial<QualityCostWeights> },
 ): { cost: number; gap: number; overTol: boolean; team_a: Team; team_b: Team } {
   const P = (id: string) => state.players.get(id)!
-  let best: { cost: number; gap: number; overTol: boolean; team_a: Team; team_b: Team } | null = null
+  type Ranked = { rank: number; cost: number; gap: number; overTol: boolean; team_a: Team; team_b: Team }
+  let best: Ranked | null = null
   for (const [sa, sb] of SPLIT_INDICES) {
     const team_a: Team = [four[sa[0]], four[sa[1]]]
     const team_b: Team = [four[sb[0]], four[sb[1]]]
@@ -171,17 +187,15 @@ export function bestSplitForFoursome(
       getAvoidPenalty(P(team_a[0]), P(team_a[1]), 'partner') === AVOID_PARTNER_PENALTY ||
       getAvoidPenalty(P(team_b[0]), P(team_b[1]), 'partner') === AVOID_PARTNER_PENALTY
     const qc = computeQualityCost(team_a, team_b, state, opts)
-    const cost = isInfeasible ? Infinity : qc.cost
-    // Infeasible splits rank as "worst" on BOTH keys so a feasible split always wins.
+    // Infeasible splits rank worst, so a feasible split always wins.
+    const rank = isInfeasible ? Infinity : lineupRankingCost(qc, opts.tolerance)
     const overTol = isInfeasible ? true : qc.gap > opts.tolerance
-    // Lexicographic within-tol-first: prefer a within-tolerance split; among splits with the same
-    // over-tolerance status, prefer lower cost. Gender/repeat (soft costs) may only break ties WITHIN
-    // the tolerance band — they can never make an over-tol split win over a within-tol one.
-    const better = best === null
-      || (overTol !== best.overTol ? (!overTol && best.overTol) : cost < best.cost)
-    if (better) best = { cost, gap: qc.gap, overTol, team_a, team_b }
+    if (best === null || rank < best.rank) {
+      best = { rank, cost: isInfeasible ? Infinity : qc.cost, gap: qc.gap, overTol, team_a, team_b }
+    }
   }
-  return best!
+  const { rank: _rank, ...winner } = best!
+  return winner
 }
 
 export type JointSplit = { court_idx: number; team_a: Team; team_b: Team }
