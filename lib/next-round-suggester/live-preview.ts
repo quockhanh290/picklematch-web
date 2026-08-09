@@ -100,7 +100,7 @@ const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 55
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 56
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -2915,11 +2915,45 @@ export function applyJointRepartition(
   })
 }
 
+function seatedLineupKey(teamA: readonly string[], teamB: readonly string[]) {
+  return [[...teamA].sort().join('+'), [...teamB].sort().join('+')].sort().join('|')
+}
+
+// forced_tradeoff / wait_rescue_options / tradeoff_choices are derived inside the per-court fill loop,
+// before the repair and joint passes get a chance to change the lineup. The client seats whatever they
+// describe (ScreenComponents forcedDecision wins over the payload), so metadata pointing at a lineup we
+// are no longer persisting would silently undo those passes — and can name a player now on another court.
+export function dropStaleDerivedMetadata(payload: SuggestedMatchPayload): SuggestedMatchPayload {
+  const seated = seatedLineupKey(payload.team_a, payload.team_b)
+  const forcedStale = payload.forced_tradeoff !== undefined
+    && seatedLineupKey(
+      payload.forced_tradeoff.acceptRepeat.team_a,
+      payload.forced_tradeoff.acceptRepeat.team_b,
+    ) !== seated
+  const choices = payload.tradeoff_choices
+  const describesSeated = (choice: SuggestionTradeoffChoice) => {
+    const match = choice.alternative.matches[0]
+    return match !== undefined && seatedLineupKey(match.team_a, match.team_b) === seated
+  }
+  const choicesStale = choices !== undefined && choices.length > 0 && (
+    payload.recommended_tradeoff_choice !== undefined
+      ? !choices.some(choice => choice.id === payload.recommended_tradeoff_choice && describesSeated(choice))
+      : !choices.some(describesSeated)
+  )
+  if (!forcedStale && !choicesStale) return payload
+  return {
+    ...payload,
+    forced_tradeoff: forcedStale ? undefined : payload.forced_tradeoff,
+    wait_rescue_options: forcedStale ? undefined : payload.wait_rescue_options,
+    tradeoff_choices: choicesStale ? undefined : payload.tradeoff_choices,
+    recommended_tradeoff_choice: choicesStale ? undefined : payload.recommended_tradeoff_choice,
+  }
+}
+
 function normalizeRepairedPayload(
   payload: SuggestedMatchPayload,
   state: SessionState,
   pvnaTolerance: number,
-  options: { clearTradeoffChoices?: boolean } = {},
 ) {
   const pvnaGap = getPayloadPvnaGap(payload, state)
   const intraGap = getPayloadIntraTeamGap(payload, state)
@@ -2961,10 +2995,6 @@ function normalizeRepairedPayload(
     warnings: [...warnings],
     tradeoffs,
     approval_required: tradeoffs.length > 0,
-    tradeoff_choices: options.clearTradeoffChoices === false ? payload.tradeoff_choices : undefined,
-    recommended_tradeoff_choice: options.clearTradeoffChoices === false
-      ? payload.recommended_tradeoff_choice
-      : undefined,
   }
 }
 
@@ -5623,10 +5653,7 @@ export function buildSuggestedMatchPayloads({
   const jointRepartitionedPayloads = options.disableJointRepartition
     ? invariantSafePayloads
     : applyJointRepartition(invariantSafePayloads, repairState, pvnaTolerance, onRepairInstrument)
-  return jointRepartitionedPayloads.map(payload => normalizeRepairedPayload(
-    payload,
-    repairState,
-    pvnaTolerance,
-    { clearTradeoffChoices: false },
+  return jointRepartitionedPayloads.map(payload => dropStaleDerivedMetadata(
+    normalizeRepairedPayload(payload, repairState, pvnaTolerance),
   ))
 }
