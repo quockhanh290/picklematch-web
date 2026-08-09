@@ -2260,6 +2260,19 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           const responsePayloads = edgeReturnedFinalBoard
             ? res.final_preview_board.filter((match: any) => isStartablePreviewRow(match))
             : (res.payloads ?? [])
+          const nextCourtShortageBreakdown = (() => {
+            if (typeof res.temp_limited_courts === 'number' || typeof res.real_limited_courts === 'number') {
+              const temp = typeof res.temp_limited_courts === 'number' ? res.temp_limited_courts : 0
+              const real = typeof res.real_limited_courts === 'number' ? res.real_limited_courts : 0
+              return temp > 0 || real > 0 ? { temp, real } : null
+            }
+            if (typeof res.player_limited_courts === 'number' && res.player_limited_courts > 0) {
+              // Fallback for older edge function responses
+              return { temp: res.player_limited_courts, real: 0 }
+            }
+            return null
+          })()
+          setCourtShortageBreakdown(nextCourtShortageBreakdown)
           if (__DEV__) {
             const fmt = (ids: string[]) => ids.map(id => {
               const p = snap.playersById.get(id)
@@ -2549,16 +2562,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
               previewRetryTimeoutsRef.current.forEach(clearTimeout)
               previewRetryTimeoutsRef.current.clear()
               previewScheduledRetryKeysRef.current.clear()
-            }
-            if (typeof res.temp_limited_courts === 'number' || typeof res.real_limited_courts === 'number') {
-              const temp = typeof res.temp_limited_courts === 'number' ? res.temp_limited_courts : 0
-              const real = typeof res.real_limited_courts === 'number' ? res.real_limited_courts : 0
-              setCourtShortageBreakdown(temp > 0 || real > 0 ? { temp, real } : null)
-            } else if (typeof res.player_limited_courts === 'number' && res.player_limited_courts > 0) {
-              // Fallback for older edge function responses
-              setCourtShortageBreakdown({ temp: res.player_limited_courts, real: 0 })
-            } else {
-              setCourtShortageBreakdown(null)
             }
             if (__DEV__) console.log('[NextRoundSuggesterV2] preview fetch done', {
               totalMs: Math.round(nowMs() - previewT0),

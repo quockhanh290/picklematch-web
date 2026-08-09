@@ -93,6 +93,8 @@ export type ForcedDecisionCard = {
   selected: boolean
 }
 
+export type ForcedSelection = 'accept_repeat' | 'accept_imbalance' | 'wait'
+
 // Forced-court (no clean lineup) 3-way decision: derived from the engine's two Pareto endpoints
 // (forced_tradeoff.acceptRepeat / acceptImbalance) rather than tradeoff_choices. Pure — no React,
 // no I/O. Returns null when the match has no forced_tradeoff (non-forced court).
@@ -100,7 +102,7 @@ export function buildForcedDecision(
   match: SuggestedLiveMatchRow,
   state: SessionState,
   playersById: Map<string, ArrangementPlayer>,
-  selection: 'accept_repeat' | 'accept_imbalance' | 'wait',
+  selection: ForcedSelection,
   cardCourtIdx: number,
 ): {
   forcedLineup: { team_a: [string, string]; team_b: [string, string] } | null
@@ -111,10 +113,13 @@ export function buildForcedDecision(
   const forced = match.forced_tradeoff
   if (!forced) return null
   const isBlowout = forced.kind === 'blowout'
+  const isFatigue = forced.kind === 'fatigue'
   const forcedWait = match.wait_rescue_options ?? []
   // "wait" keeps the default lineup (acceptRepeat) pending the re-suggest — it has no lineup of
   // its own, unlike the swap-to-alternative choices below.
-  const forcedLineup = selection === 'accept_imbalance' ? forced.acceptImbalance : forced.acceptRepeat
+  const forcedLineup = selection === 'accept_imbalance' && forced.acceptImbalance
+    ? forced.acceptImbalance
+    : forced.acceptRepeat
   // The server only ever persists ONE forced-court lineup (whatever team_a/team_b the edge committed
   // — normally acceptRepeat). If the host's displayed choice differs from that persisted pair, Start
   // must not take the match_id-only "already committed" fast path (useLiveBoard's usePersistedMatchStart)
@@ -136,9 +141,11 @@ export function buildForcedDecision(
   const forcedAcceptRepeatGap = Math.abs(
     getTeamPvna(forced.acceptRepeat.team_a, state) - getTeamPvna(forced.acceptRepeat.team_b, state),
   )
-  const forcedAcceptImbalanceGap = Math.abs(
-    getTeamPvna(forced.acceptImbalance.team_a, state) - getTeamPvna(forced.acceptImbalance.team_b, state),
-  )
+  const forcedAcceptImbalanceGap = forced.acceptImbalance
+    ? Math.abs(
+        getTeamPvna(forced.acceptImbalance.team_a, state) - getTeamPvna(forced.acceptImbalance.team_b, state),
+      )
+    : 0
   const forcedRepeatDetail = getRepeatDetailLines(
     { court_idx: cardCourtIdx, team_a: forced.acceptRepeat.team_a, team_b: forced.acceptRepeat.team_b },
     state,
@@ -154,6 +161,37 @@ export function buildForcedDecision(
   // (default): acceptRepeat carries the repeated pair ("Chịu lặp"); acceptImbalance is the fresh,
   // more-PVNA-lopsided alternative ("Chịu lệch"). Same slot mapping (accept_repeat=②/accept_imbalance=③)
   // in both kinds — only the copy differs.
+  if (isFatigue) {
+    const cards: ForcedDecisionCard[] = [
+      {
+        key: 'accept_repeat',
+        testId: `nrv2-decision-accept_repeat-${cardCourtIdx}`,
+        tone: 'play',
+        title: 'Cho đánh tiếp',
+        result: `Chơi luôn (chênh ${formatNumber(forcedAcceptRepeatGap, 2)})`,
+        cost: 'Chấp nhận chuỗi đánh liên tiếp',
+        selected: selection === 'accept_repeat',
+      },
+    ]
+    if (forcedWait.length > 0) {
+      cards.unshift({
+        key: 'wait',
+        testId: `nrv2-decision-wait-${cardCourtIdx}`,
+        tone: 'wait',
+        title: `Chờ Sân ${forcedWait[0].court_idx + 1}`,
+        result: 'Có người thay khi sân kia xong',
+        cost: 'sân này để trống',
+        selected: selection === 'wait',
+      })
+    }
+    return {
+      forcedLineup,
+      cards,
+      startMatch,
+      explanation: forced.explanation ? { heading: 'Vì sao chờ', text: forced.explanation } : null,
+    }
+  }
+
   const cards: ForcedDecisionCard[] = isBlowout
     ? [
         {

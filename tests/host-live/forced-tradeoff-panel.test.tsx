@@ -186,6 +186,54 @@ function buildForcedPreviewResponse(options: { wait_rescue_options: { court_idx:
   }
 }
 
+const FATIGUE_EXPLANATION_WITH_WAIT = 'P5 đã chơi 4 trận liên tiếp. Chờ một sân xong để có người thay, hoặc cho đánh tiếp.'
+const FATIGUE_EXPLANATION_NO_WAIT = 'P5 đã chơi 4 trận liên tiếp, nhưng không còn sân nào đang chạy để chờ người thay.'
+
+function buildForcedFatiguePreviewResponse(options: {
+  wait_rescue_options: { court_idx: number; started_at: string | null }[]
+  recommended: 'wait' | 'accept_repeat'
+  explanation: string
+}) {
+  return {
+    ok: true as const,
+    live_state_version: 1,
+    live_state_version_used: 1,
+    payloads: [] as unknown[],
+    final_preview_board: [
+      {
+        id: 'edge-court-1-forced-fatigue-match',
+        session_id: SESSION_ID,
+        sequence_no: 1,
+        round_no: 1,
+        court_idx: 1,
+        status: 'suggested' as const,
+        team_a: ACCEPT_REPEAT.team_a,
+        team_b: ACCEPT_REPEAT.team_b,
+        resting: [] as string[],
+        score_a: 0,
+        score_b: 0,
+        suggested_at: CHECKED_IN_AT,
+        started_at: null,
+        ended_at: null,
+        preview_live_state_version: 1,
+        preview_countable_match_count: 0,
+        warnings: ['LIVE_RECYCLE_ABSOLUTE_RELAXED'] as string[],
+        tradeoffs: [] as unknown[],
+        approval_required: false,
+        configured_pvna_tolerance: 0.5,
+        effective_pvna_tolerance: 0.5,
+        forced_tradeoff: {
+          kind: 'fatigue' as const,
+          explanation: options.explanation,
+          recommended: options.recommended,
+          acceptRepeat: ACCEPT_REPEAT,
+        },
+        wait_rescue_options: options.wait_rescue_options,
+      },
+    ],
+  }
+}
+
 // Clean (non-forced) court fixture for the "no forced_tradeoff" case: no repeat/imbalance data at
 // all, plain suggested lineup.
 function buildCleanPreviewResponse() {
@@ -322,6 +370,46 @@ describe('SuggestedLiveMatchCard: forced-court decision panel from forced_tradeo
     expect(queryByTestId('nrv2-decision-accept_repeat-1')).toBeNull()
     expect(queryByTestId('nrv2-decision-accept_imbalance-1')).toBeNull()
     expect(queryByTestId('nrv2-decision-wait-1')).toBeNull()
+  })
+
+  it('fatigue with a rescue court defaults to Chờ and uses the engine explanation', async () => {
+    const { getByTestId, queryByTestId, queryByText } = await mountWithPreview(
+      buildForcedFatiguePreviewResponse({
+        wait_rescue_options: [{ court_idx: 0, started_at: CHECKED_IN_AT }],
+        recommended: 'wait',
+        explanation: FATIGUE_EXPLANATION_WITH_WAIT,
+      }),
+    )
+
+    const waitCard = getByTestId('nrv2-decision-wait-1')
+    const acceptRepeatCard = getByTestId('nrv2-decision-accept_repeat-1')
+
+    expect(waitCard).toHaveTextContent('Chờ Sân 1', { exact: false })
+    expect(acceptRepeatCard).toHaveTextContent('Cho đánh tiếp', { exact: false })
+    expect(queryByTestId('nrv2-decision-accept_imbalance-1')).toBeNull()
+
+    expect(waitCard.props.accessibilityState.selected).toBe(true)
+    expect(acceptRepeatCard.props.accessibilityState.selected).toBe(false)
+    expect(getByTestId('nrv2-start-match-court-1').props.accessibilityState.disabled).toBe(true)
+    expect(queryByText('Vì sao chờ')).toBeTruthy()
+    expect(queryByText(FATIGUE_EXPLANATION_WITH_WAIT)).toBeTruthy()
+  })
+
+  it('fatigue with no rescue court defaults to Cho đánh tiếp and does not render a dead Chờ branch', async () => {
+    const { getByTestId, queryByTestId, queryByText } = await mountWithPreview(
+      buildForcedFatiguePreviewResponse({
+        wait_rescue_options: [],
+        recommended: 'accept_repeat',
+        explanation: FATIGUE_EXPLANATION_NO_WAIT,
+      }),
+    )
+
+    const acceptRepeatCard = getByTestId('nrv2-decision-accept_repeat-1')
+    expect(acceptRepeatCard).toHaveTextContent('Cho đánh tiếp', { exact: false })
+    expect(acceptRepeatCard.props.accessibilityState.selected).toBe(true)
+    expect(queryByTestId('nrv2-decision-wait-1')).toBeNull()
+    expect(queryByTestId('nrv2-decision-accept_imbalance-1')).toBeNull()
+    expect(queryByText(FATIGUE_EXPLANATION_NO_WAIT)).toBeTruthy()
   })
 })
 

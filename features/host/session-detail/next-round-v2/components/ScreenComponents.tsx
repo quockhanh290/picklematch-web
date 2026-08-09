@@ -78,7 +78,7 @@ import {
   repeatRiskLabel
 } from '../helpers'
 import type { SuggestedLiveMatchRow } from '../preview'
-import { buildForcedDecision, getRepeatDetailLines } from '../forced-decision'
+import { buildForcedDecision, getRepeatDetailLines, type ForcedSelection } from '../forced-decision'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 const LIVE_SCORE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 90 : SCREEN_WIDTH > 360 ? 80 : 72
@@ -1704,7 +1704,13 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   // Forced-court (no clean lineup) 3-way decision, sourced from the engine's Pareto endpoints
   // instead of tradeoff_choices. Default = "Chịu lặp" (accept the balanced-but-repeats lineup).
   const forced = match.forced_tradeoff
-  const [forcedSelection, setForcedSelection] = useState<'accept_repeat' | 'accept_imbalance' | 'wait'>('accept_repeat')
+  const forcedDefaultSelection: ForcedSelection =
+    forced?.recommended === 'wait' && (match.wait_rescue_options?.length ?? 0) > 0
+      ? 'wait'
+      : forced?.recommended === 'accept_imbalance' && Boolean(forced.acceptImbalance)
+        ? 'accept_imbalance'
+        : 'accept_repeat'
+  const [forcedSelection, setForcedSelection] = useState<ForcedSelection>(forcedDefaultSelection)
   const previousMatchIdRef = useRef(match.id)
   const hostSelectedRef = useRef(false)
   const defaultChoiceIdRef = useRef<SuggestionTradeoffChoiceId>(
@@ -1720,8 +1726,13 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     hostSelectedRef.current = false
     setSelectedChoiceId(defaultChoiceIdRef.current)
     setWaitSelected(false)
-    setForcedSelection('accept_repeat')
-  }, [hasCapTradeoffChoices, match.id, onForcedWaitSelectionChange])
+    setForcedSelection(forcedDefaultSelection)
+    onForcedWaitSelectionChange(match.id, forcedDefaultSelection === 'wait')
+  }, [forcedDefaultSelection, hasCapTradeoffChoices, match.id, onForcedWaitSelectionChange])
+  useEffect(() => {
+    if (!forced) return
+    onForcedWaitSelectionChange(match.id, forcedSelection === 'wait')
+  }, [forced, forcedSelection, match.id, onForcedWaitSelectionChange])
   useEffect(() => {
     if (tradeoffChoices.length === 0) {
       if (selectedChoiceId === defaultChoiceIdRef.current) return
@@ -3627,7 +3638,12 @@ export function RestRiskBanner({
     return { riskPlayers, unavoidable: engineUnavoidable }
   }, [activeMatches, state.players, suggestedMatches])
 
-  useEffect(() => { setDismissed(false) }, [riskPlayers.length])
+  const riskPlayerKey = useMemo(
+    () => riskPlayers.map(p => p.player_id).sort().join('|'),
+    [riskPlayers],
+  )
+
+  useEffect(() => { setDismissed(false) }, [riskPlayerKey])
 
   if (riskPlayers.length === 0 || dismissed) return null
 
