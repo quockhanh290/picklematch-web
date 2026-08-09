@@ -4607,7 +4607,7 @@ export function buildSuggestedMatchPayloads({
       forced_required_player_ids: requiredForThisCourt,
       availability_metrics: getAvailabilityMetricsForState(suggestionStateForCourt),
       preview_seed: previewSeed,
-      force_budget_deadline: forceBudgetDeadline,
+      force_budget_ms: Math.max(0, forceBudgetDeadline - nowMs()),
       onInstrumentEvent: options.onInstrumentEvent,
     }
     const debugEligible = debugOut ? [...suggestionStateForCourt.players.values()]
@@ -4890,7 +4890,7 @@ export function buildSuggestedMatchPayloads({
           max_runtime_ms: conditionalBudgetMs,
           _exhaustiveDiag: conditionalDiag,
           forced_required_player_ids: requiredForThisCourt,
-          force_budget_deadline: Date.now() + conditionalBudgetMs,
+          force_budget_ms: conditionalBudgetMs,
         })
         conditionalQualityRescue = findConditionalLiveQualityRescue(
           conditionalResult.alternatives,
@@ -4948,7 +4948,7 @@ export function buildSuggestedMatchPayloads({
           allow_recent_group_rematch: true,
           max_runtime_ms: socialBudgetMs,
           forced_required_player_ids: requiredForThisCourt,
-          force_budget_deadline: Date.now() + socialBudgetMs,
+          force_budget_ms: socialBudgetMs,
         })
         unifiedSocialTradeoff = findUnifiedSocialTradeoffRescue(
           socialResult.alternatives,

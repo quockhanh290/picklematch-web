@@ -55,10 +55,12 @@ export type SuggestNextRoundOptions = {
   preview_seed?: string
   active_courts?: number      // override court count for this suggestion
   fixed_courts?: Match[]      // courts already assigned; suggest remaining courts only
-  // Absolute-timestamp deadline shared across all courts in one buildSuggestedMatchPayloads call.
-  // Prevents each court from resetting rescue time and stacking work until the worker limit.
-  // The public runtime deadline still caps the individual call.
-  force_budget_deadline?: number
+  // What is left of the rescue budget shared across all courts in one buildSuggestedMatchPayloads call,
+  // as a duration. Prevents each court from resetting rescue time and stacking work until the worker
+  // limit. The public runtime deadline still caps the individual call.
+  // A duration, not a timestamp: the caller measures the elapsed share on its own clock, so producer and
+  // consumer never have to agree on an epoch.
+  force_budget_ms?: number
   onInstrumentEvent?: (event: EngineInstrumentEvent) => void
 }
 
@@ -583,7 +585,9 @@ export function suggestNextRound(
     : DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS
   const runtimeDeadline = Math.min(
     startedAt + Math.max(1, maxRuntimeMs - RUNTIME_DEADLINE_GUARD_MS),
-    options.force_budget_deadline ?? Number.POSITIVE_INFINITY,
+    options.force_budget_ms !== undefined
+      ? startedAt + Math.max(0, options.force_budget_ms)
+      : Number.POSITIVE_INFINITY,
   )
   // Always leave a reserve for the forced/exhaustive rescue pass. At the default 1000ms budget the
   // regular deadline used to equal the overall deadline (zero reserve), so a slow/large pool spent the
