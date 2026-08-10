@@ -215,7 +215,15 @@ function run(sid: string): Score | null {
         .filter(i => (lane.get(i) ?? 0) < ROUNDS && !live.some(r => r.status === 'live' && r.court_idx === i))
       // An empty board is refilled in ONE request, not court by court. That is what production does and
       // it is the only way a pass gated on liveCourtIdxs.size === 0 is ever asked mid-session.
-      if (live.length === 0 && idle.length > 1) {
+      // MINBATCH=n refills any n or more simultaneously-idle courts in ONE request instead of one at a
+      // time. Unlike DRAIN this costs nothing: it waits for nobody, it only stops throwing away the
+      // fact that several courts happened to free up together. Draining buys a 4x cut in repeat-3 but
+      // pays for it with idle courts — 16% of production rounds have a straggler over 10 minutes — so
+      // the question is how much of that gain is available for free.
+      const minBatch = Number(process.env.MINBATCH ?? 0)
+      const batchable = minBatch > 0 && idle.length >= minBatch
+      { const g = globalThis as any; g.__IDLE__ = g.__IDLE__ ?? {}; const k = 'idle=' + idle.length; g.__IDLE__[k] = (g.__IDLE__[k] ?? 0) + 1 }
+      if (batchable || (live.length === 0 && idle.length > 1)) {
         acc.requested += idle.length
         const all = suggest(state, live, idle.length, courts)
         for (const p2 of all) { scoreMatchInto(acc, state, p2, tol); live.push(asLive(p2, seq++, lane.get(p2.court_idx as number) ?? 0)) }
@@ -272,6 +280,7 @@ console.log(`HARD avoid-partner ${report.hard.avoid_partner}   <-- must stay 0`)
 console.log(`SOFT avg cost ${report.soft.avg_cost} | over-tol ${report.soft.over_tol_pct}% | intra>${INTRA_TEAM_PVNA_GAP_LIMIT} ${report.soft.intra_over_cap_pct}% | repeat3 ${report.soft.repeat3_pct}% | blowout ${report.soft.blowout_pct}% | panel ${report.soft.panel_pct}%`)
 console.log(`model=${report.model} board_hash=${boardHash}`)
 console.log(`written to ${OUT}`)
+console.log('IDLE_DIST:', JSON.stringify((globalThis as any).__IDLE__ ?? {}))
 console.log('SPREAD:', JSON.stringify((globalThis as any).__SPREAD__ ?? {}))
 console.log('WHY:', JSON.stringify((globalThis as any).__WHY__ ?? {}))
 console.log('JOINT:', JSON.stringify((globalThis as any).__JOINT__ ?? {}))

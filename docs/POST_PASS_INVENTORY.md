@@ -696,3 +696,36 @@ front of them with both numbers, not an optimisation to apply quietly.
 Next step if it is pursued: measure the idle-court cost from production match durations, so the trade
 can be stated as "x% fewer rematches for y seconds of average court idle time" rather than as a
 one-sided quality win.
+
+### The cost of draining, and a cheaper idea that could not be tested (2026-08-10)
+
+Draining buys its 4x cut in repeat-3 with idle courts, so the trade needs both numbers. Measured over
+323 real rounds, taking each round's slowest match minus its fastest:
+
+| wait for the last court | rounds | share |
+|---|---|---|
+| under 1 minute | 165 | **51%** |
+| 1 to 3 minutes | 64 | 20% |
+| 3 to 10 minutes | 42 | 13% |
+| **over 10 minutes** | **52** | **16%** |
+
+median 0.9 min · p75 4.3 min · p90 **16.2 min**
+
+The mean of 5.9 minutes is misleading; half of all rounds would wait under a minute. The problem is
+entirely in the tail — one round in six has a straggler past ten minutes, and with six courts that is
+over fifty court-minutes standing empty. So a blanket drain is the wrong shape: it should batch when
+courts finish together and give up waiting when one match runs long.
+
+**The cheaper idea, untested.** If most of the gain comes simply from asking about several courts at
+once, it could be had for free by batching whichever courts happen to be idle together, waiting for
+nobody. Measuring that returned numbers identical to per-court refill at every batch size — and that
+result is void. Instrumenting the harness shows `idle` is 1 on 217 occasions and 0 on 31, never more:
+the replay loop completes one court and refills it immediately, so simultaneous idleness never arises
+and the batching branch never ran. Identical numbers here mean untested, not ineffective.
+
+Testing it needs match durations in the harness so courts can finish close together or far apart. The
+production distribution above is exactly the input for that, and it is the next thing to build.
+
+**Fourth time today** that harness silence was nearly read as a fact about the engine. The pattern is
+consistent enough to state as a rule: before concluding that something has no effect, confirm the code
+path executed at all.
