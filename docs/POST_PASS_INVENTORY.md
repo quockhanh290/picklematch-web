@@ -120,3 +120,141 @@ Two consequences for P2-2:
 
 Still to check: participation's rest-miss objective, the rolling-plan invariant guard, and the two
 metadata passes (`dropStaleDerivedMetadata`, `rebuildDerivedMetadataForSeatedLineup`).
+
+## Production firing rates
+
+Checked 2026-08-10 against code first, before querying prod.
+
+Instrumentation path in current code:
+
+- `buildSuggestedMatchPayloads` wraps `options.onInstrumentEvent` into `onRepairInstrument`, emitting
+  `{ event: 'repair', detail, court_count, available }`.
+- The edge function writes those events to `public.engine_instrumentation` with columns
+  `session_id`, `event`, `detail`, `court_count`, and `available`.
+- `debug_dumps` does not receive a top-level event list. The only code path that copies the in-memory
+  event list into a dump is `payload.slow_diagnostic.engine_instrumentation_events`, and only when a
+  slow diagnostic payload exists.
+- `repairAllIdlePayloadBatchParticipation` can emit `detail = 'participation'`, but only if it changes
+  the batch, survives the invariant guard, and is not masked by a later repeat/blowout-pool change in
+  the final `else if` chain.
+- `repairPayloadBatchBlowoutFromPool` has no distinct `blowoutPool` label. If it changes and survives
+  the invariant guard, the code emits `detail = 'swap'`, which is ambiguous with the earlier
+  cross-court swap repair.
+- Inline `invariantSafePayloads` emits no event at all. When it reverts a selected-player change, it
+  also suppresses the final participation/repeat/blowout-pool label because the final label block
+  requires `invariantSafePayloads === blowoutPoolRepairedPayloads`.
+
+Result: existing labels are not sufficient to confirm all three requested paths. `participation` is at
+best a lower-bound label; `blowoutPool` is indistinguishable from generic `swap`; `invariantSafePayloads`
+is unobservable in current dumps/instrumentation.
+
+Read-only prod query prepared and attempted via Supabase Management API project
+`mzqsxgfvtgmsscbqugni`, token `~/.supabase/access-token`, script
+`scratch/post-pass-prod-readonly.ts`. Execution did not reach prod because outbound network from this
+workspace is blocked (`node fetch`: `EACCES`; PowerShell `Invoke-WebRequest`: unable to connect).
+Therefore there are no production counts from this run.
+
+Queries prepared for the 60-day check:
+
+```sql
+select
+  count(*) as dump_rows_60d,
+  count(*) filter (where payload ? 'engine_instrumentation_events') as dump_rows_with_top_level_engine_events,
+  count(*) filter (where payload #> '{slow_diagnostic,engine_instrumentation_events}' is not null) as dump_rows_with_slow_diagnostic_engine_events
+from public.debug_dumps
+where created_at >= now() - interval '60 days';
+```
+
+```sql
+with dump_events as (
+  select d.id, d.session_id, d.created_at, ev->>'event' as event, ev->>'detail' as detail
+  from public.debug_dumps d
+  cross join lateral jsonb_array_elements(
+    case
+      when jsonb_typeof(d.payload #> '{slow_diagnostic,engine_instrumentation_events}') = 'array'
+        then d.payload #> '{slow_diagnostic,engine_instrumentation_events}'
+      else '[]'::jsonb
+    end
+  ) ev
+  where d.created_at >= now() - interval '60 days'
+)
+select event, detail, count(*) as event_count, count(distinct id) as request_count,
+       min(created_at) as first_seen, max(created_at) as last_seen
+from dump_events
+where event in ('repair', 'joint')
+   or detail in ('swap', 'early', 'repeat', 'participation', 'joint')
+group by event, detail
+order by event_count desc, event, detail;
+```
+
+```sql
+select event, detail, count(*) as event_count,
+       count(distinct session_id || '|' || date_trunc('second', created_at)::text) as approximate_request_count,
+       min(created_at) as first_seen, max(created_at) as last_seen
+from public.engine_instrumentation
+where created_at >= now() - interval '60 days'
+  and (event in ('repair', 'joint') or detail in ('swap', 'early', 'repeat', 'participation', 'joint'))
+group by event, detail
+order by event_count desc, event, detail;
+```
+
+Per requested pass:
+
+- `repairAllIdlePayloadBatchParticipation`: not confirmed on prod in this run. If
+  `payload.slow_diagnostic.engine_instrumentation_events` exists, `detail = 'participation'` can count
+  only surfaced/surviving participation repairs, not all actual function changes.
+- `repairPayloadBatchBlowoutFromPool`: not confirmable from existing labels. The surviving-change label
+  is `detail = 'swap'`, shared with the generic cross-court swap pass.
+- `invariantSafePayloads` (#70): not confirmable from existing labels. The guard has no positive or
+  negative instrumentation event, and prod currently passes `rollingPlanTarget: null` while rolling
+  policy is disabled.
+
+Needed before this can be answered from production data: add distinct instrumentation details such as
+`participation`, `blowoutPool`, and `invariantGuardRevert` into both durable instrumentation and the
+debug dump payload, preferably with `suggestion_request_id` so request counts are exact rather than
+approximated from timestamp/session.
+
+P2-2 retire evidence from current production data: none. These three paths are not proven dead by prod
+data available through current instrumentation.
+
+## Constraint check, final tally (2026-08-10)
+
+Seven claimed constraints, each read individually rather than taken on trust. One was not real.
+
+| # | constraint | verdict |
+|---|---|---|
+| 1 | clean-board tolerance guard, `repairPayloadBatchRepeatExposure` | **NOT REAL** — dead code, subsumed by the line above it |
+| 2 | near-level peer on the bench, `repairPayloadBatchBlowoutFromPool` | REAL — and easy to lose to the similarly-named roster-wide version |
+| 3 | owed-player guard, `repairPayloadBatchSevereRepeatFromPool` | REAL — its absence next door is BUG #18 |
+| 4 | rest-miss objective, `repairAllIdlePayloadBatchParticipation` | REAL, but its trigger reads `consecutive_rest`, frozen until 2026-08-09 |
+| 5 | rolling-plan invariant, `invariantSafePayloads` | REAL **but dormant**: `getActiveRollingInvariantTarget` returns null while rolling-plan is off, which it is |
+| 6 | stale-metadata guard, `dropStaleDerivedMetadata` | REAL — nothing else compares metadata against the seated lineup |
+| 7 | panel rebuild, `rebuildDerivedMetadataForSeatedLineup` | REAL — nothing else creates `tradeoff_choices` after the passes run |
+
+## The instrumentation cannot answer "is this pass dead" (2026-08-10)
+
+Retiring a pass in P2-2 was going to be justified by production firing rates. It cannot be, and the
+blocker is the instrumentation rather than access to the data (`live-preview.ts:5700-5715`):
+
+```ts
+if (blowoutPool changed && invariantSafe === blowoutPool) onRepairInstrument?.('swap')
+else if (repeatPool changed && ...)                        onRepairInstrument?.('repeat')
+else if (participation changed && ...)                     onRepairInstrument?.('participation')
+```
+
+Three problems compound:
+- `blowoutPool` reports under `'swap'`, the same label the cross-court swap uses, so the two cannot be
+  told apart.
+- `invariantSafePayloads` emits nothing at all, and when it reverts, `invariantSafe === blowoutPool`
+  goes false and **suppresses all three of the other labels**.
+- The chain is `if / else if / else if`, so a batch reports at most one label even when several passes
+  acted. participation is masked whenever blowoutPool also fired.
+
+So the §7.11 finding that three passes "never fired" in simulation cannot be promoted to a production
+claim, and no amount of dump data would change that. **No pass currently has the evidence needed to
+retire it.**
+
+What would fix it: a distinct label per pass (`blowoutPool`, `invariantGuardRevert`), emitting
+independently rather than in an else-chain, and a request id in the dump so firings can be counted per
+request. That is a small, behaviour-neutral instrumentation change, and it has to land and collect a few
+days of production data before the retire half of P2-2 can be argued at all.
