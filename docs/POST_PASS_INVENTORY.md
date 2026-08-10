@@ -534,3 +534,39 @@ The audit's overlap table should be read as a starting point, not a specificatio
 What remains genuinely overlapping after this reading is the bench-substitution group — participation,
 repeatPool, blowoutPool — which really are three answers to one question, differing only in objective.
 That group is still the right first merge, and it is now the only one this evidence supports.
+
+### CORRECTION: both gates open far more often than the replay suggested (2026-08-10)
+
+The two entries above call participation "structurally dead" and repeatPool "rare". Measured against
+4035 production requests over 60 days:
+
+```sql
+count(*) filter (where jsonb_array_length(payload->'occupied_live_court_idxs') = 0)  -- participation's gate
+count(*) filter (where (payload->>'target_expected_count')::int >= 2)                -- repeatPool's gate
+```
+
+| gate | opens | share |
+|---|---|---|
+| board completely empty | **568** | **14.1%** |
+| two or more courts in one request | **1599** | **39.6%** |
+| single-court refill | 2436 | 60.4% |
+
+Both claims were wrong. participation is offered 568 chances, not one per session; repeatPool at 39.6%
+is not rare by any reading.
+
+The error was reading a property of my own harness as a property of the system. The replay loop refills
+one court at a time by construction, so an empty board only ever occurs at its start — and I turned that
+into a claim about rolling play. Production empties the board regularly: every court finishing together
+between rounds, or a host resetting it.
+
+**What survives, and it is now the sharper question.** Across those 568 chances the pass is entered and
+exits at `bail_no_need` every time in replay. So the question is no longer whether it is ever invited.
+It is whether a board that arrives with no courts running is simply already fair — in which case the
+pass is redundant — or whether its trigger is too narrow to notice unfairness that is really there. That
+is unanswered, and answering it needs the entry and exit counted in production, which the current
+instrumentation cannot do.
+
+Method note for anything downstream: the replay corpus and the production request mix differ in shape,
+not just in size. 60% of production requests are single-court refills and 14% arrive on an empty board;
+the harness produces one empty board per session and single courts thereafter. Any claim about how often
+something fires has to come from `debug_dumps`, not from the replay.
