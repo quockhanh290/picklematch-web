@@ -350,3 +350,33 @@ merged optimizer around per-request invariants.
 Caveat: 20 sessions is one deterministic sample, not a distribution. What raises confidence is that four
 independent metrics — tolerance, repeat-3, blowout, stacked teams — all move the same direction, which
 is unlikely to be coincidence. Confirming it properly needs several disjoint corpus slices.
+
+### RETRACTION: joint is not reliably harmful — the sample was (2026-08-10)
+
+The section above says `applyJointRepartition` lowers its own cost while worsening every other metric.
+**That is withdrawn.** It held on the twenty sessions that happened to be sampled and does not
+generalise. Three disjoint slices, joint on versus off, counting how many of four metrics improve when
+it is turned off:
+
+| slice | matches | metrics better with joint OFF |
+|---|---|---|
+| sessions 1-20 | 1008 | **4 of 4** ← the original sample |
+| sessions 21-40 | 1024 | **1 of 4** (joint is better on three) |
+| sessions 41-60 | 1056 | 2 of 4 |
+
+One slice out of three supports the claim. The caveat written alongside the original numbers — "one
+deterministic sample, not a distribution" — turned out to be the whole story, and the argument that four
+metrics moving together made coincidence unlikely was wrong: they move together *within* a slice because
+they are not independent, being computed from the same boards.
+
+**What survives, and it is the more useful half.** The mechanism is still measured and still true: joint
+never increases the over-tolerance count on the request that runs it (20 of 20 calls unchanged), yet the
+session it opens finishes differently. What the slices add is that the direction of that difference is
+**not stable** — joint helps some session mixes and hurts others, and nothing in its per-request
+guarantee predicts which.
+
+For P2-2 that is a sharper conclusion than "joint is bad". A pass can be provably never-worse per
+request and still move session outcomes either way, so **per-request invariants cannot justify a pass,
+and cannot condemn one either**. Any merged optimizer needs session-level evaluation across several
+disjoint slices before its value can be claimed at all. One slice proves nothing, including when it
+agrees with you.

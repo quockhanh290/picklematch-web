@@ -61,7 +61,7 @@ const ROUNDS = 8
 const sids = Object.keys(mBySid)
   .filter(sid => (rBySid[sid] || []).length > 0 && !(rBySid[sid] || []).some(r => r.co != null))
   .sort()
-  .slice(0, NUM)
+  .slice(Number(process.env.SKIP ?? 0), Number(process.env.SKIP ?? 0) + NUM)
 
 function buildState(sid: string): { state: SessionState; courts: number } | null {
   const rost = rBySid[sid]; const ms = mBySid[sid]

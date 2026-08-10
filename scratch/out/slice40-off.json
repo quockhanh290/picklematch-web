@@ -1,0 +1,19 @@
+{
+  "model": "quality-cost",
+  "board_hash": "64a9efa21134",
+  "sessions": 20,
+  "requested": 1056,
+  "seated": 1056,
+  "fill_rate_pct": 100,
+  "hard": {
+    "avoid_partner": 0
+  },
+  "soft": {
+    "avg_cost": 2.4689,
+    "over_tol_pct": 9.47,
+    "repeat3_pct": 12.88,
+    "blowout_pct": 1.7,
+    "intra_over_cap_pct": 25.57,
+    "panel_pct": 15.34
+  }
+}
