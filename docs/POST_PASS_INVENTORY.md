@@ -758,3 +758,47 @@ this data.
 Measuring it needs a different source: either a client-side timestamp for when play actually starts, or
 observing a live session directly. Until then the drain result stands only as "quality improves a lot if
 you are willing to wait", with the waiting unquantified.
+
+## Two bugs found in the data itself (2026-08-10)
+
+Looking for match durations turned up two defects that need no new session to see.
+
+### 1. `started_at` is stamped at row creation, not at play
+
+Median gap between `created_at` and `started_at` across 4912 completed matches: **0.0 seconds**. The
+field records when the suggestion was persisted, not when anyone started playing.
+
+`buildWaitRescueOptions` (`forced-tradeoff.ts:170-171`) sorts the "wait for court X" choices by
+`started_at`, earliest first, on the reasoning that the court running longest will free up soonest. With
+the field meaning creation order, the host is being pointed at the court that was *suggested* first,
+which is unrelated to which will finish first. The feature is not broken in a way anyone would notice —
+it just gives advice with no information behind it.
+
+### 2. Live matches never completed, in sessions still marked playing
+
+197 rows sit at `status='live'`, and 62 of them are in 16 sessions whose status is still `playing`,
+median age 6.5 days. Every one locks four players as busy for as long as it sits there.
+
+| session | stuck live | players locked | completed in session |
+|---|---|---|---|
+| `58181280` | 2 | 8 | 47 |
+| `f43a9338` | 4 | 16 | 19 |
+| `a1cef762` | 6 | **24** | **0** |
+| `bbf721bd` | 5 | 20 | 15 |
+| `1db29119` | 5 | 20 | 24 |
+
+These are the same sessions this work has been debugging all along. `58181280` is the one TASK.md
+records as "asked for 2 courts, 21 players free, returned 0" — and it has 8 players locked by two rows
+that never completed. `a1cef762` has 24 locked and not a single completed match.
+
+To the engine a player in a live row is busy, so a row that never completes makes them busy forever.
+That is a mechanism inside the "empty court while players are free" class, and it was sitting in the
+data the whole time.
+
+A previous backfill moved 114 stuck sessions to `finished`. These 16 are newer, the most recent two days
+old, so the cause is still producing cases and only the symptom was cleared.
+
+**What is not established:** whether these sessions are abandoned — a host closing the app mid-session
+would leave exactly this trace — or genuinely broken for someone still using them. That distinction
+decides whether this is data hygiene or an active fault, and it is the one thing here that needs a
+human answer rather than a query.
