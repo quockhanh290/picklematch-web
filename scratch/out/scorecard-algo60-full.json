@@ -1,0 +1,17 @@
+{
+  "sessions": 60,
+  "requested": 3088,
+  "seated": 3088,
+  "fill_rate_pct": 100,
+  "hard": {
+    "avoid_partner": 0
+  },
+  "soft": {
+    "avg_cost": 2.8069,
+    "over_tol_pct": 13.89,
+    "repeat3_pct": 12.24,
+    "blowout_pct": 2.75,
+    "intra_over_cap_pct": 19.59,
+    "panel_pct": 6.96
+  }
+}

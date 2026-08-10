@@ -4,6 +4,18 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
+## CÁCH CHẠY CODEX SONG SONG (rút ra 2026-08-10, tôi đã tự giới hạn vô cớ suốt phiên)
+Ranh giới KHÔNG phải "một agent một lúc" mà là **agent đó có GHI file không**:
+
+| loại việc | song song |
+|---|---|
+| chỉ đọc + trả kết quả về (điều tra code, truy vấn prod read-only, chẩn đoán test) | ✅ bao nhiêu cũng được — đã chạy 3 cùng lúc, không vấn đề |
+| có ghi file (sửa code, viết test, viết doc) | ❌ phải một mình, HOẶC cấp `git worktree` riêng |
+
+- **Mẹo quan trọng:** với việc chỉ-đọc, bắt agent **trả kết quả về chứ đừng cho ghi doc**. Ba agent cùng ghi một file doc là giẫm chân nhau; trả về rồi mình tự gộp thì không.
+- **Trước khi mở P2-2 phải dựng `git worktree` riêng cho agent có ghi** — lúc đó sẽ có nhiều nhánh thử nghiệm optimizer song song, chung working tree thì suite của nhánh này bẩn vì nhánh kia đang sửa. Đây là bài học đã ghi ở mục 2026-08-09 (P1-1) mà chưa ai xử lý.
+- **Bẫy đã mắc:** giao agent 3 mục rồi tự mình cũng bắt đầu kiểm đúng 3 mục đó. Giao xong phải chuyển sang việc KHÁC, không phải làm song song cùng nội dung.
+
 ## NỢ DỌN DẸP (đừng để thành phân mảnh mới — đây chính là thứ audit đang đo)
 - [ ] **2 RPC chết trên prod:** `sync_live_suggestion_metadata`, `sync_live_suggestion_degraded_fields` — từ edge v249 không ai gọi nữa. CỐ Ý giữ để còn đường lui nếu phải rollback edge. **Xoá sau vài ngày chạy ổn**, kèm kiểm lại `grep` trong `supabase/functions/` + client trước khi drop.
 - [x] **`npm run typecheck` 936 lỗi → 0.** Ba việc, không cái nào vá triệu chứng:
