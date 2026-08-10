@@ -4645,7 +4645,7 @@ export function buildSuggestedMatchPayloads({
     ])
     const buildRelaxedTierOverrides = () => {
       const relaxedTierOverrides = { ...tierOverrides }
-      for (const playerId of [...requiredForThisCourt, ...deferredRequiredIds]) {
+      for (const playerId of requiredForThisCourt) {
         delete relaxedTierOverrides[playerId]
       }
       return relaxedTierOverrides

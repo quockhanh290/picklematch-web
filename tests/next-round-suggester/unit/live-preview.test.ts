@@ -573,6 +573,48 @@ describe('projected live match state', () => {
     expect(gap).toBeLessThan(2.0)
   })
 
+  it('does not pull a deferred required skill-outlier back in during intra rescue', () => {
+    // The owed pool is bimodal. Band-cap forces the low cluster and marks the high outliers deferred
+    // as FLEXIBLE. The near-level filler is protected by the first live-selection pass, forcing an
+    // intra-rescue retry; that retry must keep the deferred outliers FLEXIBLE instead of letting the
+    // engine reclassify them as MUST_PLAY from consecutive_rest.
+    const state = createState({
+      courts: 3,
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('A-low-1', { pvna: 2.00, consecutive_rest: 1, matches_played: 1, last_played_round: 0 }),
+        createPlayer('B-low-2', { pvna: 2.10, consecutive_rest: 1, matches_played: 1, last_played_round: 0 }),
+        createPlayer('C-low-3', { pvna: 2.20, consecutive_rest: 1, matches_played: 1, last_played_round: 0 }),
+        createPlayer('Z-high-1', { pvna: 4.80, consecutive_rest: 1, matches_played: 1, last_played_round: 0 }),
+        createPlayer('D-low-filler', { pvna: 2.15, consecutive_rest: 0, consecutive_play: 2, matches_played: 1 }),
+        createPlayer('busy-1', { pvna: 3.00, matches_played: 1 }),
+        createPlayer('busy-2', { pvna: 3.00, matches_played: 1 }),
+        createPlayer('busy-3', { pvna: 3.00, matches_played: 1 }),
+        createPlayer('busy-4', { pvna: 3.00, matches_played: 1 }),
+      ],
+    })
+    const liveCourt = liveRow('live-court-1', 1, 'live', ['busy-1', 'busy-2'], ['busy-3', 'busy-4'])
+
+    const payloads = buildSuggestedMatchPayloads({
+      count: 1,
+      sessionId: state.session_id,
+      courtCount: 3,
+      state,
+      rows: { liveMatchRows: [liveCourt], liveStateVersion: 1 },
+      completingLiveMatchIds: new Set(),
+      fairnessAdjustment: { tier_overrides: {}, applied_for_warnings: [] },
+      fairnessWarnings: [],
+      playersById: new Map([...state.players.keys()].map(id => [id, { name: id }])),
+      pvnaTolerance: 0.5,
+      options: { courtIdxs: [0] },
+    })
+
+    expect(payloads).toHaveLength(1)
+    const selectedIds = new Set([...payloads[0].team_a, ...payloads[0].team_b])
+    expect(selectedIds).toEqual(new Set(['A-low-1', 'B-low-2', 'C-low-3', 'D-low-filler']))
+    expect(selectedIds.has('Z-high-1')).toBe(false)
+  })
+
   it('does not mark same-court live players as cross-court locked', () => {
     const state = createState({
       courts: 1,
