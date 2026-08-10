@@ -67,7 +67,13 @@ function buildState(sid: string): { state: SessionState; courts: number } | null
   const rost = rBySid[sid]; const ms = mBySid[sid]
   if (!rost || !ms) return null
   const courts = Math.max(...ms.map((m: any) => m.court_idx)) + 1
-  const players: PlayerSessionState[] = rost.map(r => ({
+  // BENCH=n trims the roster to courts*4+n so the pressure the repair passes exist for can be created.
+  // The corpus is uniformly roomy — bench depth 8 to 16, nobody opting out, nobody checking out — and
+  // bench depth was already measured as the variable that decides whether the two scoring models
+  // diverge at all.
+  const benchWanted = process.env.BENCH === undefined ? null : Number(process.env.BENCH)
+  const rostUsed = benchWanted === null ? rost : rost.slice(0, courts * 4 + Math.max(0, benchWanted))
+  const players: PlayerSessionState[] = rostUsed.map(r => ({
     player_id: r.pid, pvna: Number(r.pvna), gender: gmap(r.gender), group_id: r.group_id ?? null,
     partner_gender_pref: pmap(r.ppref), opponent_gender_pref: pmap(r.opref),
     checked_in_at: new Date('2026-05-15T12:00:00Z'), checked_out_at: null,

@@ -413,3 +413,37 @@ Before any of them can be retired, the corpus needs sessions with checkouts and 
 harness that injects them. Until then the ablation supports a narrower claim: **on stable-roster
 sessions, four of the five passes are inert on both scoring models** — worth knowing, and not grounds
 for deletion.
+
+### Correction, and a pressure test the finding survives (2026-08-10)
+
+**Correction first.** The section above blames the corpus filter for excluding sessions with checkouts.
+That is wrong, and it was reached by reading the filter instead of counting the data. Of 2215 roster rows
+across the 60 sessions: **zero checkouts, zero opt-outs**. The filter excludes nothing; the corpus simply
+never contained that data.
+
+The real bias is different and larger. Bench depth across the corpus is **minimum 8, median 12, maximum
+16** — never once tight. Bench depth was already measured, earlier in this work, as the variable that
+decides whether the two scoring models diverge at all. Every measurement built today — the scorecard
+baselines, both ablations, the three slices used to retract the joint finding — ran on sessions with
+room to spare.
+
+**Pressure test.** Trimming the roster to `courts*4 + n` and re-running with all four idle passes
+disabled at once:
+
+| bench | matches | boards |
+|---|---|---|
+| 0 | 1008 | **identical** |
+| 2 | 1008 | **identical** |
+| 4 | 1008 | **identical** |
+
+The finding survives. The four passes are inert not only on roomy sessions but at exact fill, which is
+the hardest case they exist for. That is a considerably stronger claim than the one made before.
+
+**What is still untested:** churn. Trimming produces a thin bench but a stable roster, and nobody joins
+late, leaves early, or opts out. `repairAllIdlePayloadBatchParticipation` exists for participation spread
+that builds up through churn, and no amount of bench trimming creates that.
+
+**Worth noting separately:** at bench 0 the repeat-3 rate is **72.62%** — nearly three matches in four
+involve a third meeting between the same players. Exact-fill sessions are brutal for repeats regardless
+of which passes run, which is the structural version of the complaint hosts raise about late-session
+rematches.
