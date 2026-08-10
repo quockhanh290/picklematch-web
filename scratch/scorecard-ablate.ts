@@ -169,6 +169,30 @@ function run(sid: string): Score | null {
       if (done % courts === 0) {
         state = { ...buildProjectedStateAfterCompletedLiveRound(state, batch), current_round: Math.floor(done / courts) + 1 } as never
         batch = new Set()
+        // CHURN=n swaps n players out for n fresh ones after the third round. The corpus has no
+        // checkouts and no opt-outs at all, so participation spread never builds up and the repair that
+        // exists for it never has anything to do. Departures plus arrivals are what actually creates
+        // the spread: veterans carry three matches, newcomers carry none.
+        const churn = Number(process.env.CHURN ?? 0)
+        if (churn > 0 && done === courts * 3) {
+          const seatedNow = new Set(live.flatMap(r => [...r.team_a, ...r.team_b]))
+          const leavers = [...state.players.values()]
+            .filter(pl => pl.checked_out_at === null && !seatedNow.has(pl.player_id))
+            .slice(0, churn)
+          for (const leaver of leavers) {
+            state.players.set(leaver.player_id, { ...leaver, checked_out_at: new Date() } as never)
+          }
+          for (let k = 0; k < churn; k++) {
+            const donor = leavers[k]
+            if (!donor) break
+            const id = `late-${sid.slice(0, 4)}-${k}`
+            state.players.set(id, {
+              ...donor, player_id: id, checked_out_at: null,
+              matches_played: 0, last_played_round: -1, consecutive_play: 0, consecutive_rest: 0,
+              partner_counts: new Map(), opponent_counts: new Map(),
+            } as never)
+          }
+        }
       }
       const idle = Array.from({ length: courts }, (_, i) => i)
         .filter(i => (lane.get(i) ?? 0) < ROUNDS && !live.some(r => r.status === 'live' && r.court_idx === i))

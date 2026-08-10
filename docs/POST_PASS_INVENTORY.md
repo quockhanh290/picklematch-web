@@ -447,3 +447,35 @@ that builds up through churn, and no amount of bench trimming creates that.
 involve a third meeting between the same players. Exact-fill sessions are brutal for repeats regardless
 of which passes run, which is the structural version of the complaint hosts raise about late-session
 rematches.
+
+### participation is structurally dead in rolling play (2026-08-10)
+
+Adding churn to the harness — three players leaving and three fresh ones arriving after round three, so
+veterans carry three matches and newcomers none — did not wake `repairAllIdlePayloadBatchParticipation`.
+It still exits at `bail_no_need` every time. The reason is its call condition
+(`live-preview.ts:5675-5679`):
+
+```ts
+const participationRepairedPayloads = liveCourtIdxs.size === 0
+  && repairedPayloads.length === effectiveCount
+  && effectiveCount >= 2
+  ? repairAllIdlePayloadBatchParticipation(...)
+  : repairedPayloads
+```
+
+It requires **no court to be running**. In rolling play that is true exactly once, at the opening board,
+when every player has zero matches and the participation spread it looks for is zero by construction.
+Every refill afterwards has live courts, so it is never called again.
+
+So this pass is not idle because the corpus is easy. It is written for full-board suggestion and invited
+in only at the one moment it is guaranteed to have nothing to do. No amount of churn changes that — the
+spread appears at round three and its door closed at round one.
+
+This does not depend on the corpus, which makes it the strongest conclusion about any of these passes so
+far. Two options follow, and they are different work: retire it, or move the call to where spread
+actually exists — the single-court refill path, which would mean rewriting it, since it is built around
+having the whole board to rearrange.
+
+The audit credits it with being "the only pass optimising all-idle rest misses and projected match-count
+spread, and the only one grounded by CP-SAT optimality". Both are true of the code, and neither matters
+while it runs only when the board is empty.
