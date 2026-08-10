@@ -2783,6 +2783,19 @@ export function repairPayloadBatchBlowoutFromPool(
     const pv = pvnaOf(playerId)
     return pool.some(other => other !== playerId && Math.abs(pvnaOf(other) - pv) <= pvnaTolerance)
   }
+  // Same rule repairPayloadBatchSevereRepeatFromPool applies: a bench player may take a seat only from
+  // someone owed a turn no more than they are. Without it this pass evens out a court by sitting down
+  // whoever has been waiting longest, which makes the board look fairer and the queue less fair.
+  const owedRank = (playerId: string) => {
+    const player = state.players.get(playerId)
+    return { rest: player?.consecutive_rest ?? 0, matches: player?.matches_played ?? 0 }
+  }
+  const mayReplace = (incomingId: string, outgoingId: string) => {
+    const incoming = owedRank(incomingId)
+    const outgoing = owedRank(outgoingId)
+    if (incoming.rest !== outgoing.rest) return incoming.rest > outgoing.rest
+    return incoming.matches <= outgoing.matches
+  }
 
   let current = payloads
   let changed = false
@@ -2804,6 +2817,7 @@ export function repairPayloadBatchBlowoutFromPool(
         if (!state.players.get(incomingId)) continue
         for (let outPos = 0; outPos < 4; outPos += 1) {
           const outgoingId = four[outPos]
+          if (!mayReplace(incomingId, outgoingId)) continue
           const remainingBench = [...bench.filter(id => id !== incomingId), outgoingId]
           if (!hasNearLevelPeer(outgoingId, remainingBench)) continue
           const nextFour = four.map((id, idx) => (idx === outPos ? incomingId : id))
