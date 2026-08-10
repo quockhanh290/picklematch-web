@@ -45,3 +45,31 @@ Current tail order in `buildSuggestedMatchPayloads`: `repairSuggestedPayloadBatc
 - `repairPayloadBatchRepeatExposure`: **KHÔNG CÓ TEST** isolating this private repeat-exposure swap pass; only broader `repairSuggestedPayloadBatch` tests were found, and those focus on PVNA/early quality.
 - `repairSuggestedPayloadBatch` initial cross-court PVNA swap: **KHÔNG CÓ TEST** found for the original simple swap behavior from `84b5277`; later wrapper behavior is covered by broader tests.
 - `normalizeRepairedPayload`: **KHÔNG CÓ TEST** by function name because it is private; warning derivation is indirectly covered, but the normalization pass itself is not isolated.
+
+## Correction: one "unique constraint" is dead code (verified 2026-08-10)
+
+The inventory credits `repairPayloadBatchRepeatExposure` with refusing to cross tolerance while the
+board is clean. That guard cannot fire. It sits immediately after the guard that already subsumes it,
+at three separate copy-pasted sites (`live-preview.ts:2283-2284`, `:2646-2647`, `:2730-2731`):
+
+```ts
+if (candidateStats.pvnaOver > currentStats.pvnaOver) continue
+if (currentStats.pvnaOver === 0 && candidateStats.maxPvna > pvnaTolerance) continue
+```
+
+`pvnaOver` counts courts whose gap exceeds tolerance and `maxPvna` is the largest gap, so whenever the
+second condition holds — no court over tolerance now, some court over tolerance in the candidate — the
+candidate has at least one court over and the first guard has already rejected it. The second line can
+never reject anything the first does not.
+
+Found by trying to write a test that locks it: the test passed with the guard removed. A test that
+cannot fail is worse than no test, so it was deleted rather than committed. The empirical result and the
+reading agree, which is why this is recorded as a finding rather than a suspicion.
+
+For P2-2 this is one less constraint to carry into the merged optimizer, and one less place where three
+copies of the same rule can drift apart. Removing the three dead lines is behaviour-neutral but was left
+out of today's changes, since three deploys had already gone out and a no-op edit to live-preview.ts is
+not worth the churn.
+
+**Still untested, still needing a lock before the merge:** the cross-court PVNA swap in
+`repairSuggestedPayloadBatch`, and `normalizeRepairedPayload`.
