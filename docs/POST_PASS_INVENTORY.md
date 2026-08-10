@@ -506,3 +506,31 @@ passes contribute nothing in rolling play not because their logic declines but b
 the wrong moment, and a merged optimizer that runs on every request would give both of them a voice they
 have never had. That is a behaviour change disguised as a refactor, and it is exactly the kind that
 would not show up as a failing test.
+
+### Part of the "overlap" is an escalation ladder, not duplication (2026-08-10)
+
+The inventory lists six passes that can all improve team or intra-team PVNA and files that under
+overlap. Reading how they call each other, three of them are stages of one escalation rather than
+parallel attempts at the same job (`live-preview.ts:2275-2336`):
+
+```ts
+let current = repairRoundOnePayloadBatchWithCleanPool(...)   // round-one special case first
+... four hill-climb passes ...
+if (currentStats.pvnaOver === 0 && currentStats.intraOverHard === 0) return current
+return repairEarlyPayloadBatchQualityWithBeam(...)           // only when the cheap steps failed
+```
+
+The beam variant runs **only if** the cheaper hill-climb left a court over tolerance or badly stacked.
+That is a deliberate cost ladder — try cheap, escalate when it did not work — and the entry point has a
+gate of its own: `allowEarlyQualityRepair` is `payloads.length >= openCourtIdxsForBatch.length`, with an
+`|| hasSeverePayloadPvnaOutlier(...)` escape so a genuinely lopsided court is always repaired even when
+the batch is partial.
+
+This matters for how P2-2 is framed. "Six passes doing the same thing" overstates it: some of the six
+are one pass with three levels of effort. Collapsing them into a single optimizer would not remove
+duplicated logic so much as remove the ability to stop early, which is what keeps the common case cheap.
+The audit's overlap table should be read as a starting point, not a specification.
+
+What remains genuinely overlapping after this reading is the bench-substitution group — participation,
+repeatPool, blowoutPool — which really are three answers to one question, differing only in objective.
+That group is still the right first merge, and it is now the only one this evidence supports.
