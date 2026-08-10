@@ -1751,6 +1751,7 @@ Deno.serve(async (request) => {
           total: totalTimingMs,
         },
         slow_request: slowRequest,
+        engine_instrumentation_events: instrumentEvents,
         slow_diagnostic: slowDiagnostic
           ? {
               threshold_ms: SLOW_SUGGEST_THRESHOLD_MS,
