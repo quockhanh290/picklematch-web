@@ -101,10 +101,22 @@ from a different direction.
 Two consequences for P2-2:
 - Merging the three bench-substitution passes **fixes P0-4 by construction**, since they would share one
   guard instead of one of them having it. That turns an open HIGH item into a side effect of the merge.
-- `mayReplace` ranks on `consecutive_rest`, the counter that was frozen until the P0-7 migration landed
-  on 2026-08-09. The guard ran, but on dead data: every player read 0, the first comparison always tied,
-  and it fell through to matches_played. Only now does it have real input, so any before/after
-  measurement of bench substitution that predates that migration is measuring a guard running blind.
+- `mayReplace` ranks on `consecutive_rest`, the counter frozen until the P0-7 migration landed on
+  2026-08-09.
+
+  **Correction, same day.** The first version of this note said every player read 0 and the guard was
+  therefore inert. That is wrong, and production says so: of 5657 player-state rows, 1405 carry
+  `consecutive_rest >= 1`, up to 6. The counter was frozen, not empty — it holds whatever value it had
+  reached the last time the round-complete gate fired for that session.
+
+  The damage is subtler than being inert and worse to reason about. Inside sessions currently playing:
+  988 active players, 194 with `consecutive_rest >= 1`, **maximum 2**, while the average player has
+  already played **4 matches**. The counter advanced a couple of times early, when rounds still finished
+  cleanly, then stopped as the courts drifted out of step. So the guard has been ordering players by a
+  number that is real but badly out of date, which is harder to spot than a column of zeros.
+
+  Any before/after comparison of bench substitution predating that migration is measuring a guard fed
+  stale input, not a guard running blind.
 
 Still to check: participation's rest-miss objective, the rolling-plan invariant guard, and the two
 metadata passes (`dropStaleDerivedMetadata`, `rebuildDerivedMetadataForSeatedLineup`).
