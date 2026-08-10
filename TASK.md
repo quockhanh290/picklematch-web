@@ -4,6 +4,23 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
+## NỢ DỌN DẸP (đừng để thành phân mảnh mới — đây chính là thứ audit đang đo)
+- [ ] **2 RPC chết trên prod:** `sync_live_suggestion_metadata`, `sync_live_suggestion_degraded_fields` — từ edge v249 không ai gọi nữa. CỐ Ý giữ để còn đường lui nếu phải rollback edge. **Xoá sau vài ngày chạy ổn**, kèm kiểm lại `grep` trong `supabase/functions/` + client trước khi drop.
+- [ ] **~17 file `scratch/` import `buildTightPoolQualityDeferUntilByCourt`** (đã xoá ở commit `37b47aa`) → làm bẩn output `npm run typecheck`, mỗi lần chạy gate phải lọc tay. Sửa import hoặc xoá file.
+- [ ] **File lạc `Ctmptest-suggest.ts` ở gốc repo** → cũng gây lỗi tsc. Xoá.
+- [ ] **Backfill trong migration `20260809000001`** đang để dạng comment và **đã kết luận KHÔNG cần** (counter tự lành ở trận kế tiếp). Xoá khối comment đó hoặc ghi rõ "không dùng, giữ để tham khảo" — để nguyên sẽ khiến người sau tưởng còn việc phải chạy.
+- [ ] **4 test `projected live match state`** lỗi thời từ khi ALGO 53 ship (ghi ở mục 2026-08-09 P1-1). Viết lại hoặc xoá — đang đỏ kinh niên nên che mất tín hiệu thật.
+- [ ] **3 post-pass không bắn phát nào** (participation / blowoutPool / invariantGuard, đo ở §7.11). ⚠️ CHƯA ĐƯỢC XOÁ dựa trên sim — blowoutPool cần bench, invariantGuard cần plan đang tắt. Phải xác nhận trên `debug_dumps` prod trước.
+- [ ] **`ab-comparison.test.ts` chiếm ~15+ phút** mỗi lần chạy full suite. Tách khỏi vòng kiểm nhanh; chỉ chạy khi thay đổi THỰC SỰ đụng lineup.
+- [ ] **Vùng gate đúng cho thay đổi đường live** = `unit/property/scenario/fairness` + `host-live` + `production-chain-timing` + `production-live-chain`. Phần simulation còn lại gọi thẳng `suggestNextRound`, KHÔNG đi qua `buildSuggestedMatchPayloads` → chạy 60 phút mà không phủ được gì.
+
+### Phiên 2026-08-09 (P1-12 hint sync) — **ĐÃ LÊN PROD edge v249**, commit `fd11e90`
+- [x] **2 bản sync hint khác luật match:** `..._degraded_fields` match `court_idx`+team, `..._metadata` chỉ match `court_idx` → ghi hint lên bất kỳ lineup nào đang ở sân đó. Và không bản nào chạy khi board sạch → hint vòng trước bám lại. Bằng chứng prod: board không còn hint degraded nhưng dòng `suggested` vẫn giữ `match_explanations`.
+- [x] **Gộp về `sync_live_suggestion_hints`**, match `court_idx`+team; caller gửi MỌI dòng `suggested` kể cả dòng sạch (trường hint = null) — dòng không được nhắc tới thì không thể xoá được.
+- [x] **Tự verify bằng transaction rollback trên prod** (`scratch/verify-p112-transaction.sql`), tự dựng dữ liệu chứ không đi tìm session may rủi: dòng báo sạch → mất sạch hint (PASS); payload cùng sân khác đội → không đụng dòng (PASS).
+- [x] **Thứ tự triển khai bắt buộc:** apply migration TRƯỚC, deploy edge SAU. Lời gọi bọc `try/catch` nên deploy ngược sẽ làm hint **ngừng đồng bộ im lặng**.
+- [x] **BÀI HỌC:** tôi từng nói "phải chờ kèo thật mới kiểm được" — SAI. Transaction rollback trên chính prod kiểm được, dữ liệu tự dựng, không phiền ai. Đã dùng đúng cách này cho P0-7 vài giờ trước rồi lại quên. Chỉ 2 thứ thật sự cần kèo thật: **giao diện panel** và **42 người kẹt `cp=4` có thoát không**.
+
 ### Phiên 2026-08-09 (P0-7 rest bookkeeping) — **ĐÃ APPLY PROD**, engine chờ deploy cùng ALGO 60
 - [x] **Xác minh trước khi tin audit:** đọc `pg_get_functiondef` ĐANG CHẠY trên prod — cổng round-complete gom theo `round_no` toàn session vẫn còn. Session `f43a9338` (6 sân, lệch 5 vòng): replay sự kiện cho thấy **24/33 người có counter sai**.
 - [x] **Phát hiện ngoài audit — `consecutive_play` chỉ TĂNG.** Nó cộng ở khối người-vừa-chơi (luôn chạy) nhưng chỉ reset ở khối người-nghỉ (bị cổng chặn). Đo prod: `max_cp = 4` **đúng bằng ngưỡng chống kiệt sức** — engine giữ người đạt 4 không cho chơi, reset hỏng → **kẹt ở 4 vĩnh viễn**, 42 người đang vậy. Đây là người bị loại khỏi cuộc chơi, không phải "counter lệch".
