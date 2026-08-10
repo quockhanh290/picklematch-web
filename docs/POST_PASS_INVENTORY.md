@@ -320,3 +320,33 @@ passes are entered — counted at 5 to 222 calls each — so this is "runs and d
 called". And the cost model is a canary flag in production today, so the flag-ON column describes a
 path most sessions do not take yet. None of this is grounds to delete a pass; it is grounds to stop
 assuming the chain earns its complexity.
+
+### Why joint hurts: locally never-worse, globally harmful (2026-08-10)
+
+The ablation and the ALGO 55 guarantee appeared to contradict each other. ALGO 55 made
+`jointRepartition` return a board whose over-tolerance count never exceeds its input, yet turning joint
+on raises session-wide over-tolerance from 9.82% to 10.91%.
+
+Both are true. Instrumenting every call over the corpus:
+
+```
+JOINT: calls=20, worse=0, better=0, same=20
+```
+
+Twenty calls, and the over-tolerance count is unchanged in every one. The guarantee holds exactly as
+designed. The damage is **path-dependent**: joint rewrites the lineups of the opening board, which
+changes partner and opponent counts and the projected state, so every single-court refill afterwards
+plays out differently, and the accumulated difference is worse.
+
+It fires **once per session** — 20 calls across 20 sessions — because it needs two or more courts and
+every refill after the opening board is a single court. So one decision at setup propagates through the
+whole session.
+
+No per-request guard can catch this. Never-worse-within-a-request is exactly what joint promises, and
+that promise is kept; the entire safety argument is local while the cost is sequential. Any pass that
+reshuffles players across courts has the same exposure, which is worth knowing before P2-2 designs a
+merged optimizer around per-request invariants.
+
+Caveat: 20 sessions is one deterministic sample, not a distribution. What raises confidence is that four
+independent metrics — tolerance, repeat-3, blowout, stacked teams — all move the same direction, which
+is unlikely to be coincidence. Confirming it properly needs several disjoint corpus slices.

@@ -2865,6 +2865,24 @@ export function applyJointRepartition(
   }))
   const { splits, changed } = jointRepartition(courts, state, { tolerance: pvnaTolerance })
   if (!changed) return payloads
+  {
+    const g = globalThis as any
+    g.__JOINT__ = g.__JOINT__ ?? { calls: 0, worse: 0, better: 0, same: 0, examples: [] as string[] }
+    const overOf = (list: { team_a: Team; team_b: Team }[]) => list.filter(m => {
+      const qc = computeQualityCost(m.team_a, m.team_b, state, { tolerance: pvnaTolerance })
+      return qc.gap > pvnaTolerance
+    }).length
+    const before = overOf(payloads.map(pl => ({ team_a: pl.team_a as Team, team_b: pl.team_b as Team })))
+    const byC = new Map(splits.map(x => [x.court_idx, x]))
+    const after = overOf(payloads.map(pl => {
+      const sp = byC.get(pl.court_idx as number)
+      return sp ? { team_a: sp.team_a, team_b: sp.team_b } : { team_a: pl.team_a as Team, team_b: pl.team_b as Team }
+    }))
+    g.__JOINT__.calls += 1
+    if (after > before) { g.__JOINT__.worse += 1; g.__JOINT__.examples.push(`${before}->${after}`) }
+    else if (after < before) g.__JOINT__.better += 1
+    else g.__JOINT__.same += 1
+  }
   onRepairInstrument?.('joint')
   const byCourt = new Map(splits.map(s => [s.court_idx, s]))
   return payloads.map(pl => {
