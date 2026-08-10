@@ -18,6 +18,7 @@ import {
   getMatchNearRematchKeys,
   getRecentRepeatCost,
   getProjectedRepeatSummary,
+  scoreMatch,
   withRecentGroupRematchKeys,
   // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 } from './score.ts'
@@ -100,7 +101,7 @@ const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 59
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 60
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -2870,6 +2871,82 @@ function seatedLineupKey(teamA: readonly string[], teamB: readonly string[]) {
 // before the repair and joint passes get a chance to change the lineup. The client seats whatever they
 // describe (ScreenComponents forcedDecision wins over the payload), so metadata pointing at a lineup we
 // are no longer persisting would silently undo those passes — and can name a player now on another court.
+const SEATED_FOURSOME_SPLITS = [
+  [[0, 1], [2, 3]],
+  [[0, 2], [1, 3]],
+  [[0, 3], [1, 2]],
+] as const
+
+// A split has to beat the seated lineup's over-threshold total by this much to be worth interrupting
+// the host for. Nearly every foursome has three splits that differ a little (1152 of 1160 measured), so
+// without a bar the panel would appear on almost every court and stop meaning anything. At 0.15 it
+// reaches ~12% of courts against ~4% today; drop it to 0 for ~17%.
+const MIN_RESPLIT_IMPROVEMENT = 0.15
+
+// The panel is derived inside the per-court fill loop, and the repair and joint passes then rewrite the
+// lineup under it — 935 of 1160 payloads. dropStaleDerivedMetadata catches the mismatch and throws the
+// panel away, which is why only 21 of 458 reached the host.
+//
+// Two cheaper repairs were measured and rejected. Re-pointing at a choice that already describes the
+// seated lineup covers 33 of 482: the passes usually land on a lineup that was never a candidate.
+// Keeping the pre-pass alternatives and dropping the infeasible ones is worse — joint repartition moves
+// players BETWEEN courts, so 359 of 482 payloads have no surviving alternative at all.
+//
+// What always survives is the seated four. The other ways to split those same players need no search,
+// cannot conflict with another court, and change who partners whom, so the repeat axis stays live. This
+// only ever offers a different pairing of the players already on the court — it cannot fix "wrong people
+// here", which is why it reaches ~17% of courts while 40-50% seat something over a threshold.
+export function rebuildDerivedMetadataForSeatedLineup(
+  payload: SuggestedMatchPayload,
+  state: SessionState,
+  configuredPvnaTolerance: number,
+): SuggestedMatchPayload {
+  const four = [payload.team_a[0], payload.team_a[1], payload.team_b[0], payload.team_b[1]]
+  if (four.some(playerId => !state.players.has(playerId))) return payload
+
+  const alternatives: SuggestionAlternative[] = []
+  for (const [splitA, splitB] of SEATED_FOURSOME_SPLITS) {
+    const teamA: Team = [four[splitA[0]], four[splitA[1]]]
+    const teamB: Team = [four[splitB[0]], four[splitB[1]]]
+    // The seated lineup is here because a relaxation stage allowed it to breach something, so score the
+    // splits under the same allowances. Without them the legacy model returns Infinity for exactly the
+    // breaching split, and the panel gate requires a breach — the two would cancel out.
+    const scored = scoreMatch(teamA, teamB, state, {
+      tolerance: configuredPvnaTolerance,
+      allowPvnaToleranceOverflow: true,
+      allowIntraTeamGapOverflow: true,
+      allowRepeatOverflow: true,
+    })
+    // Avoid partners stay hard: never offer a lineup the engine would refuse outright.
+    if (!Number.isFinite(scored.score)) continue
+    alternatives.push({
+      matches: [{ court_idx: payload.court_idx ?? 0, team_a: teamA, team_b: teamB, score: scored.score, stats: scored.stats }],
+      resting: [...(payload.resting ?? [])],
+      score: scored.score,
+      warnings: [],
+      stats: scored.stats,
+    })
+  }
+
+  const seatedAlternative = alternatives.find(alternative => {
+    const match = alternative.matches[0]
+    return seatedLineupKey(match.team_a, match.team_b) === seatedLineupKey(payload.team_a, payload.team_b)
+  })
+  if (seatedAlternative === undefined) return payload
+
+  const rebuilt = buildLiveTradeoffChoices(alternatives, state, configuredPvnaTolerance, {
+    minOverThresholdImprovement: MIN_RESPLIT_IMPROVEMENT,
+    pinnedRecommendationKey: getAlternativeMatchKey(seatedAlternative),
+  })
+  if (rebuilt === null) return payload
+
+  return {
+    ...payload,
+    tradeoff_choices: rebuilt.choices,
+    recommended_tradeoff_choice: rebuilt.recommended,
+  }
+}
+
 export function dropStaleDerivedMetadata(payload: SuggestedMatchPayload): SuggestedMatchPayload {
   const seated = seatedLineupKey(payload.team_a, payload.team_b)
   const forcedStale = payload.forced_tradeoff !== undefined
@@ -3286,10 +3363,20 @@ export function findStrictCleanLiveAlternative(
   return best
 }
 
+function overThresholdTotal(metrics: SuggestionTradeoffChoice['metrics']) {
+  return metrics.pvna_over_by + metrics.intra_team_over_by + metrics.repeat_over_by
+}
+
 export function buildLiveTradeoffChoices(
   alternatives: SuggestionAlternative[],
   state: SessionState,
   configuredPvnaTolerance: number,
+  // Set by the re-split rebuild below, which feeds this the three ways to split ONE seated foursome
+  // rather than a search's worth of different lineups. The default usefulness filter is tuned for the
+  // latter and rejects same-four splits, so that branch supplies its own bar: keep a choice only if it
+  // cuts the seated lineup's over-threshold total by at least this much, and pin the recommendation to
+  // the lineup actually being persisted instead of re-deriving it.
+  options: { minOverThresholdImprovement?: number; pinnedRecommendationKey?: string } = {},
 ): { choices: SuggestionTradeoffChoice[]; recommended: SuggestionTradeoffChoiceId } | null {
   const candidates = alternatives
     .filter(alternative => alternative.matches.length > 0)
@@ -3351,18 +3438,28 @@ export function buildLiveTradeoffChoices(
   if (!choices.some(choice => hasTradeoffMetric(choice.metrics))) {
     return null
   }
-  const recommended = pickRecommendedTradeoffChoice(choices)
+  const pinned = options.pinnedRecommendationKey === undefined
+    ? undefined
+    : choices.find(choice => getAlternativeMatchKey(choice.alternative) === options.pinnedRecommendationKey)
+  if (options.pinnedRecommendationKey !== undefined && pinned === undefined) return null
+  const recommended = pinned?.id ?? pickRecommendedTradeoffChoice(choices)
   const recommendedChoice = choices.find(choice => choice.id === recommended) ?? choices[0]
-  const usefulChoices = choices.filter(choice =>
-    choice.id === recommended
-      || (
-        improvesTradeoffMetric(choice, recommendedChoice)
-        && (
-          recommendedChoice.metrics.pvna_over_by > 0
-          || isReasonableTradeoffChoice(choice, recommendedChoice)
-        )
-      ),
-  )
+  const minImprovement = options.minOverThresholdImprovement
+  const usefulChoices = minImprovement !== undefined
+    ? choices.filter(choice =>
+        choice.id === recommended
+          || overThresholdTotal(recommendedChoice.metrics) - overThresholdTotal(choice.metrics) >= minImprovement,
+      )
+    : choices.filter(choice =>
+        choice.id === recommended
+          || (
+            improvesTradeoffMetric(choice, recommendedChoice)
+            && (
+              recommendedChoice.metrics.pvna_over_by > 0
+              || isReasonableTradeoffChoice(choice, recommendedChoice)
+            )
+          ),
+      )
   if (usefulChoices.length < 2) return null
   return {
     choices: usefulChoices,
@@ -5618,7 +5715,12 @@ export function buildSuggestedMatchPayloads({
   const jointRepartitionedPayloads = options.disableJointRepartition
     ? invariantSafePayloads
     : applyJointRepartition(invariantSafePayloads, repairState, pvnaTolerance, onRepairInstrument)
-  return jointRepartitionedPayloads.map(payload => dropStaleDerivedMetadata(
-    normalizeRepairedPayload(payload, repairState, pvnaTolerance),
-  ))
+  return jointRepartitionedPayloads.map(payload => {
+    const settled = dropStaleDerivedMetadata(normalizeRepairedPayload(payload, repairState, pvnaTolerance))
+    // Only step in where the passes cost the host their panel. A panel that still describes the seated
+    // lineup came from the full search and offers different PLAYERS, which is strictly more than a
+    // re-split can — leave it alone.
+    if ((settled.tradeoff_choices?.length ?? 0) > 0) return settled
+    return rebuildDerivedMetadataForSeatedLineup(settled, repairState, pvnaTolerance)
+  })
 }

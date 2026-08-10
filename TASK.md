@@ -4,7 +4,37 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
-### Phiên 2026-08-09 (ALGO 59: panel kiệt sức + xoay sân) — COMMIT, **CHƯA deploy** (chờ client)
+### Phiên 2026-08-09 (P0-7 rest bookkeeping) — **ĐÃ APPLY PROD**, engine chờ deploy cùng ALGO 60
+- [x] **Xác minh trước khi tin audit:** đọc `pg_get_functiondef` ĐANG CHẠY trên prod — cổng round-complete gom theo `round_no` toàn session vẫn còn. Session `f43a9338` (6 sân, lệch 5 vòng): replay sự kiện cho thấy **24/33 người có counter sai**.
+- [x] **Phát hiện ngoài audit — `consecutive_play` chỉ TĂNG.** Nó cộng ở khối người-vừa-chơi (luôn chạy) nhưng chỉ reset ở khối người-nghỉ (bị cổng chặn). Đo prod: `max_cp = 4` **đúng bằng ngưỡng chống kiệt sức** — engine giữ người đạt 4 không cho chơi, reset hỏng → **kẹt ở 4 vĩnh viễn**, 42 người đang vậy. Đây là người bị loại khỏi cuộc chơi, không phải "counter lệch".
+- [x] **Thiết kế: SQL KHÔNG được đoán "vòng".** Cột mới `rest_seat_misses` đếm số lần bị bỏ qua chỗ ngồi (sự kiện không mơ hồ); quy đổi ra vòng ở `state.ts` — nơi duy nhất biết số sân. Nhờ vậy **không hằng số nào bên engine phải đổi** (`classify >= 1`, `detector 2/3/4`, audit live-vs-replay, sim đều giữ thang vòng).
+- [x] **Mẫu số = số sân CẤU HÌNH**, đo trên 12 dump: cả 12 kèo đều dùng đủ 6/6 sân trong lịch sử. ⚠️ Suýt chọn sai vì nhìn "sân đang chạy" thì 12/12 đều < 6 — nhưng dump chỉ sinh ra ĐÚNG LÚC có sân vừa trống, mẫu bị điều kiện hoá.
+- [x] **`opted_rest` không còn bị xoá ở khối người-nghỉ** — trước đó mỗi lần sân khác xong là cờ "Xin nghỉ" bị xoá. Cờ chỉ hết khi người đó chơi lại hoặc host tự bỏ.
+- [x] **Transaction thử trên prod rồi ROLLBACK** (`scratch/verify-p07-transaction.sql`): `played_gained_a_match=4`, **`idle_gained_a_miss=9`** (trước fix = 0), `opted_rest_changed=0`, `legacy_column_touched=0`, `seated_elsewhere_wrongly_counted=0`. Kiểm trước rằng API tôn trọng transaction (`leaked:0`) — nếu nó tự commit thì "test" đã thành apply thật.
+- [x] **Mượn danh host bằng `set_config('request.jwt.claims')` trong transaction**, không dùng mật khẩu: gọi RPC qua PostgREST là **tự commit**, sẽ kết thúc trận thật không hoàn tác được.
+- [x] **APPLIED prod** (migration `20260809000001`). Verify: cả 2 RPC đều gọi helper mới. **KHÔNG cần backfill** — người kẹt đang rảnh nên trận kế tiếp kết thúc sẽ tự reset; `rest_seat_misses` khởi tạo 0 nên vốn nhất quán.
+- [ ] **CHƯA QUAN SÁT ĐƯỢC TRÊN PROD:** `ended_3h = 0` — chưa trận nào kết thúc từ lúc apply, nên `total_misses` vẫn 0 và 42 người vẫn kẹt. Trận thật đầu tiên là phép kiểm: `total_misses > 0` và `cp_4_plus` giảm.
+- [ ] **P1-12 (Codex):** migration `20260809000002` gộp hint sync đã viết, nhưng **chưa ai gọi hàm mới** — tôi giao thiếu quyền `supabase/functions/` lượt đầu. Đang nối caller. ĐỪNG apply trước khi caller xong.
+
+### Phiên 2026-08-09 (ALGO 60: panel chia-lại) — code xong, chờ gate, CHƯA deploy
+- [x] **Đo giết 2 phương án rẻ trước khi chọn:** trỏ-lại-con-trỏ cứu 33/482 (`forced_tradeoff` 0/351); giữ alternatives cũ rồi lọc còn tệ hơn — **359/482 không còn cái nào** vì joint xáo người GIỮA các sân.
+- [x] **Chọn hướng 3 — chia lại chính bộ tứ cuối:** luôn khả thi, không cần search lại, và vẫn đổi ai-cặp-ai nên trục lặp còn sống. Panel tới tay host: flag ON **4.1% → 18.4%**, OFF **1.2% → 13.4%**.
+- [x] **Không đẻ builder thứ hai:** `buildLiveTradeoffChoices` nhận thêm 2 tuỳ chọn (`minOverThresholdImprovement`, `pinnedRecommendationKey`); nhãn/giải thích/metrics dùng chung. Chỉ can thiệp khi panel gốc ĐÃ mất — panel còn hợp lệ tới từ search thật nên mạnh hơn.
+- [x] **Bẫy suýt làm hỏng cả tính năng:** cách chia có vi phạm bị model cũ chấm `Infinity`, trong khi cổng panel ĐÒI có vi phạm — hai điều kiện triệt tiêu nhau. Phải chấm điểm với đúng bộ cờ `allow*Overflow` mà thang relaxation dùng khi seat lineup đó.
+- [x] **P2-2 có số liệu** (`scratch/lp-passes.ts`): post-pass viết lại **935/1160 (81%)** payload; **1607 lượt viết lại để tạo ra 934 sân khác gốc → ~42% công việc là các pass ghi đè lẫn nhau**. 3 pass (participation/blowoutPool/invariantGuard) không bắn phát nào — ⚠️ chưa được retire dựa trên sim, phải xác nhận trên `debug_dumps`.
+- [ ] Gate đang chạy. Sau đó: commit → chạy `ab-comparison` MỘT lần → deploy. ⚠️ `ab-comparison` chiếm ~15+ phút mỗi lần chạy full suite — tách nó ra khỏi vòng kiểm nhanh.
+
+### Phiên 2026-08-09 (ALGO 59: panel kiệt sức + xoay sân) — **ĐÃ DEPLOY edge v247**
+Commit `31237ea` (engine) + `cf5f98c` (client). Deploy `session-live-matches-suggest` **246→247 ACTIVE**
+(chỉ function này import live-preview, đã grep; deno check sạch). **ANH CẦN REBUILD CLIENT** — panel
+fatigue là UI mới, không qua edge được.
+- [x] **Bẫy hợp đồng đã đóng (CX-6).** `preview.ts` từng KHAI BÁO LẠI tay type `forced_tradeoff`, nên
+  hai bản trôi khác nhau mà `tsc` không thấy — chính hôm nay engine thêm kind + đổi field thành optional
+  với typecheck xanh và một lỗi runtime chờ sẵn bên kia. Giờ dẫn xuất từ `SuggestedMatchPayload`. Tự kiểm
+  bằng cách đổi `acceptRepeat` thành optional bên engine → client gãy **5 lỗi** ở `forced-decision.ts`,
+  trước đó cùng thay đổi ấy im lặng hoàn toàn.
+- [x] **Gate chốt:** engine 597/608 (11 đỏ = 8 timing chạy riêng EXIT 0 + 3 hành vi stash-prove
+  pre-existing → **0 hồi quy**), host-live 20 suite/70 test, tsc `features/` rỗng, deno check sạch.
 - [x] **Panel kiệt sức.** Host chốt: luật chống-kiệt-sức (cp≥4) VẪN đúng, nhưng chờ-im-lặng phải nói ra. Không dựng đường mới — `buildLiveSelectionGuard` đã có thang `relaxationStages`, chỉ thiếu tầng cuối "không bảo vệ ai" ở nhánh mặc định (nhánh no-substitute vốn đã có). Thêm tầng đó + đúng 1 chỗ đọc `LIVE_RECYCLE_ABSOLUTE_RELAXED` để dựng `forced_tradeoff {kind:'fatigue', recommended:'wait'}`. Chặn chặt: tầng 3 bảo vệ đúng nhóm cp≥4, tầng 4 chỉ bỏ nhóm đó → lineup chỉ tầng 4 tìm ra BẮT BUỘC chứa người bị chuỗi. Delta hành vi duy nhất = sân trống → panel.
 - [x] **Mặc định chờ CÓ ĐIỀU KIỆN** (tôi tự quyết, host cần biết): chỉ `wait` khi có sân đang chạy để chờ. Không sân nào chạy = không gì kết thúc để giải phóng người thay → chờ = kẹt vĩnh viễn, trái directive "luôn trả được suggest". Ca đó `recommended:'accept_repeat'`.
 - [x] **Xoay sân (BUG #22 gán sai thủ phạm).** `engine_search` cao nhất trong 12 dump = **687ms**, ngưỡng `break` = 3450ms → **break CHƯA TỪNG bắn**; `selection_debug_count=6` khớp độ dài nên không bị cắt. Thủ phạm thật: `queuedCourtIdxs.add` chỉ nằm trên đường seat thành công → sân `no_match` vẫn "trống" nên vòng sau chọn LẠI nó (`[0,1,2,3,3,3]`, chỉ khi client không truyền `courtIdxs`). Fix: `attemptedCourtIdxs`, đánh dấu mọi kết cục, ưu tiên sân chưa thử; hết mới cho thử lại (giữ lợi ích ngân sách-tăng-dần 350→900ms).

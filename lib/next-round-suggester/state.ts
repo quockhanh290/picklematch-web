@@ -178,6 +178,8 @@ export function mapRowsToSessionState(input: {
   }
 }): SessionState {
   const players = new Map<string, PlayerSessionState>()
+  // Same expression the config below uses, hoisted because rest bookkeeping is converted per row.
+  const courtCount = Math.max(1, input.extraConfig?.current_courts ?? input.courts ?? 1)
   const preferencesByPlayerId = new Map(
     (input.preferenceRows ?? []).map((row) => [row.player_id, row]),
   )
@@ -247,6 +249,17 @@ export function mapRowsToSessionState(input: {
       })
     }
 
+    // Rest bookkeeping is recorded as raw seat misses, because SQL cannot tell when "a round went by"
+    // once courts run out of step — guessing that from a session-wide round_no is what left counters
+    // frozen for 24 of 33 players in prod session f43a9338. One round of rest means being passed over
+    // once per court, so the division happens here, at the only place that knows the court count. Every
+    // consumer downstream keeps its round-scale meaning: classify's >= 1, the detector's 2/3/4, the
+    // fairness audit's live-vs-replay comparison, the simulator's own counter.
+    // Falls back to the stored column while the migration has not reached a given environment yet.
+    const consecutiveRest = row.rest_seat_misses == null
+      ? row.consecutive_rest
+      : Math.floor(row.rest_seat_misses / courtCount)
+
     players.set(row.player_id, {
       player_id: row.player_id,
       pvna: pvnaResolution.pvna,
@@ -255,7 +268,7 @@ export function mapRowsToSessionState(input: {
       checked_out_at: row.checked_out_at ? new Date(row.checked_out_at) : null,
       matches_played: row.matches_played,
       last_played_round: row.last_played_round,
-      consecutive_rest: row.consecutive_rest,
+      consecutive_rest: consecutiveRest,
       consecutive_play: row.consecutive_play,
       partner_counts: new Map(),
       opponent_counts: new Map(),
@@ -265,7 +278,7 @@ export function mapRowsToSessionState(input: {
       opponent_gender_pref: opponentGenderPref.value,
       rounds_available: 0,
       effective_pvna: row.effective_pvna ?? undefined,
-      last_rest_started_round: row.consecutive_rest > 0 ? row.last_played_round + 1 : undefined,
+      last_rest_started_round: consecutiveRest > 0 ? row.last_played_round + 1 : undefined,
     })
   }
 
@@ -375,7 +388,7 @@ export async function loadSessionState(
     timedQuery<SessionPlayerStateRow[]>(
       supabase
         .from<SessionPlayerStateRow[]>('session_player_state')
-        .select('session_id, player_id, group_id, checked_in_at, checked_out_at, matches_played, last_played_round, consecutive_rest, consecutive_play, opted_rest, effective_pvna, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
+        .select('session_id, player_id, group_id, checked_in_at, checked_out_at, matches_played, last_played_round, consecutive_rest, consecutive_play, rest_seat_misses, opted_rest, effective_pvna, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
         .eq('session_id', sessionId)
         .order('checked_in_at', { ascending: true }),
     ),

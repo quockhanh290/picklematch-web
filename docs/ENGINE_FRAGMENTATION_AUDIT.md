@@ -980,6 +980,93 @@ Harness: `scratch/lp-budget.ts` (bản sao có đo ngân sách per-sân, đổi 
 harness replay **không bao giờ** tái hiện được lỗi chọn-lại-sân. Kiểm `requested_court_idxs` của dump
 trước khi tin kết quả replay.
 
+### 7.9 Panel 84%: ba cách sửa đã ĐO và loại — cần host quyết
+
+Đo bằng `scratch/lp-stale.ts` (bản sao có counter) + `scratch/probe-stale-rate.ts`, 20 seed × 12 vòng,
+cả hai cờ. Trước hết loại một nghi ngờ: **panel dựng ĐÚNG** — chỉ **1/485** payload lệch mà không phải
+do post-pass. Toàn bộ phần mất là do chuỗi repair/joint viết lại lineup sau lưng, và mức viết lại là
+**935/1160 payload (81%)**. Đó mới là con số đáng sợ: vòng lặp per-sân quyết một đằng, post-pass quyết
+một nẻo, tầng sau đè tầng trước ở 4/5 số trận.
+
+| Cách | Ý tưởng | Đo được |
+|---|---|---|
+| 1. Trỏ lại con trỏ | seated đã nằm sẵn trong choices → chỉ đổi `recommended` | **33/482**; `forced_tradeoff` **0/351** |
+| 2. Giữ alternatives cũ, lọc cái bất khả thi | bỏ alternative có người giờ ngồi sân khác | **359/482 không còn alternative nào**; chỉ **25** còn ≥2 |
+| 3. Chia lại chính bộ tứ cuối | luôn khả thi, không cần search lại | cơ học **1152/1160** có cặp Pareto — nhưng builder từ chối |
+
+Cách 2 chết vì `jointRepartition` xáo người **giữa các sân**, nên alternative tính cho sân C phần lớn
+dùng người giờ đã ngồi sân D.
+
+Cách 3 hấp dẫn nhất (chia lại cùng 4 người vẫn đổi ai-cặp-ai nên **trục lặp vẫn sống**), và cổng chặn
+nó là `usefulChoices`: lựa chọn phải **cải thiện rõ** so với cái được chọn và "hợp lý" — bộ lọc này
+thiết kế cho tập alternative **khác người**, không phải chia lại cùng bốn người.
+
+> **ĐÍNH CHÍNH (cùng ngày).** Bản đầu mục này viết "model cũ loại trừ hoàn toàn vì cách chia có vi phạm
+> bị chấm `Infinity`". SAI — đó là artifact do tôi gọi `scoreMatch` **không truyền các cờ
+> `allow*Overflow`** mà chính thang relaxation vẫn dùng khi seat lineup vi phạm. Truyền đúng thì cả 3
+> cách chia đều hữu hạn (đo: `0.21 / 1.43 / 0.41`). Cách 3 áp dụng được cho **cả hai model**.
+
+**Kết luận: không thể khôi phục panel chỉ bằng cách dựng lại từ lineup cuối.** Còn đúng hai đường, và
+cả hai đều là quyết định của host chứ không phải của engine:
+- **(a) Nới cổng cho nhánh chia-lại** — tức định nghĩa lại "thế nào là lựa chọn đáng hiện". Rẻ (3 cách
+  chia, chỉ chấm điểm, không search), nhưng đổi tần suất panel, mà tần suất là khẩu vị host. Số đo cụ
+  thể ở 7.10.
+- **(b) Chạy search lần hai sau post-pass** — panel đầy đủ như cũ, nhưng tốn thêm một lượt tìm kiếm mỗi
+  sân (đo được 77–841ms/sân) trong ngân sách batch 3800ms.
+
+### 7.10 Ảnh hưởng cụ thể của cách (a), đo trên 1160 payload
+
+Giữ nguyên luật "phải có vi phạm thật mới hiện", chỉ nới `usefulChoices` cho nhánh chia-lại:
+
+| | flag ON | flag OFF |
+|---|---|---|
+| payload | 580 | 580 |
+| lineup đang seat CÓ vi phạm | 233 (40%) | 290 (50%) |
+| ...và có cách chia khác đỡ hơn | **98 (16.9%)** | **95 (16.4%)** |
+| mức cải thiện: median / p90 / max | 0.46 / 2.46 / 5.43 | 1.00 / 2.00 / 4.42 |
+| trong đó cải thiện <0.15 (không đáng hiện) | 29 | 13 |
+
+Đọc bảng: panel đi từ ~4% lên **~17%** số sân; lọc thêm ngưỡng cải-thiện ≥0.15 thì còn **~12%**, tức
+gấp ~3 lần hiện tại chứ không phải bùng nổ. Đơn vị "cải thiện" = tổng phần vượt ngưỡng (gap quá tol +
+intra quá 0.75 + số lần gặp quá 2), nên median 1.00 ở flag OFF là **một đơn vị vượt ngưỡng trọn vẹn** —
+cỡ intra 1.75→0.75, khác biệt nhìn thấy được chứ không phải làm đẹp số.
+
+**Giới hạn phải nói rõ:** panel này chỉ đổi **ai cặp với ai**, không bao giờ đổi **ai được chơi**. Nên
+40–50% sân seat lineup có vi phạm, mà chỉ ~17% chữa được bằng chia lại; phần còn lại cần người khác —
+đúng thứ chỉ (b) làm được.
+
+Đã cài thử `rebuildDerivedMetadataForSeatedLineup` theo cách 3 rồi **revert** (1/3 test xanh, 2/3 đỏ vì
+builder từ chối) — không để hàm chưa nối và test đỏ nằm lại trong cây.
+
+### 7.11 P2-2 có số liệu: các post-pass chủ yếu ghi đè LẪN NHAU
+
+Đo bằng `scratch/lp-passes.ts` (bản sao đo từng ranh giới stage) + `scratch/probe-passes.ts`, 20 seed ×
+12 vòng, 520 batch. Đây là số liệu P3 đòi trước khi retire bất kỳ pass nào.
+
+| stage | batch bị đổi | sân viết lại | lệch so với gốc (cộng dồn) |
+|---|---|---|---|
+| 1 `repairSuggestedPayloadBatch` | 427/520 | 903 | 903 |
+| 2 participation | **0** | **0** | 903 |
+| 3 repeatPool | 243/520 | 366 | **912** |
+| 4 blowoutPool | **0** | **0** | 912 |
+| 5 invariantGuard (#70) | **0** | **0** | 912 |
+| 6 `applyJointRepartition` | 155/520 | 338 | **934** |
+
+**Kết luận 1 — chồng chéo, không phải phân công.** repeatPool viết lại 366 sân nhưng chỉ đẩy độ lệch
+so với gốc từ 903 → 912, tức **~357/366 lần nó ghi đè lên sân mà stage 1 vừa ghi**. joint viết lại 338
+sân, chỉ thêm 22. Tổng: **1607 lượt viết lại để tạo ra 934 sân khác gốc — ~42% công việc là các pass
+ghi đè lẫn nhau.** Đây chính là lý do metadata panel không thể sống sót (7.9): không có "một" lineup
+cuối, có một chuỗi lineup và ai cũng tưởng mình là người chốt.
+
+**Kết luận 2 — ba pass im lặng hoàn toàn** trong workload này. ⚠️ KHÔNG kết luận là chết: blowoutPool
+cần bench không rỗng, invariantGuard cần `rollingPlanTarget` (đang tắt), participation cần
+`liveCourtIdxs` rỗng. Trước khi retire phải xác nhận trên `debug_dumps` prod, không phải trên sim —
+đúng bài học 7.3.
+
+**Ý nghĩa cho P2-2:** gộp 7 pass thành 1 optimizer không phải việc dọn dẹp thẩm mỹ. Chuỗi hiện tại tiêu
+~42% công vào việc tự sửa của nhau, và mỗi lần ghi đè là một lần metadata phái sinh chết. Sửa gốc này
+làm 7.9 tự biến mất thay vì phải vá.
+
 ---
 
 ## Phụ lục A — TOÀN BỘ 56 candidate bug, kết quả verify đầy đủ

@@ -106,6 +106,11 @@ export type SessionPlayerStateRow = {
   last_played_round: number
   consecutive_rest: number
   consecutive_play: number
+  // Times this player was idle while some match finished, since they last played. A raw count, not
+  // rounds — SQL cannot say "a round went by" when courts run out of step, which is what broke the old
+  // bookkeeping gate. mapRowsToSessionState divides it by the court count to get consecutive_rest.
+  // Optional because the engine deploys separately from the migration that adds the column.
+  rest_seat_misses?: number | null
   opted_rest: boolean
   players?: {
     name?: string | null
