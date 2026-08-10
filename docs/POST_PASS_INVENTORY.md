@@ -633,3 +633,32 @@ a harness that never presented their conditions. The `blowoutPool` and `repeatEx
 since those run on single-court refills which the harness does produce. Re-running the ablation on the
 corrected harness is the next step, and its numbers are the first ones about these two passes worth
 quoting.
+
+### Ablation, re-run on the corrected harness (2026-08-10)
+
+With uneven court pacing, a periodic full-board drain, and empty boards refilled in one request:
+
+| pass ablated | board | cost | over-tol | repeat-3 | blowout |
+|---|---|---|---|---|---|
+| — (baseline) | `8053bb90` | 1.5194 | 3.27% | 3.08% | 0.50% |
+| participation | **differs** | 1.5762 | 3.27% | **3.37%** | **0.60%** |
+| repeatPool | **differs** | 1.4402 | **3.57%** | **3.47%** | 0.50% |
+| blowoutPool | identical | — | — | — | — |
+| repeatExposure | identical | — | — | — | — |
+
+**participation and repeatPool both contribute.** Turning either off raises repeat-3, and turning off
+participation also raises blowouts. The earlier "no-op" verdict on both was entirely an artefact of the
+harness.
+
+**blowoutPool and repeatExposure remain inert**, and that verdict stands: both run on single-court
+refills, which the harness produced correctly all along, so their silence was never in question.
+
+repeatPool shows the shape of a real trade: disabling it *lowers* cost, to 1.4402 from 1.5194, while
+raising over-tolerance and repeat-3. It is spending the cost objective to buy the things a host notices
+— the opposite of what was suspected of joint earlier in this file.
+
+**Unresolved and possibly larger than P2-2.** The baseline itself moved enormously: repeat-3 from 13.6%
+to 3.1% and over-tolerance from 10.9% to 3.3%. The only difference is that the board is drained and
+refilled as a whole every two rounds rather than refilled one court at a time. If periodic full-board
+planning is really worth that much, it dwarfs anything discussed today. Three things changed at once
+here, so this is a hypothesis and not a result; it needs its own clean test with only the drain varied.
