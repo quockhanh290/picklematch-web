@@ -601,3 +601,35 @@ to do and reported that as its nature.
 and the reversal came from production data rather than a better replay — which is the pattern for
 everything in this file. Of the passes examined, none now has evidence supporting deletion; what the
 evidence supports is that the replay corpus is the wrong instrument for this particular question.
+
+### The harness never asked the question (2026-08-10)
+
+Three separate conclusions in this file — "idle because the corpus is easy", "structurally dead in
+rolling play", "trigger too narrow" — were all drawn from the same observation: participation exits at
+`bail_no_need` every time in replay. All three were wrong, and the explanation is simpler than any of
+them. The harness never gave it a chance to do anything.
+
+Three things were missing, and each had to be measured to find:
+
+| missing | why it mattered |
+|---|---|
+| uneven court pacing | the replay completed courts in strict order, so participation spread never accumulated; production averages 1.84 at the same bench depth and court count |
+| a mid-session empty board | the replay had exactly one empty board, its first, when nobody had played and the spread is zero by definition |
+| full-board refill | an empty board was being refilled court by court, so the request never had `liveCourtIdxs.size === 0` |
+
+With all three, participation goes from 10 calls and 0 useful ones to **50 calls, 15 of which proceed**.
+Any two of the three still leave it silent, which is why each earlier attempt looked like confirmation.
+
+Production sees an empty board on 568 requests, 14% of the total, most of them mid-session with an
+average spread of 2.04. The harness asked once, at zero.
+
+**The lesson, and it applies to everything measured today:** when a component is silent, that is
+evidence about the instrument before it is evidence about the component. Each time this file concluded
+a pass does nothing, the honest next step was to ask what the harness would have to do for that pass to
+act at all, and check whether it does it.
+
+Everything the ablations concluded about `participation` and `repeatPool` is void — both were judged by
+a harness that never presented their conditions. The `blowoutPool` and `repeatExposure` results stand,
+since those run on single-court refills which the harness does produce. Re-running the ablation on the
+corrected harness is the next step, and its numbers are the first ones about these two passes worth
+quoting.

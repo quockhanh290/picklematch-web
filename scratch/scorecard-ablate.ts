@@ -160,7 +160,16 @@ function run(sid: string): Score | null {
 
   let done = 0, batch = new Set<string>(), guard = 0
   while (done < courts * ROUNDS && guard++ < courts * ROUNDS * 4) {
-    for (let c = 0; c < courts; c++) {
+    // UNEVEN=1 gives each court its own pace instead of completing them in strict order. Production
+    // courts finish far apart — a fast one cycles three times while a slow one cycles once — and that
+    // is what builds participation spread. Round-robin replay produces spread <= 1 while production
+    // averages 1.84 at the same bench depth and court count, so the even rotation is the harness
+    // diverging from reality, not the sessions being unusual. Deterministic: court c takes c+1 units,
+    // and the court with the earliest finish time goes next.
+    const order = process.env.UNEVEN === '1'
+      ? [...Array(courts).keys()].sort((x, y) => ((lane.get(x) ?? 0) * (x + 1)) - ((lane.get(y) ?? 0) * (y + 1)))
+      : [...Array(courts).keys()]
+    for (const c of order) {
       if ((lane.get(c) ?? 0) >= ROUNDS) continue
       const l = live.find(r => r.status === 'live' && r.court_idx === c); if (!l) continue
       state = buildProjectedStateAfterLiveMatch(state, { ...l, status: 'completed', ended_at: new Date((seq + 1) * 1000).toISOString() } as never, l.round_no ?? 0)
@@ -194,14 +203,30 @@ function run(sid: string): Score | null {
           }
         }
       }
+      // DRAIN=n empties the whole board every n rounds and refills it in one request, the way
+      // production does when every court finishes together. Without this the harness has exactly one
+      // empty board — its first — so any pass gated on an empty board is only ever asked at the moment
+      // nobody has played. Production sees an empty board on 14% of requests, most of them mid-session
+      // with spread already accumulated.
+      const drainEvery = Number(process.env.DRAIN ?? 0)
+      const draining = drainEvery > 0 && Math.floor(done / courts) % drainEvery === 0 && done % courts !== 0
+      if (draining) continue
       const idle = Array.from({ length: courts }, (_, i) => i)
         .filter(i => (lane.get(i) ?? 0) < ROUNDS && !live.some(r => r.status === 'live' && r.court_idx === i))
-      for (const ic of idle) {
-        acc.requested += 1
-        const n = suggest(state, live, 1, courts, [ic])
-        if (n.length !== 1) continue
-        scoreMatchInto(acc, state, n[0], tol)
-        live.push(asLive(n[0], seq++, lane.get(ic) ?? 0))
+      // An empty board is refilled in ONE request, not court by court. That is what production does and
+      // it is the only way a pass gated on liveCourtIdxs.size === 0 is ever asked mid-session.
+      if (live.length === 0 && idle.length > 1) {
+        acc.requested += idle.length
+        const all = suggest(state, live, idle.length, courts)
+        for (const p2 of all) { scoreMatchInto(acc, state, p2, tol); live.push(asLive(p2, seq++, lane.get(p2.court_idx as number) ?? 0)) }
+      } else {
+        for (const ic of idle) {
+          acc.requested += 1
+          const n = suggest(state, live, 1, courts, [ic])
+          if (n.length !== 1) continue
+          scoreMatchInto(acc, state, n[0], tol)
+          live.push(asLive(n[0], seq++, lane.get(ic) ?? 0))
+        }
       }
     }
   }
@@ -247,6 +272,7 @@ console.log(`HARD avoid-partner ${report.hard.avoid_partner}   <-- must stay 0`)
 console.log(`SOFT avg cost ${report.soft.avg_cost} | over-tol ${report.soft.over_tol_pct}% | intra>${INTRA_TEAM_PVNA_GAP_LIMIT} ${report.soft.intra_over_cap_pct}% | repeat3 ${report.soft.repeat3_pct}% | blowout ${report.soft.blowout_pct}% | panel ${report.soft.panel_pct}%`)
 console.log(`model=${report.model} board_hash=${boardHash}`)
 console.log(`written to ${OUT}`)
+console.log('SPREAD:', JSON.stringify((globalThis as any).__SPREAD__ ?? {}))
 console.log('WHY:', JSON.stringify((globalThis as any).__WHY__ ?? {}))
 console.log('JOINT:', JSON.stringify((globalThis as any).__JOINT__ ?? {}))
 console.log('ENTERED:', JSON.stringify((globalThis as any).__ENTER__ ?? {}))
