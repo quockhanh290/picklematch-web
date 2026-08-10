@@ -662,3 +662,37 @@ to 3.1% and over-tolerance from 10.9% to 3.3%. The only difference is that the b
 refilled as a whole every two rounds rather than refilled one court at a time. If periodic full-board
 planning is really worth that much, it dwarfs anything discussed today. Three things changed at once
 here, so this is a hypothesis and not a result; it needs its own clean test with only the drain varied.
+
+### The largest result of the day is not a pass at all (2026-08-10)
+
+Isolating the three harness changes, one variable at a time, 20 sessions each:
+
+| configuration | repeat-3 | over-tolerance | cost |
+|---|---|---|---|
+| as before | 13.59% | 10.91% | 2.4826 |
+| **drain only** | **3.08%** | **3.27%** | 1.5194 |
+| uneven pacing only | 13.59% | 10.91% | 2.4826 |
+| all three | 3.08% | 3.27% | 1.5194 |
+
+The entire improvement comes from the drain. Uneven court pacing contributes exactly nothing — my model
+of it was a no-op and should not be credited with anything.
+
+**Draining means emptying the board and refilling it in one request every two rounds, instead of
+refilling each court as it frees up.** Repeat-3 falls from 13.6% to 3.1% and over-tolerance from 10.9%
+to 3.3%. That is more than a fourfold reduction in the thing hosts complain about most, and it needs no
+engine change whatsoever — the engine is the same, it is only being *asked* differently.
+
+This confirms with numbers a hypothesis recorded much earlier: that repeats are structural to
+rolling-lane refill, where each request sees only a small idle pool, and that only round-level planning
+helps. What the measurement adds is that it does not require a solver — asking for the whole board
+periodically is enough.
+
+**The cost is real and this harness does not measure it.** Draining means courts sit idle while the
+slowest match finishes. The 4x quality gain is bought with waiting, and how much waiting depends on how
+uneven real match durations are. A host who hates empty courts may refuse this trade outright; a host
+who hates rematches may take it happily. That makes it a product decision, and one worth putting in
+front of them with both numbers, not an optimisation to apply quietly.
+
+Next step if it is pursued: measure the idle-court cost from production match durations, so the trade
+can be stated as "x% fewer rematches for y seconds of average court idle time" rather than as a
+one-sided quality win.
