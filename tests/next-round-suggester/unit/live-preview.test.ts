@@ -1893,6 +1893,42 @@ describe('live preview batch repair', () => {
     expect(Math.max(...gaps)).toBeLessThan(1.5)
   })
 
+  it('uses the initial cross-court swap to reduce a non-severe PVNA outlier without changing who plays', () => {
+    const state = createState({
+      courts: 2,
+      pvnaTolerance: 0.5,
+      players: [
+        createPlayer('a', { pvna: 4.0 }),
+        createPlayer('b', { pvna: 3.0 }),
+        createPlayer('c', { pvna: 3.0 }),
+        createPlayer('d', { pvna: 2.6 }),
+        createPlayer('e', { pvna: 2.8 }),
+        createPlayer('f', { pvna: 3.0 }),
+        createPlayer('g', { pvna: 3.4 }),
+        createPlayer('h', { pvna: 3.4 }),
+      ],
+    })
+    const payloads = [
+      { ...previewPayload(0, ['a', 'b'], ['c', 'd']), round_no: 6 },
+      { ...previewPayload(1, ['e', 'f'], ['g', 'h']), round_no: 6 },
+    ]
+    const teamPvna = (team: [string, string]) =>
+      team.reduce((sum, playerId) => sum + (state.players.get(playerId)?.pvna ?? 0), 0)
+    const maxGap = (batch: typeof payloads) =>
+      Math.max(...batch.map(payload => Math.abs(teamPvna(payload.team_a) - teamPvna(payload.team_b))))
+
+    const repaired = repairSuggestedPayloadBatch(payloads, state, 0.5, undefined, {
+      allowEarlyQualityRepair: false,
+    })
+
+    expect(maxGap(payloads)).toBeCloseTo(1.4)
+    expect(maxGap(repaired)).toBeLessThanOrEqual(0.5)
+    expect(new Set(repaired.flatMap(payload => [...payload.team_a, ...payload.team_b]))).toEqual(
+      new Set(payloads.flatMap(payload => [...payload.team_a, ...payload.team_b])),
+    )
+    expect(repaired).not.toEqual(payloads)
+  })
+
   it('repairs a severe PVNA outlier before preserving intra-team comfort', () => {
     const state = createState({
       courts: 2,
