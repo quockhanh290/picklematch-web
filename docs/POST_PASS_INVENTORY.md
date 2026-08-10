@@ -729,3 +729,32 @@ production distribution above is exactly the input for that, and it is the next 
 **Fourth time today** that harness silence was nearly read as a fact about the engine. The pattern is
 consistent enough to state as a rule: before concluding that something has no effect, confirm the code
 path executed at all.
+
+### RETRACTION: the idle-cost numbers are built on unusable data (2026-08-10)
+
+The wait distribution above — median 0.9 minutes, p90 16.2, 51% of rounds under a minute — is
+**withdrawn**. It was computed from matches whose duration fell between 1 and 90 minutes, and that
+filter discards most of the data:
+
+| completed matches | 4912 |
+|---|---|
+| duration **under 1 minute** | **3407 (69%)** |
+| over 90 minutes | 51 |
+| median duration, unfiltered | **0.4 minutes (24 seconds)** |
+
+No pickleball match lasts 24 seconds. `started_at` and `ended_at` are not recording how long a match
+took; the likeliest reading is that both are stamped when the host enters the score, so they sit close
+together regardless of play. Whatever they mean, it is not duration.
+
+So the 323 rounds sampled are the 31% that survived a filter designed around an assumption the data does
+not support — a biased subset reported as if it described reality. The filter was chosen to remove
+outliers and instead removed the majority.
+
+**Two consequences.** The idle-court cost of draining is currently **unmeasurable**, so the trade behind
+the 4x repeat-3 improvement cannot be stated, and the drain proposal cannot be evaluated as a trade at
+all. And adding match durations to the harness, which was the next planned step, cannot be done from
+this data.
+
+Measuring it needs a different source: either a client-side timestamp for when play actually starts, or
+observing a live session directly. Until then the drain result stands only as "quality improves a lot if
+you are willing to wait", with the waiting unquantified.
