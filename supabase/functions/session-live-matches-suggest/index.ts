@@ -1531,12 +1531,10 @@ Deno.serve(async (request) => {
         }
       }
     }
-    // Persist the board-wide degraded/rescue hints onto the committed suggested rows so the host
-    // "Cách xử lý" panel survives cold load / snapshot hydration / sticky merge (the INSERT-time
-    // persist misses rescue_court_idxs, which the board-wide pass above fills in). Best-effort and
-    // hint-only — a sync failure must never fail the suggest response. Updates only changed rows.
+    // Persist advisory hints onto committed suggested rows after the final board repair pass.
+    // Send every suggested row, including clean rows, so the RPC can clear stale hint keys.
     try {
-      const degradedSyncFields = (finalPreviewBoard as any[])
+      const hintSyncFields = (finalPreviewBoard as any[])
         .filter(m => m.status === 'suggested' && m.court_idx != null)
         .map(m => ({
           court_idx: Number(m.court_idx),
@@ -1545,39 +1543,18 @@ Deno.serve(async (request) => {
           degraded_reason: m.degraded_reason ?? null,
           rescue_court_idxs: Array.isArray(m.rescue_court_idxs) ? m.rescue_court_idxs : null,
           match_explanations: Array.isArray(m.match_explanations) ? m.match_explanations : null,
+          suggestion_metadata: m.forced_tradeoff
+            ? {
+                forced_tradeoff: m.forced_tradeoff,
+                wait_rescue_options: Array.isArray(m.wait_rescue_options) ? m.wait_rescue_options : [],
+              }
+            : {},
         }))
-      // Only pay the sync round-trip when there is a degraded court to persist rescue for. A board
-      // with no degraded lanes needs nothing: freshly re-suggested lanes already got degraded=null
-      // from the persist INSERT, so there is no stale value to clear.
-      if (degradedSyncFields.some(f => f.degraded_reason != null)) {
-        await auth.supabase.rpc('sync_live_suggestion_degraded_fields', {
-          p_session_id: sessionId,
-          p_fields: degradedSyncFields,
-        })
-      }
+      await auth.supabase.rpc('sync_live_suggestion_hints', {
+        p_session_id: sessionId,
+        p_fields: hintSyncFields,
+      })
     } catch (_syncError) {
-      // hint-only advisory sync; never block the response on it
-    }
-    // Persist the forced-court 3-way decision data (forced_tradeoff + wait_rescue_options) into
-    // suggestion_metadata so the host panel survives snapshot hydration. Best-effort, hint-only — never
-    // fail the suggest response. Only fires when a court is actually forced (flag-gated in the engine).
-    try {
-      const metadataSyncFields = (finalPreviewBoard as any[])
-        .filter(m => m.status === 'suggested' && m.court_idx != null && m.forced_tradeoff)
-        .map(m => ({
-          court_idx: Number(m.court_idx),
-          suggestion_metadata: {
-            forced_tradeoff: m.forced_tradeoff,
-            wait_rescue_options: Array.isArray(m.wait_rescue_options) ? m.wait_rescue_options : [],
-          },
-        }))
-      if (metadataSyncFields.length > 0) {
-        await auth.supabase.rpc('sync_live_suggestion_metadata', {
-          p_session_id: sessionId,
-          p_fields: metadataSyncFields,
-        })
-      }
-    } catch (_metaSyncError) {
       // hint-only advisory sync; never block the response on it
     }
     timingMs.persistence = roundedDuration(stageStartedAt)
