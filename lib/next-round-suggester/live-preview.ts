@@ -2974,7 +2974,10 @@ export function dropStaleDerivedMetadata(payload: SuggestedMatchPayload): Sugges
   }
 }
 
-function normalizeRepairedPayload(
+// Exported for tests. This runs last in the chain and is the only pass that re-derives the quality
+// warnings from the lineup actually being persisted, so a merged optimizer that forgets it would leave
+// the host reading warnings about a lineup the repairs already replaced.
+export function normalizeRepairedPayload(
   payload: SuggestedMatchPayload,
   state: SessionState,
   pvnaTolerance: number,
