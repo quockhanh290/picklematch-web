@@ -570,3 +570,34 @@ Method note for anything downstream: the replay corpus and the production reques
 not just in size. 60% of production requests are single-court refills and 14% arrive on an empty board;
 the harness produces one empty board per session and single courts thereafter. Any claim about how often
 something fires has to come from `debug_dumps`, not from the replay.
+
+### The open question, answered from production: participation has real work to do (2026-08-10)
+
+The question left hanging was whether a board arriving with no courts running is simply already fair, or
+whether the participation trigger is too narrow to see unfairness that is there. Neither: the boards are
+unfair and the trigger sees it.
+
+Across production dumps from empty-board requests that carry player state, measuring
+`max(matches_played) - min(matches_played)` over players still checked in — the same quantity the pass
+tests as `projectedSpread`:
+
+| | dumps | share |
+|---|---|---|
+| spread ≤ 1 (pass would bail) | 305 | 12% |
+| **spread ≥ 2 (pass proceeds)** | **2213** | **88%** |
+| average spread | 2.04 | |
+| worst spread | 4 | |
+
+On 88% of the requests where it runs, the condition it exists for is met. It is not redundant, and its
+trigger is not too narrow.
+
+**So the replay result was backwards.** In replay the pass bails every single time, because every player
+starts at zero matches and the spread never accumulates. Production has late arrivals, early departures
+and opt-outs, and by the time the board next empties the spread averages two full matches. The corpus
+cannot produce the state this pass exists for, so it measured the pass at the one moment it has nothing
+to do and reported that as its nature.
+
+**participation should not be retired.** That reverses the direction three earlier entries were heading,
+and the reversal came from production data rather than a better replay — which is the pattern for
+everything in this file. Of the passes examined, none now has evidence supporting deletion; what the
+evidence supports is that the replay corpus is the wrong instrument for this particular question.
