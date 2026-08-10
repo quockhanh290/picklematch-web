@@ -73,3 +73,38 @@ not worth the churn.
 
 **Still untested, still needing a lock before the merge:** the cross-court PVNA swap in
 `repairSuggestedPayloadBatch`, and `normalizeRepairedPayload`.
+
+## Checking the "unique constraints" one by one (2026-08-10)
+
+The list of seven was taken on trust once and one entry turned out to be unreachable, so the rest are
+being read individually. Three done.
+
+**1. Clean-board tolerance guard in `repairPayloadBatchRepeatExposure` — NOT REAL.** Dead code, see the
+correction above.
+
+**2. Near-level peer in `repairPayloadBatchBlowoutFromPool` — REAL, and easy to lose.** Two functions
+answer almost the same question under nearly the same name. `hasNearLevelPeerInActiveRoster` asks
+whether anyone in the active roster is close in rating; the closure inside blowoutPool asks whether the
+bench *after the swap* still holds someone close, counting the player just displaced. Only the second
+answers the question that matters — whether the benched outlier will have anyone to play with next
+round — because the roster-wide version is satisfied by players currently busy on other courts. That is
+the exact situation that produced this pass (session bbf721bd: five weaker players in the roster, all
+busy when the last court was filled). Substituting the roster-wide version during a merge would silently
+undo it.
+
+**3. Owed-player guard in `repairPayloadBatchSevereRepeatFromPool` — REAL, and its absence next door is
+already a known bug.** `mayReplace` allows a bench player in only if they are at least as owed a turn as
+the player going out: rest recovery first, then fewer matches played. `repairPayloadBatchBlowoutFromPool`
+pulls from the bench with no such guard — which is BUG #18 / P0-4 in the audit, still open, reached here
+from a different direction.
+
+Two consequences for P2-2:
+- Merging the three bench-substitution passes **fixes P0-4 by construction**, since they would share one
+  guard instead of one of them having it. That turns an open HIGH item into a side effect of the merge.
+- `mayReplace` ranks on `consecutive_rest`, the counter that was frozen until the P0-7 migration landed
+  on 2026-08-09. The guard ran, but on dead data: every player read 0, the first comparison always tied,
+  and it fell through to matches_played. Only now does it have real input, so any before/after
+  measurement of bench substitution that predates that migration is measuring a guard running blind.
+
+Still to check: participation's rest-miss objective, the rolling-plan invariant guard, and the two
+metadata passes (`dropStaleDerivedMetadata`, `rebuildDerivedMetadataForSeatedLineup`).
