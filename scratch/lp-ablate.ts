@@ -2557,6 +2557,12 @@ export function repairAllIdlePayloadBatchParticipation(
   const missesRestRecovery = eligiblePlayers.some(player =>
     player.consecutive_rest >= 1 && !selectedIds.has(player.player_id)
   )
+  {
+    const g = globalThis as any
+    g.__WHY__ = g.__WHY__ ?? {}
+    const k = (!missesRestRecovery && projectedSpread <= 1) ? 'participation:bail_no_need' : 'participation:proceeds'
+    g.__WHY__[k] = (g.__WHY__[k] ?? 0) + 1
+  }
   if (!missesRestRecovery && projectedSpread <= 1) return payloads
 
   let current = payloads
@@ -2813,7 +2819,8 @@ export function repairPayloadBatchBlowoutFromPool(
         for (let outPos = 0; outPos < 4; outPos += 1) {
           const outgoingId = four[outPos]
           const remainingBench = [...bench.filter(id => id !== incomingId), outgoingId]
-          if (!hasNearLevelPeer(outgoingId, remainingBench)) continue
+          { const g = globalThis as any; g.__WHY__ = g.__WHY__ ?? {}; g.__WHY__['blowout:peer_block'] = (g.__WHY__['blowout:peer_block'] ?? 0) + 1 }
+  if (!hasNearLevelPeer(outgoingId, remainingBench)) continue
           const nextFour = four.map((id, idx) => (idx === outPos ? incomingId : id))
           for (const [teamA, teamB] of splitsOfFour(nextFour)) {
             const candidatePayload = { ...current[payloadIndex], team_a: teamA, team_b: teamB }

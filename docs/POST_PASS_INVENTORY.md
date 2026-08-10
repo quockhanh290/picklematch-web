@@ -380,3 +380,36 @@ request and still move session outcomes either way, so **per-request invariants 
 and cannot condemn one either**. Any merged optimizer needs session-level evaluation across several
 disjoint slices before its value can be claimed at all. One slice proves nothing, including when it
 agrees with you.
+
+### Why the passes decline, and why that weakens the ablation (2026-08-10)
+
+The four passes that changed nothing are entered and then decline. Counting where participation exits:
+
+```
+WHY: {"participation:bail_no_need": 20}
+```
+
+Twenty calls, twenty exits at the same check — no player owed rest recovery was left out, and the
+projected match-count spread was at most 1. It is not blocked by a strict guard; it looks at the board
+and finds it already fair.
+
+The reason the board is always fair is the problem. The corpus filter excludes every session where
+anyone checked out:
+
+```ts
+.filter(sid => !(rBySid[sid] || []).some(r => r.co != null))
+```
+
+and the replay starts every player at zero matches. Between them, that removes exactly the conditions
+`repairAllIdlePayloadBatchParticipation` exists for — players joining late, leaving early, and the
+participation spread that follows.
+
+So "these passes are no-ops" has to be narrowed: on clean sessions with a stable roster they contribute
+nothing, which is not the same as contributing nothing. The corpus was selected for replay fidelity, and
+that selection quietly excluded the messy sessions where several of these repairs were introduced to
+help.
+
+Before any of them can be retired, the corpus needs sessions with checkouts and mid-session joins, or a
+harness that injects them. Until then the ablation supports a narrower claim: **on stable-roster
+sessions, four of the five passes are inert on both scoring models** — worth knowing, and not grounds
+for deletion.
