@@ -21,6 +21,8 @@
   "exclude": [
     "supabase/functions/**/*.ts",
     "scripts/diagnostics/**/*",
-    "tests/**/*"
+    "tests/**/*",
+    "scratch/**/*",
+    "tmp/**/*"
   ]
 }
