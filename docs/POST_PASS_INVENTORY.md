@@ -479,3 +479,30 @@ having the whole board to rearrange.
 The audit credits it with being "the only pass optimising all-idle rest misses and projected match-count
 spread, and the only one grounded by CP-SAT optimality". Both are true of the code, and neither matters
 while it runs only when the board is empty.
+
+### Call conditions decide more than the pass bodies do (2026-08-10)
+
+Reading the four call sites rather than the function bodies, in the order the chain runs:
+
+| pass | gate | consequence in rolling play |
+|---|---|---|
+| participation | `liveCourtIdxs.size === 0` | **structurally dead** — only the opening board, where spread is 0 by construction |
+| repeatPool | `payloads.length >= 2` | opening board, or a refill covering two or more courts |
+| blowoutPool | bench recomputed with no court-count gate | runs on single-court refills too, deliberately |
+| repeatExposure | inside `repairSuggestedPayloadBatch` | runs on every batch |
+
+The distinction between the first two matters and is easy to blur. participation needs a completely
+empty board, which in a rolling session happens once, at the start, when nobody has played and the
+participation spread it looks for cannot exist. repeatPool needs only two or more courts in one request,
+which does happen in production when several courts finish together — four of the twelve production
+dumps are multi-court requests. So participation is dead by construction; repeatPool is merely rare, and
+rare in a way the replay corpus makes look like never, since every refill there is single-court.
+
+blowoutPool is the counter-example that shows this was thought about: its bench is recomputed
+independently precisely so it can act on a single-court refill, and the comment above it says so.
+
+The lesson for P2-2 is that the merge cannot be reasoned about from the pass bodies alone. Two of these
+passes contribute nothing in rolling play not because their logic declines but because they are asked at
+the wrong moment, and a merged optimizer that runs on every request would give both of them a voice they
+have never had. That is a behaviour change disguised as a refactor, and it is exactly the kind that
+would not show up as a failing test.
