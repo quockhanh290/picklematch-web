@@ -17,7 +17,8 @@ export type PickPlayersResult = {
   warnings: string[]
 }
 
-function comparePlayersByPriority(
+// Exported for tests: BUG #14 is entirely about the order this produces.
+export function comparePlayersByPriority(
   a: PlayerSessionState,
   b: PlayerSessionState,
   tiers: Map<string, Tier>,
@@ -46,8 +47,15 @@ function comparePlayersByPriority(
     return a.matches_played - b.matches_played
   }
 
-  if (a.last_played_round !== b.last_played_round) {
-    return a.last_played_round - b.last_played_round
+  // `last_played_round` is the round number of one court, and courts drift apart — court 3 can be on
+  // round 2 while court 1 is on round 8. Comparing them ranks a player who just walked off a slow court
+  // as having waited longer than someone idle since early on, which is backwards precisely when the
+  // board is most uneven. `last_played_seq` is session-wide (from sequence_no, unique per session and
+  // 0.886 correlated with wall time) and is used whenever the database has it.
+  const aLast = a.last_played_seq ?? a.last_played_round
+  const bLast = b.last_played_seq ?? b.last_played_round
+  if (aLast !== bLast) {
+    return aLast - bLast
   }
 
   const pvnaDiff = getEffectivePvna(a) - getEffectivePvna(b)

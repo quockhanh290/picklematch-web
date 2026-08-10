@@ -22,6 +22,8 @@ export type PlayerSessionState = {
   checked_out_at: Date | null
   matches_played: number
   last_played_round: number
+  // Session-wide equivalent of last_played_round; see select.ts for why the per-court value misleads.
+  last_played_seq?: number | null
   consecutive_rest: number
   consecutive_play: number
   partner_counts: Map<string, number>
@@ -111,6 +113,9 @@ export type SessionPlayerStateRow = {
   // bookkeeping gate. mapRowsToSessionState divides it by the court count to get consecutive_rest.
   // Optional because the engine deploys separately from the migration that adds the column.
   rest_seat_misses?: number | null
+  // Session-wide position of the player's last match, from session_live_matches.sequence_no. Optional
+  // because the engine ships separately from the migration that adds it.
+  last_played_seq?: number | null
   opted_rest: boolean
   players?: {
     name?: string | null

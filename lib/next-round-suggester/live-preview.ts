@@ -101,7 +101,7 @@ const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 61
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 62
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -5665,6 +5665,9 @@ export function buildSuggestedMatchPayloads({
         try { options.onInstrumentEvent!({ event: 'repair', detail, court_count: courtCount, available: availableForBatch }) } catch { /* noop */ }
       }
     : undefined
+  const instrumentPostPass = (pass: string, phase: 'entered' | 'changed') => {
+    onRepairInstrument?.(`${pass}:${phase}`)
+  }
   const hasStartedOrCompletedLiveMatches = countableMatches.some(match =>
     match.status === 'live' || match.status === 'completed',
   )
@@ -5672,11 +5675,14 @@ export function buildSuggestedMatchPayloads({
     isTrueFirstRound: state.rounds.length === 0 && !hasStartedOrCompletedLiveMatches,
     allowEarlyQualityRepair: payloads.length >= openCourtIdxsForBatch.length,
   })
-  const participationRepairedPayloads = liveCourtIdxs.size === 0
+  const shouldRunParticipationRepair = liveCourtIdxs.size === 0
     && repairedPayloads.length === effectiveCount
     && effectiveCount >= 2
+  if (shouldRunParticipationRepair) instrumentPostPass('participation', 'entered')
+  const participationRepairedPayloads = shouldRunParticipationRepair
     ? repairAllIdlePayloadBatchParticipation(repairedPayloads, repairState, pvnaTolerance)
     : repairedPayloads
+  if (participationRepairedPayloads !== repairedPayloads) instrumentPostPass('participation', 'changed')
   // Pull-from-bench repair for the multi-court greedy-steal repeat-3 (see
   // repairPayloadBatchSevereRepeatFromPool). Needs ≥2 courts in one request and a live board for the
   // steal to occur; the function no-ops unless a payload is at a 3rd meeting with a fresh player benched.
@@ -5688,9 +5694,11 @@ export function buildSuggestedMatchPayloads({
           .map(player => player.player_id)
       })()
     : []
+  if (benchIdsForRepeatRepair.length > 0) instrumentPostPass('repeatPool', 'entered')
   const repeatPoolRepairedPayloads = benchIdsForRepeatRepair.length > 0
     ? repairPayloadBatchSevereRepeatFromPool(participationRepairedPayloads, repairState, pvnaTolerance, benchIdsForRepeatRepair)
     : participationRepairedPayloads
+  if (repeatPoolRepairedPayloads !== participationRepairedPayloads) instrumentPostPass('repeatPool', 'changed')
   // Pull-from-bench repair for the rolling single-court blowout (see repairPayloadBatchBlowoutFromPool).
   // Applies to any court the engine flagged degraded=blowout — including a single-court refill — so its
   // bench is recomputed independently of the repeat pass's ≥2-court gate.
@@ -5700,33 +5708,23 @@ export function buildSuggestedMatchPayloads({
       .filter(player => player.checked_out_at === null && !player.opted_rest && !selected.has(player.player_id))
       .map(player => player.player_id)
   })()
+  if (benchIdsForBlowoutRepair.length > 0) instrumentPostPass('blowoutPool', 'entered')
   const blowoutPoolRepairedPayloads = benchIdsForBlowoutRepair.length > 0
     ? repairPayloadBatchBlowoutFromPool(repeatPoolRepairedPayloads, repairState, pvnaTolerance, benchIdsForBlowoutRepair)
     : repeatPoolRepairedPayloads
+  if (blowoutPoolRepairedPayloads !== repeatPoolRepairedPayloads) instrumentPostPass('blowoutPool', 'changed')
   const selectedPlayerKey = (items: SuggestedMatchPayload[]) => items
     .flatMap(payload => [...payload.team_a, ...payload.team_b])
     .sort()
     .join('|')
-  const invariantSafePayloads = getActiveRollingInvariantTarget(repairState, options.rollingPlanTarget)
+  const hasActiveRollingInvariantTarget = Boolean(getActiveRollingInvariantTarget(repairState, options.rollingPlanTarget))
+  if (hasActiveRollingInvariantTarget) instrumentPostPass('invariantGuardRevert', 'entered')
+  const shouldRevertForRollingInvariant = hasActiveRollingInvariantTarget
     && selectedPlayerKey(blowoutPoolRepairedPayloads) !== selectedPlayerKey(payloads)
+  if (shouldRevertForRollingInvariant) instrumentPostPass('invariantGuardRevert', 'changed')
+  const invariantSafePayloads = shouldRevertForRollingInvariant
     ? payloads
     : blowoutPoolRepairedPayloads
-  if (
-    blowoutPoolRepairedPayloads !== repeatPoolRepairedPayloads
-    && invariantSafePayloads === blowoutPoolRepairedPayloads
-  ) {
-    onRepairInstrument?.('swap')
-  } else if (
-    repeatPoolRepairedPayloads !== participationRepairedPayloads
-    && invariantSafePayloads === blowoutPoolRepairedPayloads
-  ) {
-    onRepairInstrument?.('repeat')
-  } else if (
-    participationRepairedPayloads !== repairedPayloads
-    && invariantSafePayloads === blowoutPoolRepairedPayloads
-  ) {
-    onRepairInstrument?.('participation')
-  }
   // Derive warnings from the exact lineups returned to persistence. Rescue and
   // repair paths must not leave over-cap quality metadata stale.
   const jointRepartitionedPayloads = options.disableJointRepartition

@@ -268,6 +268,7 @@ export function mapRowsToSessionState(input: {
       checked_out_at: row.checked_out_at ? new Date(row.checked_out_at) : null,
       matches_played: row.matches_played,
       last_played_round: row.last_played_round,
+      last_played_seq: row.last_played_seq ?? undefined,
       consecutive_rest: consecutiveRest,
       consecutive_play: row.consecutive_play,
       partner_counts: new Map(),
@@ -388,7 +389,7 @@ export async function loadSessionState(
     timedQuery<SessionPlayerStateRow[]>(
       supabase
         .from<SessionPlayerStateRow[]>('session_player_state')
-        .select('session_id, player_id, group_id, checked_in_at, checked_out_at, matches_played, last_played_round, consecutive_rest, consecutive_play, rest_seat_misses, opted_rest, effective_pvna, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
+        .select('session_id, player_id, group_id, checked_in_at, checked_out_at, matches_played, last_played_round, consecutive_rest, consecutive_play, rest_seat_misses, last_played_seq, opted_rest, effective_pvna, players(pvna, current_elo, elo, gender, partner_gender_pref, opponent_gender_pref)')
         .eq('session_id', sessionId)
         .order('checked_in_at', { ascending: true }),
     ),
