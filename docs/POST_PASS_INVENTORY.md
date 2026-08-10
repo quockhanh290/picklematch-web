@@ -258,3 +258,65 @@ What would fix it: a distinct label per pass (`blowoutPool`, `invariantGuardReve
 independently rather than in an else-chain, and a request id in the dump so firings can be counted per
 request. That is a small, behaviour-neutral instrumentation change, and it has to land and collect a few
 days of production data before the retire half of P2-2 can be argued at all.
+
+## Ablation: turn each pass off and replay the corpus (2026-08-10)
+
+Firing rates were the wrong question. "Did this pass run" cannot be answered by the instrumentation, and
+it would not settle anything anyway — a pass that runs and changes nothing is as retirable as one that
+never runs. The answerable question is: **turn it off and does the board come out different?**
+
+Getting a trustworthy answer needed the harness fixed first. Two runs of identical code differed by up
+to 1.4 points, the same size as the effects being measured, because the search is bounded by wall-clock
+deadlines and moves with CPU load. Raising the budgets did not help — there are several independent
+deadlines and `suggest.ts` reads `Date.now()` directly. Freezing `Date.now` and `performance.now` in the
+harness makes every `now >= deadline` false, so the search runs to its iteration caps instead. Two runs
+then match to the digit. Determinism also made a large sample unnecessary: without noise, any difference
+is real, so 20 sessions answer the question that 60 noisy ones could not. It also made parallel runs safe
+again, since load no longer changes results.
+
+Boards are compared by hashing every seated lineup, not just the quality averages — a pass can move
+players around while the aggregates stay put, and that is a different verdict from doing nothing.
+
+**Legacy model (flag OFF — what most of production runs), 20 sessions, 1008 matches:**
+
+| pass ablated | board |
+|---|---|
+| participation, repeatPool, blowoutPool, repeatExposure, joint | **identical, hash `5eae564d4f2e`** |
+
+Every one of the five is a complete no-op. Not "similar quality" — the same players, in the same teams,
+on the same courts, in all 1008 matches. `joint` is inert here by construction, since it returns early
+when the cost model is off, but the other four are not.
+
+**Quality-cost model (flag ON), same corpus:**
+
+| pass ablated | board | effect |
+|---|---|---|
+| participation, repeatPool, blowoutPool, repeatExposure | identical, hash `2509833cbdaa` | none |
+| `applyJointRepartition` | hash `c02990026aad` | real change, see below |
+
+**`applyJointRepartition` lowers its own objective while worsening everything else:**
+
+| | joint on | joint off |
+|---|---|---|
+| avg cost | **2.4826** | 2.5590 |
+| over-tolerance | 10.91% | **9.82%** |
+| repeat-3 | 13.59% | **13.19%** |
+| blowout | 2.58% | **1.98%** |
+| intra > 1.0 | 26.59% | **24.80%** |
+
+It succeeds at the job it was given — cost drops when it runs — and every measure a host would
+recognise gets worse: more courts past tolerance, more third meetings, more blowouts, more stacked
+teams. This is the same disease caught in the gender-gap investigation, where the quadratic
+`balanceOver * over²` made crossing tolerance nearly free; ALGO 55 patched that with within-tol-first,
+and in aggregate the symptom is still here.
+
+**What this means for P2-2.** The merge is far smaller than planned: on the legacy path nothing to
+merge changes anything, and on the cost path only `joint` does. But `joint` needs its own investigation
+first — if turning it off improves four metrics out of five, the question is not how to merge it.
+
+**Limits, stated plainly.** 20 corpus sessions, replayed state (players start fresh, nobody opted out,
+nobody checked out), so trigger conditions that depend on session history may never arise here. The
+passes are entered — counted at 5 to 222 calls each — so this is "runs and declines to act", not "never
+called". And the cost model is a canary flag in production today, so the flag-ON column describes a
+path most sessions do not take yet. None of this is grounds to delete a pass; it is grounds to stop
+assuming the chain earns its complexity.
