@@ -13,7 +13,20 @@ Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32b
 - [x] **#7 là NO-OP trên corpus** — baseline chạy trong worktree `../pm-baseline` cho **đúng cùng** `board_hash ee1f348ae561` và cùng từng con số. Lý do: harness dựng `PlayerSessionState` bằng tay, `last_played_seq` luôn undefined nên nhánh tie-break **không hề chạy**. Đo mà đường code không chạy thì không kết luận được gì — kể cả "không hồi quy". (Tôi đã lỡ nói "board đổi thật" dựa trên `dc04189a0fa2` từ lần chạy harness khác — sai, không so được.)
 - [x] **BUG MỚI, do chính bản vá #14 của tôi đẻ ra** (`live-preview.ts`): `buildProjectedStateAfterLiveMatch` bump `last_played_round` nhưng **bỏ quên `last_played_seq`**, nhánh nghỉ chưa bao giờ đặt `last_rest_started_*`. Từ khi `select.ts` **ưu tiên** seq, người vừa được chiếu là đã chơi vẫn mang seq cũ từ DB → trông như lâu chưa chơi → **được ưu tiên chơi tiếp**, ngay trong batch lấp nhiều sân. Đúng cái đảo-ưu-tiên mà #14 đặt ra để sửa. Test đỏ: `Expected "b-waiting", Received "a-just-played"`.
 - [x] **Lỗi thiết kế thứ hai của tôi, cùng gốc:** `a.last_played_seq ?? a.last_played_round` đọc từng vế **độc lập** → một bên có seq, bên kia không thì đem số-thứ-tự-phiên so với số-vòng. Người chưa chơi trận nào trong phiên là **không có seq**, nên ca này là bình thường chứ không hiếm. Luật đúng: **cả hai vế có seq thì dùng seq, không thì cả hai dùng round** (`pickComparableScale`).
-- [ ] Đang đo lại sau khi sửa hai chỗ trên. Lần đo giữa chừng (chỉ có projection, chưa có luật cùng-thang) là `5806e10dd8f4`: cost 2.8002→2.938, over-tol 13.49→14.67, intra 20.33→22.17, repeat3 11.71→13.55, blowout 3.22→2.70.
+- [x] **BUG #6 ĐÓNG** (`2106786`, migration `20260811000002` **ĐÃ APPLY PROD**): guard same-round ở **cả hai** đường start so `round_no` mà không hỏi sân nào đánh số. Đường payload **có** tính `v_round_no` per-sân rồi vứt đi bằng cách so với hàng của mọi sân (lượt trước Codex báo đường này "đã đúng sẵn" — sai). Khác phía persist, guard này **KHÔNG xoá** (hàng thành `live`, ca double-play là thật), chỉ thu hẹp về đúng sân bằng `is not distinct from`. Transaction rollback trên prod: trước REFUSED, sau STARTED, hai control vẫn chặn, `leaked: 0`.
+  - **Lấy định nghĩa đọc từ prod về rồi đổi đúng 1 dòng mỗi hàm.** Codex nộp bản **viết lại nguyên hàm bằng tay** kèm dòng `perform p_expected_live_state_version;` tự chú "cố ý bỏ CAS" — không dùng, viết tay kiểu đó đánh rơi hành vi mà không ai thấy.
+- [x] **ĐẢO ưu tiên seq — HOST CHỐT** (`211bc37`, ALGO 67, **ĐÃ DEPLOY edge v257**). Đo trên corpus, hai cỡ mẫu:
+
+  | | chu-kỳ-sân | vị-trí-phiên |
+  |---|---|---|
+  | intra>1 | 19.66% | 22.12% (30 phiên: 20.33 vs 22.17) |
+  | repeat3 | 11.53% | 13.28% (30 phiên: 11.71 vs 13.55) |
+  | play-spread | 1.433 | 1.433 — **bằng nhau** |
+
+  Hai mẫu đồng chiều; chính phép đo đó lặp ở hai cỡ chỉ dao động ≤0.67pp. **Vị trí phiên tốn chất lượng ghép mà không mua được công bằng nào đo được** → quay về chu kỳ sân. Giữ cột `last_played_seq` + projection duy trì nó; **xoá** `last_rest_started_seq` (chỉ sinh ra cho comparator vừa đảo).
+  - ⚠️ Corpus **không nhìn thấy** ca gốc của #14: mọi phiên bắt đầu từ trắng, nên nó đo lệch nhịp tích luỹ trong replay, KHÔNG phải phiên nạp lại giữa chừng từ DB với hai bộ đếm đã lệch xa. Đo được ca đó mà ngược lại thì xem lại `tests/.../unit/last-played-ordering.test.ts` — quyết định ghi ở đó.
+- [x] **Scorecard trước giờ MÙ một nửa**: chỉ đo chất lượng ghép, không đo công bằng. Đã thêm `play-spread` (chênh số ván max-min) + `worst-rest`. Không có hai chỉ số này thì mọi thay đổi ràng buộc AI được ngồi đều **trông như hồi quy thuần tuý** — chính chúng biến lần đo này từ phỏng đoán thành kết luận.
+- [x] **`test:gate` / `test:slow`** (`3ec66c5`): 93 file phủ đường live (~7 phút, không có `ab-comparison`) tách khỏi 11 file simulation. Task này giao Codex nhưng job **bị kill** không ra output, tự làm.
 
 ### ⚠️ VỊ TỪ `last_played_seq` KHÔNG PHẢI THUỐC CHỮA MỌI CHỖ round_no
 Codex sửa `computeRestFairness` theo đúng khuôn `seq` đã dùng ở `select.ts`. Test của nó **đỏ thật** khi gỡ fix, suite xanh. Nhưng tôi tự dựng thêm ca thì nó **hồi quy**:
