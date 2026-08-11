@@ -129,7 +129,7 @@ export function isPreviewResponseCurrent({
 }) {
   if (requestVersion === null || responseVersion === null || currentVersion === null) return false
   if (allowResponseAdvance) {
-    return requestVersion === currentVersion && responseVersion >= requestVersion
+    return responseVersion >= requestVersion && currentVersion <= responseVersion
   }
   return requestVersion === responseVersion && responseVersion === currentVersion
 }
