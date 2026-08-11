@@ -1,4 +1,4 @@
-import { getTeamPvnaTotal } from '@/lib/next-round-suggester/state'
+import { getMatchPvnaGap, getTeamPvnaTotal } from '@/lib/next-round-suggester/state'
 import { LinearGradient } from 'expo-linear-gradient'
 import {
   AlertTriangle,
@@ -43,12 +43,10 @@ import { reconstructLiveRounds } from '@/lib/next-round-suggester/live-rounds'
 import {
   MAX_PROJECTED_OPPONENT_PAIR_COUNT,
   MAX_PROJECTED_PARTNER_PAIR_COUNT,
-  MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER,
-  MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER,
-  PREFERRED_INTRA_TEAM_PVNA_GAP_LIMIT,
   getProjectedRepeatSummary,
   scoreMatch
 } from '@/lib/next-round-suggester/score'
+import { computeMatchVerdict } from '@/lib/next-round-suggester/verdict'
 import type {
   Match,
   PlayerSessionState,
@@ -1775,12 +1773,16 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     ? availablePoolPreview as SuggestedLiveMatchRow
     : activeMatch
   const liveAvailabilityContext = visibleMatch.live_availability_context
+  const matchVerdict = useMemo(
+    () => computeMatchVerdict(visibleMatch.team_a, visibleMatch.team_b, state, pvnaTolerance),
+    [visibleMatch.team_a, visibleMatch.team_b, state, pvnaTolerance],
+  )
   const pvnaDiff = useMemo(
-    () => Math.abs(getTeamPvnaTotal(visibleMatch.team_a, state) - getTeamPvnaTotal(visibleMatch.team_b, state)),
+    () => getMatchPvnaGap(visibleMatch.team_a, visibleMatch.team_b, state),
     [visibleMatch.team_a, visibleMatch.team_b, state],
   )
   const pvnaOverBy = Math.max(0, pvnaDiff - pvnaTolerance)
-  const pvnaCapExceeded = pvnaOverBy > 0
+  const pvnaCapExceeded = matchVerdict.pvnaVerdict === 'over_tolerance'
   const hasPvnaOpenWarning = visibleMatch.warnings?.includes('PVNA_TOLERANCE_OPEN') ?? false
   const requiresRepeatApproval = visibleMatch.approval_required || pvnaCapExceeded || visibleMatch.warnings?.includes('REPEAT_CAP_RELAXED') || visibleMatch.warnings?.includes('PVNA_TOLERANCE_RELAXED') || hasPvnaOpenWarning || false
   const repeatTradeoff = visibleMatch.tradeoffs?.find(tradeoff => tradeoff.type === 'repeat_cap_relaxed')
@@ -1789,11 +1791,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   const effectivePvnaTolerance = visibleMatch.effective_pvna_tolerance ?? state.config.pvna_tolerance
   const configuredPvnaTolerance = visibleMatch.configured_pvna_tolerance ?? pvnaTolerance
   const autoPvnaRelaxed = effectivePvnaTolerance > configuredPvnaTolerance && Boolean(pvnaTradeoff)
-  const intraTeamRelaxed = visibleMatch.warnings?.includes('INTRA_TEAM_GAP_RELAXED') ?? false
-  const maxIntraTeamGap = useMemo(() => Math.max(
-    Math.abs((state.players.get(visibleMatch.team_a[0])?.pvna ?? 0) - (state.players.get(visibleMatch.team_a[1])?.pvna ?? 0)),
-    Math.abs((state.players.get(visibleMatch.team_b[0])?.pvna ?? 0) - (state.players.get(visibleMatch.team_b[1])?.pvna ?? 0)),
-  ), [visibleMatch.team_a, visibleMatch.team_b, state])
+  const intraTeamRelaxed = matchVerdict.intraVerdict !== 'within_preferred'
   const fairnessReasonText = visibleMatch.fairness_reasons?.length ? visibleMatch.fairness_reasons.join(', ') : null
   const fairnessReasonDetails = visibleMatch.fairness_reason_details ?? []
   const hasPvnaTradeoff = pvnaCapExceeded || Boolean(pvnaTradeoff)
@@ -2055,7 +2053,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       capacityInfoLines.push(`Tốt nhất từ ${availableCount}/${totalActivePlayers} người đang rảnh`)
     }
     if (intraTeamRelaxed) {
-      capacityInfoLines.push(`Hai người cùng đội chênh trình độ (${formatNumber(maxIntraTeamGap, 2)})`)
+      capacityInfoLines.push('Hai người cùng đội chênh trình độ')
     }
     if (visiblePvnaOverBy > 0) {
       capacityInfoLines.push(`Hai đội chênh nhau hơn bình thường`)
@@ -2565,21 +2563,21 @@ export function SuggestedMatchTile({
   lockedPlayerCourtMap?: Map<string, number>
 }) {
   const theme = useAppTheme()
+  const effectivePvnaTolerance = pvnaTolerance ?? state.config.pvna_tolerance
+  const matchVerdict = useMemo(
+    () => computeMatchVerdict(match.team_a, match.team_b, state, effectivePvnaTolerance),
+    [match.team_a, match.team_b, state, effectivePvnaTolerance],
+  )
   const diff = useMemo(
-    () => Math.abs(getTeamPvnaTotal(match.team_a, state) - getTeamPvnaTotal(match.team_b, state)),
+    () => getMatchPvnaGap(match.team_a, match.team_b, state),
     [match.team_a, match.team_b, state],
   )
-  const effectivePvnaTolerance = pvnaTolerance ?? state.config.pvna_tolerance
-  const pvnaCapExceeded = diff > effectivePvnaTolerance
+  const pvnaCapExceeded = matchVerdict.pvnaVerdict === 'over_tolerance'
   const repeatCap = useMemo(
     () => getProjectedRepeatCapSummary(match, state),
     [match, state],
   )
-  const repeatCapExceeded =
-    repeatCap.max_partner_pair_count > MAX_PROJECTED_PARTNER_PAIR_COUNT ||
-    repeatCap.max_opponent_pair_count > MAX_PROJECTED_OPPONENT_PAIR_COUNT ||
-    repeatCap.max_repeated_partners_per_player > MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER ||
-    repeatCap.max_repeated_opponents_per_player > MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER
+  const repeatCapExceeded = matchVerdict.repeatVerdict === 'over_cap'
   const repeatDetails = useMemo(
     () => getRepeatDetailLines(match, state, playersById),
     [match, playersById, state],
@@ -2858,12 +2856,16 @@ export function MatchTile({
   showSwapBadges?: boolean
 }) {
   const theme = useAppTheme()
+  const effectivePvnaTolerance = pvnaTolerance ?? state.config.pvna_tolerance
+  const matchVerdict = useMemo(
+    () => computeMatchVerdict(match.team_a, match.team_b, state, effectivePvnaTolerance),
+    [match.team_a, match.team_b, state, effectivePvnaTolerance],
+  )
   const diff = useMemo(
-    () => Math.abs(getTeamPvnaTotal(match.team_a, state) - getTeamPvnaTotal(match.team_b, state)),
+    () => getMatchPvnaGap(match.team_a, match.team_b, state),
     [match.team_a, match.team_b, state],
   )
-  const effectivePvnaTolerance = pvnaTolerance ?? state.config.pvna_tolerance
-  const pvnaCapExceeded = diff > effectivePvnaTolerance
+  const pvnaCapExceeded = matchVerdict.pvnaVerdict === 'over_tolerance'
   const scored = useMemo(
     () => match.stats && match.score != null ? { score: match.score, stats: match.stats } : scoreMatch(match.team_a, match.team_b, state),
     [match, state],
@@ -2872,11 +2874,7 @@ export function MatchTile({
     () => getProjectedRepeatCapSummary(match, state),
     [match, state],
   )
-  const repeatCapExceeded =
-    repeatCap.max_partner_pair_count > MAX_PROJECTED_PARTNER_PAIR_COUNT ||
-    repeatCap.max_opponent_pair_count > MAX_PROJECTED_OPPONENT_PAIR_COUNT ||
-    repeatCap.max_repeated_partners_per_player > MAX_PROJECTED_REPEATED_PARTNERS_PER_PLAYER ||
-    repeatCap.max_repeated_opponents_per_player > MAX_PROJECTED_REPEATED_OPPONENTS_PER_PLAYER
+  const repeatCapExceeded = matchVerdict.repeatVerdict === 'over_cap'
   const repeatDetails = useMemo(
     () => getRepeatDetailLines(match, state, playersById),
     [match, playersById, state],
@@ -3113,8 +3111,8 @@ export function RepeatCompactSummary({
   return (
     <View style={{ marginTop: 10 }}>
       <Pressable onPress={onToggle} style={{ minHeight: 34, borderRadius: RADIUS.sm, backgroundColor: theme.warningBg, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        {showPartnerChip ? <RepeatSummaryChip icon="🤝" label="Lặp partner" count={partnerCount} strong={partnerCount > MAX_PROJECTED_PARTNER_PAIR_COUNT} /> : null}
-        {showOpponentChip ? <RepeatSummaryChip icon="⚔️" label="Lặp đối thủ" count={opponentCount} strong={opponentCount > MAX_PROJECTED_OPPONENT_PAIR_COUNT} /> : null}
+        {showPartnerChip ? <RepeatSummaryChip icon="🤝" label="Lặp partner" count={partnerCount} strong={exceeded} /> : null}
+        {showOpponentChip ? <RepeatSummaryChip icon="⚔️" label="Lặp đối thủ" count={opponentCount} strong={exceeded} /> : null}
         <View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
           <ChevronDown size={15} color={textColor} />
         </View>
