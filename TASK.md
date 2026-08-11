@@ -4,6 +4,33 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
+## Phiên 2026-08-11 (đóng nốt cụm round_no) — **ĐÃ DEPLOY edge v256, ALGO 66** + migration prod
+- [x] **BUG #7 chỗ engine cuối** (`c92dd95`): `last_rest_started_round` dựng từ `last_played_round + 1` (đếm per-sân) nhưng `comparePlayersByPriority` đem **so giữa hai người** → người ngồi không từ đầu ở sân chậm thua người vừa ngồi xuống ở sân nhanh, sai đúng lúc board lệch nhất. Thêm `last_rest_started_seq` theo thang toàn phiên, có fallback. Test đỏ trước.
+- [x] **BUG #5** (`8a3e42d`, migration `20260811000001` **ĐÃ APPLY PROD**): guard "đã chơi vòng này" khoá theo `v_round_no` của batch trong khi INSERT khoá **per-sân** → sai cả hai chiều. Sân A xong vòng 5, sân B xong vòng 1 → `v_round_no`=6, insert A=6/B=2: người vừa xong vòng 6 ở A **bị chặn oan** khi ngồi B; chính người đó đã có vòng 2 ở B thì **lọt**. Khớp khoá lại thì nhánh này bất khả đạt (insert round = max completed sân đó + 1) nên **xoá** thay vì viết code chết. Không ai chơi 2 lần: hàng này là `suggested` chứ không phải `live`, và path start giữ guard per-sân riêng.
+  - Xác minh prod bằng transaction rollback (`scratch/verify-bug5-transaction.sql`): trước REJECTED, sau PERSISTED `round_no=2`, control người-đang-live và trùng-người-trong-batch vẫn chặn, `leaked: 0`.
+  - **Giữ NGUYÊN VĂN câu lỗi** dù nhánh đã xoá: client bám chuỗi đó ở `useLiveBoard.ts:2905`, và **bản app cũ ngoài thực địa cũng bám** — đổi chữ là bản cũ mất đường invalidate.
+- [x] **`fairness/metrics.ts` — QUYẾT ĐỊNH KHÔNG SỬA**, pin bằng 2 test (`4114323`). Xem mục ⚠️ ngay dưới.
+- [ ] Baseline trước/sau cho #7 đang chạy trong worktree `../pm-baseline` (chưa có số).
+
+### ⚠️ VỊ TỪ `last_played_seq` KHÔNG PHẢI THUỐC CHỮA MỌI CHỖ round_no
+Codex sửa `computeRestFairness` theo đúng khuôn `seq` đã dùng ở `select.ts`. Test của nó **đỏ thật** khi gỡ fix, suite xanh. Nhưng tôi tự dựng thêm ca thì nó **hồi quy**:
+
+| ca | code cũ (`round_no`) | bản `seq` của Codex |
+|---|---|---|
+| sân lệch nhịp (test Codex) | ✗ | ✓ |
+| cùng nhóm vòng trước đánh lại, 1 người vẫn nghỉ | ✓ | ✗ |
+
+Gốc: `latestTrackedSeq` tra **trạng thái hiện tại** của người trong vòng đã track → họ đánh tiếp là mốc tự nhảy lên bằng `latestPlayerSeq`, `latestPlayerSeq > latestTrackedSeq` thành false, **phép nới tắt hoàn toàn** ở ca thường gặp nhất. Đã hoàn nguyên, xoá test của Codex, giữ 2 test của tôi làm rào.
+→ **Fix đúng cần DỮ LIỆU chứ không phải phép so khác**: `RoundRecord` phải mang `sequence_no` của các trận trong vòng, thì "đã được `state.rounds` phủ" mới là sự thật thay vì suy đoán. Đó là thay đổi snapshot, chưa làm.
+→ Bài học chung: **khuôn mẫu đúng ở chỗ này không tự đúng ở chỗ khác.** Mỗi lượt Codex xong phải tự dựng ca ngược lại, không chỉ chạy suite.
+
+### ⚠️ Vùng gate: đừng chạy `tests/next-round-suggester` nguyên cụm
+Chạy full = 60 phút (chủ yếu `ab-comparison`), và phần simulation **không đi qua** `buildSuggestedMatchPayloads` nên không phủ được đường live. Vùng đúng cho thay đổi đường live (đã dùng phiên này, **717/717 xanh**, ~7 phút):
+`npx jest tests/next-round-suggester/{unit,property,scenario,fairness} tests/host --runInBand`
+
+### ⚠️ `String.replace` với chuỗi thay thế chứa `$`
+Ghép migration vào harness SQL bằng `harness.replace(marker, migration)` làm hỏng file **im lặng**: `$function$` trong chuỗi thay thế bị đọc là pattern thay thế, phần còn lại của file bị nhân đôi, Postgres báo `mismatched parentheses` cách chỗ hỏng 300 dòng. Dùng `split`/`join`. Và **migration kết thúc bằng `$function$` không có `;`** → câu lệnh kế tiếp bị nuốt vào thân hàm (`syntax error at or near "do"`). Codex đang dựng guard CI cho đúng hai thứ này.
+
 ## Phiên 2026-08-10 (đóng P0 + đào cụm round_no) — prod edge v252, ALGO 63 CHƯA deploy
 **P0 đóng hoàn toàn 8/8.** Bug CONFIRMED đã đóng: 29/43.
 
