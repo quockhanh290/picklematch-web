@@ -12,7 +12,12 @@
  * Usage: npx tsx scratch/board-scorecard.ts [numSessions] [outFile]
  *   Run on the current tree, stash, run again, diff the two JSON files.
  */
+const FROZEN = 1_000_000
+Date.now = () => FROZEN
+if (typeof performance !== 'undefined') performance.now = () => FROZEN
+
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import { correctForFairness } from '../lib/next-round-suggester/fairness/corrector'
 import { detectFairnessIssues } from '../lib/next-round-suggester/fairness/detector'
 import {
@@ -90,12 +95,13 @@ type Score = {
   hardAvoidPartner: number; intraOverCap: number
   overTol: number; repeat3: number; blowout: number
   panels: number
+  lineups: string[]
 }
 
 const emptyScore = (): Score => ({
   requested: 0, seated: 0, cost: 0,
   hardAvoidPartner: 0, intraOverCap: 0,
-  overTol: 0, repeat3: 0, blowout: 0, panels: 0,
+  overTol: 0, repeat3: 0, blowout: 0, panels: 0, lineups: [],
 })
 
 function scoreMatchInto(acc: Score, s: SessionState, p: SuggestedMatchPayload, tol: number) {
@@ -105,6 +111,7 @@ function scoreMatchInto(acc: Score, s: SessionState, p: SuggestedMatchPayload, t
   const pv = (id: string) => { const q = s.players.get(id); return q ? getEffectivePvna(q) : 0 }
   const intra = Math.max(Math.abs(pv(A[0]) - pv(A[1])), Math.abs(pv(B[0]) - pv(B[1])))
 
+  acc.lineups.push(`${p.court_idx}:${[...A].sort().join('+')}|${[...B].sort().join('+')}`)
   acc.seated += 1
   acc.cost += qc.cost
   // HARD: avoid-partner is the only constraint the engine will not trade. It is Infinity in scoreMatch
@@ -166,11 +173,16 @@ let sessions = 0
 for (const sid of sids) {
   const s = run(sid); if (!s) continue
   sessions += 1
-  for (const k of Object.keys(totals) as (keyof Score)[]) totals[k] += s[k]
+  for (const k of Object.keys(totals) as (keyof Score)[]) {
+    if (k === 'lineups') totals.lineups.push(...s.lineups)
+    else (totals[k] as number) += s[k] as number
+  }
 }
 
 const pct = (n: number) => totals.seated ? (100 * n / totals.seated) : 0
+const boardHash = crypto.createHash('sha1').update(totals.lineups.join(',')).digest('hex').slice(0, 12)
 const report = {
+  board_hash: boardHash,
   sessions, requested: totals.requested, seated: totals.seated,
   fill_rate_pct: totals.requested ? +(100 * totals.seated / totals.requested).toFixed(2) : 0,
   hard: {
@@ -192,4 +204,5 @@ console.log(`--- board scorecard: ${sessions} sessions, ${totals.seated} matches
 console.log(`fill rate      ${report.fill_rate_pct}%  (${totals.seated}/${totals.requested})`)
 console.log(`HARD avoid-partner ${report.hard.avoid_partner}   <-- must stay 0`)
 console.log(`SOFT avg cost ${report.soft.avg_cost} | over-tol ${report.soft.over_tol_pct}% | intra>${INTRA_TEAM_PVNA_GAP_LIMIT} ${report.soft.intra_over_cap_pct}% | repeat3 ${report.soft.repeat3_pct}% | blowout ${report.soft.blowout_pct}% | panel ${report.soft.panel_pct}%`)
+console.log(`board_hash ${boardHash}`)
 console.log(`written to ${OUT}`)
