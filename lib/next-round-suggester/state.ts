@@ -318,6 +318,7 @@ export function mapRowsToSessionState(input: {
     id: row.id,
     session_id: row.session_id,
     round_no: row.round_no,
+    sequence_no: row.sequence_no ?? undefined,
     status: row.status,
     matches: row.matches,
     resting: row.resting,

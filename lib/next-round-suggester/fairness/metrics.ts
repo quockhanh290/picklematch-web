@@ -473,20 +473,38 @@ export function computeRestFairness(state: SessionState): RestFairnessMetrics {
     }
   }
 
-  // Extend the rest run by 1 when the current round is NOT yet in state.rounds (not started or
-  // no match has completed yet) but players are already active in it (last_played_round updated).
-  // Guard: skip when the active round is already tracked in state.rounds — in that case the main
-  // loop above already processed it (or will once it completes).
-  const activeRoundAlreadyTracked = state.rounds.some(r => r.round_no === state.current_round)
-  const hasPlayersInCurrentRound = !activeRoundAlreadyTracked && [...state.players.values()].some(
-    p => p.last_played_round >= state.current_round,
-  )
+  // Extend the rest run by 1 for players sitting out activity that state.rounds does not cover yet.
+  //
+  // The anchor is the newest sequence among the rounds themselves — a fact about those rounds. Two
+  // earlier attempts anchored on player state instead and both drifted: the session's newest sequence
+  // makes everyone but the last court to finish look idle, and the newest sequence among tracked-round
+  // PLAYERS rises to the session maximum the moment any of them plays again, silently switching the
+  // extension off. A round's own sequence cannot move under either.
+  //
+  // Falls back to the round-number comparison while a database predates the column, which is the
+  // per-court comparison this replaces — wrong when courts drift, but no worse than before.
+  const trackedSeqs = state.rounds
+    .map(round => round.sequence_no)
+    .filter((seq): seq is number => seq != null)
+  const haveRoundAnchors = trackedSeqs.length === state.rounds.length && state.rounds.length > 0
+  const newestTrackedSeq = haveRoundAnchors ? Math.max(...trackedSeqs) : null
+
+  const playedSinceTrackedRounds = (player: PlayerSessionState): boolean =>
+    newestTrackedSeq !== null && player.last_played_seq != null
+      ? player.last_played_seq > newestTrackedSeq
+      : player.last_played_round >= state.current_round
+
+  const activeRoundAlreadyTracked = newestTrackedSeq === null
+    && state.rounds.some(r => r.round_no === state.current_round)
+  const hasPlayersInCurrentRound = !activeRoundAlreadyTracked
+    && [...state.players.values()].some(playedSinceTrackedRounds)
+
   for (const [playerId, currentRun] of currentRestRun) {
     const metrics = byPlayer.get(playerId)
     const player = state.players.get(playerId)
     if (!metrics || !player) continue
     if (player.checked_out_at !== null || player.opted_rest) continue
-    const extendedRun = hasPlayersInCurrentRound && currentRun > 0 && player.last_played_round < state.current_round
+    const extendedRun = hasPlayersInCurrentRound && currentRun > 0 && !playedSinceTrackedRounds(player)
       ? currentRun + 1
       : currentRun
     metrics.max_consecutive_rest = Math.max(metrics.max_consecutive_rest, extendedRun)

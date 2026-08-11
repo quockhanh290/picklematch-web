@@ -66,6 +66,11 @@ export type RoundRecord = {
   id?: string
   session_id: string
   round_no: number
+  // Session-wide position of the LAST match in this round. round_no counts cycles on one court and
+  // courts drift, so it cannot say whether a round came before or after another court's activity; this
+  // can. A property of the round itself, unlike anything derived from current player state, which is
+  // why the two earlier attempts at this comparison both drifted.
+  sequence_no?: number | null
   status: RoundStatus
   matches: Match[]
   resting: string[]
@@ -159,6 +164,7 @@ export type SessionRoundRow = {
   id: string
   session_id: string
   round_no: number
+  sequence_no?: number | null
   status: RoundStatus
   matches: Match[]
   resting: string[]

@@ -4,23 +4,20 @@ import { createMatch, createPlayer, createState } from '../helpers/factories'
 // The current-round extension asks one question: has this player NOT played in the activity that
 // state.rounds does not yet cover?
 //
-// KNOWN LIMITATION, deliberately pinned here rather than papered over. The check uses
-// `player.last_played_round >= state.current_round`, and last_played_round counts cycles on one court
-// (BUG #7). When courts drift apart it reads the wrong side, and a genuinely resting player's run can
-// go unextended.
+// It used to have only round numbers to answer with, and last_played_round counts cycles on ONE court
+// (BUG #7), so when courts drift it reads the wrong side. Swapping in last_played_seq was tried twice
+// and both anchors drifted, because both were derived from PLAYER state:
+//   * against the session's newest sequence, every court except the last to finish sits below it, so
+//     people who just played read as resting;
+//   * against the newest sequence among players of tracked rounds, that value is read as it is NOW, so
+//     the moment those players play again it rises to the session maximum and the extension stops
+//     firing at all — the second test below.
 //
-// The obvious repair — swap round numbers for the session-wide last_played_seq — was tried and is
-// WORSE, which is what these two tests exist to stop anyone from re-landing. Both candidate anchors
-// fail:
-//   * against the session's newest sequence: every court except the last one to finish sits below it,
-//     so people who just played read as resting;
-//   * against the newest sequence among players of tracked rounds: those players' state is read as it
-//     is NOW, so the moment they play again that anchor rises to the session maximum and the extension
-//     stops firing at all — the second test below.
-//
-// A sound fix needs data this function does not have: the sequence number of each tracked round's
-// matches, so "covered by state.rounds" becomes a fact rather than an inference. That means carrying it
-// on RoundRecord from the snapshot, not another comparison here.
+// The fix was data, not another comparison: a completed round now carries max(sequence_no) over its own
+// matches (migration 20260811000003), which nothing about later play can move. The first two tests
+// still cover the fallback for a database without it; the third is the drift case that was unfixable
+// before.
+
 describe('rest run extension for the round state.rounds does not cover yet', () => {
   it('still extends the run when the players who are back on court are the tracked round\'s own players', () => {
     // Tracked round 7: p1..p8 played, p9 sat out (run of 1).
@@ -88,5 +85,34 @@ describe('rest run extension for the round state.rounds does not cover yet', () 
     const p9 = metrics.per_player.find(p => p.player_id === 'p9')
 
     expect(p9?.max_consecutive_rest).toBe(1)
+  })
+
+  it('extends a run using the anchor carried by the round itself when courts have drifted', () => {
+    // Tracked round 7 ended at sequence 10. p1..p8 have since played again at sequence 40 — including
+    // the very players that round tracked, which is what defeated the previous anchor. p9 has not
+    // played since sequence 5, so its run of 1 becomes 2.
+    const state = createState({
+      currentRound: 8,
+      players: [
+        ...['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'].map(id =>
+          createPlayer(id, { last_played_round: 2, last_played_seq: 40 } as never)),
+        createPlayer('p9', { last_played_round: 6, last_played_seq: 5 } as never),
+      ],
+    })
+
+    state.rounds = [{
+      session_id: state.session_id,
+      round_no: 7,
+      sequence_no: 10,
+      status: 'completed',
+      matches: [createMatch(['p1', 'p2'], ['p3', 'p4'])],
+      resting: ['p9'],
+      started_at: null,
+      ended_at: null,
+    }]
+
+    const metrics = computeRestFairness(state)
+
+    expect(metrics.per_player.find(p => p.player_id === 'p9')?.max_consecutive_rest).toBe(2)
   })
 })
