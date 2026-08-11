@@ -20,6 +20,8 @@
     "test:suggester:property": "jest tests/next-round-suggester/property",
     "test:suggester:scenario": "jest tests/next-round-suggester/scenario",
     "test:suggester:simulation": "jest tests/next-round-suggester/simulation",
+    "test:gate": "jest tests/next-round-suggester/unit tests/next-round-suggester/property tests/next-round-suggester/scenario tests/next-round-suggester/fairness tests/host --runInBand",
+    "test:slow": "jest tests/next-round-suggester/simulation --runInBand",
     "test:suggester:fairness": "jest tests/next-round-suggester/fairness",
     "sim": "jest tests/next-round-suggester/simulation/sanity.test.ts tests/next-round-suggester/simulation/targets.test.ts",
     "diagnose": "npx tsx scripts/diagnose-session.ts",
