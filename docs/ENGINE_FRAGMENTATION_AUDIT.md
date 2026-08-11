@@ -390,11 +390,13 @@ Chỉ bug **không bác được VÀ có repro** mới nằm dưới đây. Seve
 
 ### 5.1 Bảng tổng hợp — 43 CONFIRMED
 
-> **Cột trạng thái: Codex quét, tôi chốt từng phần.** Bảng trạng thái do agent sinh trong dự án này đã sai 2 lần trước đây, và lượt quét này cũng sai — theo cả hai chiều. Tôi đã tự kiểm bằng code các mục **#1, #3, #7, #15, #16, #17, #23, #26, #32, #39** — **5 trên 10 mục sai**, đã sửa tại chỗ:
+> **Cột trạng thái: Codex quét, tôi chốt từng phần.** Bảng trạng thái do agent sinh trong dự án này đã sai 2 lần trước đây, và lượt quét này cũng sai — theo cả hai chiều. Tôi đã tự kiểm bằng code các mục **#1, #3, #7, #15, #16, #17, #23, #26, #32, #39** — **5 trên 10 mục sai, và 1 mục nữa hoá ra tôi chưa kiểm thật**, đã sửa tại chỗ:
 > - **#17** bị đánh nhầm CÒN MỞ: vòng `delete` còn lại chính là hình dạng SAU bản vá `4ef0449`.
 > - **#32** bị đánh nhầm ĐÃ SỬA: ngưỡng vẫn tách theo `round_no` per-sân.
 > - **#7 và #26** bị đánh nhầm CÒN MỞ, cùng kiểu sai như #17: `Math.max(1, roundNo - round.round_no)` là bản vá, nhưng vì hai biến cũ vẫn xuất hiện nên bị đọc thành chưa sửa.
 > - **#39** cả hai đều sai: tôi bảo file đã bị xoá (sai — nó ở `lib/`), Codex bảo còn mở (sai — nhánh `cycle_no` không còn dòng nào trong file).
+>
+> Trong 5 mục tôi cho là ĐÚNG, chỉ **#1, #3, #16** là kiểm chắc; **#15** mới đối chiếu file migration chứ chưa đối chiếu prod; **#23** đã hạ xuống CHƯA KIỂM sau khi soi lại.
 >
 > **Các mục ĐÃ SỬA còn lại chưa được tôi kiểm từng cái.** Dùng bảng này làm danh sách đi kiểm, đừng dùng làm kết luận.
 
@@ -429,7 +431,7 @@ Chỉ bug **không bác được VÀ có repro** mới nằm dưới đây. Seve
 | 20 | "Chờ Sân X" hứa suông — `simulateWaitWouldClean` bỏ qua required-players | `forced-tradeoff.ts:151-168` | ĐÃ SỬA | lib/next-round-suggester/forced-tradeoff.ts:163-180 nhận requiredIds và filter mustSeat |
 | 21 | Rolling-horizon so điểm candidate trên số path KHÔNG bằng nhau khi hết budget | `planner/rolling-horizon.ts:572-591, 643-645` | CÒN MỞ | lib/next-round-suggester/planner/rolling-horizon.ts:588-590 break khi đã có pathScores; 643-645 vẫn average pathScores |
 | 22 | Batch cắt theo wall-clock 3800ms → cùng input, số sân fill khác nhau giữa 2 lần bấm | `live-preview.ts:4387-4392` | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:4504-4508 comment bỏ việc quyết định số sân theo remaining time |
-| 23 | Rolling-lane ghi đè `playerIdsByRound` → sân kế trong batch tính sai "ai đã nghỉ" | `live-preview.ts:4418-4420`, `:5466` | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:4546-4548 seed từ playerIdsByRound hiện có; 5593-5595 merge rồi set |
+| 23 | Rolling-lane ghi đè `playerIdsByRound` → sân kế trong batch tính sai "ai đã nghỉ" | `live-preview.ts:4418-4420`, `:5466` | CHƯA KIỂM | Ghi đè vẫn còn (:5595) và `isRollingLaneRequest` (:4466) KHÔNG kéo theo count===1, nên về lý sân sau trong batch thấy tập rỗng. Nhưng để rỗng ở :4546 có vẻ CỐ Ý theo ngữ nghĩa rolling-horizon, và người đã xếp vẫn nằm trong busyIds/batchBusyIds. Cần đọc hợp đồng rolling-horizon mới kết luận được |
 | 24 | `sync_live_suggestion_metadata` gắn metadata nhầm lineup (chỉ match `court_idx`, không so team) | `20260805000010:31` | ĐÃ SỬA | supabase/migrations/20260809000002_unify_live_suggestion_hint_sync.sql:87-99 match court_idx và team hai chiều |
 | 25 | `degraded_reason` cũ không bao giờ được xoá khỏi DB khi board trở nên sạch | `index.ts:1559, 1543-1566` | ĐÃ SỬA | supabase/migrations/20260809000002_unify_live_suggestion_hint_sync.sql:31-49 empty board clear stale hints |
 | 26 | Hệ số recency của `computeQualityCost` lệch vì `current_round` là bộ đếm per-court | `quality-cost.ts:41-47`, `live-preview.ts:4533` | ĐÃ SỬA | quality-cost.ts:64 cùng clamp `Math.max(1, roundNo - round.round_no)`; đo được: cặp từ sân nhanh trước bị định giá 0.31 thay vì 0.73 |
