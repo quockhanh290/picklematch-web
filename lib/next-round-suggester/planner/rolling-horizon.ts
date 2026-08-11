@@ -583,10 +583,12 @@ export function chooseRollingHorizonAlternative(options: {
     const projectedFairnessCost = prepared.projectedFairnessCost
     const pathScores: number[] = []
     let pathsWithoutFutureMatch = 0
+    let truncatedPaths = false
 
     for (const order of orders) {
       if (clock() >= deadline && pathScores.length > 0) {
         budgetExhausted = true
+        truncatedPaths = true
         break
       }
       let simState = projectedCandidateState
@@ -639,6 +641,11 @@ export function chooseRollingHorizonAlternative(options: {
     }
 
     if (pathScores.length === 0) continue
+    // A candidate the clock interrupted was measured over fewer futures than the others, and the score
+    // is average + worst/2 — the worst of two futures is milder than the worst of eight, so scoring a
+    // truncated candidate against complete ones lets the LESS examined one win. Drop it instead, unless
+    // nothing has been fully scored, in which case a partial answer still beats none.
+    if (truncatedPaths && evaluated.length > 0) break
 
     const average = pathScores.reduce((sum, score) => sum + score, 0) / pathScores.length
     const worst = Math.max(...pathScores)
