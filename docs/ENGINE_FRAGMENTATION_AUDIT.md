@@ -398,7 +398,9 @@ Chỉ bug **không bác được VÀ có repro** mới nằm dưới đây. Seve
 >
 > Trong 5 mục tôi cho là ĐÚNG, chỉ **#1, #3, #16** là kiểm chắc; **#15** mới đối chiếu file migration chứ chưa đối chiếu prod; **#23** đã hạ xuống CHƯA KIỂM sau khi soi lại.
 >
-> **Các mục ĐÃ SỬA còn lại chưa được tôi kiểm từng cái.** Dùng bảng này làm danh sách đi kiểm, đừng dùng làm kết luận.
+> **Vòng kiểm 2 (toàn bộ):** đã soi nốt #2/#8/#12/#19/#30 (một cụm — drop+rebuild chạy SAU mọi post-pass kể cả joint; cú xoá cả batch đã bị bỏ hẳn, không có cờ `clearTradeoffChoices` nào như audit đề xuất), #13/#24 (kiểm thẳng định nghĩa trên prod), #27/#29/#37/#38/#40 (client). Tất cả đúng. Hai mục phải hạ cấp: **#15** xuống ĐÃ ÁP-CHƯA CHẠY, **#25** xuống nửa-xác-nhận. **#23** vẫn CHƯA KIỂM.
+>
+> Các mục ĐÃ SỬA còn lại là việc làm trong phiên 2026-08-11 với bằng chứng đỏ-rồi-xanh trực tiếp. Dùng bảng này làm danh sách đi kiểm, đừng dùng làm kết luận.
 
 
 #### HIGH (15)
@@ -416,7 +418,7 @@ Chỉ bug **không bác được VÀ có repro** mới nằm dưới đây. Seve
 | 9 | Board-wide pass chia chung 400ms theo thứ tự mảng → sân degraded cuối **mất "Chờ Sân X"** | `index.ts:1489-1520`, `live-preview.ts:3968` | 4, 9 | CÒN MỞ | lib/next-round-suggester/live-preview.ts:77-82 mô tả shared rescue budget; 3975 findRescueCourts |
 | 13 | Snapshot RPC **xoá ngược** round đã hoàn tất *(nâng medium → HIGH ở lượt verify 2: "tệ hơn mô tả")* | `20260703000005:128-143` | 3, 7 | ĐÃ SỬA | supabase/migrations/20260810000002_partial_round_visible.sql:151 và 167-170 chỉ agg completed rows |
 | **14** | **`last_played_round` lưu round per-court → engine ưu tiên NGƯỢC người chơi** | `20260726000002:95` → `select.ts:49-50` | 7 | CÒN MỞ | lib/next-round-suggester/select.ts:51-66 vẫn ưu tiên bằng last_played_round per-court |
-| **15** | **Rest bookkeeping không chạy** — group theo `round_no` trên TẤT CẢ sân | `20260726000002:154-160` + `20260722000005:96-101` | 7 | ĐÃ SỬA | supabase/migrations/20260809000001_rest_bookkeeping_per_match_event.sql:381-382 nói bookkeeping không còn chờ round gate |
+| **15** | **Rest bookkeeping không chạy** — group theo `round_no` trên TẤT CẢ sân | `20260726000002:154-160` + `20260722000005:96-101` | 7 | ĐÃ ÁP, CHƯA CHẠY | prod: `complete_live_session_match_versioned` CÓ `rest_seat_misses`, nhưng cột đó `> 0` ở **0/5657 hàng** `session_player_state` — trận mới nhất trong DB là 2026-08-08, migration áp sau đó, nên chưa phiên nào chạy để bookkeeping mới kịp động. Không có dữ liệu nào chứng minh nó chạy đúng. ⚠️ `cancel_live_session_match_versioned` KHÔNG đụng `rest_seat_misses` → hai đường bất đồng (P2-7) |
 | **16** | **`findMinCostFoursome` quyết định AI CHƠI ngay cả khi flag quality-cost TẮT** | `suggest.ts:1105-1108` | 1 | ĐÃ SỬA | lib/next-round-suggester/forced-tradeoff.ts:145-150 findMinCostFoursome rank qua scoreMatch theo flag |
 | **17** | **`buildRelaxedTierOverrides` xoá tag FLEXIBLE → undo toàn bộ patch defer (ALGO 37/48/54)** | `live-preview.ts:4560-4566` | 2 | ĐÃ SỬA | live-preview.ts:4690 lặp CHỈ trên requiredForThisCourt. Bản vá P0-8 (`4ef0449`) chính là bỏ `...deferredRequiredIds` khỏi vòng lặp đó, nên vòng `delete` còn lại LÀ trạng thái đã sửa |
 | **18** | **`repairPayloadBatchBlowoutFromPool` thiếu guard công bằng — bench thẳng người owed nhất** | `live-preview.ts:2855-2877` | 5 | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:2802-2810 mayReplace dùng consecutive_rest và matches_played |
@@ -433,7 +435,7 @@ Chỉ bug **không bác được VÀ có repro** mới nằm dưới đây. Seve
 | 22 | Batch cắt theo wall-clock 3800ms → cùng input, số sân fill khác nhau giữa 2 lần bấm | `live-preview.ts:4387-4392` | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:4504-4508 comment bỏ việc quyết định số sân theo remaining time |
 | 23 | Rolling-lane ghi đè `playerIdsByRound` → sân kế trong batch tính sai "ai đã nghỉ" | `live-preview.ts:4418-4420`, `:5466` | CHƯA KIỂM | Ghi đè vẫn còn (:5595) và `isRollingLaneRequest` (:4466) KHÔNG kéo theo count===1, nên về lý sân sau trong batch thấy tập rỗng. Nhưng để rỗng ở :4546 có vẻ CỐ Ý theo ngữ nghĩa rolling-horizon, và người đã xếp vẫn nằm trong busyIds/batchBusyIds. Cần đọc hợp đồng rolling-horizon mới kết luận được |
 | 24 | `sync_live_suggestion_metadata` gắn metadata nhầm lineup (chỉ match `court_idx`, không so team) | `20260805000010:31` | ĐÃ SỬA | supabase/migrations/20260809000002_unify_live_suggestion_hint_sync.sql:87-99 match court_idx và team hai chiều |
-| 25 | `degraded_reason` cũ không bao giờ được xoá khỏi DB khi board trở nên sạch | `index.ts:1559, 1543-1566` | ĐÃ SỬA | supabase/migrations/20260809000002_unify_live_suggestion_hint_sync.sql:31-49 empty board clear stale hints |
+| 25 | `degraded_reason` cũ không bao giờ được xoá khỏi DB khi board trở nên sạch | `index.ts:1559, 1543-1566` | ĐÃ SỬA (một nửa xác nhận) | prod: `sync_live_suggestion_hints` khớp theo team. Nửa "luôn gọi kể cả khi board sạch" nằm ở phía CALLER (edge function), chưa kiểm |
 | 26 | Hệ số recency của `computeQualityCost` lệch vì `current_round` là bộ đếm per-court | `quality-cost.ts:41-47`, `live-preview.ts:4533` | ĐÃ SỬA | quality-cost.ts:64 cùng clamp `Math.max(1, roundNo - round.round_no)`; đo được: cặp từ sân nhanh trước bị định giá 0.31 thay vì 0.73 |
 | 27 | `fetchAvailablePoolPreview` bump serial → response preview đang bay bị vứt, không lịch lại | `useLiveBoard.ts:809` vs `:2229` | ĐÃ SỬA | features/host/session-detail/next-round-v2/hooks/useLiveBoard.ts:797 gọi abortPreviewRequest; 225-234 bump nonce |
 | 28 | `rescueHandledNonceRef` tiêu thụ lúc DISPATCH → request thất bại làm mất trigger "Chờ Sân X" | `useLiveBoard.ts:2086-2091` | ĐÃ SỬA | features/host/session-detail/next-round-v2/hooks/useLiveBoard.ts:2448-2452 chỉ set rescueHandledNonce sau khi có replacement |
