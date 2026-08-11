@@ -1,3 +1,4 @@
+import { toDisplayCourtCycle } from '@/lib/next-round-suggester/round-numbering'
 import { getMatchPvnaGap, getTeamPvnaTotal } from '@/lib/next-round-suggester/state'
 import { LinearGradient } from 'expo-linear-gradient'
 import {
@@ -4109,7 +4110,9 @@ export function PlayerMatchDistributionBlock({
           const isMin = row.matches_played === match.min && match.range > 0 && !row.checked_out_at && !row.opted_rest
           const activities = buildPlayerRoundTimeline(row, completedRounds)
           const checkedOutRound = activities.find(activity => activity.status === 'checked_out')?.round_no
-          const checkedOutLabel = checkedOutRound != null ? `R\u1eddi t\u1eeb V${checkedOutRound + 1}` : null
+          const checkedOutLabel = checkedOutRound != null
+            ? `R\u1eddi t\u1eeb V${toDisplayCourtCycle(checkedOutRound)}`
+            : null
           const statusLabel = checkedOutLabel ?? (row.opted_rest ? '\u0110ang xin ngh\u1ec9' : hasViolation ? `T\u1eebng ngh\u1ec9 ${playerRest?.max_consecutive_rest ?? 0}` : null)
           return (
             <View
@@ -4229,7 +4232,7 @@ function RoundTimelineBar({ activities }: { activities: { round_no: number; stat
                 }}
               >
                 <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 8.5, color: tone.text }}>
-                  {activity.round_no + 1}
+                  {toDisplayCourtCycle(activity.round_no)}
                 </Text>
               </View>
             </View>
@@ -4314,7 +4317,7 @@ export function FairnessHistoryAuditSection({
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 12, color: theme.onSurface }}>
-                    Vòng {audit.round_no + 1}
+                    Vòng {toDisplayCourtCycle(audit.round_no)}
                   </Text>
                   <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 10.5, color: theme.outline }}>
                     {audit.before_total} → {audit.after_total} điểm
@@ -4377,7 +4380,7 @@ export function FairnessEvolutionBlock({ state }: { state: SessionState }) {
           return (
             <View key={`evolution-${entry.round}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 3 }}>
               <Text style={{ width: 52, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-                Vòng {entry.round + 1}
+                Vòng {toDisplayCourtCycle(entry.round)}
               </Text>
               <Text style={{ width: 30, fontFamily: SCREEN_FONTS.headline, fontSize: 13, color: theme.onSurface }}>
                 {entry.score}

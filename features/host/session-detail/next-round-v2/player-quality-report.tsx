@@ -1,3 +1,4 @@
+import { toDisplayCourtCycle } from '@/lib/next-round-suggester/round-numbering'
 import React, { useMemo, useState } from 'react'
 import { Text, TouchableOpacity, View } from 'react-native'
 
@@ -396,7 +397,7 @@ function RoundActivityChips({ activities }: { activities: RoundActivity[] }) {
             }}
           >
             <Text style={{ fontFamily: SCREEN_FONTS.bold, fontSize: 10, color: textColor }}>
-              {round_no + 1}
+              {toDisplayCourtCycle(round_no)}
             </Text>
           </View>
         )
@@ -543,7 +544,7 @@ function PlayerCard({
                 const badgeColor = r.won === true ? theme.successText : theme.dangerText
                 const badgeBg = r.won === true ? theme.successBg : theme.dangerBg
                 const courtLabel = r.court_idx != null ? `Sân ${r.court_idx + 1}` : null
-                const roundLabel = r.round_no != null ? `Vòng ${r.round_no + 1}` : `Trận ${idx + 1}`
+                const roundLabel = r.round_no != null ? `Vòng ${toDisplayCourtCycle(r.round_no)}` : `Trận ${idx + 1}`
                 return (
                   <View
                     key={idx}
