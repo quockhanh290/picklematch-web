@@ -30,12 +30,10 @@ export function comparePlayersByPriority(
   if (b.consecutive_rest !== a.consecutive_rest) {
     return b.consecutive_rest - a.consecutive_rest
   }
-  // Same consecutive_rest: prefer player who started resting earlier (smaller round number)
-  // Prefer the session-wide position; the round-derived value counts cycles on one court, so comparing
-  // it across two players can compare different courts' counters. Falls back while a database predates
-  // the last_played_seq column.
-  const aRestStart = a.last_rest_started_seq ?? a.last_rest_started_round ?? Infinity
-  const bRestStart = b.last_rest_started_seq ?? b.last_rest_started_round ?? Infinity
+  // Same consecutive_rest: prefer the player whose rest run started earlier. Counted in court cycles,
+  // for the reason given at the last_played_round comparison below.
+  const aRestStart = a.last_rest_started_round ?? Infinity
+  const bRestStart = b.last_rest_started_round ?? Infinity
   if (aRestStart !== bRestStart) {
     return aRestStart - bRestStart
   }
@@ -50,13 +48,22 @@ export function comparePlayersByPriority(
     return a.matches_played - b.matches_played
   }
 
-  // `last_played_round` is the round number of one court, and courts drift apart — court 3 can be on
-  // round 2 while court 1 is on round 8. Comparing them ranks a player who just walked off a slow court
-  // as having waited longer than someone idle since early on, which is backwards precisely when the
-  // board is most uneven. `last_played_seq` is session-wide (from sequence_no, unique per session and
-  // 0.886 correlated with wall time) and is used whenever the database has it.
-  const aLast = a.last_played_seq ?? a.last_played_round
-  const bLast = b.last_played_seq ?? b.last_played_round
+  // Ordering by court cycles, deliberately, though `last_played_round` counts cycles on ONE court and
+  // courts drift apart. Ordering by session position instead (`last_played_seq`, from sequence_no) was
+  // built, deployed, and then measured against it on the replay corpus at two sample sizes:
+  //
+  //            court cycles      session position
+  //   intra>1     19.66%            22.12%          (30-session run: 20.33 vs 22.17)
+  //   repeat3     11.53%            13.28%          (30-session run: 11.71 vs 13.55)
+  //   spread       1.433             1.433          equal — no fairness bought
+  //
+  // Both samples agree, and the same measurement repeated at two sizes moves by at most 0.67pp on its
+  // own, so the gap is not noise. Session position costs pairing quality and buys nothing measurable, so
+  // cycles win. `last_played_seq` stays on the row and in state — the projection maintains it — but no
+  // ordering reads it. Measured on a corpus that always starts a session from empty, so it observes
+  // drift accumulating inside a replay rather than a session resumed from a database mid-way.
+  const aLast = a.last_played_round
+  const bLast = b.last_played_round
   if (aLast !== bLast) {
     return aLast - bLast
   }

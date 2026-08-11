@@ -280,9 +280,6 @@ export function mapRowsToSessionState(input: {
       rounds_available: 0,
       effective_pvna: row.effective_pvna ?? undefined,
       last_rest_started_round: consecutiveRest > 0 ? row.last_played_round + 1 : undefined,
-      last_rest_started_seq: consecutiveRest > 0 && row.last_played_seq != null
-        ? row.last_played_seq + 1
-        : undefined,
     })
   }
 

@@ -96,12 +96,16 @@ type Score = {
   overTol: number; repeat3: number; blowout: number
   panels: number
   lineups: string[]
+  // The board metrics above price lineup quality only. Anything that constrains WHO may be seated buys
+  // fairness and spends quality, and without these two the trade looks like a pure regression.
+  playSpread: number; worstRest: number
 }
 
 const emptyScore = (): Score => ({
   requested: 0, seated: 0, cost: 0,
   hardAvoidPartner: 0, intraOverCap: 0,
   overTol: 0, repeat3: 0, blowout: 0, panels: 0, lineups: [],
+  playSpread: 0, worstRest: 0,
 })
 
 function scoreMatchInto(acc: Score, s: SessionState, p: SuggestedMatchPayload, tol: number) {
@@ -165,6 +169,10 @@ function run(sid: string): Score | null {
       }
     }
   }
+
+  const played = [...state.players.values()].map(p => p.matches_played)
+  acc.playSpread = played.length ? Math.max(...played) - Math.min(...played) : 0
+  acc.worstRest = Math.max(0, ...[...state.players.values()].map(p => p.consecutive_rest))
   return acc
 }
 
@@ -196,6 +204,10 @@ const report = {
     intra_over_cap_pct: +pct(totals.intraOverCap).toFixed(2),
     panel_pct: +pct(totals.panels).toFixed(2),
   },
+  fair: {
+    avg_play_spread: +(totals.playSpread / Math.max(1, sessions)).toFixed(3),
+    avg_worst_rest: +(totals.worstRest / Math.max(1, sessions)).toFixed(3),
+  },
 }
 
 fs.mkdirSync('scratch/out', { recursive: true })
@@ -204,5 +216,6 @@ console.log(`--- board scorecard: ${sessions} sessions, ${totals.seated} matches
 console.log(`fill rate      ${report.fill_rate_pct}%  (${totals.seated}/${totals.requested})`)
 console.log(`HARD avoid-partner ${report.hard.avoid_partner}   <-- must stay 0`)
 console.log(`SOFT avg cost ${report.soft.avg_cost} | over-tol ${report.soft.over_tol_pct}% | intra>${INTRA_TEAM_PVNA_GAP_LIMIT} ${report.soft.intra_over_cap_pct}% | repeat3 ${report.soft.repeat3_pct}% | blowout ${report.soft.blowout_pct}% | panel ${report.soft.panel_pct}%`)
+console.log(`FAIR play-spread ${report.fair.avg_play_spread} | worst-rest ${report.fair.avg_worst_rest}   <-- lower is fairer`)
 console.log(`board_hash ${boardHash}`)
 console.log(`written to ${OUT}`)

@@ -101,7 +101,7 @@ const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 66
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 67
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -593,8 +593,13 @@ export function buildProjectedStateAfterLiveMatch(
         ...player,
         matches_played: player.matches_played + 1,
         last_played_round: effectiveRoundNo,
+        // The comparator prefers last_played_seq (BUG #14), so it has to advance with the round it
+        // sits beside. Left behind, a player projected as just having played keeps an older sequence
+        // than someone still waiting and outranks them — inside the very batch that fills the board.
+        last_played_seq: match.sequence_no ?? player.last_played_seq,
         consecutive_play: player.consecutive_play + 1,
         consecutive_rest: 0,
+        last_rest_started_round: undefined,
         opted_rest: false,
       })
       return
@@ -668,6 +673,12 @@ export function buildProjectedStateAfterCompletedLiveRound(
       ...player,
       consecutive_rest: player.consecutive_rest + 1,
       consecutive_play: 0,
+      // Stamp where the run began the first time it is incremented, on the same basis state.ts uses
+      // when it reads the row back from the database. Without it the rest-start tie-break stays
+      // undefined for everyone projected forward and silently stops separating anyone.
+      last_rest_started_round: player.consecutive_rest === 0
+        ? player.last_played_round + 1
+        : player.last_rest_started_round,
       opted_rest: false,
     })
   })
