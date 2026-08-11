@@ -82,6 +82,18 @@ const FORCE_RESCUE_TOTAL_MS = 1500
 // findRescueCourts runs a suggest per live court, so a per-court budget would multiply latency on
 // multi-court fills. Degraded courts past this budget still seat + explain, just without a rescue list.
 const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
+// Smallest slice a rescue search can do anything with. Below this it returns "none found" without having
+// looked, and the host cannot tell that from a genuine answer.
+const MIN_RESCUE_SEARCH_MS = 80
+
+// The pool used to be drained in visit order, so a court late in the array could find it empty and come
+// back with no wait options at all — never searched, indistinguishable from searched-and-found-nothing.
+// Splitting by court count costs a lone degraded court some search time, which is the trade: a shorter
+// search still answers the question.
+export function getRescueBudgetShareMs(totalMs: number, courtCount: number): number {
+  const courts = Math.max(1, Math.floor(courtCount))
+  return Math.max(MIN_RESCUE_SEARCH_MS, Math.floor(totalMs / courts))
+}
 
 // --- Wait-rescue "how lopsided is lopsided" thresholds ---------------------------------------
 // Three separate questions, three separate bars, all measured off the same configuredPvnaTolerance:
@@ -101,7 +113,7 @@ const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 71
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 72
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -4244,7 +4256,6 @@ export function buildSuggestedMatchPayloads({
 }: BuildSuggestedMatchPayloadsParams): SuggestedMatchPayload[] {
   const batchStartedAt = nowMs()
   const forceBudgetDeadline = nowMs() + FORCE_RESCUE_TOTAL_MS
-  let rescueSearchBudgetRemainingMs = LIVE_RESCUE_TOTAL_BUDGET_MS
   const baseSuggestionState = options.stateOverride ?? state
   let suggestionState = applyFairnessAdjustment(baseSuggestionState, {
     type: fairnessAdjustment.config_changes && Object.keys(fairnessAdjustment.config_changes).length > 0
@@ -5248,12 +5259,11 @@ export function buildSuggestedMatchPayloads({
           players.push(playerId)
           liveCourtPlayers.set(playerCourtIdx, players)
         }
-        const rescueBudgetMs = rescueSearchBudgetRemainingMs > 0
-          ? Math.max(80, Math.min(
-              rescueSearchBudgetRemainingMs,
-              LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt),
-            ))
-          : 0
+        // This court's own share, not whatever earlier courts left behind.
+        const rescueBudgetMs = Math.min(
+          getRescueBudgetShareMs(LIVE_RESCUE_TOTAL_BUDGET_MS, effectiveCount),
+          Math.max(0, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)),
+        )
         const degraded = computeMatchDegradedRescue({
           teamA: match.team_a,
           teamB: match.team_b,
@@ -5272,7 +5282,6 @@ export function buildSuggestedMatchPayloads({
         // shared detector reports truncation from the search itself and cannot know it was skipped.
         rescueSearchTruncated = degraded.rescueSearchTruncated
           || (degraded.degradedReason !== undefined && rescueBudgetMs <= 0)
-        rescueSearchBudgetRemainingMs -= degraded.elapsedMs
         if (degradedReason !== undefined) {
           try {
             options.onInstrumentEvent?.({
