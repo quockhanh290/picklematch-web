@@ -21,9 +21,9 @@ import {
   TouchableOpacity, 
   View, 
   ScrollView,
-  Dimensions,
   FlatList,
-  Linking
+  Linking,
+  useWindowDimensions
 } from 'react-native'
 import { SCREEN_FONTS } from '@/constants/typography'
 import { RADIUS, BORDER, SHADOW as LAYOUT_SHADOW } from '@/constants/screenLayout'
@@ -33,11 +33,10 @@ import { Image } from 'expo-image'
 import { isCurrentlyOpen } from '@/lib/utils/court'
 import { fetchCourtDetailApi } from '@/features/player/court/api'
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window')
-
 export default function CourtConfigScreen() {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
+  const { width: screenWidth } = useWindowDimensions()
   const { userId } = useAuth()
   const params = useLocalSearchParams()
   const courtId = params.id as string
@@ -142,15 +141,15 @@ export default function CourtConfigScreen() {
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
-            style={{ width: SCREEN_WIDTH, height: 300 }}
+            style={{ width: screenWidth, height: 300 }}
             renderItem={({ item }) => (
-              <View style={{ width: SCREEN_WIDTH, height: 300 }}>
+              <View style={{ width: screenWidth, height: 300 }}>
                 <Image source={{ uri: item }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
               </View>
             )}
             keyExtractor={(_, idx) => idx.toString()}
             ListEmptyComponent={() => (
-              <View style={{ width: SCREEN_WIDTH, height: 300, backgroundColor: theme.surfaceVariant, alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ width: screenWidth, height: 300, backgroundColor: theme.surfaceVariant, alignItems: 'center', justifyContent: 'center' }}>
                 <Landmark size={48} color={theme.outline} />
               </View>
             )}

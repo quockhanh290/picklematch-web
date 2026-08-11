@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { Dimensions, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native'
+import { Text, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native'
 import Animated, {
   useAnimatedRef,
   useAnimatedStyle,
@@ -12,8 +12,6 @@ import { SCREEN_FONTS } from '@/constants/typography'
 import { useAppTheme } from '@/lib/theme-context'
 
 const screenPadding = 20
-const screenWidth = Dimensions.get('window').width
-const carouselCardWidth = screenWidth - screenPadding * 2
 const carouselGap = 14
 
 function CarouselDots({ count, activeIndex }: { count: number; activeIndex: number }) {
@@ -36,18 +34,20 @@ function CarouselDots({ count, activeIndex }: { count: number; activeIndex: numb
 function CarouselCard({
   index,
   itemCount,
+  cardWidth,
   scrollOffset,
   children,
 }: {
   index: number
   itemCount: number
+  cardWidth: number
   scrollOffset: SharedValue<number>
   children: ReactNode
 }) {
   const cardStyle = useAnimatedStyle(() => {
-    const itemOffset = index * (carouselCardWidth + carouselGap)
+    const itemOffset = index * (cardWidth + carouselGap)
     const distance = Math.abs(scrollOffset.value - itemOffset)
-    const progress = Math.min(distance / (carouselCardWidth + carouselGap), 1)
+    const progress = Math.min(distance / (cardWidth + carouselGap), 1)
 
     return {
       opacity: 1 - progress * 0.2,
@@ -62,7 +62,7 @@ function CarouselCard({
     <Animated.View
       style={[
         {
-          width: carouselCardWidth,
+          width: cardWidth,
           marginRight: index === itemCount - 1 ? 0 : carouselGap,
         },
         cardStyle,
@@ -84,6 +84,8 @@ function SwipeStack<T>({
   renderCard: (item: T) => ReactNode
   onIndexChange?: (index: number) => void
 }) {
+  const { width: screenWidth } = useWindowDimensions()
+  const carouselCardWidth = screenWidth - screenPadding * 2
   const scrollRef = useAnimatedRef<Animated.ScrollView>()
   const scrollOffset = useScrollViewOffset(scrollRef)
   const [measuredHeight, setMeasuredHeight] = useState(0)
@@ -111,6 +113,7 @@ function SwipeStack<T>({
           key={String((item as { id?: string }).id ?? index)}
           index={index}
           itemCount={items.length}
+          cardWidth={carouselCardWidth}
           scrollOffset={scrollOffset}
         >
           <View

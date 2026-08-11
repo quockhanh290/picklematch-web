@@ -1,12 +1,10 @@
 import { useSessionNav } from '@/lib/navigation/SessionNavContext'
 import { Hand, LayoutList } from 'lucide-react-native'
-import { Dimensions, Pressable, ScrollView, Text, View } from 'react-native'
+import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native'
 
 import { useAppTheme } from '@/lib/theme-context'
 import type { PendingMatch } from '@/lib/homeFeed'
 
-const screenWidth = Dimensions.get('window').width
-const pendingCardWidth = screenWidth - 88
 const pendingCardGap = 14
 
 import { withAlpha } from '@/lib/utils/ui'
@@ -32,7 +30,7 @@ function CarouselDots({ count, activeIndex }: { count: number; activeIndex: numb
   )
 }
 
-function PendingMatchResultCard({ item }: { item: PendingMatch }) {
+function PendingMatchResultCard({ item, cardWidth }: { item: PendingMatch; cardWidth: number }) {
   const theme = useAppTheme()
   const { onViewMatchResult } = useSessionNav()
   return (
@@ -41,7 +39,7 @@ function PendingMatchResultCard({ item }: { item: PendingMatch }) {
       style={{
         borderColor: theme.secondaryFixedDim,
         backgroundColor: theme.primaryFixed,
-        width: pendingCardWidth,
+        width: cardWidth,
         shadowColor: theme.primary,
         shadowOpacity: 0.08,
         shadowRadius: 12,
@@ -99,12 +97,14 @@ type Props = {
 
 export function PendingMatchResultCarousel({ items, activeIndex, onIndexChange }: Props) {
   const theme = useAppTheme()
+  const { width: screenWidth } = useWindowDimensions()
+  const pendingCardWidth = screenWidth - 88
   if (items.length === 0) return null
 
   if (items.length === 1) {
     return (
       <View className="mt-6">
-        <PendingMatchResultCard item={items[0]} />
+        <PendingMatchResultCard item={items[0]} cardWidth={pendingCardWidth} />
       </View>
     )
   }
@@ -128,7 +128,7 @@ export function PendingMatchResultCarousel({ items, activeIndex, onIndexChange }
       >
         {items.map((item, index) => (
           <View key={item.id} style={{ marginRight: index === items.length - 1 ? 0 : pendingCardGap }}>
-            <PendingMatchResultCard item={item} />
+            <PendingMatchResultCard item={item} cardWidth={pendingCardWidth} />
           </View>
         ))}
       </ScrollView>

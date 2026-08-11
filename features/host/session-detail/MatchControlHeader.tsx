@@ -1,9 +1,7 @@
 import { RADIUS } from '@/constants/screenLayout'
 import { SCREEN_FONTS } from '@/constants/typography'
 import React from 'react'
-import { Dimensions, Text, View } from 'react-native'
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window')
+import { Text, View, useWindowDimensions } from 'react-native'
 
 type Props = {
   activePlayerCount: number
@@ -20,6 +18,7 @@ export function MatchControlHeader({
   pendingRoundCount,
   courtCount,
 }: Props) {
+  const { width: screenWidth } = useWindowDimensions()
   const stats = [
     { label: 'Người chơi', value: activePlayerCount, tone: 'warm' },
     { label: 'Sân đấu', value: courtCount, tone: 'neutral' },
@@ -27,7 +26,7 @@ export function MatchControlHeader({
     { label: 'Trận chờ', value: pendingMatchCount, tone: pendingMatchCount > 0 ? 'warn' : 'neutral' },
     { label: 'Vòng chờ', value: pendingRoundCount, tone: pendingRoundCount > 0 ? 'warn' : 'neutral' },
   ]
-  const isCompact = SCREEN_WIDTH < 420
+  const isCompact = screenWidth < 420
   const statBoxWidth = isCompact ? '31.5%' : '18.8%'
 
   return (

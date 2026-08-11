@@ -6,17 +6,12 @@ import type { ArrangementPlayer } from '@/lib/sessionDetail'
 import { useAppTheme } from '@/lib/theme-context'
 import { Minus, Plus, SwordsIcon } from 'lucide-react-native'
 import React, { useState } from 'react'
-import { Alert, Dimensions, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { Alert, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native'
 import { deleteAllMatchesForSession } from './host-match/api'
 import { useHostMatchController } from './host-match/useHostMatchController'
 import { MatchControlHeader } from './MatchControlHeader'
 import { MatchPlayerManagementPanel } from './MatchPlayerManagementPanel'
 import { ScheduleSetupPanel } from './ScheduleSetupPanel'
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window')
-const RESPONSIVE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 80 : SCREEN_WIDTH > 360 ? 70 : 64
-const RESPONSIVE_CARD_HEIGHT = RESPONSIVE_CARD_WIDTH * 1.25
-const RESPONSIVE_FONT_SIZE = SCREEN_WIDTH > 400 ? 56 : SCREEN_WIDTH > 360 ? 48 : 42
 
 interface Props {
   sessionId: string
@@ -35,6 +30,10 @@ interface Props {
 
 export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfterEnd, courtCount = 1, maxPlayers, formatType, onScheduleSetupPageChange, scheduleSetupBackSignal = 0, initialScheduleSetupOpen = false }: Omit<Props, 'onClose'>) {
   const theme = useAppTheme()
+  const { width: screenWidth } = useWindowDimensions()
+  const responsiveCardWidth = screenWidth > 400 ? 80 : screenWidth > 360 ? 70 : 64
+  const responsiveCardHeight = responsiveCardWidth * 1.25
+  const responsiveFontSize = screenWidth > 400 ? 56 : screenWidth > 360 ? 48 : 42
   const [editingPendingIndex, setEditingPendingIndex] = useState<number | null>(null)
   const [showAllProgress, setShowAllProgress] = useState(false)
 
@@ -472,8 +471,8 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                             </Pressable>
 
                             <View style={{
-                              width: RESPONSIVE_CARD_WIDTH + 10,
-                              height: RESPONSIVE_CARD_HEIGHT + 10,
+                              width: responsiveCardWidth + 10,
+                              height: responsiveCardHeight + 10,
                               backgroundColor: '#F5F1E8',
                               borderRadius: RADIUS.md,
                               alignItems: 'center',
@@ -484,7 +483,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                             }}>
                               <Text style={{
                                 fontFamily: SCREEN_FONTS.headline,
-                                fontSize: RESPONSIVE_FONT_SIZE,
+                                fontSize: responsiveFontSize,
                                 color: scoreA > scoreB ? '#0F6E56' : '#1A2E2A',
                                 fontWeight: '900'
                               }}>{scoreA}</Text>
@@ -537,8 +536,8 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                             </Pressable>
 
                             <View style={{
-                              width: RESPONSIVE_CARD_WIDTH + 10,
-                              height: RESPONSIVE_CARD_HEIGHT + 10,
+                              width: responsiveCardWidth + 10,
+                              height: responsiveCardHeight + 10,
                               backgroundColor: '#F5F1E8',
                               borderRadius: RADIUS.md,
                               alignItems: 'center',
@@ -549,7 +548,7 @@ export function HostMatchScreen({ sessionId, matches, players, onUpdated, isAfte
                             }}>
                               <Text style={{
                                 fontFamily: SCREEN_FONTS.headline,
-                                fontSize: RESPONSIVE_FONT_SIZE,
+                                fontSize: responsiveFontSize,
                                 color: scoreB > scoreA ? '#0F6E56' : '#1A2E2A',
                                 fontWeight: '900'
                               }}>{scoreB}</Text>

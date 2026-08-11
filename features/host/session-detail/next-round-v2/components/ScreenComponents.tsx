@@ -15,7 +15,7 @@ import {
   Zap
 } from 'lucide-react-native'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ActivityIndicator, Dimensions, Pressable, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Pressable, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native'
 
 import { colors } from '@/constants/colors'
 import { BORDER, SHADOW as LAYOUT_SHADOW, RADIUS } from '@/constants/screenLayout'
@@ -79,10 +79,6 @@ import {
 import type { SuggestedLiveMatchRow } from '../preview'
 import { buildForcedDecision, getRepeatDetailLines, type ForcedSelection } from '../forced-decision'
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window')
-const LIVE_SCORE_CARD_WIDTH = SCREEN_WIDTH > 400 ? 90 : SCREEN_WIDTH > 360 ? 80 : 72
-const LIVE_SCORE_CARD_HEIGHT = LIVE_SCORE_CARD_WIDTH * 1.25
-const LIVE_SCORE_FONT_SIZE = SCREEN_WIDTH > 400 ? 56 : SCREEN_WIDTH > 360 ? 48 : 42
 const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
 const BALANCED_PVNA_COST_WEIGHT = 10
 const BALANCED_REPEAT_COST_WEIGHT = 3
@@ -2427,6 +2423,9 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
   onCancel: (match: SessionLiveMatchRow) => void
 }) {
   const theme = useAppTheme()
+  const { width: screenWidth } = useWindowDimensions()
+  const liveScoreCardWidth = screenWidth > 400 ? 90 : screenWidth > 360 ? 80 : 72
+  const liveScoreCardHeight = liveScoreCardWidth * 1.25
   const [score, setScore] = useState({ a: match.score_a ?? 0, b: match.score_b ?? 0 })
 
   const handleScoreChange = useCallback((side: 'a' | 'b', delta: number) => {
@@ -2476,7 +2475,7 @@ export const LiveMatchScoreBoard = React.memo(function LiveMatchScoreBoard({
             onMinus={() => handleScoreChange('a', -1)}
             onPlus={() => handleScoreChange('a', 1)}
           />
-          <View style={{ paddingHorizontal: 8, paddingTop: LIVE_SCORE_CARD_HEIGHT / 2 - 2, alignItems: 'center' }}>
+          <View style={{ paddingHorizontal: 8, paddingTop: liveScoreCardHeight / 2 - 2, alignItems: 'center' }}>
             <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: 14, color: theme.outlineVariant, fontWeight: '900' }}>VS</Text>
           </View>
           <LiveScoreTeam
@@ -2738,6 +2737,10 @@ export function LiveScoreTeam({
   onPlus: () => void
 }) {
   const theme = useAppTheme()
+  const { width: screenWidth } = useWindowDimensions()
+  const liveScoreCardWidth = screenWidth > 400 ? 90 : screenWidth > 360 ? 80 : 72
+  const liveScoreCardHeight = liveScoreCardWidth * 1.25
+  const liveScoreFontSize = screenWidth > 400 ? 56 : screenWidth > 360 ? 48 : 42
   const winning = score > opponentScore
   return (
     <View style={{ alignItems: 'center', flex: 1, minWidth: 0 }}>
@@ -2758,8 +2761,8 @@ export function LiveScoreTeam({
         >
           <Minus size={18} color={theme.outline} />
         </Pressable>
-        <View style={{ width: LIVE_SCORE_CARD_WIDTH, height: LIVE_SCORE_CARD_HEIGHT, backgroundColor: theme.surfaceContainerLow, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: winning ? theme.primary : theme.outlineVariant, ...LAYOUT_SHADOW.sm }}>
-          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: LIVE_SCORE_FONT_SIZE, color: winning ? theme.primary : theme.onSurface, fontWeight: '900' }}>{score}</Text>
+        <View style={{ width: liveScoreCardWidth, height: liveScoreCardHeight, backgroundColor: theme.surfaceContainerLow, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: winning ? theme.primary : theme.outlineVariant, ...LAYOUT_SHADOW.sm }}>
+          <Text style={{ fontFamily: SCREEN_FONTS.headline, fontSize: liveScoreFontSize, color: winning ? theme.primary : theme.onSurface, fontWeight: '900' }}>{score}</Text>
         </View>
         <Pressable
           onPress={onPlus}

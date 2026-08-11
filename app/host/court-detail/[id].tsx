@@ -7,12 +7,12 @@ import {
   StatusBar,
   Linking,
   Modal, 
-  Dimensions, 
   FlatList,
   Share,
   RefreshControl,
   StyleSheet,
-  Alert
+  Alert,
+  useWindowDimensions
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
@@ -49,8 +49,6 @@ import Animated, {
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler'
 import { supabase } from '@/lib/supabase'
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window')
-
 function _withAlpha(hex: string, alpha: number): string {
   if (!hex || !hex.startsWith('#')) return hex
   const r = parseInt(hex.slice(1, 3), 16)
@@ -64,6 +62,7 @@ export default function OwnerCourtDetailScreen() {
   const theme = useAppTheme()
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions()
   
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -231,7 +230,7 @@ export default function OwnerCourtDetailScreen() {
 
   const reviewsAnimatedStyle = useAnimatedStyle(() => {
     return {
-      transform: [{ translateY: interpolate(reviewsProgress.value, [0, 1], [SCREEN_HEIGHT, 0]) }]
+      transform: [{ translateY: interpolate(reviewsProgress.value, [0, 1], [screenHeight, 0]) }]
     }
   })
 
@@ -289,9 +288,9 @@ export default function OwnerCourtDetailScreen() {
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
-              style={{ width: SCREEN_WIDTH, height: 280 }}
+              style={{ width: screenWidth, height: 280 }}
               renderItem={({ item, index }) => (
-                <TouchableOpacity activeOpacity={0.9} onPress={() => openImageViewer(index, court.images)} style={{ width: SCREEN_WIDTH, height: 280 }}>
+                <TouchableOpacity activeOpacity={0.9} onPress={() => openImageViewer(index, court.images)} style={{ width: screenWidth, height: 280 }}>
                   <Image source={{ uri: item }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
                 </TouchableOpacity>
               )}
@@ -367,7 +366,7 @@ export default function OwnerCourtDetailScreen() {
             >
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -24 }} contentContainerStyle={{ paddingHorizontal: 24, gap: 12 }}>
                 {court.reviews.slice(0, 5).map((rev, idx) => (
-                  <ReviewCard key={idx} review={rev} width={SCREEN_WIDTH * 0.7} theme={theme} compact onPhotoPress={(imgIdx, imgs) => openImageViewer(imgIdx, imgs)} />
+                  <ReviewCard key={idx} review={rev} width={screenWidth * 0.7} theme={theme} compact onPhotoPress={(imgIdx, imgs) => openImageViewer(imgIdx, imgs)} />
                 ))}
                 {court.reviews.length > 5 && (
                   <TouchableOpacity onPress={() => setReviewsVisible(true)} style={{ width: 100, height: 120, backgroundColor: theme.surfaceVariant, borderRadius: RADIUS.lg, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' }}>
@@ -420,17 +419,17 @@ export default function OwnerCourtDetailScreen() {
                   horizontal
                   pagingEnabled
                   initialScrollIndex={selectedImageIndex}
-                  getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
+                  getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
                   onMomentumScrollEnd={(e) => {
                     const offset = e?.nativeEvent?.contentOffset?.x
-                    if (typeof offset === 'number' && SCREEN_WIDTH > 0) {
-                      setSelectedImageIndex(Math.round(offset / SCREEN_WIDTH))
+                    if (typeof offset === 'number' && screenWidth > 0) {
+                      setSelectedImageIndex(Math.round(offset / screenWidth))
                     }
                   }}
                   showsHorizontalScrollIndicator={false}
                   renderItem={({ item }) => (
-                    <View style={{ width: SCREEN_WIDTH, height: '100%', justifyContent: 'center' }}>
-                      <Image source={{ uri: item }} style={{ width: SCREEN_WIDTH, height: '100%' }} contentFit="contain" />
+                    <View style={{ width: screenWidth, height: '100%', justifyContent: 'center' }}>
+                      <Image source={{ uri: item }} style={{ width: screenWidth, height: '100%' }} contentFit="contain" />
                     </View>
                   )}
                   keyExtractor={(_, index) => index.toString()}
