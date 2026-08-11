@@ -57,8 +57,12 @@ function recentMeetings(state: SessionState, xId: string, yId: string, kind: 'pa
   let weighted = 0
   for (const round of state.rounds) {
     if (round.status !== 'completed') continue
-    const d = roundNo - round.round_no
-    if (d <= 0 || d > RECENT_REPEAT_PENALTY_WINDOW) continue
+    // Same clamp score.ts applies: round_no counts cycles on one court, so a completed round can carry
+    // a higher number than the court being judged. Discarding it as "the future" priced a meeting that
+    // finished minutes ago on a faster court at the stale floor instead of full weight — measured at
+    // 0.31 against 0.73 for the identical pairing from a slower court.
+    const d = Math.max(1, roundNo - round.round_no)
+    if (d > RECENT_REPEAT_PENALTY_WINDOW) continue
     const decay = d <= 1 ? 1 : d === 2 ? 0.65 : 0.35
     for (const m of round.matches) {
       const pairs = kind === 'partner'

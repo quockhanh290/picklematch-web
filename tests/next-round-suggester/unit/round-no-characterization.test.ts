@@ -73,7 +73,10 @@ describe('round_no characterization across next-round-suggester', () => {
     // the minimum repeat weight.
     const recentCost = computeQualityCost(['a', 'b'], ['c', 'd'], recent, { tolerance: 0.5 }).cost
     const aheadCycleCost = computeQualityCost(['a', 'b'], ['c', 'd'], sameCourtAheadCycle, { tolerance: 0.5 }).cost
-    expect(recentCost).toBeGreaterThan(aheadCycleCost)
+    // APPROVED BEHAVIOUR CHANGE (BUG #7): the cost model used to discount a meeting from a court further
+    // ahead to the stale floor — 0.31 against 0.73 for the identical pairing from a slower court. Both
+    // are recent, so they now price the same, and score.ts already made this change in baa5c70.
+    expect(recentCost).toBeCloseTo(aheadCycleCost, 6)
   })
 
   it('select.pickPlayers uses last_played_round as a session recency priority tie-breaker', () => {
