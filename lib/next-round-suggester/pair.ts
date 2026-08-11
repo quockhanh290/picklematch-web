@@ -273,7 +273,8 @@ function shouldReplaceBestPartition(
     return candidatePartnerBurden.avg < bestPartnerBurden.avg
   }
 
-  return scoreDiff < 0
+  if (scoreDiff !== 0) return scoreDiff < 0
+  return matchesKey(candidate.matches) < matchesKey(best.matches)
 }
 
 function getProjectedBurden(

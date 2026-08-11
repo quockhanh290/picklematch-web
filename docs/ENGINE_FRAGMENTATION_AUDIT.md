@@ -390,10 +390,11 @@ Chỉ bug **không bác được VÀ có repro** mới nằm dưới đây. Seve
 
 ### 5.1 Bảng tổng hợp — 43 CONFIRMED
 
-> **Cột trạng thái: Codex quét, tôi chốt từng phần.** Bảng trạng thái do agent sinh trong dự án này đã sai 2 lần trước đây, và lượt quét này cũng sai — theo cả hai chiều. Tôi đã tự kiểm bằng code các mục **#1, #3, #15, #16, #17, #23, #32, #39** và tìm thấy 2 mục sai, đã sửa tại chỗ:
+> **Cột trạng thái: Codex quét, tôi chốt từng phần.** Bảng trạng thái do agent sinh trong dự án này đã sai 2 lần trước đây, và lượt quét này cũng sai — theo cả hai chiều. Tôi đã tự kiểm bằng code các mục **#1, #3, #7, #15, #16, #17, #23, #26, #32, #39** — **5 trên 10 mục sai**, đã sửa tại chỗ:
 > - **#17** bị đánh nhầm CÒN MỞ: vòng `delete` còn lại chính là hình dạng SAU bản vá `4ef0449`.
 > - **#32** bị đánh nhầm ĐÃ SỬA: ngưỡng vẫn tách theo `round_no` per-sân.
-> - **#39** Codex đúng và TÔI sai: `live-rounds.ts` nằm ở `lib/`, không phải `features/` như audit ghi.
+> - **#7 và #26** bị đánh nhầm CÒN MỞ, cùng kiểu sai như #17: `Math.max(1, roundNo - round.round_no)` là bản vá, nhưng vì hai biến cũ vẫn xuất hiện nên bị đọc thành chưa sửa.
+> - **#39** cả hai đều sai: tôi bảo file đã bị xoá (sai — nó ở `lib/`), Codex bảo còn mở (sai — nhánh `cycle_no` không còn dòng nào trong file).
 >
 > **Các mục ĐÃ SỬA còn lại chưa được tôi kiểm từng cái.** Dùng bảng này làm danh sách đi kiểm, đừng dùng làm kết luận.
 
@@ -408,7 +409,7 @@ Chỉ bug **không bác được VÀ có repro** mới nằm dưới đây. Seve
 | 4 | Migration chép đè thân hàm → silent revert 5 text-patch | `20260722000004:13` | 7, 3 | ĐÃ SỬA | supabase/migrations/20260811000001_persist_guard_per_court_key.sql:186-205 guard mới; 279-286 vẫn insert per-court |
 | 5 | Guard persist dùng `v_round_no` batch nhưng INSERT per-court → lưu được, **không start được** | `20260808000001:189-192` vs `:268-275` | 7 | ĐÃ SỬA | supabase/migrations/20260811000001_persist_guard_per_court_key.sql:186-205 bỏ guard already-played theo v_round_no |
 | 6 | Guard "đã chơi vòng này" so `round_no` **xuyên sân** → persist/start bị từ chối, sân kẹt | `20260808000001:184-195`, `20260721000001:86-104` | 3, 7 | ĐÃ SỬA | supabase/migrations/20260811000002_start_guards_scope_round_to_court.sql:94-95 và 319-320 scope theo court |
-| 7 | Cửa sổ chống-lặp **mù** với sân chạy trước sau khi `round_no` thành per-court | `score.ts:169-177, 252-259` | 3 | CÒN MỞ | lib/next-round-suggester/score.ts:169-176 vẫn dùng state.current_round với round.round_no |
+| 7 | Cửa sổ chống-lặp **mù** với sân chạy trước sau khi `round_no` thành per-court | `score.ts:169-177, 252-259` | 3 | ĐÃ SỬA | score.ts:175 `Math.max(1, roundNo - round.round_no)` — clamp CHÍNH LÀ bản vá; hai biến còn đó là đúng, cái đổi là vòng đã xong mang số lớn hơn không còn bị bỏ như "tương lai" |
 | 8 | Cùng root #2 — `forced_tradeoff.acceptRepeat` có thể **double-book** người đã bị chuyển sân | `live-preview.ts:5321` + `forced-decision.ts:117-131` | 2 | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:2979-2999 xoá forced_tradeoff nếu lineup khác seated |
 | 9 | Board-wide pass chia chung 400ms theo thứ tự mảng → sân degraded cuối **mất "Chờ Sân X"** | `index.ts:1489-1520`, `live-preview.ts:3968` | 4, 9 | CÒN MỞ | lib/next-round-suggester/live-preview.ts:77-82 mô tả shared rescue budget; 3975 findRescueCourts |
 | 13 | Snapshot RPC **xoá ngược** round đã hoàn tất *(nâng medium → HIGH ở lượt verify 2: "tệ hơn mô tả")* | `20260703000005:128-143` | 3, 7 | ĐÃ SỬA | supabase/migrations/20260810000002_partial_round_visible.sql:151 và 167-170 chỉ agg completed rows |
@@ -431,7 +432,7 @@ Chỉ bug **không bác được VÀ có repro** mới nằm dưới đây. Seve
 | 23 | Rolling-lane ghi đè `playerIdsByRound` → sân kế trong batch tính sai "ai đã nghỉ" | `live-preview.ts:4418-4420`, `:5466` | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:4546-4548 seed từ playerIdsByRound hiện có; 5593-5595 merge rồi set |
 | 24 | `sync_live_suggestion_metadata` gắn metadata nhầm lineup (chỉ match `court_idx`, không so team) | `20260805000010:31` | ĐÃ SỬA | supabase/migrations/20260809000002_unify_live_suggestion_hint_sync.sql:87-99 match court_idx và team hai chiều |
 | 25 | `degraded_reason` cũ không bao giờ được xoá khỏi DB khi board trở nên sạch | `index.ts:1559, 1543-1566` | ĐÃ SỬA | supabase/migrations/20260809000002_unify_live_suggestion_hint_sync.sql:31-49 empty board clear stale hints |
-| 26 | Hệ số recency của `computeQualityCost` lệch vì `current_round` là bộ đếm per-court | `quality-cost.ts:41-47`, `live-preview.ts:4533` | CÒN MỞ | lib/next-round-suggester/quality-cost.ts:55-64 vẫn tính recency bằng state.current_round và round.round_no |
+| 26 | Hệ số recency của `computeQualityCost` lệch vì `current_round` là bộ đếm per-court | `quality-cost.ts:41-47`, `live-preview.ts:4533` | ĐÃ SỬA | quality-cost.ts:64 cùng clamp `Math.max(1, roundNo - round.round_no)`; đo được: cặp từ sân nhanh trước bị định giá 0.31 thay vì 0.73 |
 | 27 | `fetchAvailablePoolPreview` bump serial → response preview đang bay bị vứt, không lịch lại | `useLiveBoard.ts:809` vs `:2229` | ĐÃ SỬA | features/host/session-detail/next-round-v2/hooks/useLiveBoard.ts:797 gọi abortPreviewRequest; 225-234 bump nonce |
 | 28 | `rescueHandledNonceRef` tiêu thụ lúc DISPATCH → request thất bại làm mất trigger "Chờ Sân X" | `useLiveBoard.ts:2086-2091` | ĐÃ SỬA | features/host/session-detail/next-round-v2/hooks/useLiveBoard.ts:2448-2452 chỉ set rescueHandledNonce sau khi có replacement |
 
@@ -450,11 +451,11 @@ Chỉ bug **không bác được VÀ có repro** mới nằm dưới đây. Seve
 | 36 | Gợi ý nhánh legacy bị dán nhãn `edge_committed` → Start với id không tồn tại | `useLiveBoard.ts:2357, 2810-2815` | CHƯA KIỂM | còn preview_source edge_committed tại useLiveBoard.ts:2722-2724 nhưng chưa theo được runtime id persist hay client |
 | 37 | `RestRiskBanner` "Bỏ qua" 1 lần → im lặng với người khác nếu số lượng không đổi | `ScreenComponents.tsx:3632` | ĐÃ SỬA | features/host/session-detail/next-round-v2/components/ScreenComponents.tsx:3640-3645 reset dismissed theo riskPlayerKey |
 | 38 | `playCostText` báo "không đánh đổi gì" cho trận đã vượt PVNA tolerance | `ScreenComponents.tsx:1971-1979` | ĐÃ SỬA | features/host/session-detail/next-round-v2/components/ScreenComponents.tsx:1982-1987 over tolerance không còn text không đánh đổi |
-| 39 | `cycle_no` không còn writer → nhánh canonical của `reconstructLiveRounds` là dead code | `live-rounds.ts:35-41, 65-66` | CÒN MỞ | lib/next-round-suggester/live-rounds.ts:51-56 vẫn dùng persisted round_no khi reliable; file hiện tồn tại |
+| 39 | `cycle_no` không còn writer → nhánh canonical của `reconstructLiveRounds` là dead code | `live-rounds.ts:35-41, 65-66` | ĐÃ SỬA | `rg cycle_no lib/next-round-suggester/live-rounds.ts` => 0 hit trong cả 96 dòng; thứ tự lấy theo `sequence_no` (:48-49). Nhánh round_no mà bản rà trích dẫn KHÔNG phải bug này. Lưu ý đường dẫn trong bảng sai: file ở `lib/`, không phải `features/` |
 | 40 | Patch tight-pool quality-defer đã unreachable nhưng vẫn tính và vận chuyển tới client | `live-preview.ts:5114, 5191-5209` | ĐÃ SỬA | lệnh: rg -n "shouldDeferTightPoolSuggestion|TIGHT_POOL_QUALITY_WAIT_MS|quality_deferred_courts|quality_deferred" lib/next-round-suggester supabase/functions features/host/session-detail => 0 hit |
 | 41 | Breakpoint tính 1 lần lúc import → web resize không đổi layout | `ScreenComponents.tsx:83-86` + 7 file | CÒN MỞ | features/host/session-detail/next-round-v2/components/ScreenComponents.tsx:82-85 vẫn tính SCREEN_WIDTH lúc import |
 | 42 | 0 `accessibilityLabel` trên toàn bộ 376 touchable | toàn repo | CÒN MỞ | features/host/session-detail/next-round-v2/components/ScreenComponents.tsx:336 có TouchableOpacity không accessibilityLabel |
-| 43 | Comment/calibration lệch weight đang ship (`intraOver` doc 1.0 vs ship 4.0) | `quality-cost.ts:15-22` | CÒN MỞ | lib/next-round-suggester/quality-cost.ts:15-19 comment nói chỉ balance/repeat moved nhưng intraOver ship 4.0 |
+| 43 | Comment/calibration lệch weight đang ship (`intraOver` doc 1.0 vs ship 4.0) | `quality-cost.ts:15-22` | ĐÃ SỬA | quality-cost.ts:15-20 nay ghi rõ intraOver cũng đã đổi 1.0 → 4.0 (`e4b020e`), khớp giá trị đang ship |
 
 > **Lưu ý dedup:** #2/#8 cùng một root (`forced_tradeoff` snapshot trước post-pass) và #19/#30 cùng một root (`normalizeRepairedPayload` wipe) — mỗi cặp được hai agent phát hiện từ hai chiều khác nhau, dedup theo title không gộp được. **41 root cause riêng biệt / 43 bug.**
 

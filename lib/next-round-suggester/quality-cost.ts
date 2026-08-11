@@ -14,7 +14,10 @@ export type QualityCostWeights = {
 }
 // Calibrated via scripts/diagnostics/quality-cost-sim.ts (Task 6 A/B sweep, see that file's header for
 // the before/after table) + the 5 intent-check scenarios in tests/.../quality-cost.test.ts. Shapes are
-// fixed; only balanceOver/repeat2/repeat3/repeatStep moved from the Task 1 illustrative starting values.
+// fixed; balanceOver/repeat2/repeat3/repeatStep moved from the Task 1 illustrative starting values, and
+// so did intraOver — 1.0 to 4.0 in e4b020e. This note used to omit that, which is BUG #43: a comment
+// listing which weights are calibrated is how the next person decides what is safe to tune, so one that
+// quietly disagrees with the shipped values is worse than none.
 export const DEFAULT_QUALITY_COST_WEIGHTS: QualityCostWeights = {
   balanceTie: 0.1, balanceOver: 1.6, intraTie: 0.1, intraOver: 4.0,
   repeat2: 1.0, repeat3: 3.6, repeatStep: 2.4, opponentFactor: 0.7,
