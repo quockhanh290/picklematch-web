@@ -13,7 +13,7 @@ import { getEffectivePvna } from './state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { getAvoidPenalty, AVOID_PARTNER_PENALTY } from './avoid.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
-import { computeQualityCost, lineupRankingCost } from './quality-cost.ts'
+import { computeQualityCost, lineupRankingCost, OVER_TOLERANCE_BARRIER } from './quality-cost.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
 
@@ -628,7 +628,19 @@ export function scoreMatch(
     // (same helper the flag-OFF path uses) so planner/session-plan.ts -> ScreenComponents.tsx shows
     // a real number instead of the placeholder 0.
     stats.gender_pref_penalty = genderPenalty(teamA, teamB, state, weights)
-    return { score: lineupRankingCost(result, tolerance), stats }
+    // The gate below at the recent-group-rematch check never runs on this branch, and the cost model has
+    // no term standing in for it: its repeat curve prices PAIR meetings, so the same four playing the
+    // same two-versus-two again costs no more than any other repeat. The rule would simply not exist for
+    // sessions on this model.
+    //
+    // Applied as a barrier rather than the legacy INFINITY_SCORE — a hard gate inside a soft model
+    // cannot be ordered, and the engine needs to rank rematches against each other when a pool leaves it
+    // no choice. Same magnitude as the tolerance barrier: both are rules the objective may not trade
+    // away, and a lineup breaking both costs both.
+    const rematchBarrier = !options.allowRecentGroupRematch && hasRecentGroupRematch(teamA, teamB, state)
+      ? OVER_TOLERANCE_BARRIER
+      : 0
+    return { score: lineupRankingCost(result, tolerance) + rematchBarrier, stats }
   }
 
   const teamAIntraGap = Math.abs(getEffectivePvna(teamA0) - getEffectivePvna(teamA1))
