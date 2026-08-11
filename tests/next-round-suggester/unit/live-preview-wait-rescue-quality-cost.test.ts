@@ -116,6 +116,39 @@ describe('computeMatchDegradedRescue — quality-cost re-anchor (flag-gated)', (
       expect(result.rescueCourtIdxs).toEqual([0])
     })
 
+    it('marks rescue search truncated when the budget is exhausted before checking a viable rescue court', () => {
+      const scene = buildRescueClearsScenario()
+      const fullBudget = computeMatchDegradedRescue({
+        teamA: ['X1', 'X2'],
+        teamB: ['Y1', 'Y2'],
+        courtIdx: 1,
+        state: scene.state,
+        liveCourtIdxs: scene.liveCourtIdxs,
+        liveCourtPlayers: scene.liveCourtPlayers,
+        busyIds: scene.busyIds,
+        pvnaTolerance: 0.5,
+        budgetMs: 2000,
+        nowMsFn: () => performance.now(),
+      })
+      const exhaustedBudget = computeMatchDegradedRescue({
+        teamA: ['X1', 'X2'],
+        teamB: ['Y1', 'Y2'],
+        courtIdx: 1,
+        state: scene.state,
+        liveCourtIdxs: scene.liveCourtIdxs,
+        liveCourtPlayers: scene.liveCourtPlayers,
+        busyIds: scene.busyIds,
+        pvnaTolerance: 0.5,
+        budgetMs: 0,
+        nowMsFn: () => performance.now(),
+      })
+
+      expect(fullBudget.rescueCourtIdxs).toEqual([0])
+      expect(exhaustedBudget.degradedReason).toBe('blowout')
+      expect(exhaustedBudget.rescueCourtIdxs).toEqual([])
+      expect((exhaustedBudget as any).rescueSearchTruncated).toBe(true)
+    })
+
     it('a within-cost-region seat (balanced, fresh) is not degraded', () => {
       const state = buildBalancedFreshState()
       const result = computeMatchDegradedRescue({

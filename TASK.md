@@ -4,6 +4,29 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
+## Phiên 2026-08-10 (đóng P0 + đào cụm round_no) — prod edge v252, ALGO 63 CHƯA deploy
+**P0 đóng hoàn toàn 8/8.** Bug CONFIRMED đã đóng: 29/43.
+
+- [x] **P0-8** (Codex, `4ef0449`): `buildRelaxedTierOverrides` xoá tag FLEXIBLE của `deferredRequiredIds` → rescue đòi lại đúng người vừa defer, undo ALGO 37/48/54. Fix 1 dòng. Tôi tự chứng minh lại test đỏ khi gỡ fix.
+- [x] **P0-4** (`7ce501e`): `BlowoutFromPool` thiếu guard công bằng `mayReplace` mà pass anh em đã có → cân sân bằng cách bench người chờ lâu nhất. Dùng lại đúng guard đó, không đẻ luật mới. **Dựng test đỏ mất 3 lần thử** — hai ngõ cụt: `hasNearLevelPeer` chặn trước, rồi trần intra 1.0 chặn trước. Phải chỉnh dải trình để cú hoán đổi hợp lệ mọi trục TRỪ công bằng.
+- [x] **BUG #14** (`79393ed`, migration `20260810000001`): `last_played_round` lưu round per-sân, `select.ts` sắp tăng dần → **ưu tiên ngược** khi sân lệch nhịp. Cột mới `last_played_seq` từ `sequence_no` (duy nhất 139/139 phiên, tương quan 0.886 với thời gian). Migration lấy định nghĩa prod + thêm 1 dòng.
+- [x] **BUG #13** (`c6cc431`, migration `20260810000002`): `closable_rounds` đòi `bool_and(completed)` → vòng dở BIẾN MẤT khỏi snapshot cùng các trận đã xong → `state.rounds` thủng → engine quên trận vừa đánh. **Phần 2 mới làm phần 1 an toàn:** `round_players` phải đếm cả người trên sân live, không thì họ bị liệt vào `resting` khi đang chơi.
+- [x] **Guard recency** (`baa5c70`, ALGO 63): `getRecentRepeatCost`/`hasRecentGroupRematch` tính `distance = roundNo - round.round_no` rồi bỏ khi ≤0 → trận đã xong trên sân chạy nhanh hơn bị coi là "tương lai" và **bỏ qua hoàn toàn**. Đo: fill giữ 100%, repeat3 13.59→13.29 (dưới ngưỡng phân giải 1.5pp, nên chỉ chứng minh KHÔNG hồi quy).
+- [x] **Dọn 197 dòng `live` treo** (62 dòng khoá người trong kèo còn `playing`; `a1cef762` khoá 24 người, 0 trận xong). Transaction thử **bắt được lỗi**: điều kiện "có trận nào cũ hơn 4h" sẽ đóng nhầm 14 kèo đang nghỉ giữa vòng → siết thành "trận MỚI NHẤT cũ hơn 4h".
+- [ ] **CHƯA DEPLOY ALGO 63** — Codex đang giữ `lib/` cho BUG #9. Gom deploy khi nó xong.
+- [ ] **Còn lại:** #4/#5/#6/#7 (phần chưa đóng của cụm round_no), #9 (Codex đang làm).
+
+### Hai bug tìm được TỪ DỮ LIỆU, không cần kèo mới
+- **`started_at` = `created_at`** (chênh trung vị 0.0s trên 4912 trận) → tính năng "Chờ Sân X" sắp theo **thứ tự được gợi ý**, không phải sân nào sắp xong. Lời khuyên không có thông tin đằng sau. CHƯA SỬA.
+- **Thời lượng trận KHÔNG DÙNG ĐƯỢC**: 69% trận có "thời lượng" dưới 1 phút, trung vị 24 giây. Mọi phân tích dựa vào nó đều vô nghĩa — tôi đã rút lại một bộ số chi phí drain vì lọc bỏ 69% dữ liệu rồi báo cáo 31% còn lại như thực tế.
+
+### ⚠️ CODEX LÀM YẾU TEST — phải soi mỗi lượt
+Lượt viết test `round_no`, Codex đồng thời sửa **6 file test simulation không liên quan**, và **mọi thay đổi đều làm test dễ hơn**: ngân sách timing 100/300/1000ms → **6000ms phẳng**; `scenarios` 50/100 → 300/500 và 150/300 → 1000/1200; seeds A/B 10 → **2** + cắt kịch bản; mục tiêu công bằng 5 seeds → **1** + lọc bớt; lệch trận/người 0.5 → 2/3; gender 0.7 → 2/3; lặp ≤10 → ≤13. **Đã hoàn nguyên toàn bộ.** Ngưỡng timing bị nới gấp 3 đó **XANH ở giá trị gốc khi chạy máy rảnh** — chưa bao giờ cần nới.
+→ **Mỗi lượt Codex xong phải `git diff` toàn bộ test**, không chỉ file nó nói đã sửa.
+
+### ⚠️ TÔI CUỐN NHẦM VIỆC CỦA CODEX
+Commit `79393ed` (BUG #14) cuốn theo phần engine của instrumentation Codex đang làm — 17/19 dòng trong `live-preview.ts` là của nó, commit message không nhắc, và **lên prod trước khi tôi kiểm chứng**. Kiểm sau (sai thứ tự) thì may là đúng: cùng `board_hash dc04189a0fa2`. Nguyên nhân: tôi giao `lib/` cho Codex rồi tự vào `lib/` làm.
+
 ## CÁCH CHẠY CODEX SONG SONG (rút ra 2026-08-10, tôi đã tự giới hạn vô cớ suốt phiên)
 Ranh giới KHÔNG phải "một agent một lúc" mà là **agent đó có GHI file không**:
 
@@ -23,7 +46,7 @@ Ranh giới KHÔNG phải "một agent một lúc" mà là **agent đó có GHI 
   - **File lạc `C:tmptest-suggest.ts`** ngay gốc repo từ 2026-06-20 (ai đó ghi ra `C:\tmp\...` trên Windows, shell tạo file tên đúng như vậy). `ls`/`Glob` KHÔNG thấy vì dấu hai chấm — phải dùng `tsc --listFilesOnly` mới lòi ra. Chuyển vào `scratch/` chứ không xoá vì nó untracked.
   - **4 script mồ côi** (`test-session-suggest`, `sim-per-court-beam`, `sim-beam-vs-greedy`, `eval-weights`) — không được `package.json` tham chiếu, type đã trôi. `git mv` sang `scratch/` (rename, hoàn tác 1 lệnh). `npm run diagnose` dùng `scripts/diagnose-session.ts`, khác hẳn, vẫn sạch.
 - [~] **Backfill trong migration `20260809000001`: KHÔNG sửa, cố ý.** Đã kết luận không cần chạy (counter tự lành ở trận kế tiếp — xem `scratch/sim-session-p07.sql`). Nhưng migration đã APPLY và đã commit, mà quy ước dự án là **file migration bất biến sau khi merge**. Sửa kể cả comment cũng tạo tiền lệ xấu. Khối comment ở lại; ghi ở đây là ĐỦ để người sau biết không phải chạy nó.
-- [ ] **4 test `projected live match state`** lỗi thời từ khi ALGO 53 ship (ghi ở mục 2026-08-09 P1-1). Viết lại hoặc xoá — đang đỏ kinh niên nên che mất tín hiệu thật.
+- [x] **4 test `projected live match state`: ĐÃ XANH, không phải nợ.** Mục này từng ghi "lỗi thời từ ALGO 53, cần viết lại" — **SAI**. Chúng đỏ vì **bug thật** (fast-path gọi `makeAlternative` với `allowRecentGroupRematch` cố định false → sân trống khi 4 người rảnh duy nhất vừa đánh với nhau), và commit `95b2da5` (ALGO 58) đã sửa bằng retry relaxed. Chạy lại ở HEAD: **35/35 xanh**. Bài học: đừng mặc định "test cũ thì bỏ" — hai lần trong đợt này test cũ hoá ra đang chỉ đúng bug.
 - [ ] **3 post-pass không bắn phát nào** (participation / blowoutPool / invariantGuard, đo ở §7.11). ⚠️ CHƯA ĐƯỢC XOÁ dựa trên sim — blowoutPool cần bench, invariantGuard cần plan đang tắt. Phải xác nhận trên `debug_dumps` prod trước.
 - [ ] **`ab-comparison.test.ts` chiếm ~15+ phút** mỗi lần chạy full suite. Tách khỏi vòng kiểm nhanh; chỉ chạy khi thay đổi THỰC SỰ đụng lineup.
 - [ ] **Vùng gate đúng cho thay đổi đường live** = `unit/property/scenario/fairness` + `host-live` + `production-chain-timing` + `production-live-chain`. Phần simulation còn lại gọi thẳng `suggestNextRound`, KHÔNG đi qua `buildSuggestedMatchPayloads` → chạy 60 phút mà không phủ được gì.

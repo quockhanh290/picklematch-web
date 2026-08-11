@@ -189,6 +189,7 @@ export type SessionLiveMatchRow = {
   // so the host "Cách xử lý" panel survives cold load / snapshot hydration / sticky merge.
   degraded_reason?: 'blowout' | 'repeat' | 'both' | null
   rescue_court_idxs?: number[] | null
+  rescue_search_truncated?: boolean | null
   match_explanations?: string[] | null
 }
 
