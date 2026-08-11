@@ -42,6 +42,7 @@
     "lint:errors": "eslint . --ext .ts,.tsx,.js,.jsx --quiet",
     "lint:warnings:report": "eslint . --ext .ts,.tsx,.js,.jsx -f json -o .lint-report.json && node ./scripts/lint-warnings-report.mjs",
     "check:encoding": "node ./scripts/check-encoding.mjs",
+    "check:migrations": "tsx scripts/check-migrations.ts",
     "check:secrets": "node ./scripts/check-secrets.mjs",
     "seed:dummy": "node --env-file=.env.server ./scripts/seed-dummy-data.mjs",
     "smoke:backend": "node --env-file=.env.server ./scripts/smoke-backend.mjs",

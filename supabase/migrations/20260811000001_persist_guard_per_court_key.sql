@@ -331,5 +331,5 @@ begin
     'persisted_preview_noop', false
   );
 end;
-$function$
+$function$;
 
