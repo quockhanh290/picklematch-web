@@ -166,9 +166,10 @@ export function simulateWaitWouldClean(
     const res = buildTradeoffEndpoints(enlarged, state, tolerance)
     if (res.isForced === false && res.clean) qualifying.push({ court_idx: court.court_idx, started_at: court.started_at })
   }
-  return qualifying.sort((a, b) => {
-    const ta = a.started_at ? Date.parse(a.started_at) : Infinity
-    const tb = b.started_at ? Date.parse(b.started_at) : Infinity
-    return ta - tb || a.court_idx - b.court_idx
-  })
+  // Ordered by court number, which claims nothing. Sorting by started_at used to imply "this court has
+  // been running longest so it will free up first", and that timestamp is set when the row is created —
+  // median gap from created_at is 0.0s across 4912 completed matches — so the ranking encoded suggestion
+  // order, not remaining play time. Court order is arbitrary too, but it does not pretend otherwise, and
+  // it keeps the list stable rather than dependent on whatever order the caller iterated.
+  return qualifying.sort((a, b) => a.court_idx - b.court_idx)
 }

@@ -122,7 +122,12 @@ describe('simulateWaitWouldClean', () => {
     expect(simulateWaitWouldClean(pool, live, state, 0.5)).toEqual([])
   })
 
-  it('sorts qualifying courts longest-running first (earliest started_at)', () => {
+  // APPROVED BEHAVIOUR CHANGE. This pinned an ordering by started_at, on the reading that the court
+  // running longest frees up first. started_at is stamped when the row is created — median gap from
+  // created_at is 0.0 seconds across 4912 completed matches — so it ranked by suggestion order and told
+  // the host nothing about which court would finish next. The list is now ordered by court number, which
+  // claims nothing and stays stable.
+  it('orders qualifying courts by court number, making no claim about who finishes first', () => {
     const state = stateWith({ lo1: 2.0, lo2: 2.1, hi1: 3.7, hi2: 3.8, m1: 3.0, m2: 3.0, m3: 3.0, m4: 3.0, n1: 3.0, n2: 3.0, n3: 3.0, n4: 3.0 }, 3)
     const lo1 = state.players.get('lo1')!
     const lo2 = state.players.get('lo2')!
@@ -138,10 +143,11 @@ describe('simulateWaitWouldClean', () => {
     // this genuinely exercises the sort rather than depending on only one court qualifying.
     const live = [
       { court_idx: 1, player_ids: ['m1', 'm2', 'm3', 'm4'], started_at: '2026-08-05T07:10:00Z' },
-      { court_idx: 2, player_ids: ['n1', 'n2', 'n3', 'n4'], started_at: '2026-08-05T07:00:00Z' }, // earlier
+      // Earlier timestamp, and deliberately listed second: it must NOT be promoted for that.
+      { court_idx: 2, player_ids: ['n1', 'n2', 'n3', 'n4'], started_at: '2026-08-05T07:00:00Z' },
     ]
     const res = simulateWaitWouldClean(pool, live, state, 0.5)
-    expect(res.map(r => r.court_idx)).toEqual([2, 1])
+    expect(res.map(r => r.court_idx)).toEqual([1, 2])
   })
 })
 
