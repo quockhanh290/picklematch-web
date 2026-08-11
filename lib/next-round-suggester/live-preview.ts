@@ -101,7 +101,7 @@ const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 62
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 63
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -294,6 +294,8 @@ export type SuggestedLiveMatchRow = SessionLiveMatchRow & {
   degraded_reason?: 'blowout' | 'repeat' | 'both'
   // Live court idxs whose completion would let the engine build a non-degraded lineup ("sân cứu").
   rescue_court_idxs?: number[]
+  // True when the bounded rescue-court search stopped before all candidate live courts were checked.
+  rescue_search_truncated?: boolean
   // Phase 3: concrete per-match explanations of each compromise (repeat/intra/blowout) + reason.
   match_explanations?: string[]
   // Quality-cost-model: when this court's lineup is a forced tradeoff (no clean split exists in the
@@ -323,7 +325,7 @@ export type SuggestedPreviewBatch = {
   matches: SuggestedLiveMatchRow[]
 }
 
-export type SuggestedMatchPayload = Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context' | 'locked_player_ids' | 'degraded_reason' | 'rescue_court_idxs' | 'match_explanations' | 'forced_tradeoff' | 'wait_rescue_options'>
+export type SuggestedMatchPayload = Pick<SuggestedLiveMatchRow, 'court_idx' | 'team_a' | 'team_b' | 'resting' | 'round_no' | 'preview_live_state_version' | 'preview_countable_match_count' | 'warnings' | 'tradeoffs' | 'approval_required' | 'configured_pvna_tolerance' | 'effective_pvna_tolerance' | 'fairness_reasons' | 'fairness_reason_details' | 'tradeoff_choices' | 'recommended_tradeoff_choice' | 'live_availability_context' | 'locked_player_ids' | 'degraded_reason' | 'rescue_court_idxs' | 'rescue_search_truncated' | 'match_explanations' | 'forced_tradeoff' | 'wait_rescue_options'>
 
 export type PreviewBoardMode = 'full_board' | 'replace_courts'
 
@@ -3968,11 +3970,15 @@ function findRescueCourts(input: {
   perCourtRuntimeMs: number
   budgetMs: number
   nowMsFn: () => number
-}): number[] {
+}): { courtIdxs: number[]; truncated: boolean } {
   const rescue: number[] = []
   const startedAt = input.nowMsFn()
+  let truncated = false
   for (const [liveCourt, players] of input.liveCourtPlayers) {
-    if (input.nowMsFn() - startedAt > input.budgetMs) break
+    if (input.nowMsFn() - startedAt > input.budgetMs) {
+      truncated = true
+      break
+    }
     const freedBusy = new Set([...input.busyIds].filter(id => !players.includes(id)))
     // A finishing court does not hand ALL its players to the degraded lane — it ALSO re-fills, and
     // typically re-claims its own just-freed players. Simulate that re-fill FIRST so those players
@@ -4003,7 +4009,7 @@ function findRescueCourts(input: {
       rescue.push(liveCourt)
     }
   }
-  return rescue.sort((left, right) => left - right)
+  return { courtIdxs: rescue.sort((left, right) => left - right), truncated }
 }
 
 // Degraded-match detection + rescue-court search for a SINGLE match, reusable outside the per-court
@@ -4022,7 +4028,7 @@ export function computeMatchDegradedRescue(input: {
   pvnaTolerance: number
   budgetMs: number
   nowMsFn: () => number
-}): { degradedReason: SuggestedMatchPayload['degraded_reason']; rescueCourtIdxs: number[]; elapsedMs: number } {
+}): { degradedReason: SuggestedMatchPayload['degraded_reason']; rescueCourtIdxs: number[]; rescueSearchTruncated: boolean; elapsedMs: number } {
   const { teamA, teamB, courtIdx, state, liveCourtIdxs, liveCourtPlayers, busyIds, pvnaTolerance, budgetMs, nowMsFn } = input
   const pv = (id: string) => {
     const player = state.players.get(id)
@@ -4051,14 +4057,15 @@ export function computeMatchDegradedRescue(input: {
   // liveCourtIdxs.size > 0 cleared genuine repeat-3 lanes whenever the whole board was suggested (no
   // live courts), so the host lost the repeat warning. Only the rescue SEARCH needs a live court.
   if (!(isBlowout || isRepeat)) {
-    return { degradedReason: undefined, rescueCourtIdxs: [], elapsedMs: 0 }
+    return { degradedReason: undefined, rescueCourtIdxs: [], rescueSearchTruncated: false, elapsedMs: 0 }
   }
   const degradedReason: SuggestedMatchPayload['degraded_reason'] = isBlowout && isRepeat ? 'both' : isBlowout ? 'blowout' : 'repeat'
   let rescueCourtIdxs: number[] = []
+  let rescueSearchTruncated = false
   let elapsedMs = 0
   if (budgetMs > 0 && liveCourtIdxs.size > 0) {
     const startedAt = nowMsFn()
-    rescueCourtIdxs = findRescueCourts({
+    const rescueSearch = findRescueCourts({
       state,
       courtIdx,
       busyIds,
@@ -4085,9 +4092,13 @@ export function computeMatchDegradedRescue(input: {
       budgetMs,
       nowMsFn,
     })
+    rescueCourtIdxs = rescueSearch.courtIdxs
+    rescueSearchTruncated = rescueSearch.truncated
     elapsedMs = nowMsFn() - startedAt
+  } else if (budgetMs <= 0 && liveCourtIdxs.size > 0) {
+    rescueSearchTruncated = true
   }
-  return { degradedReason, rescueCourtIdxs, elapsedMs }
+  return { degradedReason, rescueCourtIdxs, rescueSearchTruncated, elapsedMs }
 }
 
 const EXPLAIN_LOPSIDED_MIN_GAP = 1.0
@@ -5204,6 +5215,7 @@ export function buildSuggestedMatchPayloads({
     ).length
     let degradedReason: SuggestedMatchPayload['degraded_reason']
     let rescueCourtIdxs: number[] = []
+    let rescueSearchTruncated = false
     if (options.blowoutRescue === true) {
       try {
         // Never silently defer. If the only available lineup is degraded (Phase 1: blowout / Phase 2:
@@ -5230,7 +5242,7 @@ export function buildSuggestedMatchPayloads({
             }
             const rescueBudgetMs = Math.max(80, Math.min(rescueSearchBudgetRemainingMs, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)))
             const rescueStartedAt = nowMs()
-            rescueCourtIdxs = findRescueCourts({
+            const rescueSearch = findRescueCourts({
               state: suggestionStateForCourt,
               courtIdx,
               busyIds,
@@ -5255,7 +5267,11 @@ export function buildSuggestedMatchPayloads({
               budgetMs: rescueBudgetMs,
               nowMsFn: nowMs,
             })
+            rescueCourtIdxs = rescueSearch.courtIdxs
+            rescueSearchTruncated = rescueSearch.truncated
             rescueSearchBudgetRemainingMs -= (nowMs() - rescueStartedAt)
+          } else {
+            rescueSearchTruncated = true
           }
           try {
             options.onInstrumentEvent?.({
@@ -5272,6 +5288,7 @@ export function buildSuggestedMatchPayloads({
         // without degraded metadata rather than aborting the whole batch (edge 500).
         degradedReason = undefined
         rescueCourtIdxs = []
+        rescueSearchTruncated = false
         try {
           options.onInstrumentEvent?.({
             event: 'repair',
@@ -5541,6 +5558,7 @@ export function buildSuggestedMatchPayloads({
       locked_player_ids: matchLockedPlayerIds.length > 0 ? matchLockedPlayerIds : undefined,
       degraded_reason: degradedReason,
       rescue_court_idxs: rescueCourtIdxs.length > 0 ? rescueCourtIdxs : undefined,
+      rescue_search_truncated: rescueSearchTruncated ? true : undefined,
       match_explanations: matchExplanations.length > 0 ? matchExplanations : undefined,
       forced_tradeoff: forcedTradeoff,
       wait_rescue_options: waitRescueOptions,

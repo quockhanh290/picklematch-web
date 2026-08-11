@@ -36,7 +36,9 @@ describe('round_no characterization across next-round-suggester', () => {
     // Meaning: session time/recency axis. A per-court cycle number ahead of current_round is treated
     // as future and contributes no recent-repeat cost.
     expect(getRecentRepeatCost(['a', 'b'], ['c', 'd'], recent).exact4).toBe(1)
-    expect(getRecentRepeatCost(['a', 'b'], ['c', 'd'], sameCourtAheadCycle).total).toBe(0)
+    // APPROVED BEHAVIOUR CHANGE (BUG #4-#7): a completed round on a court further ahead used to be
+    // read as the future and skipped. It is history, so it is now charged.
+    expect(getRecentRepeatCost(['a', 'b'], ['c', 'd'], sameCourtAheadCycle).total).toBeGreaterThan(0)
   })
 
   it('score.hasRecentGroupRematch uses round_no as the session timeline window', () => {
@@ -46,7 +48,8 @@ describe('round_no characterization across next-round-suggester', () => {
     // Meaning: session time/recency axis. The same foursome is blocked only when round_no falls inside
     // the current_round-based lookback window.
     expect(hasRecentGroupRematch(['a', 'b'], ['c', 'd'], recent)).toBe(true)
-    expect(hasRecentGroupRematch(['a', 'b'], ['c', 'd'], sameCourtAheadCycle)).toBe(false)
+    // APPROVED BEHAVIOUR CHANGE: the block window now sees rounds finished on faster courts.
+    expect(hasRecentGroupRematch(['a', 'b'], ['c', 'd'], sameCourtAheadCycle)).toBe(true)
   })
 
   it('pair.buildRecentGroupRematchKeys uses round_no as the session timeline window', () => {
@@ -132,8 +135,11 @@ describe('round_no characterization across next-round-suggester', () => {
 
     // Meaning conflict: the same value, 5, is a per-court cycle that score/pair treat as future, while
     // select treats last_played_round 5 as more recent than the session current_round.
-    expect(getRecentRepeatCost(['a', 'b'], ['c', 'd'], state).total).toBe(0)
-    expect(hasRecentGroupRematch(['a', 'b'], ['c', 'd'], state)).toBe(false)
+    // The contradiction this case was written to expose is resolved: the guards and the priority
+    // ordering now read the same completed round the same way, instead of one ignoring it while the
+    // other penalised for it.
+    expect(getRecentRepeatCost(['a', 'b'], ['c', 'd'], state).total).toBeGreaterThan(0)
+    expect(hasRecentGroupRematch(['a', 'b'], ['c', 'd'], state)).toBe(true)
     expect(pickPlayers(priorityState, 4).selected.map(p => p.player_id)).not.toContain('a')
   })
 })

@@ -167,14 +167,13 @@ export function getRecentRepeatCost(
   const matchGroupKey = getMatchGroupKey(teamA, teamB)
 
   for (const round of state.rounds) {
-    const distance = roundNo - round.round_no
-    if (
-      round.status !== 'completed' ||
-      distance <= 0 ||
-      distance > RECENT_REPEAT_PENALTY_WINDOW
-    ) {
-      continue
-    }
+    if (round.status !== 'completed') continue
+    // round_no counts cycles on one court and courts drift apart, so a completed round can carry a
+    // higher number than the court being filled. It still happened. Treating that as the future let a
+    // pairing finished minutes ago on a faster court be rebuilt immediately; such a round is clamped to
+    // the nearest distance instead, which is what "it just happened" means here.
+    const distance = Math.max(1, roundNo - round.round_no)
+    if (distance > RECENT_REPEAT_PENALTY_WINDOW) continue
 
     const weight = recentRepeatDecay(distance)
     for (const match of round.matches) {
@@ -250,13 +249,10 @@ export function hasRecentGroupRematch(teamA: Team, teamB: Team, state: SessionSt
   // through unblocked; only an identical-partnerships rematch is blocked. See task-2-brief.md Decision 1.
   const teamAwareExactRematch = isQualityCostModelEnabled(state)
   for (const round of state.rounds) {
-    if (
-      round.status !== 'completed' ||
-      currentRoundNo <= round.round_no ||
-      currentRoundNo > round.round_no + blockRounds
-    ) {
-      continue
-    }
+    // Same clamp as getRecentRepeatCost: a completed round on a court that is further ahead is still
+    // history, and the block window has to see it.
+    if (round.status !== 'completed') continue
+    if (currentRoundNo > round.round_no && currentRoundNo > round.round_no + blockRounds) continue
 
     for (const match of round.matches) {
       if (teamAwareExactRematch) {
