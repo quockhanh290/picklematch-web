@@ -36,6 +36,11 @@ export type PlayerSessionState = {
   effective_pvna?: number
   avoid_ids?: Set<string>
   last_rest_started_round?: number
+  // Session-wide position at which this player's current rest began, derived from last_played_seq.
+  // Only ever compared between players, never against a round number, so it needs one shared scale —
+  // last_rest_started_round is built from a per-court cycle and two players can be counting different
+  // courts.
+  last_rest_started_seq?: number
 }
 
 export type Team = [string, string]

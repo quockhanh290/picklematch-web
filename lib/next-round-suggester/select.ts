@@ -31,8 +31,11 @@ export function comparePlayersByPriority(
     return b.consecutive_rest - a.consecutive_rest
   }
   // Same consecutive_rest: prefer player who started resting earlier (smaller round number)
-  const aRestStart = a.last_rest_started_round ?? Infinity
-  const bRestStart = b.last_rest_started_round ?? Infinity
+  // Prefer the session-wide position; the round-derived value counts cycles on one court, so comparing
+  // it across two players can compare different courts' counters. Falls back while a database predates
+  // the last_played_seq column.
+  const aRestStart = a.last_rest_started_seq ?? a.last_rest_started_round ?? Infinity
+  const bRestStart = b.last_rest_started_seq ?? b.last_rest_started_round ?? Infinity
   if (aRestStart !== bRestStart) {
     return aRestStart - bRestStart
   }
