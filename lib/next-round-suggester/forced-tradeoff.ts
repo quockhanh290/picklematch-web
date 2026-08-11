@@ -42,6 +42,9 @@ const FORCED_TRADEOFF_MAX_POOL = 28
 
 export function buildTradeoffEndpoints(
   poolIds: string[], state: SessionState, tolerance: number,
+  // Callers that must seat particular players narrow what counts as clean. Default accepts everything,
+  // which is the question "does a clean lineup exist anywhere in this pool".
+  isSeatable: (fourIds: string[]) => boolean = () => true,
 ): ForcedTradeoff {
   if (poolIds.length < 4) return { isForced: false, clean: null }
   if (poolIds.length > FORCED_TRADEOFF_MAX_POOL) return { isForced: false, clean: null }
@@ -55,10 +58,13 @@ export function buildTradeoffEndpoints(
     for (let j = i + 1; j < ids.length; j += 1)
       for (let k = j + 1; k < ids.length; k += 1)
         for (let l = k + 1; l < ids.length; l += 1) {
-          const lineups = candidateLineups([ids[i], ids[j], ids[k], ids[l]], state)
+          const four = [ids[i], ids[j], ids[k], ids[l]]
+          const lineups = candidateLineups(four, state)
           for (const lu of lineups) {
             all.push(lu)
-            if (lu.gap <= tolerance && lu.maxMeeting < 3) return { isForced: false, clean: lu }
+            if (lu.gap <= tolerance && lu.maxMeeting < 3 && isSeatable(four)) {
+              return { isForced: false, clean: lu }
+            }
           }
         }
   if (all.length === 0) return { isForced: false, clean: null }
@@ -158,12 +164,20 @@ export function simulateWaitWouldClean(
   poolIds: string[],
   liveCourts: { court_idx: number; player_ids: string[]; started_at: string | null }[],
   state: SessionState, tolerance: number,
+  // The players this court owes a game to. The refill will be built under that obligation, so a wait is
+  // only worth offering if a clean lineup exists that seats them — asking merely whether SOME clean
+  // foursome exists in the enlarged pool promises the host something the engine will not deliver.
+  requiredIds: string[] = [],
 ): WaitRescueOption[] {
   const poolSet = new Set(poolIds)
   const qualifying: WaitRescueOption[] = []
   for (const court of liveCourts) {
     const enlarged = [...poolIds, ...court.player_ids.filter(id => !poolSet.has(id))]
-    const res = buildTradeoffEndpoints(enlarged, state, tolerance)
+    const enlargedSet = new Set(enlarged)
+    // Someone owed a game who is not even in this pool cannot constrain this court's refill.
+    const mustSeat = requiredIds.filter(id => enlargedSet.has(id))
+    const res = buildTradeoffEndpoints(enlarged, state, tolerance,
+      four => mustSeat.every(id => four.includes(id)))
     if (res.isForced === false && res.clean) qualifying.push({ court_idx: court.court_idx, started_at: court.started_at })
   }
   // Ordered by court number, which claims nothing. Sorting by started_at used to imply "this court has

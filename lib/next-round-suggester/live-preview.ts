@@ -5452,6 +5452,7 @@ export function buildSuggestedMatchPayloads({
               liveCourtsForSim,
               suggestionStateForCourt,
               configuredPvnaTolerance,
+              requiredForThisCourt,
             )
           } catch (waitError) {
             waitRescueOptions = []
