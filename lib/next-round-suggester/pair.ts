@@ -539,7 +539,7 @@ function getMediumPvnaTolerance(state: SessionState): number {
   return Math.max(0.75, state.config.pvna_tolerance * 1.5)
 }
 
-function buildRecentGroupRematchKeys(state: SessionState, blockRounds: number): Set<string> {
+export function buildRecentGroupRematchKeys(state: SessionState, blockRounds: number): Set<string> {
   const keys = getRecentGroupRematchKeys(state)
   const currentRoundNo = state.current_round
   const activeN = [...state.players.values()].filter(p => p.checked_out_at === null).length
