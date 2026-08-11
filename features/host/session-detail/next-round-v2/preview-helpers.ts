@@ -6,14 +6,6 @@ export const getSuggestedMatchSignature = (match: Pick<SessionLiveMatchRow, 'tea
   ...match.team_b.map(String).sort(),
 ].join('|')
 
-export function getSuggestedMatchPvnaGap(match: Pick<SessionLiveMatchRow, 'team_a' | 'team_b'>, state: SessionState) {
-  const getTeamPvna = (team: readonly string[]) => team.reduce(
-    (sum, playerId) => sum + (state.players.get(String(playerId))?.pvna ?? 0),
-    0,
-  )
-  return Math.abs(getTeamPvna(match.team_a) - getTeamPvna(match.team_b))
-}
-
 export function applyPairIncrement(
   players: Map<string, PlayerSessionState>,
   playerAId: string,

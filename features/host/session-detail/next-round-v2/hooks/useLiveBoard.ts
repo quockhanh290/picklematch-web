@@ -31,7 +31,8 @@ import type {
 import { supabase } from '@/lib/supabase'
 import { repairLiveSessionPlayerStateFromRounds } from '../api'
 import { getNextRoundTelemetry, markNextRoundStage } from '../telemetry'
-import { getSuggestedMatchPvnaGap, getSuggestedMatchSignature, swapPlayersInSuggestedMatch } from '../preview-helpers'
+import { getMatchPvnaGap } from '@/lib/next-round-suggester/state'
+import { getSuggestedMatchSignature, swapPlayersInSuggestedMatch } from '../preview-helpers'
 import {
   getPlayerPvna,
 } from '../helpers'
@@ -1042,7 +1043,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
             // over tolerance) or explicit tradeoffs — never on intra alone, since a balanced-total
             // mixed-strength lane is a valid fill (see hasHardPreviewQualityViolation).
             if (m.live_availability_context != null && (
-              getSuggestedMatchPvnaGap(m, state) > pvnaTolerance ||
+              getMatchPvnaGap(m.team_a, m.team_b, state) > pvnaTolerance ||
               (m.tradeoffs?.length ?? 0) > 0
             )) return false
             return true

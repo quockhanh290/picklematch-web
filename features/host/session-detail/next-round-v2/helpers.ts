@@ -31,10 +31,6 @@ export function initials(name: string) {
   return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase()
 }
 
-export function getTeamPvna(team: [string, string], state: SessionState) {
-  return team.reduce((sum, id) => sum + (state.players.get(id)?.pvna ?? 3.0), 0)
-}
-
 const TEST_PLAYER_DISPLAY_NAMES = [
   'Minh Anh',
   'Gia Bao',

@@ -1,3 +1,4 @@
+import { getTeamPvnaTotal } from '@/lib/next-round-suggester/state'
 import { LinearGradient } from 'expo-linear-gradient'
 import {
   AlertTriangle,
@@ -73,7 +74,6 @@ import {
   ctaTextStyle,
   eyebrowStyle,
   formatNumber,
-  getTeamPvna,
   playerName,
   repeatRiskLabel
 } from '../helpers'
@@ -1776,7 +1776,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     : activeMatch
   const liveAvailabilityContext = visibleMatch.live_availability_context
   const pvnaDiff = useMemo(
-    () => Math.abs(getTeamPvna(visibleMatch.team_a, state) - getTeamPvna(visibleMatch.team_b, state)),
+    () => Math.abs(getTeamPvnaTotal(visibleMatch.team_a, state) - getTeamPvnaTotal(visibleMatch.team_b, state)),
     [visibleMatch.team_a, visibleMatch.team_b, state],
   )
   const pvnaOverBy = Math.max(0, pvnaDiff - pvnaTolerance)
@@ -2566,7 +2566,7 @@ export function SuggestedMatchTile({
 }) {
   const theme = useAppTheme()
   const diff = useMemo(
-    () => Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state)),
+    () => Math.abs(getTeamPvnaTotal(match.team_a, state) - getTeamPvnaTotal(match.team_b, state)),
     [match.team_a, match.team_b, state],
   )
   const effectivePvnaTolerance = pvnaTolerance ?? state.config.pvna_tolerance
@@ -2666,7 +2666,7 @@ export function SuggestedTeamBlock({
   lockedPlayerCourtMap?: Map<string, number>
 }) {
   const theme = useAppTheme()
-  const teamTotal = getTeamPvna(team, state)
+  const teamTotal = getTeamPvnaTotal(team, state)
   const panelStyle = tone === 'green'
     ? { backgroundColor: 'rgba(225,245,238,0.42)', borderColor: '#D0E7DD' }
     : { backgroundColor: colors.surfaceAlt, borderColor: '#DDD8C9' }
@@ -2782,7 +2782,7 @@ export function LiveScoreTeam({
         {team.map(playerId => playerName(playerId, playersById)).join(' · ')}
       </Text>
       <Text style={{ marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 12, color: theme.outline }}>
-        Tổng PVNA {getTeamPvna(team, state).toFixed(2)}
+        Tổng PVNA {getTeamPvnaTotal(team, state).toFixed(2)}
       </Text>
     </View>
   )
@@ -2859,7 +2859,7 @@ export function MatchTile({
 }) {
   const theme = useAppTheme()
   const diff = useMemo(
-    () => Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state)),
+    () => Math.abs(getTeamPvnaTotal(match.team_a, state) - getTeamPvnaTotal(match.team_b, state)),
     [match.team_a, match.team_b, state],
   )
   const effectivePvnaTolerance = pvnaTolerance ?? state.config.pvna_tolerance
@@ -3471,11 +3471,11 @@ export function TeamBlock({
       </Text>
       <View style={{ marginTop: 5, borderRadius: RADIUS.full, backgroundColor: theme.secondaryContainer, paddingHorizontal: 8, paddingVertical: 3, alignSelf: showSwapBadges ? 'center' : align === 'right' ? 'flex-end' : 'flex-start' }}>
         <Text style={{ fontFamily: SCREEN_FONTS.label, fontSize: 10.5, color: theme.primary, fontWeight: '900' }}>
-          PVNA {getTeamPvna(team, state).toFixed(2)}
+          PVNA {getTeamPvnaTotal(team, state).toFixed(2)}
         </Text>
       </View>
       <Text style={{ display: 'none', marginTop: 2, fontFamily: SCREEN_FONTS.body, fontSize: 11, color: theme.outline }}>
-        Tổng PVNA {getTeamPvna(team, state).toFixed(2)}
+        Tổng PVNA {getTeamPvnaTotal(team, state).toFixed(2)}
       </Text>
     </View>
   )

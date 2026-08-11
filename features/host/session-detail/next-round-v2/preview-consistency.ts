@@ -1,5 +1,5 @@
 import type { SessionState } from '@/lib/next-round-suggester/types'
-import { getSuggestedMatchPvnaGap } from './preview-helpers'
+import { getMatchPvnaGap } from '@/lib/next-round-suggester/state'
 
 type PreviewRow = {
   status?: string | null
@@ -206,7 +206,7 @@ export function hasHardPreviewQualityViolation(
   // lane unfillable and thrashing the board into an under-filled round. We reject only on the
   // team-total axis (a real blowout), never on intra. Early/mid rounds keep a tighter total-gap
   // threshold since the pool has more room to stay balanced; late rounds allow more.
-  const pvnaGap = getSuggestedMatchPvnaGap(match, state)
+  const pvnaGap = getMatchPvnaGap(match.team_a, match.team_b, state)
   const pvnaOverBy = pvnaGap - pvnaTolerance
   if (pvnaOverBy > 1) return true
 

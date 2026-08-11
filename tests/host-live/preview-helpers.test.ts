@@ -1,9 +1,9 @@
 import {
   applyPairIncrement,
-  getSuggestedMatchPvnaGap,
   getSuggestedMatchSignature,
   swapPlayersInSuggestedMatch,
 } from '@/features/host/session-detail/next-round-v2/preview-helpers'
+import { getMatchPvnaGap } from '@/lib/next-round-suggester/state'
 
 describe('getSuggestedMatchSignature', () => {
   it('signature is order-independent within a team', () => {
@@ -19,9 +19,12 @@ describe('getSuggestedMatchSignature', () => {
   })
 })
 
-describe('getSuggestedMatchPvnaGap', () => {
+// Was getSuggestedMatchPvnaGap, a client-local copy that read raw pvna. Deleted in favour of the
+// function the engine itself gates on (P1-9). The arithmetic below is unchanged; what changed is that a
+// session carrying effective_pvna now yields the engine's number instead of a second opinion, which is a
+// deliberate behaviour change, not a test being made to fit.
+describe('getMatchPvnaGap', () => {
   it('computes the absolute pvna gap between team totals', () => {
-    const match = { team_a: ['1', '2'], team_b: ['3', '4'] }
     const state = {
       players: new Map([
         ['1', { pvna: 5 }],
@@ -31,13 +34,25 @@ describe('getSuggestedMatchPvnaGap', () => {
       ]),
     } as any
     // team_a = 5 + 3 = 8, team_b = 4 + 1 = 5, gap = 3
-    expect(getSuggestedMatchPvnaGap(match, state)).toBe(3)
+    expect(getMatchPvnaGap(['1', '2'], ['3', '4'], state)).toBe(3)
   })
 
-  it('treats missing pvna as 0', () => {
-    const match = { team_a: ['1'], team_b: ['2'] }
+  it('prefers effective_pvna, which is what the engine ranked on', () => {
+    const state = {
+      players: new Map([
+        ['1', { pvna: 5, effective_pvna: 2 }],
+        ['2', { pvna: 3, effective_pvna: 2 }],
+        ['3', { pvna: 4 }],
+        ['4', { pvna: 1 }],
+      ]),
+    } as any
+    // team_a = 2 + 2 = 4 (not 8), team_b = 4 + 1 = 5, gap = 1
+    expect(getMatchPvnaGap(['1', '2'], ['3', '4'], state)).toBe(1)
+  })
+
+  it('treats a player the state has not caught up to as 0', () => {
     const state = { players: new Map() } as any
-    expect(getSuggestedMatchPvnaGap(match, state)).toBe(0)
+    expect(getMatchPvnaGap(['1'], ['2'], state)).toBe(0)
   })
 })
 

@@ -1,3 +1,4 @@
+import { getTeamPvnaTotal } from '@/lib/next-round-suggester/state'
 import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -44,7 +45,6 @@ import {
   ctaTextStyle,
   eyebrowStyle,
   getPlayerPvna,
-  getTeamPvna,
   playerName,
 } from './next-round-v2/helpers'
 import type { NextRoundSuggesterV2Props } from './next-round-v2/types'
@@ -719,10 +719,10 @@ export function NextRoundSuggesterScreenV2({ sessionId, players = EMPTY_ARRANGEM
 }
 
 function buildSuggestedSwapImpact(match: SuggestedLiveMatchRow, fromId: string, toId: string, state: SessionState) {
-  const beforePvnaDiff = Math.abs(getTeamPvna(match.team_a, state) - getTeamPvna(match.team_b, state))
+  const beforePvnaDiff = Math.abs(getTeamPvnaTotal(match.team_a, state) - getTeamPvnaTotal(match.team_b, state))
   const beforeRepeat = getProjectedRepeatSummary(match.team_a, match.team_b, state)
   const afterMatch = swapPlayersInSuggestedMatch(match, fromId, toId)
-  const afterPvnaDiff = Math.abs(getTeamPvna(afterMatch.team_a, state) - getTeamPvna(afterMatch.team_b, state))
+  const afterPvnaDiff = Math.abs(getTeamPvnaTotal(afterMatch.team_a, state) - getTeamPvnaTotal(afterMatch.team_b, state))
   const afterRepeat = getProjectedRepeatSummary(afterMatch.team_a, afterMatch.team_b, state)
   const beforeRepeatOver = beforeRepeat.pair_over_by + beforeRepeat.player_over_by
   const afterRepeatOver = afterRepeat.pair_over_by + afterRepeat.player_over_by

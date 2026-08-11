@@ -455,6 +455,27 @@ export function getEffectivePvna(player: PlayerSessionState): number {
   return player.effective_pvna ?? player.pvna
 }
 
+// The client used to carry its own copies of this arithmetic, reading raw pvna and disagreeing with each
+// other about a missing player. Its gap is not decoration — it is compared against the tolerance to
+// decide whether a match is acceptable — so it has to be the same number the engine gated on.
+//
+// A player the caller's state has not caught up to contributes nothing rather than an invented average:
+// a fabricated rating produces a plausible total for someone nobody can see.
+export function getTeamPvnaTotal(team: readonly string[], state: SessionState): number {
+  return team.reduce((sum, playerId) => {
+    const player = state.players.get(String(playerId))
+    return sum + (player ? getEffectivePvna(player) : 0)
+  }, 0)
+}
+
+export function getMatchPvnaGap(
+  teamA: readonly string[],
+  teamB: readonly string[],
+  state: SessionState,
+): number {
+  return Math.abs(getTeamPvnaTotal(teamA, state) - getTeamPvnaTotal(teamB, state))
+}
+
 export function getBenchDepth(state: SessionState): number {
   const active = [...state.players.values()].filter(
     p => p.checked_out_at === null && !p.opted_rest,

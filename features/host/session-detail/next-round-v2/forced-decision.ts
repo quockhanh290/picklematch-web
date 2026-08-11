@@ -1,6 +1,7 @@
 import type { Match, SessionState } from '@/lib/next-round-suggester/types'
 import type { ArrangementPlayer } from '@/lib/sessionDetail'
-import { formatNumber, getTeamPvna, playerName } from './helpers'
+import { getTeamPvnaTotal } from '@/lib/next-round-suggester/state'
+import { formatNumber, playerName } from './helpers'
 import type { SuggestedLiveMatchRow } from './preview'
 
 // Repeat-detail derivation for a lineup — pure (no React). Lives here (not preview-helpers.ts) because it
@@ -137,13 +138,13 @@ export function buildForcedDecision(
   }
 
   // Forced-court decision costs: derived from the same pvna/repeat helpers the rest of the card
-  // uses (getTeamPvna, getRepeatDetailLines), applied to the engine's two Pareto endpoints.
+  // uses (getTeamPvnaTotal, getRepeatDetailLines), applied to the engine's two Pareto endpoints.
   const forcedAcceptRepeatGap = Math.abs(
-    getTeamPvna(forced.acceptRepeat.team_a, state) - getTeamPvna(forced.acceptRepeat.team_b, state),
+    getTeamPvnaTotal(forced.acceptRepeat.team_a, state) - getTeamPvnaTotal(forced.acceptRepeat.team_b, state),
   )
   const forcedAcceptImbalanceGap = forced.acceptImbalance
     ? Math.abs(
-        getTeamPvna(forced.acceptImbalance.team_a, state) - getTeamPvna(forced.acceptImbalance.team_b, state),
+        getTeamPvnaTotal(forced.acceptImbalance.team_a, state) - getTeamPvnaTotal(forced.acceptImbalance.team_b, state),
       )
     : 0
   const forcedRepeatDetail = getRepeatDetailLines(
