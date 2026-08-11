@@ -101,7 +101,7 @@ const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 69
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 70
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -5235,65 +5235,49 @@ export function buildSuggestedMatchPayloads({
     let rescueSearchTruncated = false
     if (options.blowoutRescue === true) {
       try {
-        // Never silently defer. If the only available lineup is degraded (Phase 1: blowout / Phase 2:
-        // a 3rd meeting), SEAT it (host can "Chơi luôn") and offer the live courts whose completion
-        // would enable a better lineup ("Chờ Sân X"). Repeat caps are 2 → count >= 3 is "over".
-        const isBlowout = pvnaDiff > Math.max(
-          BLOWOUT_DEGRADE_GAP_FLOOR,
-          configuredPvnaTolerance + BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN,
-        )
-        const seatedRepeat = getProjectedRepeatSummary(match.team_a, match.team_b, suggestionStateForCourt)
-        const isRepeat = seatedRepeat.max_opponent_pair_count >= 3 || seatedRepeat.max_partner_pair_count >= 3
-        // Fire for EVERY court being filled (not just single-court refills) so a degraded court in a
-        // multi-court board is flagged too. degraded_reason is cheap; the expensive rescue search
-        // below is bounded by one shared batch budget.
-        if ((isBlowout || isRepeat) && liveCourtIdxs.size > 0) {
-          degradedReason = isBlowout && isRepeat ? 'both' : isBlowout ? 'blowout' : 'repeat'
-          if (rescueSearchBudgetRemainingMs > 0) {
-            const liveCourtPlayers = new Map<number, string[]>()
-            for (const [playerId, playerCourtIdx] of liveLockedPlayerCourtIdxs) {
-              if (!liveCourtIdxs.has(playerCourtIdx)) continue
-              const players = liveCourtPlayers.get(playerCourtIdx) ?? []
-              players.push(playerId)
-              liveCourtPlayers.set(playerCourtIdx, players)
-            }
-            const rescueBudgetMs = Math.max(80, Math.min(rescueSearchBudgetRemainingMs, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)))
-            const rescueStartedAt = nowMs()
-            const rescueSearch = findRescueCourts({
-              state: suggestionStateForCourt,
-              courtIdx,
-              busyIds,
-              liveCourtPlayers,
-              // A rescue court must fix EVERY problem the seated lineup has (else waiting isn't honest).
-              isFixed: (teamA, teamB) => {
-                if (isBlowout) {
-                  const pv = (id: string) => {
-                    const player = suggestionStateForCourt.players.get(id)
-                    return player ? getEffectivePvna(player) : 0
-                  }
-                  const gap = Math.abs(pv(teamA[0]) + pv(teamA[1]) - pv(teamB[0]) - pv(teamB[1]))
-                  if (gap > configuredPvnaTolerance + RESCUE_FIXED_GAP_CEILING_MARGIN) return false
-                }
-                if (isRepeat) {
-                  const rescued = getProjectedRepeatSummary(teamA, teamB, suggestionStateForCourt)
-                  if (rescued.max_opponent_pair_count >= 3 || rescued.max_partner_pair_count >= 3) return false
-                }
-                return true
-              },
-              perCourtRuntimeMs: 100,
-              budgetMs: rescueBudgetMs,
-              nowMsFn: nowMs,
-            })
-            rescueCourtIdxs = rescueSearch.courtIdxs
-            rescueSearchTruncated = rescueSearch.truncated
-            rescueSearchBudgetRemainingMs -= (nowMs() - rescueStartedAt)
-          } else {
-            rescueSearchTruncated = true
-          }
+        // One detector, the same one the edge function's full-board rescue calls. The copy that used to
+        // live here had drifted in two ways that both cost the host information: it always used the
+        // legacy gap/repeat heuristics even under the cost model, and it only set the flag when a live
+        // court existed — so suggesting the whole board at once, which is how a round starts, produced
+        // lineups carrying no warning at all. Only the rescue SEARCH needs a live court; being degraded
+        // is a property of the lineup.
+        const liveCourtPlayers = new Map<number, string[]>()
+        for (const [playerId, playerCourtIdx] of liveLockedPlayerCourtIdxs) {
+          if (!liveCourtIdxs.has(playerCourtIdx)) continue
+          const players = liveCourtPlayers.get(playerCourtIdx) ?? []
+          players.push(playerId)
+          liveCourtPlayers.set(playerCourtIdx, players)
+        }
+        const rescueBudgetMs = rescueSearchBudgetRemainingMs > 0
+          ? Math.max(80, Math.min(
+              rescueSearchBudgetRemainingMs,
+              LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt),
+            ))
+          : 0
+        const degraded = computeMatchDegradedRescue({
+          teamA: match.team_a,
+          teamB: match.team_b,
+          courtIdx,
+          state: suggestionStateForCourt,
+          liveCourtIdxs,
+          liveCourtPlayers,
+          busyIds,
+          pvnaTolerance: configuredPvnaTolerance,
+          budgetMs: rescueBudgetMs,
+          nowMsFn: nowMs,
+        })
+        degradedReason = degraded.degradedReason
+        rescueCourtIdxs = degraded.rescueCourtIdxs
+        // A degraded lineup with no budget left never searched, which is what truncated means. The
+        // shared detector reports truncation from the search itself and cannot know it was skipped.
+        rescueSearchTruncated = degraded.rescueSearchTruncated
+          || (degraded.degradedReason !== undefined && rescueBudgetMs <= 0)
+        rescueSearchBudgetRemainingMs -= degraded.elapsedMs
+        if (degradedReason !== undefined) {
           try {
             options.onInstrumentEvent?.({
               event: 'repair',
-              detail: `degraded_seated_with_rescue:court=${courtIdx};reason=${degradedReason};pvna=${pvnaDiff.toFixed(2)};maxOpp=${seatedRepeat.max_opponent_pair_count};rescue=${rescueCourtIdxs.join('|') || 'none'}`,
+              detail: `degraded_seated_with_rescue:court=${courtIdx};reason=${degradedReason};pvna=${pvnaDiff.toFixed(2)};rescue=${rescueCourtIdxs.join('|') || 'none'}`,
               court_count: courtCount,
               available: availablePlayerCount,
             })
