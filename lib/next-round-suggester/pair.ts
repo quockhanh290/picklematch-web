@@ -14,6 +14,8 @@ import {
   withRecentGroupRematchKeys,
   // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 } from './score.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { getEffectivePvna } from './state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
@@ -103,7 +105,20 @@ const EXHAUSTIVE_MAX_ITER = 20000
 const SAMPLED_MAX_ITER = 600
 const SAMPLED_MAX_ITER_3_COURTS = 2000
 const SAMPLED_MAX_ITER_4_PLUS_COURTS = 3000
-const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
+// How close two partitions must score before burden decides between them. One constant cannot serve
+// both scoring models: 3 is a few percent of a legacy score and a large fraction of a cost, so the same
+// number means "practically tied" in one model and "clearly different" in the other.
+//
+// The cost-scale value is anchored on the one quantity both models price explicitly, a third meeting
+// between the same pair: 50 in legacy units (SEVERE_REPEAT_PAIR_PENALTY), 3.6 in cost units
+// (QUALITY_COST_WEIGHTS.repeat3). The legacy window is 3, or 6% of that anchor, and 6% of 3.6 is 0.216.
+//
+// Rounded to 0.2 rather than up: a wider window means burden overrides larger quality differences, so
+// the estimate errs toward letting quality decide. This is an order-of-magnitude derivation, not a
+// calibration — the audit rates the production scenario for this as refuted, so it guards against a
+// future trap rather than fixing a live one.
+const LEGACY_BURDEN_TIE_BREAK_SCORE_WINDOW = 3
+const QUALITY_COST_BURDEN_TIE_BREAK_SCORE_WINDOW = 0.2
 const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
 const PARTITION_COUNT_CAP = 1_000_000_000
 const MIN_SOFT_PVNA_TOLERANCE = 1.0
@@ -228,8 +243,11 @@ function shouldReplaceBestPartition(
   if (!best) return true
 
   const scoreDiff = candidate.score - best.score
-  if (scoreDiff < -BURDEN_TIE_BREAK_SCORE_WINDOW) return true
-  if (scoreDiff > BURDEN_TIE_BREAK_SCORE_WINDOW) return false
+  const scoreWindow = isQualityCostModelEnabled(state)
+    ? QUALITY_COST_BURDEN_TIE_BREAK_SCORE_WINDOW
+    : LEGACY_BURDEN_TIE_BREAK_SCORE_WINDOW
+  if (scoreDiff < -scoreWindow) return true
+  if (scoreDiff > scoreWindow) return false
 
   const candidateOpponentBurden = getProjectedBurden(candidate.matches, state, 'opponent', cache)
   const bestOpponentBurden = getProjectedBurden(best.matches, state, 'opponent', cache)
