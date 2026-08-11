@@ -550,10 +550,12 @@ export function buildRecentGroupRematchKeys(state: SessionState, blockRounds: nu
   const addNearKeys = activeN - 4 >= 2
 
   for (const round of state.rounds) {
+    // Same clamp as score.ts and quality-cost.ts: round_no counts cycles on one court, so a completed
+    // round can carry a higher number than the court being filled. Reading that as the future left the
+    // group that just finished elsewhere out of the key set entirely, so the guard never fired for it.
     if (
       round.status !== 'completed' ||
-      currentRoundNo <= round.round_no ||
-      currentRoundNo > round.round_no + blockRounds
+      (currentRoundNo > round.round_no && currentRoundNo > round.round_no + blockRounds)
     ) {
       continue
     }

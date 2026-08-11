@@ -59,7 +59,10 @@ describe('round_no characterization across next-round-suggester', () => {
     // Meaning: session time/recency axis. The guard-key set ignores completed rows whose per-court
     // round_no is ahead of state.current_round.
     expect(buildRecentGroupRematchKeys(recent, 3).size).toBeGreaterThan(0)
-    expect(buildRecentGroupRematchKeys(sameCourtAheadCycle, 3).size).toBe(0)
+    // APPROVED BEHAVIOUR CHANGE (BUG #7): the key set left out groups that finished on a court further
+    // ahead, so the pairing guard never fired for exactly the rematches that had just happened. Third
+    // and last of the engine-side sites, after score.ts (baa5c70) and quality-cost.ts (088ff67).
+    expect(buildRecentGroupRematchKeys(sameCourtAheadCycle, 3).size).toBeGreaterThan(0)
   })
 
   it('quality-cost recent meeting weight uses round_no as the session timeline for recency', () => {

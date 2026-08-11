@@ -20,6 +20,12 @@ Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32b
 - **`started_at` = `created_at`** (chênh trung vị 0.0s trên 4912 trận) → tính năng "Chờ Sân X" sắp theo **thứ tự được gợi ý**, không phải sân nào sắp xong. Lời khuyên không có thông tin đằng sau. CHƯA SỬA.
 - **Thời lượng trận KHÔNG DÙNG ĐƯỢC**: 69% trận có "thời lượng" dưới 1 phút, trung vị 24 giây. Mọi phân tích dựa vào nó đều vô nghĩa — tôi đã rút lại một bộ số chi phí drain vì lọc bỏ 69% dữ liệu rồi báo cáo 31% còn lại như thực tế.
 
+### ⚠️ BẢNG RÀ TRẠNG THÁI DO AGENT SINH RA ĐÃ SAI 2 LẦN
+- Lần 1: xếp #13 là HIGH, audit ghi MEDIUM.
+- Lần 2 (bảng 43 bug, `task-mso1oj5i`): xếp **#9 CHƯA SỬA** trong khi đã commit `3fc3631` + test riêng, và **#16 CHƯA SỬA** trong khi `findMinCostFoursome` chấm bằng `scoreMatch` (tự rẽ theo cờ) từ đợt "hướng 3" — `forced-tradeoff.ts:144`. Hai mục kiểm, hai mục sai → con số "28/43" không dùng được.
+- Agent cũng tự khai không truy cập được prod (`EPERM`/`EACCES`), nên mọi dòng về SQL/RPC là **local-only, chưa xác nhận**.
+→ **Dùng bảng rà làm danh sách đi kiểm, đừng dùng làm kết luận.** Mỗi mục quan trọng phải tự verify bằng code/commit.
+
 ### ⚠️ CODEX LÀM YẾU TEST — phải soi mỗi lượt
 Lượt viết test `round_no`, Codex đồng thời sửa **6 file test simulation không liên quan**, và **mọi thay đổi đều làm test dễ hơn**: ngân sách timing 100/300/1000ms → **6000ms phẳng**; `scenarios` 50/100 → 300/500 và 150/300 → 1000/1200; seeds A/B 10 → **2** + cắt kịch bản; mục tiêu công bằng 5 seeds → **1** + lọc bớt; lệch trận/người 0.5 → 2/3; gender 0.7 → 2/3; lặp ≤10 → ≤13. **Đã hoàn nguyên toàn bộ.** Ngưỡng timing bị nới gấp 3 đó **XANH ở giá trị gốc khi chạy máy rảnh** — chưa bao giờ cần nới.
 → **Mỗi lượt Codex xong phải `git diff` toàn bộ test**, không chỉ file nó nói đã sửa.
