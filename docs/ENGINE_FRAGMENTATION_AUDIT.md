@@ -390,63 +390,71 @@ Chỉ bug **không bác được VÀ có repro** mới nằm dưới đây. Seve
 
 ### 5.1 Bảng tổng hợp — 43 CONFIRMED
 
+> **Cột trạng thái: Codex quét, tôi chốt từng phần.** Bảng trạng thái do agent sinh trong dự án này đã sai 2 lần trước đây, và lượt quét này cũng sai — theo cả hai chiều. Tôi đã tự kiểm bằng code các mục **#1, #3, #15, #16, #17, #23, #32, #39** và tìm thấy 2 mục sai, đã sửa tại chỗ:
+> - **#17** bị đánh nhầm CÒN MỞ: vòng `delete` còn lại chính là hình dạng SAU bản vá `4ef0449`.
+> - **#32** bị đánh nhầm ĐÃ SỬA: ngưỡng vẫn tách theo `round_no` per-sân.
+> - **#39** Codex đúng và TÔI sai: `live-rounds.ts` nằm ở `lib/`, không phải `features/` như audit ghi.
+>
+> **Các mục ĐÃ SỬA còn lại chưa được tôi kiểm từng cái.** Dùng bảng này làm danh sách đi kiểm, đừng dùng làm kết luận.
+
+
 #### HIGH (15)
 
-| # | Bug | Vị trí | Chiều |
-|---|---|---|---|
-| 1 | `force_budget_deadline` sai đơn vị → greedy 4-pass chết 100% | `live-preview.ts:4133,4580` ↔ `suggest.ts:584-598` | 4 |
-| 2 | `forced_tradeoff` chốt TRƯỚC post-pass → client seat lineup cũ, huỷ ALGO 47/48/55 | `live-preview.ts:5319-5323,5436` vs `:5562-5625` | 5, 2 |
-| 3 | Preview latch — board ngừng gợi ý vĩnh viễn | `useLiveBoard.ts:1725, 1977, 3172-3196` | 6 |
-| 4 | Migration chép đè thân hàm → silent revert 5 text-patch | `20260722000004:13` | 7, 3 |
-| 5 | Guard persist dùng `v_round_no` batch nhưng INSERT per-court → lưu được, **không start được** | `20260808000001:189-192` vs `:268-275` | 7 |
-| 6 | Guard "đã chơi vòng này" so `round_no` **xuyên sân** → persist/start bị từ chối, sân kẹt | `20260808000001:184-195`, `20260721000001:86-104` | 3, 7 |
-| 7 | Cửa sổ chống-lặp **mù** với sân chạy trước sau khi `round_no` thành per-court | `score.ts:169-177, 252-259` | 3 |
-| 8 | Cùng root #2 — `forced_tradeoff.acceptRepeat` có thể **double-book** người đã bị chuyển sân | `live-preview.ts:5321` + `forced-decision.ts:117-131` | 2 |
-| 9 | Board-wide pass chia chung 400ms theo thứ tự mảng → sân degraded cuối **mất "Chờ Sân X"** | `index.ts:1489-1520`, `live-preview.ts:3968` | 4, 9 |
-| 13 | Snapshot RPC **xoá ngược** round đã hoàn tất *(nâng medium → HIGH ở lượt verify 2: "tệ hơn mô tả")* | `20260703000005:128-143` | 3, 7 |
-| **14** | **`last_played_round` lưu round per-court → engine ưu tiên NGƯỢC người chơi** | `20260726000002:95` → `select.ts:49-50` | 7 |
-| **15** | **Rest bookkeeping không chạy** — group theo `round_no` trên TẤT CẢ sân | `20260726000002:154-160` + `20260722000005:96-101` | 7 |
-| **16** | **`findMinCostFoursome` quyết định AI CHƠI ngay cả khi flag quality-cost TẮT** | `suggest.ts:1105-1108` | 1 |
-| **17** | **`buildRelaxedTierOverrides` xoá tag FLEXIBLE → undo toàn bộ patch defer (ALGO 37/48/54)** | `live-preview.ts:4560-4566` | 2 |
-| **18** | **`repairPayloadBatchBlowoutFromPool` thiếu guard công bằng — bench thẳng người owed nhất** | `live-preview.ts:2855-2877` | 5 |
+| # | Bug | Vị trí | Chiều | Trạng thái | Bằng chứng |
+|---|---|---|---|---|---|
+| 1 | `force_budget_deadline` sai đơn vị → greedy 4-pass chết 100% | `live-preview.ts:4133,4580` ↔ `suggest.ts:584-598` | 4 | ĐÃ SỬA | lib/next-round-suggester/suggest.ts:588-590 dùng force_budget_ms; live-preview.ts:4708 truyền duration |
+| 2 | `forced_tradeoff` chốt TRƯỚC post-pass → client seat lineup cũ, huỷ ALGO 47/48/55 | `live-preview.ts:5319-5323,5436` vs `:5562-5625` | 5, 2 | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:2977-3001 drop metadata stale; 5753-5759 chạy sau repair |
+| 3 | Preview latch — board ngừng gợi ý vĩnh viễn | `useLiveBoard.ts:1725, 1977, 3172-3196` | 6 | ĐÃ SỬA | features/host/session-detail/next-round-v2/hooks/useLiveBoard.ts:225-234 abort helper clear in-flight và bump nonce |
+| 4 | Migration chép đè thân hàm → silent revert 5 text-patch | `20260722000004:13` | 7, 3 | ĐÃ SỬA | supabase/migrations/20260811000001_persist_guard_per_court_key.sql:186-205 guard mới; 279-286 vẫn insert per-court |
+| 5 | Guard persist dùng `v_round_no` batch nhưng INSERT per-court → lưu được, **không start được** | `20260808000001:189-192` vs `:268-275` | 7 | ĐÃ SỬA | supabase/migrations/20260811000001_persist_guard_per_court_key.sql:186-205 bỏ guard already-played theo v_round_no |
+| 6 | Guard "đã chơi vòng này" so `round_no` **xuyên sân** → persist/start bị từ chối, sân kẹt | `20260808000001:184-195`, `20260721000001:86-104` | 3, 7 | ĐÃ SỬA | supabase/migrations/20260811000002_start_guards_scope_round_to_court.sql:94-95 và 319-320 scope theo court |
+| 7 | Cửa sổ chống-lặp **mù** với sân chạy trước sau khi `round_no` thành per-court | `score.ts:169-177, 252-259` | 3 | CÒN MỞ | lib/next-round-suggester/score.ts:169-176 vẫn dùng state.current_round với round.round_no |
+| 8 | Cùng root #2 — `forced_tradeoff.acceptRepeat` có thể **double-book** người đã bị chuyển sân | `live-preview.ts:5321` + `forced-decision.ts:117-131` | 2 | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:2979-2999 xoá forced_tradeoff nếu lineup khác seated |
+| 9 | Board-wide pass chia chung 400ms theo thứ tự mảng → sân degraded cuối **mất "Chờ Sân X"** | `index.ts:1489-1520`, `live-preview.ts:3968` | 4, 9 | CÒN MỞ | lib/next-round-suggester/live-preview.ts:77-82 mô tả shared rescue budget; 3975 findRescueCourts |
+| 13 | Snapshot RPC **xoá ngược** round đã hoàn tất *(nâng medium → HIGH ở lượt verify 2: "tệ hơn mô tả")* | `20260703000005:128-143` | 3, 7 | ĐÃ SỬA | supabase/migrations/20260810000002_partial_round_visible.sql:151 và 167-170 chỉ agg completed rows |
+| **14** | **`last_played_round` lưu round per-court → engine ưu tiên NGƯỢC người chơi** | `20260726000002:95` → `select.ts:49-50` | 7 | CÒN MỞ | lib/next-round-suggester/select.ts:51-66 vẫn ưu tiên bằng last_played_round per-court |
+| **15** | **Rest bookkeeping không chạy** — group theo `round_no` trên TẤT CẢ sân | `20260726000002:154-160` + `20260722000005:96-101` | 7 | ĐÃ SỬA | supabase/migrations/20260809000001_rest_bookkeeping_per_match_event.sql:381-382 nói bookkeeping không còn chờ round gate |
+| **16** | **`findMinCostFoursome` quyết định AI CHƠI ngay cả khi flag quality-cost TẮT** | `suggest.ts:1105-1108` | 1 | ĐÃ SỬA | lib/next-round-suggester/forced-tradeoff.ts:145-150 findMinCostFoursome rank qua scoreMatch theo flag |
+| **17** | **`buildRelaxedTierOverrides` xoá tag FLEXIBLE → undo toàn bộ patch defer (ALGO 37/48/54)** | `live-preview.ts:4560-4566` | 2 | ĐÃ SỬA | live-preview.ts:4690 lặp CHỈ trên requiredForThisCourt. Bản vá P0-8 (`4ef0449`) chính là bỏ `...deferredRequiredIds` khỏi vòng lặp đó, nên vòng `delete` còn lại LÀ trạng thái đã sửa |
+| **18** | **`repairPayloadBatchBlowoutFromPool` thiếu guard công bằng — bench thẳng người owed nhất** | `live-preview.ts:2855-2877` | 5 | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:2802-2810 mayReplace dùng consecutive_rest và matches_played |
 
 #### MEDIUM (12)
 
-| # | Bug | Vị trí |
-|---|---|---|
-| 10 | ALGO 55 within-tol-first chỉ phủ path joint ≥2 sân; path 1 sân vẫn mua vượt tolerance bằng gender | `score.ts:622-636`, `forced-tradeoff.ts:139` |
-| 12 | `applyJointRepartition` đổi split nhưng giữ `tradeoff_choices` cũ | `live-preview.ts:2896-2916`, `:5626-5630` |
-| 19 | `normalizeRepairedPayload` xoá `tradeoff_choices` của TOÀN batch khi bất kỳ repair nào fire | `live-preview.ts:2964-2967` ← `:3055, 2665, 2804, 2890` |
-| 20 | "Chờ Sân X" hứa suông — `simulateWaitWouldClean` bỏ qua required-players | `forced-tradeoff.ts:151-168` |
-| 21 | Rolling-horizon so điểm candidate trên số path KHÔNG bằng nhau khi hết budget | `planner/rolling-horizon.ts:572-591, 643-645` |
-| 22 | Batch cắt theo wall-clock 3800ms → cùng input, số sân fill khác nhau giữa 2 lần bấm | `live-preview.ts:4387-4392` |
-| 23 | Rolling-lane ghi đè `playerIdsByRound` → sân kế trong batch tính sai "ai đã nghỉ" | `live-preview.ts:4418-4420`, `:5466` |
-| 24 | `sync_live_suggestion_metadata` gắn metadata nhầm lineup (chỉ match `court_idx`, không so team) | `20260805000010:31` |
-| 25 | `degraded_reason` cũ không bao giờ được xoá khỏi DB khi board trở nên sạch | `index.ts:1559, 1543-1566` |
-| 26 | Hệ số recency của `computeQualityCost` lệch vì `current_round` là bộ đếm per-court | `quality-cost.ts:41-47`, `live-preview.ts:4533` |
-| 27 | `fetchAvailablePoolPreview` bump serial → response preview đang bay bị vứt, không lịch lại | `useLiveBoard.ts:809` vs `:2229` |
-| 28 | `rescueHandledNonceRef` tiêu thụ lúc DISPATCH → request thất bại làm mất trigger "Chờ Sân X" | `useLiveBoard.ts:2086-2091` |
+| # | Bug | Vị trí | Trạng thái | Bằng chứng |
+|---|---|---|---|---|
+| 10 | ALGO 55 within-tol-first chỉ phủ path joint ≥2 sân; path 1 sân vẫn mua vượt tolerance bằng gender | `score.ts:622-636`, `forced-tradeoff.ts:139` | ĐÃ SỬA | lib/next-round-suggester/score.ts:618-643 thêm tolerance/rematch barrier cho cost branch |
+| 12 | `applyJointRepartition` đổi split nhưng giữ `tradeoff_choices` cũ | `live-preview.ts:2896-2916`, `:5626-5630` | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:2977-3001 drop stale choices; 5753-5759 rebuild sau joint |
+| 19 | `normalizeRepairedPayload` xoá `tradeoff_choices` của TOÀN batch khi bất kỳ repair nào fire | `live-preview.ts:2964-2967` ← `:3055, 2665, 2804, 2890` | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:2977-3001 chỉ xoá choices stale; 5758 giữ choices còn đúng |
+| 20 | "Chờ Sân X" hứa suông — `simulateWaitWouldClean` bỏ qua required-players | `forced-tradeoff.ts:151-168` | ĐÃ SỬA | lib/next-round-suggester/forced-tradeoff.ts:163-180 nhận requiredIds và filter mustSeat |
+| 21 | Rolling-horizon so điểm candidate trên số path KHÔNG bằng nhau khi hết budget | `planner/rolling-horizon.ts:572-591, 643-645` | CÒN MỞ | lib/next-round-suggester/planner/rolling-horizon.ts:588-590 break khi đã có pathScores; 643-645 vẫn average pathScores |
+| 22 | Batch cắt theo wall-clock 3800ms → cùng input, số sân fill khác nhau giữa 2 lần bấm | `live-preview.ts:4387-4392` | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:4504-4508 comment bỏ việc quyết định số sân theo remaining time |
+| 23 | Rolling-lane ghi đè `playerIdsByRound` → sân kế trong batch tính sai "ai đã nghỉ" | `live-preview.ts:4418-4420`, `:5466` | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:4546-4548 seed từ playerIdsByRound hiện có; 5593-5595 merge rồi set |
+| 24 | `sync_live_suggestion_metadata` gắn metadata nhầm lineup (chỉ match `court_idx`, không so team) | `20260805000010:31` | ĐÃ SỬA | supabase/migrations/20260809000002_unify_live_suggestion_hint_sync.sql:87-99 match court_idx và team hai chiều |
+| 25 | `degraded_reason` cũ không bao giờ được xoá khỏi DB khi board trở nên sạch | `index.ts:1559, 1543-1566` | ĐÃ SỬA | supabase/migrations/20260809000002_unify_live_suggestion_hint_sync.sql:31-49 empty board clear stale hints |
+| 26 | Hệ số recency của `computeQualityCost` lệch vì `current_round` là bộ đếm per-court | `quality-cost.ts:41-47`, `live-preview.ts:4533` | CÒN MỞ | lib/next-round-suggester/quality-cost.ts:55-64 vẫn tính recency bằng state.current_round và round.round_no |
+| 27 | `fetchAvailablePoolPreview` bump serial → response preview đang bay bị vứt, không lịch lại | `useLiveBoard.ts:809` vs `:2229` | ĐÃ SỬA | features/host/session-detail/next-round-v2/hooks/useLiveBoard.ts:797 gọi abortPreviewRequest; 225-234 bump nonce |
+| 28 | `rescueHandledNonceRef` tiêu thụ lúc DISPATCH → request thất bại làm mất trigger "Chờ Sân X" | `useLiveBoard.ts:2086-2091` | ĐÃ SỬA | features/host/session-detail/next-round-v2/hooks/useLiveBoard.ts:2448-2452 chỉ set rescueHandledNonce sau khi có replacement |
 
 #### LOW (16)
 
-| # | Bug | Vị trí |
-|---|---|---|
-| 11 | `BURDEN_TIE_BREAK_SCORE_WINDOW = 3` áp lên thang COST *(hạ medium → LOW: kịch bản production bị bác)* | `pair.ts:106, 222-232` |
-| 29 | `courtShortageBreakdown` không cập nhật khi board rỗng → nhãn lane kẹt giá trị cũ | `useLiveBoard.ts:2645-2654` |
-| 30 | `normalizeRepairedPayload` wipe *(bản trùng gốc với #19, phát hiện từ Chiều 5)* | `live-preview.ts:3055` |
-| 31 | `bestPartitioning` random-restart phụ thuộc wall-clock, không tie-break tổng thể | `pair.ts:751, 258` |
-| 32 | Cổng chất lượng client áp 2 ngưỡng khác nhau cho 2 lane cùng board | `preview-consistency.ts:198-215` |
-| 33 | 448 dòng fork engine chết trong client, vẫn bundle, tự nhận là ALGO 55 | `preview.ts:481-928` |
-| 34 | `scheduleReconcile` no-op — 0 producer set `reconcile` | `NextRoundSuggesterScreenV2.tsx:180-181` |
-| 35 | Poll 4s làm response preview vừa persist bị coi là stale → board xoá trắng + request thừa | `preview-consistency.ts:119-135` |
-| 36 | Gợi ý nhánh legacy bị dán nhãn `edge_committed` → Start với id không tồn tại | `useLiveBoard.ts:2357, 2810-2815` |
-| 37 | `RestRiskBanner` "Bỏ qua" 1 lần → im lặng với người khác nếu số lượng không đổi | `ScreenComponents.tsx:3632` |
-| 38 | `playCostText` báo "không đánh đổi gì" cho trận đã vượt PVNA tolerance | `ScreenComponents.tsx:1971-1979` |
-| 39 | `cycle_no` không còn writer → nhánh canonical của `reconstructLiveRounds` là dead code | `live-rounds.ts:35-41, 65-66` |
-| 40 | Patch tight-pool quality-defer đã unreachable nhưng vẫn tính và vận chuyển tới client | `live-preview.ts:5114, 5191-5209` |
-| 41 | Breakpoint tính 1 lần lúc import → web resize không đổi layout | `ScreenComponents.tsx:83-86` + 7 file |
-| 42 | 0 `accessibilityLabel` trên toàn bộ 376 touchable | toàn repo |
-| 43 | Comment/calibration lệch weight đang ship (`intraOver` doc 1.0 vs ship 4.0) | `quality-cost.ts:15-22` |
+| # | Bug | Vị trí | Trạng thái | Bằng chứng |
+|---|---|---|---|---|
+| 11 | `BURDEN_TIE_BREAK_SCORE_WINDOW = 3` áp lên thang COST *(hạ medium → LOW: kịch bản production bị bác)* | `pair.ts:106, 222-232` | ĐÃ SỬA | lib/next-round-suggester/pair.ts:120-121 tách window legacy 3 và quality 0.2; 246-248 chọn theo flag |
+| 29 | `courtShortageBreakdown` không cập nhật khi board rỗng → nhãn lane kẹt giá trị cũ | `useLiveBoard.ts:2645-2654` | ĐÃ SỬA | features/host/session-detail/next-round-v2/hooks/useLiveBoard.ts:2220 setCourtShortageBreakdown null khi board không thiếu |
+| 30 | `normalizeRepairedPayload` wipe *(bản trùng gốc với #19, phát hiện từ Chiều 5)* | `live-preview.ts:3055` | ĐÃ SỬA | lib/next-round-suggester/live-preview.ts:2977-3001 không wipe toàn batch; chỉ drop stale metadata |
+| 31 | `bestPartitioning` random-restart phụ thuộc wall-clock, không tie-break tổng thể | `pair.ts:751, 258` | CÒN MỞ | lib/next-round-suggester/pair.ts:770-772 random-restart vẫn dừng theo Date.now maxRuntimeMs |
+| 32 | Cổng chất lượng client áp 2 ngưỡng khác nhau cho 2 lane cùng board | `preview-consistency.ts:198-215` | CÒN MỞ | preview-consistency.ts:198-199 `isEarlyOrMidRound = match.round_no < 5`, và round_no là PER-SÂN → sân vòng 6 và sân vòng 3 trên cùng board nhận hai ngưỡng khác nhau. Bỏ chặn theo intra là đúng nhưng không phải bug này |
+| 33 | 448 dòng fork engine chết trong client, vẫn bundle, tự nhận là ALGO 55 | `preview.ts:481-928` | ĐÃ SỬA | lệnh: rg -n "ALGO 55|buildSuggestedMatchPayloads" features/host/session-detail/next-round-v2/preview.ts => 0 hit; file 384 dòng |
+| 34 | `scheduleReconcile` no-op — 0 producer set `reconcile` | `NextRoundSuggesterScreenV2.tsx:180-181` | ĐÃ SỬA | lệnh: rg -n "scheduleReconcile|ActionResult.*reconcile|reconcile\\?:" features/host/session-detail lib/next-round-suggester supabase/functions => 0 hit |
+| 35 | Poll 4s làm response preview vừa persist bị coi là stale → board xoá trắng + request thừa | `preview-consistency.ts:119-135` | ĐÃ SỬA | features/host/session-detail/next-round-v2/hooks/useLiveBoard.ts:2151-2155 allowResponseAdvance khi persisted_preview |
+| 36 | Gợi ý nhánh legacy bị dán nhãn `edge_committed` → Start với id không tồn tại | `useLiveBoard.ts:2357, 2810-2815` | CHƯA KIỂM | còn preview_source edge_committed tại useLiveBoard.ts:2722-2724 nhưng chưa theo được runtime id persist hay client |
+| 37 | `RestRiskBanner` "Bỏ qua" 1 lần → im lặng với người khác nếu số lượng không đổi | `ScreenComponents.tsx:3632` | ĐÃ SỬA | features/host/session-detail/next-round-v2/components/ScreenComponents.tsx:3640-3645 reset dismissed theo riskPlayerKey |
+| 38 | `playCostText` báo "không đánh đổi gì" cho trận đã vượt PVNA tolerance | `ScreenComponents.tsx:1971-1979` | ĐÃ SỬA | features/host/session-detail/next-round-v2/components/ScreenComponents.tsx:1982-1987 over tolerance không còn text không đánh đổi |
+| 39 | `cycle_no` không còn writer → nhánh canonical của `reconstructLiveRounds` là dead code | `live-rounds.ts:35-41, 65-66` | CÒN MỞ | lib/next-round-suggester/live-rounds.ts:51-56 vẫn dùng persisted round_no khi reliable; file hiện tồn tại |
+| 40 | Patch tight-pool quality-defer đã unreachable nhưng vẫn tính và vận chuyển tới client | `live-preview.ts:5114, 5191-5209` | ĐÃ SỬA | lệnh: rg -n "shouldDeferTightPoolSuggestion|TIGHT_POOL_QUALITY_WAIT_MS|quality_deferred_courts|quality_deferred" lib/next-round-suggester supabase/functions features/host/session-detail => 0 hit |
+| 41 | Breakpoint tính 1 lần lúc import → web resize không đổi layout | `ScreenComponents.tsx:83-86` + 7 file | CÒN MỞ | features/host/session-detail/next-round-v2/components/ScreenComponents.tsx:82-85 vẫn tính SCREEN_WIDTH lúc import |
+| 42 | 0 `accessibilityLabel` trên toàn bộ 376 touchable | toàn repo | CÒN MỞ | features/host/session-detail/next-round-v2/components/ScreenComponents.tsx:336 có TouchableOpacity không accessibilityLabel |
+| 43 | Comment/calibration lệch weight đang ship (`intraOver` doc 1.0 vs ship 4.0) | `quality-cost.ts:15-22` | CÒN MỞ | lib/next-round-suggester/quality-cost.ts:15-19 comment nói chỉ balance/repeat moved nhưng intraOver ship 4.0 |
 
 > **Lưu ý dedup:** #2/#8 cùng một root (`forced_tradeoff` snapshot trước post-pass) và #19/#30 cùng một root (`normalizeRepairedPayload` wipe) — mỗi cặp được hai agent phát hiện từ hai chiều khác nhau, dedup theo title không gộp được. **41 root cause riêng biệt / 43 bug.**
 

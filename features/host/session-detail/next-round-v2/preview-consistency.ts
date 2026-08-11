@@ -195,8 +195,11 @@ export function hasHardPreviewQualityViolation(
   state: SessionState,
   pvnaTolerance: number,
 ) {
-  const roundNo = Number(match.round_no ?? 0)
-  const isEarlyOrMidRound = roundNo < 5
+  // Session progress, not this lane's cycle count. match.round_no counts turnovers on ONE court and
+  // courts drift, so reading the phase off it gave two lanes of the same board different thresholds —
+  // a court on its 6th cycle accepted a lineup the court on its 3rd rejected, with the host looking at
+  // both at once. state.rounds is the same for every lane.
+  const isEarlyOrMidRound = state.rounds.length < 5
 
   // NEVER reject on intra-team gap alone, at any round. A wide-PVNA pool — and the live per-court
   // flow that fills lanes incrementally — forces strong+weak pairing to keep the team TOTALS

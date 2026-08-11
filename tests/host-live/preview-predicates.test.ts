@@ -6,9 +6,13 @@ import {
   shouldRestMissForceFullBoard,
 } from '@/features/host/session-detail/next-round-v2/preview-consistency'
 
-function stateWithPvna(pvnaById: Record<string, number>) {
+// The quality gate's threshold used to come from match.round_no, a per-court cycle count, so two lanes
+// of one board could be judged differently (BUG #32). It now comes from how far the SESSION has got,
+// which every lane shares — so these cases set the phase on the state, not on the match.
+function stateWithPvna(pvnaById: Record<string, number>, roundsPlayed = 0) {
   return {
     players: new Map(Object.entries(pvnaById).map(([id, pvna]) => [id, { pvna }])),
+    rounds: Array.from({ length: roundsPlayed }, (_, index) => ({ round_no: index })),
   } as any
 }
 
@@ -31,13 +35,13 @@ describe('hasHardPreviewQualityViolation', () => {
     const match = { round_no: 5, team_a: ['1', '2'], team_b: ['3', '4'] }
     // gap = |8-7.4| = 0.6, tolerance=0.5 -> overBy=0.1 -- would fail early-round (>0.25 band) but
     // round 5 is NOT early/mid (roundNo < 5 is false), so it's allowed.
-    const state = stateWithPvna({ '1': 5, '2': 3, '3': 4, '4': 3.4 })
+    const state = stateWithPvna({ '1': 5, '2': 3, '3': 4, '4': 3.4 }, 5)
     expect(hasHardPreviewQualityViolation(match, state, 0.5)).toBe(false)
   })
 
   it('late-round matches still reject when overBy exceeds 1', () => {
     const match = { round_no: 5, team_a: ['1', '2'], team_b: ['3', '4'] }
-    const state = stateWithPvna({ '1': 5, '2': 3, '3': 4, '4': 1 })
+    const state = stateWithPvna({ '1': 5, '2': 3, '3': 4, '4': 1 }, 5)
     expect(hasHardPreviewQualityViolation(match, state, 0.5)).toBe(true)
   })
 })
