@@ -4500,10 +4500,16 @@ export function buildSuggestedMatchPayloads({
   
   for (let index = 0; index < effectiveCount; index += 1) {
     const remainingBatchMs = LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)
-    if (remainingBatchMs <= LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS) break
-    const remainingCourtsInBatch = Math.max(1, count - index)
     const courtStartedAt = nowMs()
-    const courtBudgetMs = getLivePreviewCourtBudgetMs(remainingBatchMs, remainingCourtsInBatch)
+    // Each court gets the same slice, decided by how many courts were asked for and nothing else. It
+    // used to be carved out of the time actually left, with the loop breaking once that ran low: a
+    // slower machine returned fewer courts from identical input, and a host had no way to tell a court
+    // that was dropped from one that could not be filled. A budget on the SEARCH is fine — it trades
+    // quality for latency and still returns a lineup. Deciding the number of courts is not.
+    //
+    // The total stays bounded by construction: the share reserves the minimum for every other court, so
+    // effectiveCount slices never exceed the batch budget.
+    const courtBudgetMs = getLivePreviewCourtBudgetMs(LIVE_PREVIEW_BATCH_TIMEOUT_MS, effectiveCount)
     const getRemainingCourtBudgetMs = (capMs = LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS) => Math.min(
       capMs,
       Math.max(20, courtBudgetMs - (nowMs() - courtStartedAt)),
