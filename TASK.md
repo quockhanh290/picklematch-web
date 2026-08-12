@@ -25,6 +25,21 @@ ghi `restSpread` là *"selection-layer metric, untouched by this task"* — đ�
 đúng kịch bản đang hỏi. Đây là bằng chứng cho board bình thường, KHÔNG phải cho board bị ép.
 - [ ] Kèo thật có board bị ép (sân lẻ, pool chật) là chỗ kiểm được điều này.
 
+## PHÁT HIỆN VỀ QUY TRÌNH: bảng 43 bug LÀM RƠI phát hiện thật
+
+Lỗi `'both'` tôi vá hôm nay (sân vừa lệch vừa lặp bị pass blowout bỏ qua) **đã nằm trong dữ liệu thô của
+audit từ đầu**: `scratch/audit-final.json:400` ghi đủ cả ba dòng code và câu *"Type allows 'both'"*.
+Nhưng nó **không lên bảng 43 bug** — rơi mất trong bước dedup/xếp hạng.
+
+Thêm nữa, `tests/next-round-suggester/unit/blowout-pool-owed-guard.test.ts:11` đã ghi chú sẵn *"This pass
+never acts on the replay corpus, because it needs degraded_reason === 'blowout' and those boards do not
+carry it"* — tức hiện tượng đã được quan sát, chỉ chưa ai nối hai mảnh lại.
+
+→ Bảng 43 **không phải tập đầy đủ** các phát hiện. Quét lại `scratch/audit-final.json` có thể còn phát
+hiện thật khác bị rơi.
+- [ ] Đối chiếu `audit-final.json` với bảng §5.1: mục nào trong thô mà không có trong bảng?
+- [ ] Ưu tiên các mục có `evidence` trích dẫn dòng code cụ thể — đó là loại đã được kiểm, không phải suy đoán.
+
 ## P2-2 — ĐO NỀN (2026-08-11, ĐÃ SỬA LẠI SAU KHI PHÁT HIỆN HARNESS TẮT TÍNH NĂNG)
 
 ### ⚠️ Kết luận đầu tiên của tôi SAI — đã rút lại
