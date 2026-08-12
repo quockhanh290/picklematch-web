@@ -869,3 +869,18 @@ Kế hoạch: docs/superpowers/plans/2026-07-27-host-live-logic-ui-separation.md
 
 ### Files touched
 lib/next-round-suggester/{live-preview.ts, pair.ts}; features/host/session-detail/{NextRoundSuggesterScreenV2.tsx, liveMatchGuards.ts, next-round-v2/{flow-sheets.tsx, useNextRoundModel.ts}}; app/host/dashboard.tsx; supabase/migrations/20260726000001_fix_rester_excludes_live_players.sql; supabase/tests/rester_excludes_live_players_test.sql
+
+### Deploy 2026-08-12 — ALGO 76, edge v266
+
+Đã đẩy `session-live-matches-suggest` v266 (ACTIVE) mang ALGO 76:
+- `repeatPool` chạy được trên lượt lấp MỘT sân (bỏ cổng `>= 2` phía caller) — corpus: lặp-3 11.63% → 1.98%
+- `participation` lọc người đang bận khỏi pool — corpus: không đo được tác động (harness chỉ lấp 1 sân)
+
+CẢNH BÁO cho lúc đọc kết quả canary quality-cost: board giờ đổi vì HAI lý do
+(model cost + ALGO 76). Không quy công/quy lỗi cho riêng model được nữa.
+Muốn tách bạch thì chạy canary trên một kèo khác sau khi ALGO 76 đã ổn định.
+
+Xác minh tới đâu: deploy log có upload lib/next-round-suggester/*, Management API trả
+version 266 ACTIVE. KHÔNG xác minh được ALGO version thực sự đang phục vụ — nhánh
+warmup chỉ trả `{ok, warmed}`, không trả `algorithm_version`. Muốn chắc thì đọc
+`algorithm_version` trong debug dump của suggest thật đầu tiên.
