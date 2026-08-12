@@ -256,7 +256,6 @@ export type BuildSuggestedMatchOptions = {
   stateOverride?: SessionState
   liveMatchRowsOverride?: SessionLiveMatchRow[]
   liveQualityPolicy?: LiveQualityPolicy
-  forcedRequiredPlayerIds?: string[]
   ignoreCapacityLock?: boolean
   // Phase 1: when true, a single-court refill that can only produce a blowout is SEATED (startable)
   // instead of silently deferred, and the host is offered rescue courts to optionally wait for.
@@ -4646,9 +4645,6 @@ export function buildSuggestedMatchPayloads({
         : minRequiredForThisCourt,
       state: suggestionState,
     })
-    for (const playerId of options.forcedRequiredPlayerIds ?? []) {
-      if (!requiredForThisCourt.includes(playerId)) requiredForThisCourt.push(playerId)
-    }
     const requiredForThisCourtIds = new Set(requiredForThisCourt)
     const deferredRequiredIds = availableRequiredIds
       .filter(playerId => !requiredForThisCourtIds.has(playerId))

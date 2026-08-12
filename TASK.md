@@ -25,6 +25,25 @@ ghi `restSpread` là *"selection-layer metric, untouched by this task"* — đ�
 đúng kịch bản đang hỏi. Đây là bằng chứng cho board bình thường, KHÔNG phải cho board bị ép.
 - [ ] Kèo thật có board bị ép (sân lẻ, pool chật) là chỗ kiểm được điều này.
 
+## HAI MỤC TREO — ĐÃ ĐÓNG CẢ HAI (2026-08-12)
+
+- **`forced_required` vượt cap 4 → lọc sạch alternative: KHÔNG TỚI ĐƯỢC.** Option
+  `LivePreviewOptions.forcedRequiredPlayerIds` **không có producer nào** trong `lib/`,
+  `supabase/functions/`, `features/`, và không test nào dùng — chỉ bản sao trong `scratch/`. Danh sách
+  luôn rỗng nên `containsForcedRequired` luôn thoả được. **Đã xoá option + vòng push** (code chết theo
+  quy ước CLAUDE.md). Lưu ý phân biệt: `suggest.ts:forced_required_player_ids` thì VẪN dùng, được nạp từ
+  `requiredForThisCourt` (`live-preview.ts:4744, 5029, 5087`) — chỉ option của live-preview là chết.
+- **fairness `MUST_PLAY` bị `deferLowViability` bỏ qua: CỐ Ý, có tài liệu.** `live-preview.ts:1713-1719`
+  ghi rõ người-bị-nợ lệch trình bị hoãn có chủ ý và `buildLiveTierOverrides` hạ tier xuống FLEXIBLE, kèm
+  lý do: ép cả nhóm bị nợ khi pool lưỡng cực sẽ đẻ foursome mạnh+yếu chỉ nới được thành blowout. KHÔNG
+  im lặng. Phần "thông báo nói ngược lại" là chữ hiển thị, hẹp hơn — chưa kiểm, hậu quả thấp.
+
+### Còn lại tôi làm được nhưng chưa làm
+- [ ] Truy test flaky trong gate (đỏ 1 lần, xanh khi chạy lại + chạy riêng). Cần chạy gate nhiều lượt
+      (~7 phút/lượt) mới bắt được — tốn, và chưa chặn việc gì.
+- [ ] Bỏ cổng ≥2 sân của `repeatPool`, và dạy `participation` biết ai đang bận. **Cả hai là đổi hành vi,
+      cần đo trước-sau, và KHÔNG nên trộn vào kèo canary.**
+
 ## SÀNG LỌC XONG NHÓM MEDIUM CÒN LẠI + NHÓM LOW (2026-08-12)
 
 ### MEDIUM — thêm hai mục còn sống
