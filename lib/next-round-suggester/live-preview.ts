@@ -113,7 +113,7 @@ export function getRescueBudgetShareMs(totalMs: number, courtCount: number): num
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 74
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 75
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -3064,11 +3064,31 @@ export function normalizeRepairedPayload(
   if (hasPayloadRepeat(payload, state)) {
     warnings.add('REPEAT_CAP_REACHED')
   }
+  // degraded_reason is stamped while the court is being filled, before any repair pass runs. A court the
+  // blowout repair has since fixed kept telling the host it was lopsided and kept offering "Chờ Sân X" —
+  // a wait for another court to free up so this one can be rescued, when there is nothing left to rescue.
+  //
+  // Only ever WITHDRAWN or narrowed here, never added: the detector decides whether a court is degraded
+  // at all, and it is gated behind an option this function knows nothing about. Inventing a flag here
+  // would put warnings on boards whose caller deliberately runs without them.
+  const previouslyDegraded = payload.degraded_reason !== undefined
+  const stillBlowout = previouslyDegraded && pvnaGap > Math.max(
+    BLOWOUT_DEGRADE_GAP_FLOOR,
+    pvnaTolerance + BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN,
+  )
+  const stillRepeat = previouslyDegraded && getPayloadProjectedMaxMeeting(payload, state) >= 3
+  const degradedReason = !previouslyDegraded
+    ? payload.degraded_reason
+    : stillBlowout && stillRepeat ? 'both' : stillBlowout ? 'blowout' : stillRepeat ? 'repeat' : undefined
+  const stillDegraded = degradedReason !== undefined
   return {
     ...payload,
     warnings: [...warnings],
     tradeoffs,
     approval_required: tradeoffs.length > 0,
+    degraded_reason: degradedReason,
+    rescue_court_idxs: stillDegraded ? payload.rescue_court_idxs : undefined,
+    rescue_search_truncated: stillDegraded ? payload.rescue_search_truncated : undefined,
   }
 }
 
