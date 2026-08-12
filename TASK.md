@@ -4,6 +4,42 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
+## VIỆC TỒN — cần kèo thật hoặc cần host (chốt 2026-08-11)
+
+### #15 — rest bookkeeping: ĐÃ ÁP PROD, CHƯA CHẠY LẦN NÀO
+Bookkeeping cũ chỉ chạy khi **cả vòng** xong trên mọi sân; sân lệch nhịp thì điều kiện đó không bao giờ
+đúng → `consecutive_rest`/`consecutive_play` đứng im → engine tính công bằng trên số liệu chết. Migration
+`20260809000001` chuyển sang đếm theo **từng trận kết thúc** (`rest_seat_misses`), dùng chung một helper
+`apply_live_match_rest_bookkeeping_event` cho cả `complete_` lẫn `cancel_`.
+
+**Chưa có một dòng dữ liệu nào chứng minh nó chạy đúng**: `rest_seat_misses > 0` ở 0/5657 hàng, vì trận
+mới nhất trong DB là 2026-08-08 còn migration áp sau đó.
+
+- [ ] Sau kèo thật đầu tiên, chạy: `select count(*) filter (where rest_seat_misses > 0), count(*) from public.session_player_state where session_id = '<id>'` — phải khác 0.
+- [ ] Đối chiếu `consecutive_rest` với số lần thật sự ngồi ngoài của vài người (chia cho số sân).
+- [ ] Nếu sai: triệu chứng là ưu tiên lệch — có người bị bench quá lâu hoặc chơi quá nhiều. Không crash.
+
+### #14 — ưu tiên theo chu kỳ sân: CỐ Ý, nhưng corpus không nhìn thấy ca gốc
+Host chốt quay về `last_played_round` (chu kỳ per-sân) sau khi đo hai cỡ mẫu: dùng `last_played_seq`
+(vị trí toàn phiên) tốn intra +1.8/+2.5pp và repeat3 +1.8/+1.75pp, mà `play-spread` **bằng nhau đến chữ
+số**. Tức vị trí phiên tốn chất lượng ghép mà không mua được công bằng nào đo được.
+
+**Giới hạn của phép đo**: mọi phiên trong corpus bắt đầu từ trắng, nên nó đo lệch-nhịp **tích luỹ trong
+một lượt replay**, KHÔNG phải phiên **nạp lại giữa chừng từ DB** với hai bộ đếm đã lệch xa — đúng ca mà
+BUG #14 xuất phát.
+
+- [ ] Sau một kèo thật có sân trôi lệch nhịp rõ (chênh ≥3 vòng), dump state rồi so hai cách xếp trên
+      cùng dữ liệu đó.
+- [ ] Nếu ngược lại: chỗ ghi quyết định là header `tests/next-round-suggester/unit/last-played-ordering.test.ts`
+      — sửa ở đó trước, test đang pin cả ca "trông có vẻ ngược".
+
+### #42 — accessibility: chưa làm vì cần người duyệt chữ, không vì khó
+376 touchable thiếu `accessibilityLabel`; trình đọc màn hình không đọc được gì hữu ích.
+
+- [ ] Giao Codex quét theo đợt, mỗi đợt một màn hình, KHÔNG làm một phát cả 376.
+- [ ] **Nhãn sai còn tệ hơn không nhãn** — host phải duyệt chữ tiếng Việt cho từng nhóm nút trước khi merge.
+- [ ] Ưu tiên màn hình host dùng nhiều nhất: next-round-v2, host-match, host-live.
+
 ## Phiên 2026-08-11 (đóng nốt cụm round_no) — **ĐÃ DEPLOY edge v256, ALGO 66** + migration prod
 - [x] **BUG #7 chỗ engine cuối** (`c92dd95`): `last_rest_started_round` dựng từ `last_played_round + 1` (đếm per-sân) nhưng `comparePlayersByPriority` đem **so giữa hai người** → người ngồi không từ đầu ở sân chậm thua người vừa ngồi xuống ở sân nhanh, sai đúng lúc board lệch nhất. Thêm `last_rest_started_seq` theo thang toàn phiên, có fallback. Test đỏ trước.
 - [x] **BUG #5** (`8a3e42d`, migration `20260811000001` **ĐÃ APPLY PROD**): guard "đã chơi vòng này" khoá theo `v_round_no` của batch trong khi INSERT khoá **per-sân** → sai cả hai chiều. Sân A xong vòng 5, sân B xong vòng 1 → `v_round_no`=6, insert A=6/B=2: người vừa xong vòng 6 ở A **bị chặn oan** khi ngồi B; chính người đó đã có vòng 2 ở B thì **lọt**. Khớp khoá lại thì nhánh này bất khả đạt (insert round = max completed sân đó + 1) nên **xoá** thay vì viết code chết. Không ai chơi 2 lần: hàng này là `suggested` chứ không phải `live`, và path start giữ guard per-sân riêng.
