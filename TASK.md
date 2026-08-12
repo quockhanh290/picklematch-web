@@ -114,8 +114,20 @@ buộc phải ghép mạnh+yếu, mà thế là vượt trần. Không xoá pass
   mọi lần lấp sau đều MỘT sân. Nên 60 lần vào đều ở tình huống nó không thể giúp, còn tình huống nó được
   sinh ra để xử — lấp nhiều sân TRONG LÚC có sân đang chạy — **chưa bao giờ xảy ra**.
   → **KHÔNG kết luận được gì về `repeatPool` từ corpus này.**
-- [ ] Muốn kiểm `repeatPool` phải sửa harness cho nó lấp ≥2 sân khi đang có sân chạy (đúng hình dạng
-      request thật của board nhiều sân), hoặc lấy từ `debug_dumps` prod.
+- [x] **Đã thử sửa harness (`MULTI=1`) — KHÔNG ĂN, và lý do sâu hơn một công tắc.** Vòng replay hoàn
+      thành MỘT sân rồi lấp lại ngay trong cùng vòng lặp, nên tại mọi thời điểm chỉ có đúng một sân
+      trống; điều kiện `idle.length > 1` không bao giờ đúng. Muốn có ≥2 sân trống cùng lúc phải để vài
+      sân xong TRƯỚC khi lấp — tức đổi cấu trúc vòng replay, không phải thêm cờ.
+- [ ] **`repeatPool` vẫn KHÔNG kiểm được.** Không được kết luận nó vô dụng. Hai đường còn lại: đổi cấu
+      trúc replay (tốn, và làm harness lệch xa hành vi thật hơn), hoặc lấy `debug_dumps` từ kèo thật.
+      **Ưu tiên đường thứ hai** — nó đo đúng thứ đang chạy.
+
+### Quy tắc rút ra hôm nay, đã trả giá 3 lần
+**Số liệu KHÔNG ĐỔI sau khi vừa đổi cách đo = dấu hiệu phép đo không chạy, KHÔNG phải dấu hiệu thay đổi
+vô tác dụng.** Ba lần hôm nay công cụ hỏng mà vẫn in ra kết quả trông hợp lệ: `rg` không tồn tại nên báo
+mọi symbol đã biến mất (kể cả hàm vừa sửa một tiếng trước); anchor khớp nhầm hàm nên counter rơi sai chỗ;
+assertion chết nhưng script vẫn chạy tiếp và in số của đường cũ. Cả ba lần đều chỉ bắt được nhờ con số
+trùng khít tới từng đơn vị — nếu lệch một chút thì đã tin là kết quả mới.
 - [ ] ⚠️ Mọi số đo trước đó hôm nay đều lấy với rescue TẮT, gồm cả bảng so P2-1. Đang chạy lại cả hai vế.
 
 ## P2-1 — `consecutive_play` bỏ khỏi cost model: CỐ Ý, và không tốn gì đo được

@@ -204,17 +204,26 @@ function run(sid: string): Score | null {
       }
       const idle = Array.from({ length: courts }, (_, i) => i)
         .filter(i => (lane.get(i) ?? 0) < ROUNDS && !live.some(r => r.status === 'live' && r.court_idx === i))
-      for (const ic of idle) {
-        acc.requested += 1
-        const idle = [...state.players.values()].filter(p =>
+      // Owed share: how many idle players carry consecutive_rest >= 1, the condition classify.ts turns
+      // into MUST_PLAY. Sampled once per refill decision, before any seat is taken.
+      const idlePlayers = [...state.players.values()].filter(p =>
         p.checked_out_at === null && !p.opted_rest
         && !live.some(r => r.status === 'live' && [...r.team_a, ...r.team_b].includes(p.player_id)))
-      acc.owedSamples += idle.length
-      acc.owedIdle += idle.filter(p => p.consecutive_rest >= 1).length
-      const n = suggest(state, live, 1, courts, [ic])
-        if (n.length !== 1) continue
-        scoreMatchInto(acc, state, n[0], tol)
-        live.push(asLive(n[0], seq++, lane.get(ic) ?? 0))
+      acc.owedSamples += idlePlayers.length
+      acc.owedIdle += idlePlayers.filter(p => p.consecutive_rest >= 1).length
+
+      // MULTI=1 asks for every idle court in ONE request instead of one call each. repeatPool only acts
+      // when two or more courts are filled together WHILE others are live, and the default loop never
+      // produces that shape — its only multi-court request is the opening fill on an empty board. So the
+      // pass has only ever been measured in the situation where it cannot help.
+      const groups = process.env.MULTI === '1' && idle.length > 1 ? [idle] : idle.map(ic => [ic])
+      for (const group of groups) {
+        acc.requested += group.length
+        const n = suggest(state, live, group.length, courts, group)
+        for (const payload of n) {
+          scoreMatchInto(acc, state, payload, tol)
+          live.push(asLive(payload, seq++, lane.get(payload.court_idx) ?? 0))
+        }
       }
     }
   }
