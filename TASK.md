@@ -25,6 +25,33 @@ ghi `restSpread` là *"selection-layer metric, untouched by this task"* — đ�
 đúng kịch bản đang hỏi. Đây là bằng chứng cho board bình thường, KHÔNG phải cho board bị ép.
 - [ ] Kèo thật có board bị ép (sân lẻ, pool chật) là chỗ kiểm được điều này.
 
+## SÀNG LỌC XONG NHÓM MEDIUM CÒN LẠI + NHÓM LOW (2026-08-12)
+
+### MEDIUM — thêm hai mục còn sống
+- **`repeatPool` chỉ chạy khi ≥2 sân trong một request** (`live-preview.ts:5746`), trong khi cứu blowout
+  KHÔNG có cổng đó. Nên **lấp một sân — trường hợp thường gặp nhất của board rolling — không có cứu
+  lặp-3 từ băng ghế**, dù "lặp-3 phải thua" là chỉ thị host. Bất đối xứng thật.
+- **Ngưỡng vi phạm nghỉ lệch nhau giữa hai chỗ**: `metrics.ts:517` dùng cứng `> 1`, `detector.ts:239`
+  co giãn theo băng ghế `2/3/4`. NHƯNG corrector đọc `warning.affected_players` từ **detector**, không
+  đọc `violations` của metrics — nên bất nhất chỉ ảnh hưởng **báo cáo**, không ảnh hưởng hành vi engine.
+  Hậu quả thấp, ghi lại chứ không sửa.
+
+### MEDIUM — đã sửa từ trước
+- `rest_violation` nới `pvna_tolerance` +0.15 toàn cục: **đã bỏ**, `corrector.ts:75-79` ghi rõ lý do.
+
+### LOW (12 mục) — không mục nào đáng sửa gấp
+- **Cụm code chết trong `metrics.ts`** (`getEffectiveDiversityCredits`, `getDiversityCredit`,
+  `collectRepeatPairs`): xác nhận 0 tham chiếu ngoài, **đã xoá** (~52 dòng).
+- **Guard `seen` ở fallback cuối "đã chết"**: SAI với code hiện tại — cùng một `key` được kiểm rồi thêm
+  vào (`live-preview.ts:3406-3408`). Đã sửa từ trước hoặc phát hiện sai.
+- **`BURDEN_TIE_BREAK_SCORE_WINDOW=3`**: đã xử hôm nay (P1-2, tách hai thang).
+- Còn lại là hiệu năng, nhãn hiển thị lệch, hoặc đường last-resort — ghi nhận, không gấp.
+
+### Tổng kết việc đối chiếu dữ liệu thô (71 thô vs 43 trong bảng)
+**4 lỗi còn sống tìm được, 2 đã vá và deploy** (ALGO 74 `'both'`, ALGO 75 cờ degraded không thu hồi),
+**2 chờ kèo thật** (repeatPool một sân, participation tắt trên đường rolling). Bảng 43 **bỏ sót cả bốn**.
+→ Kết luận về quy trình: **bảng đã dedup không được dùng thay cho dữ liệu thô.**
+
 ## SÀNG LỌC MEDIUM BỊ RƠI (15 mục) — 2026-08-12
 
 | mục | kết luận |

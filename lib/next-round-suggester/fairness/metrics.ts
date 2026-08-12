@@ -387,36 +387,6 @@ function getActiveRepeatCount(
     : (player.opponent_counts.get(otherId) ?? 0)
 }
 
-function getEffectiveDiversityCredits(
-  player: PlayerSessionState,
-  state: SessionState,
-  field: 'partner_counts' | 'opponent_counts',
-): number {
-  let credits = 0
-  const type: 'partner' | 'opponent' = field === 'partner_counts' ? 'partner' : 'opponent'
-
-  for (const [otherId] of player[field]) {
-    const count = getActiveRepeatCount(player, otherId, state, type)
-    if (count <= 0) continue
-    const other = state.players.get(otherId)
-    credits += getDiversityCredit(player, other, count)
-  }
-
-  return credits
-}
-
-function getDiversityCredit(
-  player: PlayerSessionState,
-  other: PlayerSessionState | undefined,
-  count: number,
-): number {
-  if (count <= 0) return 0
-  if (player.group_id && player.group_id === other?.group_id) {
-    return Math.min(count, 2)
-  }
-  return 1
-}
-
 function isBurdenRepeat(
   player: PlayerSessionState | undefined,
   other: PlayerSessionState | undefined,
@@ -965,36 +935,6 @@ function collectSplitRepeatPairs(
     cross_group: [...crossGroup.values()].sort(sortFn),
     intra_group: [...intraGroup.values()].sort(sortFn),
   }
-}
-
-function collectRepeatPairs(
-  state: SessionState,
-  field: 'partner_counts' | 'opponent_counts',
-): { player_a: string; player_b: string; count: number }[] {
-  const pairs = new Map<string, { player_a: string; player_b: string; count: number }>()
-
-  for (const player of state.players.values()) {
-    for (const [otherId, count] of player[field]) {
-      if (count <= 1) continue
-      if (!state.players.has(otherId)) continue
-
-      const [playerA, playerB] =
-        player.player_id < otherId ? [player.player_id, otherId] : [otherId, player.player_id]
-      const key = `${playerA}:${playerB}`
-      const existing = pairs.get(key)
-
-      pairs.set(key, {
-        player_a: playerA,
-        player_b: playerB,
-        count: Math.max(existing?.count ?? 0, count),
-      })
-    }
-  }
-
-  return [...pairs.values()].sort((a, b) => {
-    if (b.count !== a.count) return b.count - a.count
-    return `${a.player_a}:${a.player_b}`.localeCompare(`${b.player_a}:${b.player_b}`)
-  })
 }
 
 const AVAILABILITY_PENALTY_MULTIPLIER: Record<AvailabilityPressureLevel, number> = {
