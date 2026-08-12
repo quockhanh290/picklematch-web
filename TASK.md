@@ -25,6 +25,52 @@ ghi `restSpread` là *"selection-layer metric, untouched by this task"* — đ�
 đúng kịch bản đang hỏi. Đây là bằng chứng cho board bình thường, KHÔNG phải cho board bị ép.
 - [ ] Kèo thật có board bị ép (sân lẻ, pool chật) là chỗ kiểm được điều này.
 
+## HAI PASS: ĐÃ SỬA + ĐO, **CHƯA DEPLOY** (chờ canary xong)
+
+### `repeatPool` bỏ cổng `>= 2` sân — THẮNG LỚN NHẤT ĐO ĐƯỢC TRONG NGÀY
+Cổng đó là hạn chế phía caller, không phải yêu cầu của hàm: hàm tự guard bằng "có payload nào ở lần gặp
+thứ 3 không" và chạy được với một payload. Giữ cổng nghĩa là **lấp một sân — cách board rolling hoạt động
+phần lớn thời gian — không có cứu lặp-3 từ băng ghế**, trong khi pass cứu blowout ngay cạnh không có cổng đó.
+
+| | trước | sau |
+|---|---|---|
+| **repeat3** | **11.63%** | **1.98%** |
+| **worst-rest** | **1.80** | **1.55** |
+| avg cost | 2.6475 | 2.5742 |
+| over-tol | 12.5% | 11.43% |
+| panel | 7.19% | 5.67% |
+| blowout | 1.17% | 1.39% |
+| intra>1 | 19.3% | 19.56% |
+| play-spread | 1.35 | 1.367 |
+| `repeatPool` đổi board | 0 | **310** |
+
+Lặp-3 giảm **83%**, giá gần như bằng không. Ba dấu hiệu độc lập xác nhận là thật: `board_hash` đổi,
+`changed` từ 0 lên 310, và `worst-rest` GIẢM — đúng chiều nếu guard `mayReplace` bên trong vẫn chặn việc
+đẩy người đang bị nợ ra khỏi sân.
+
+### `participation` biết ai đang bận — ĐÚNG NGUYÊN TẮC, KHÔNG ĐO ĐƯỢC
+Đã thêm tham số `busyIds`, lọc người đang ở sân live, rồi bỏ cổng `liveCourtIdxs.size === 0`. Thứ tự đó
+bắt buộc: cổng cũ ĐÚNG với hàm viết như cũ (hàm đếm cả người đang chơi vào nhóm "chưa được xếp"), nên gỡ
+cổng trước khi dạy hàm biết ai bận là biến một hạn chế đúng thành một lỗi.
+
+**Kết quả đo: KHÔNG ĐỔI GÌ** — mọi số và `board_hash` giống hệt, `participation:changed` = 0. Vì hàm tự
+đòi `payloads.length >= 2` và chỗ gọi còn `effectiveCount >= 2`, mà harness lấp từng sân một → chỉ chạy
+ở cú lấp đầu phiên, 60 lần, y như trước.
+→ **Không được tuyên bố nó cải thiện gì.** An toàn (753/753, tsc 0) nhưng chưa chứng minh.
+
+### ⚠️ Hạn chế hệ thống của harness — đã chặn phép đo BA lần
+Harness hoàn thành một sân rồi lấp lại ngay, nên **không bao giờ có tình huống "lấp nhiều sân trong lúc
+sân khác đang chạy"**. Ba thứ đã không đo được vì đúng lý do này: `repeatPool` (trước khi bỏ cổng),
+`participation`, và hình dạng request nhiều sân nói chung.
+- [ ] Muốn đo được phải đổi cấu trúc vòng replay (để vài sân xong trước khi lấp) — nhưng làm vậy kéo
+      harness xa hành vi thật hơn. **Đường tốt hơn: `debug_dumps` từ kèo thật.**
+
+### Thứ tự deploy đã thống nhất
+- [ ] **CHƯA deploy hai thay đổi này.** Đẩy lên trước canary thì board thật đổi vì hai lý do cùng lúc và
+      không tách được cái nào là cost model.
+- [ ] Host chạy canary xong → deploy `repeatPool` (có số) → `participation` đi kèm (không số, nhưng an toàn
+      và sửa một lỗ có thật ở đường rolling).
+
 ## HAI MỤC TREO — ĐÃ ĐÓNG CẢ HAI (2026-08-12)
 
 - **`forced_required` vượt cap 4 → lọc sạch alternative: KHÔNG TỚI ĐƯỢC.** Option

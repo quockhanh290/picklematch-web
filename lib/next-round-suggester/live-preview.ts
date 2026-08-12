@@ -2564,10 +2564,15 @@ export function repairAllIdlePayloadBatchParticipation(
   payloads: SuggestedMatchPayload[],
   state: SessionState,
   pvnaTolerance: number,
+  // Players already on a live court. Without this the function counts them as "not selected", concludes
+  // they are being under-played, and tries to swap in someone who cannot take a seat — which is why the
+  // caller used to skip the pass entirely whenever any court was live, leaving the rolling path with no
+  // participation repair at all.
+  busyIds: ReadonlySet<string> = new Set(),
 ) {
   if (payloads.length < 2) return payloads
   const eligiblePlayers = [...state.players.values()]
-    .filter(player => player.checked_out_at === null && !player.opted_rest)
+    .filter(player => player.checked_out_at === null && !player.opted_rest && !busyIds.has(player.player_id))
   const eligibleIds = eligiblePlayers.map(player => player.player_id)
   const selectedIds = new Set(payloads.flatMap(payload => [...payload.team_a, ...payload.team_b]))
   if (selectedIds.size !== payloads.length * 4) return payloads
@@ -5728,18 +5733,24 @@ export function buildSuggestedMatchPayloads({
     isTrueFirstRound: state.rounds.length === 0 && !hasStartedOrCompletedLiveMatches,
     allowEarlyQualityRepair: payloads.length >= openCourtIdxsForBatch.length,
   })
-  const shouldRunParticipationRepair = liveCourtIdxs.size === 0
-    && repairedPayloads.length === effectiveCount
+  // No longer gated on an empty board: the function now excludes players on live courts, so it can run
+  // on the rolling path — which is where a session spends most of its time and where it previously did
+  // nothing at all.
+  const shouldRunParticipationRepair = repairedPayloads.length === effectiveCount
     && effectiveCount >= 2
   if (shouldRunParticipationRepair) instrumentPostPass('participation', 'entered')
   const participationRepairedPayloads = shouldRunParticipationRepair
-    ? repairAllIdlePayloadBatchParticipation(repairedPayloads, repairState, pvnaTolerance)
+    ? repairAllIdlePayloadBatchParticipation(repairedPayloads, repairState, pvnaTolerance, liveLockedPlayerIds)
     : repairedPayloads
   if (participationRepairedPayloads !== repairedPayloads) instrumentPostPass('participation', 'changed')
   // Pull-from-bench repair for the multi-court greedy-steal repeat-3 (see
   // repairPayloadBatchSevereRepeatFromPool). Needs ≥2 courts in one request and a live board for the
   // steal to occur; the function no-ops unless a payload is at a 3rd meeting with a fresh player benched.
-  const benchIdsForRepeatRepair = participationRepairedPayloads.length >= 2
+  // The >= 2 gate was a caller-side restriction, not a requirement of the pass: the function guards
+  // itself on "is any payload at a third meeting" and works on one payload as well as several. Keeping
+  // the gate meant a single-court refill — how a rolling board spends most of a session — got no bench
+  // rescue for a repeat-3, while the blowout repair beside it has no such gate.
+  const benchIdsForRepeatRepair = participationRepairedPayloads.length >= 1
     ? (() => {
         const selected = new Set(participationRepairedPayloads.flatMap(pl => [...pl.team_a, ...pl.team_b]))
         return [...repairState.players.values()]
