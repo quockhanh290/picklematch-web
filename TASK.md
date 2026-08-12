@@ -4,6 +4,40 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
+## P2-1 — CANARY COST MODEL (host chốt 2026-08-11)
+
+### Số đo trên corpus 60 phiên, cùng cây code, cùng dữ liệu
+| | model cũ | cost model |
+|---|---|---|
+| avg cost | 2.8057 | **2.4681** |
+| over-tol | 13.54% | **9.72%** |
+| blowout | 3.30% | **1.81%** |
+| play-spread | 1.433 | **1.367** |
+| worst-rest | 1.767 | 1.750 |
+| intra>1 | **19.66%** | 25.87% |
+| repeat3 | **11.53%** | 12.34% |
+| **panel** | **6.93%** | **15.61%** |
+
+Cost model ghép cân hơn rõ rệt, giá phải trả là intra +6.2pp (ghép mạnh+yếu để cân tổng đội — KHÔNG phải
+cổng cứng, thang relaxation vẫn nới, 311/1520 trận corpus vốn đã vượt) và **panel gấp đôi**: host bị hỏi
+ở ~1/6 trận thay vì 1/14. Corpus **không đo được** "hỏi nhiều có phiền không" → host chốt chạy canary.
+
+### Trạng thái cờ trên prod (đã kiểm 2026-08-11)
+- `SESSION_QUALITY_COST_MODEL = "1"` (Management API trả **hash SHA-256**, phải dò ngược mới đọc được).
+- `SESSION_QUALITY_COST_SESSION_IDS` = một id cụ thể, **không phải `*`**, và **không khớp** session nào
+  trong 246 phiên gần nhất → canary cũ đã chết.
+- `resolveQualityCostEnabledForSession` đòi cờ='1' **VÀ** session nằm trong allowlist → **hiện tắt với
+  mọi phiên đang tồn tại**.
+
+### Các bước chạy canary
+- [ ] Host tạo kèo, đưa `session_id`.
+- [ ] `node scratch/cost-canary.mjs <session_id>` — đặt allowlist đúng một id đó. Mọi phiên khác vẫn model cũ.
+- [ ] Chạy hết kèo. Thứ cần cảm nhận: **tần suất bị hỏi ý** (dự kiến ~1/6 trận), và trận có cân hơn không.
+- [ ] Rollback bất cứ lúc nào: `node scratch/cost-canary.mjs --off`.
+- [ ] Sau kèo, đối chiếu bằng `debug_dumps`: tỉ lệ panel thực tế so với 15.61% của corpus.
+- [ ] ⚠️ **KHÔNG đặt allowlist = `*`** — đó là cái bẫy đã làm hỏng đợt rollout plan trước (xem
+      [[project-plan-consumption-disabled]]).
+
 ## VIỆC TỒN — cần kèo thật hoặc cần host (chốt 2026-08-11)
 
 ### #15 — rest bookkeeping: ĐÃ ÁP PROD, CHƯA CHẠY LẦN NÀO

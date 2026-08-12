@@ -64,9 +64,13 @@ function buildState(sid: string): { state: SessionState; courts: number } | null
     matches_played: 0, last_played_round: -1, consecutive_play: 0, consecutive_rest: 0,
     partner_counts: new Map(), opponent_counts: new Map(), opted_rest: false, rounds_available: 0,
   })) as never
+  // P2-1: the two scoring models are chosen per session by this flag, so the corpus can be replayed
+  // under either. QC=1 answers "what would the board look like if the cost model were switched on for
+  // everyone", which is the decision the flag exists to gate.
   const state = {
     session_id: sid, current_round: 1, status: 'active',
-    config: { courts, pvna_tolerance: tolBySid[sid] ?? 0.5, court_preset: 'balanced', weights: BASE_W, planned_total_rounds: 8 },
+    config: { courts, pvna_tolerance: tolBySid[sid] ?? 0.5, court_preset: 'balanced', weights: BASE_W, planned_total_rounds: 8,
+      quality_cost_enabled: process.env.QC === '1' },
     players: new Map(players.map(p => [p.player_id, p])), rounds: [],
   } as unknown as SessionState
   return { state, courts }
