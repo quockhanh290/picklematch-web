@@ -16,7 +16,8 @@ const carried = (location = '') => {
   return lines.length === 0 ? true : lines.some(n => doc.includes(n))
 }
 
-const high = raw.filter(f => !carried(f.location) && (f.severity ?? '').toUpperCase() === 'HIGH')
+const WANT = (process.env.SEV ?? 'HIGH').split(',')
+const high = raw.filter(f => !carried(f.location) && WANT.includes((f.severity ?? '').toUpperCase()))
 
 // The identifier a finding is really about is usually the longest camelCase name in its title or
 // location — good enough to locate the code today, whatever the line numbers have done since.

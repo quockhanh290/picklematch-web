@@ -25,6 +25,28 @@ ghi `restSpread` là *"selection-layer metric, untouched by this task"* — đ�
 đúng kịch bản đang hỏi. Đây là bằng chứng cho board bình thường, KHÔNG phải cho board bị ép.
 - [ ] Kèo thật có board bị ép (sân lẻ, pool chật) là chỗ kiểm được điều này.
 
+## SÀNG LỌC MEDIUM BỊ RƠI (15 mục) — 2026-08-12
+
+| mục | kết luận |
+|---|---|
+| Blowout pull-from-bench thiếu guard owed-rank (2 mục trùng) | **ĐÃ SỬA** — `mayReplace` thêm ở P0-4, `live-preview.ts:2818-2823` |
+| `getMatchGroupKey` bỏ qua ranh giới đội → re-split bị tính là rematch | **CỐ Ý, gated theo cờ** — `score.ts:166` `teamAwareExactRematch = isQualityCostModelEnabled(state)`: cost model team-aware, legacy thì không |
+| Local 2-opt không với tới re-partition 3+ người | không phải bug — đây chính là luận điểm của P2-2 |
+| **Participation repair tắt hoàn toàn khi có sân đang chạy** | **CÒN SỐNG, đã xác nhận bằng số**: `live-preview.ts:5716` `shouldRunParticipationRepair = liveCourtIdxs.size === 0`. Nên **đường rolling KHÔNG có sửa chữa công bằng nào**. Khớp với đo được: 60 vào / 0 đổi, và 60 lần đó đều là cú lấp đầu phiên |
+| **`courtCount` hiện tại chia cho toàn bộ lịch sử lỡ ghế** | **CÒN SỐNG — giới hạn trong thiết kế TÔI ship (P0-7)**, xem dưới |
+| `forced_required_player_ids` vượt cap 4 → `containsForcedRequired` lọc sạch alternative | **CHƯA KẾT LUẬN** — `live-preview.ts:4956` đòi alternative chứa MỌI required; nếu list > 4 thì không alternative 4 ghế nào thoả. Cần lần xem list có thể vượt 4 thật không (`:4649` push `forcedRequiredPlayerIds` SAU cap/defer) |
+| 8 mục còn lại | chưa kiểm |
+
+### `consecutive_rest` méo khi host đổi số sân giữa phiên
+`state.ts:182`: `courtCount = current_courts ?? courts`, rồi `consecutiveRest = floor(rest_seat_misses / courtCount)`.
+Số sân **hiện tại** chia cho **toàn bộ lịch sử**. 6 sân → 3 sân: 6 lượt lỡ cũ đang là "nghỉ 1" thành
+**"nghỉ 2"**, người đó trông như bị nợ gấp đôi. Tăng sân thì mọi người bỗng trông như vừa nghỉ.
+
+Đây là hệ quả của việc lưu **số lượt lỡ thô** rồi quy đổi lúc đọc — chính là đánh đổi tôi chọn ở P0-7 để
+SQL không phải biết "một vòng đã trôi qua". Sửa đúng cần lưu số sân tại thời điểm lỡ, tức đổi schema.
+- [ ] Kèo thật: nếu host đổi số sân giữa phiên, theo dõi bộ đếm nghỉ có nhảy bất thường không.
+- [ ] Chỉ đổi schema nếu quan sát được méo thật — đừng sửa dựa trên lập luận (5 lần hôm nay lập luận thua phép đo).
+
 ## SÀNG LỌC 51 MỤC BỊ RƠI — kết quả tới lúc này (2026-08-12)
 
 16 mục HIGH. Đã kiểm:
