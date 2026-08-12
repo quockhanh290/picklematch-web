@@ -53,8 +53,17 @@ tôi đã đi xoá ba pass.
 
 → **`blowoutPool` KHÔNG vô dụng**, nó sửa 68 board. Cửa ải chính là **trần intra 1.0** — cân tổng hai đội
 buộc phải ghép mạnh+yếu, mà thế là vượt trần. Không xoá pass này.
-- [ ] `participation` và `repeatPool` vẫn 60 vào / 0 đổi **kể cả khi đã bật rescue** — nhưng sau bốn lần
-      sai, KHÔNG kết luận gì cho tới khi kiểm điều kiện tiên quyết của CHÚNG có bị tắt tương tự không.
+### Đã kiểm điều kiện tiên quyết của hai pass còn lại — hai kết luận KHÁC HẲN nhau
+- **`participation`**: chạy khi `liveCourtIdxs.size === 0 && effectiveCount >= 2` (`:5716`), tức **gợi ý
+  cả bàn cùng lúc** — đúng là cú lấp đầu mỗi phiên trong harness. 60 lần vào đó **đúng kịch bản nó sinh
+  ra**, nên "0 đổi" là bằng chứng thật. Vẫn chưa biết điều kiện BÊN TRONG nó có thoả không.
+- **`repeatPool`**: comment tại `:5722-5724` ghi rõ *"Needs ≥2 courts in one request **and a live board**
+  for the steal to occur"*. Harness chỉ yêu cầu ≥2 sân **đúng một lần, lúc bàn còn trống** (`live = []`);
+  mọi lần lấp sau đều MỘT sân. Nên 60 lần vào đều ở tình huống nó không thể giúp, còn tình huống nó được
+  sinh ra để xử — lấp nhiều sân TRONG LÚC có sân đang chạy — **chưa bao giờ xảy ra**.
+  → **KHÔNG kết luận được gì về `repeatPool` từ corpus này.**
+- [ ] Muốn kiểm `repeatPool` phải sửa harness cho nó lấp ≥2 sân khi đang có sân chạy (đúng hình dạng
+      request thật của board nhiều sân), hoặc lấy từ `debug_dumps` prod.
 - [ ] ⚠️ Mọi số đo trước đó hôm nay đều lấy với rescue TẮT, gồm cả bảng so P2-1. Đang chạy lại cả hai vế.
 
 ## P2-1 — `consecutive_play` bỏ khỏi cost model: CỐ Ý, và không tốn gì đo được
