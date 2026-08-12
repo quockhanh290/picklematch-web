@@ -131,6 +131,10 @@ type Score = {
   // This measures whether that costs anything: how tired the most-fatigued seated player was, and how
   // often anyone is seated at or past the rest threshold.
   worstPlay: number; seatedTired: number
+  // classify.ts makes anyone who sat out a single round MUST_PLAY (mustPlayAt is the constant 1) while
+  // mustRestAt scales with bench depth. If nearly everyone idle carries that tier, the tier cannot
+  // discriminate and everything downstream reading it as "must be seated" is working from noise.
+  owedSamples: number; owedIdle: number
 }
 
 const emptyScore = (): Score => ({
@@ -138,6 +142,7 @@ const emptyScore = (): Score => ({
   hardAvoidPartner: 0, intraOverCap: 0,
   overTol: 0, repeat3: 0, blowout: 0, panels: 0, lineups: [],
   playSpread: 0, worstRest: 0, panelsForced: 0, panelsChoices: 0, worstPlay: 0, seatedTired: 0,
+  owedSamples: 0, owedIdle: 0,
 })
 
 function scoreMatchInto(acc: Score, s: SessionState, p: SuggestedMatchPayload, tol: number) {
@@ -201,7 +206,12 @@ function run(sid: string): Score | null {
         .filter(i => (lane.get(i) ?? 0) < ROUNDS && !live.some(r => r.status === 'live' && r.court_idx === i))
       for (const ic of idle) {
         acc.requested += 1
-        const n = suggest(state, live, 1, courts, [ic])
+        const idle = [...state.players.values()].filter(p =>
+        p.checked_out_at === null && !p.opted_rest
+        && !live.some(r => r.status === 'live' && [...r.team_a, ...r.team_b].includes(p.player_id)))
+      acc.owedSamples += idle.length
+      acc.owedIdle += idle.filter(p => p.consecutive_rest >= 1).length
+      const n = suggest(state, live, 1, courts, [ic])
         if (n.length !== 1) continue
         scoreMatchInto(acc, state, n[0], tol)
         live.push(asLive(n[0], seq++, lane.get(ic) ?? 0))
@@ -252,6 +262,7 @@ const report = {
     // field. Comparable between runs because both aggregate the same way; do not read it as "someone
     // played N in a row".
     summed_session_max_consecutive_play: totals.worstPlay,
+    owed_share_of_idle_pct: +(100 * totals.owedIdle / Math.max(1, totals.owedSamples)).toFixed(2),
     seated_at_or_past_rest_pct: +(100 * totals.seatedTired / Math.max(1, totals.seated * 4)).toFixed(2),
   },
 }
@@ -264,6 +275,7 @@ console.log(`HARD avoid-partner ${report.hard.avoid_partner}   <-- must stay 0`)
 console.log(`SOFT avg cost ${report.soft.avg_cost} | over-tol ${report.soft.over_tol_pct}% | intra>${INTRA_TEAM_PVNA_GAP_LIMIT} ${report.soft.intra_over_cap_pct}% | repeat3 ${report.soft.repeat3_pct}% | blowout ${report.soft.blowout_pct}% | panel ${report.soft.panel_pct}%`)
 console.log(`PANEL forced ${report.soft.panel_forced_pct}% | choices ${report.soft.panel_choices_pct}%   <-- forced chỉ tồn tại khi bật cờ`)
 console.log(`FAIR play-spread ${report.fair.avg_play_spread} | worst-rest ${report.fair.avg_worst_rest}   <-- lower is fairer`)
+console.log(`OWED người rảnh mang tier MUST_PLAY (consecutive_rest>=1): ${report.fair.owed_share_of_idle_pct}%`)
 console.log(`FATIGUE tổng max consecutive_play mỗi phiên ${report.fair.summed_session_max_consecutive_play} | ghế cho người đã chơi >=2 liên tiếp ${report.fair.seated_at_or_past_rest_pct}%`)
 console.log(`board_hash ${boardHash}`)
 const tallied = [...repairTally.entries()].sort((a, b) => b[1] - a[1])

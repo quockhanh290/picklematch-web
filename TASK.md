@@ -52,10 +52,15 @@ liên tục hoãn người, và NO_VALID_MATCH giả khi bench > số ghế.
 
 `mustRestAt` có comment giải thích công thức; `mustPlayAt: 1` **không có dòng nào**. Nhưng vắng comment
 KHÔNG có nghĩa là lỗi (bài học hôm nay), nên **chưa sửa**.
-- [ ] Đo trước: mỗi vòng bao nhiêu % người chơi mang tier MUST_PLAY? Nếu gần 100% thì tier đúng là vô
-      nghĩa và cần cho `mustPlayAt` co giãn theo bench như `mustRestAt`.
-- [ ] Đây là thay đổi hiệu chuẩn, đổi ai được ưu tiên — phải đo, không sửa mò. Và nên đo SAU canary để
-      không trộn hai thay đổi vào một kèo.
+**ĐÃ ĐO — GIẢ THUYẾT CỦA TÔI SAI, KHÔNG SỬA.** Chỉ **3.19%** người rảnh mang `consecutive_rest >= 1`,
+không phải gần 100% như lập luận. Lý do có cấu trúc: `consecutive_rest` được suy ra là
+`floor(rest_seat_misses / courtCount)` (`state.ts:259`), nên với 6 sân một người phải lỡ **6 lượt lấp
+ghế** mới lên 1. Phép chia theo số sân **đã co giãn sẵn đầu vào** — hằng số `mustPlayAt: 1` không làm
+tier phình to.
+
+→ Bất đối xứng tồn tại trên mặt chữ nhưng **không có hậu quả đo được**. Đóng mục này, không sửa.
+→ Lần thứ năm hôm nay một lập luận nghe rất hợp lý không sống sót qua phép đo. Khác bốn lần trước ở chỗ
+   lần này tôi đo TRƯỚC khi sửa, nên không mất gì.
 
 ## PHÁT HIỆN VỀ QUY TRÌNH: bảng 43 bug LÀM RƠI phát hiện thật
 
