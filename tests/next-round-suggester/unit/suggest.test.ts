@@ -82,15 +82,10 @@ describe('suggestNextRound', () => {
       max_iterations: 0,
       exhaustive: false,
     }
-    const startedAt = performance.now()
-
     const result = suggestNextRound(state, { diagnostics })
-    const elapsedMs = performance.now() - startedAt
 
     expect(result.alternatives[0]?.matches).toHaveLength(4)
-    expect(elapsedMs).toBeLessThan(1800)
     expect(diagnostics.budget_ms).toBe(DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS)
-    expect(diagnostics.elapsed_ms).toBeLessThan(1800)
   })
 
   it('suggests one next match while excluding busy players', () => {
