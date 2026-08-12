@@ -40,9 +40,16 @@ sẵn có (`instrumentPostPass` phát `entered` khi pass được XÉT, `changed
 | `participation` | 60 vào / 0 đổi | 60 vào / 0 đổi |
 | `repeatPool` | 60 vào / 0 đổi | 60 vào / 0 đổi |
 
-**Bằng chứng này MẠNH, không phải im lặng.** `blowoutPool:entered` nghĩa là `benchIdsForBlowoutRepair`
-KHÔNG rỗng — tức điều kiện tiên quyết ĐÃ thoả 2762 lần, và pass vẫn từ chối đổi mọi lần. Khác hẳn kiểu
-"không thấy nó bắn" (có thể do chưa bao giờ vào được nhánh) đã làm tôi kết luận sai sáng nay.
+⚠️ **TÔI ĐÃ NÓI QUÁ Ở ĐÂY, Codex bắt được.** `blowoutPool:entered` chỉ chứng minh **băng ghế không
+rỗng** (`live-preview.ts:5740`) — KHÔNG chứng minh có sân nào cần cứu. Nên câu "điều kiện tiên quyết đã
+thoả 2762 lần và pass vẫn từ chối" là **sai**: 2762 lần đó có thể phần lớn là board chẳng có sân nào
+lệch để mà cứu. Lại đúng lỗi nhầm *tín hiệu đo được* với *điều muốn biết* — lần thứ ba trong ngày, và
+lần này ngay sau khi tôi vừa cảnh báo Codex về đúng nó.
+
+**Và việc đào tiếp đã tìm ra lỗi thật**: pass lọc `degraded_reason === 'blowout'` ở HAI chỗ, trong khi
+sân vừa lệch vừa lặp mang nhãn `'both'` → **các sân tệ nhất bị bỏ qua hoàn toàn**. Đã vá (ALGO 74).
+Để biết 3 pass kia vô dụng hay bị guard chặn, cần counter tách riêng: có payload blowout thật không,
+qua `mayReplace` không, qua `hasNearLevelPeer` không, qua ngưỡng cải thiện không.
 
 **Bẫy suýt dính:** lần đếm đầu tôi gộp `entered` và `changed` → `blowoutPool` hiện 2762 trông như pass
 mạnh nhất hệ thống. Nhầm *tín hiệu đo được* với *điều muốn biết* — cùng lỗi với cái bẫy im lặng, ngược
