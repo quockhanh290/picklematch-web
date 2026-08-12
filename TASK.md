@@ -4,6 +4,27 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
+## P2-1 — `consecutive_play` bỏ khỏi cost model: CỐ Ý, và không tốn gì đo được
+
+Codex đào lịch sử, kết luận **CỐ Ý** kèm bằng chứng tài liệu: `scripts/diagnostics/quality-cost-sim.ts:75`
+ghi `restSpread` là *"selection-layer metric, untouched by this task"* — đợt hiệu chuẩn trọng số cố tình
+để sức bền ở tầng chọn người, không đưa vào tầng chi phí.
+
+Đo lại thay vì tin lập luận, 60 phiên, hai model:
+
+| | model cũ | cost model |
+|---|---|---|
+| tổng max `consecutive_play` mỗi phiên | 168 | 168 |
+| ghế cho người đã chơi ≥2 liên tiếp | 31.95% | 31.82% |
+
+→ **Không cần thêm số hạng nào trước khi khai tử model cũ.**
+
+⚠️ **Giới hạn của phép đo này, đừng bỏ qua:** lỗ hổng nằm ở đường forced/rescue (corrector đặt
+`MUST_PLAY` khi rest_violation, required ids bị ép, forced rescue nới hết cờ, exhaustive fallback bỏ
+`enforceRequired`). Trên corpus `forced_tradeoff` chỉ bắn **0.03%** — tức phép đo gần như KHÔNG chạm
+đúng kịch bản đang hỏi. Đây là bằng chứng cho board bình thường, KHÔNG phải cho board bị ép.
+- [ ] Kèo thật có board bị ép (sân lẻ, pool chật) là chỗ kiểm được điều này.
+
 ## P2-2 — ĐO NỀN: pass nào còn đổi board (2026-08-11)
 
 Trước khi gộp 7 post-pass thành một optimizer, phải biết cái nào còn làm việc. Đếm qua kênh instrument

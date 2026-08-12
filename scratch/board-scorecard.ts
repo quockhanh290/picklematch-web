@@ -123,13 +123,17 @@ type Score = {
   // both models, forced_tradeoff/wait_rescue is built ONLY when the cost-model flag is on
   // (live-preview.ts:5383). Counting them together compares a feature being present against absent.
   panelsForced: number; panelsChoices: number
+  // Fatigue is deliberately left to the selection layer, not the cost model (quality-cost-sim.ts:75).
+  // This measures whether that costs anything: how tired the most-fatigued seated player was, and how
+  // often anyone is seated at or past the rest threshold.
+  worstPlay: number; seatedTired: number
 }
 
 const emptyScore = (): Score => ({
   requested: 0, seated: 0, cost: 0,
   hardAvoidPartner: 0, intraOverCap: 0,
   overTol: 0, repeat3: 0, blowout: 0, panels: 0, lineups: [],
-  playSpread: 0, worstRest: 0, panelsForced: 0, panelsChoices: 0,
+  playSpread: 0, worstRest: 0, panelsForced: 0, panelsChoices: 0, worstPlay: 0, seatedTired: 0,
 })
 
 function scoreMatchInto(acc: Score, s: SessionState, p: SuggestedMatchPayload, tol: number) {
@@ -139,6 +143,11 @@ function scoreMatchInto(acc: Score, s: SessionState, p: SuggestedMatchPayload, t
   const pv = (id: string) => { const q = s.players.get(id); return q ? getEffectivePvna(q) : 0 }
   const intra = Math.max(Math.abs(pv(A[0]) - pv(A[1])), Math.abs(pv(B[0]) - pv(B[1])))
 
+  for (const id of [...A, ...B]) {
+    const cp = s.players.get(id)?.consecutive_play ?? 0
+    if (cp > acc.worstPlay) acc.worstPlay = cp
+    if (cp >= 2) acc.seatedTired += 1
+  }
   acc.lineups.push(`${p.court_idx}:${[...A].sort().join('+')}|${[...B].sort().join('+')}`)
   acc.seated += 1
   acc.cost += qc.cost
@@ -235,6 +244,11 @@ const report = {
   fair: {
     avg_play_spread: +(totals.playSpread / Math.max(1, sessions)).toFixed(3),
     avg_worst_rest: +(totals.worstRest / Math.max(1, sessions)).toFixed(3),
+    // SUM of each session's maximum, not a global maximum — the totals loop adds every numeric
+    // field. Comparable between runs because both aggregate the same way; do not read it as "someone
+    // played N in a row".
+    summed_session_max_consecutive_play: totals.worstPlay,
+    seated_at_or_past_rest_pct: +(100 * totals.seatedTired / Math.max(1, totals.seated * 4)).toFixed(2),
   },
 }
 
@@ -246,6 +260,7 @@ console.log(`HARD avoid-partner ${report.hard.avoid_partner}   <-- must stay 0`)
 console.log(`SOFT avg cost ${report.soft.avg_cost} | over-tol ${report.soft.over_tol_pct}% | intra>${INTRA_TEAM_PVNA_GAP_LIMIT} ${report.soft.intra_over_cap_pct}% | repeat3 ${report.soft.repeat3_pct}% | blowout ${report.soft.blowout_pct}% | panel ${report.soft.panel_pct}%`)
 console.log(`PANEL forced ${report.soft.panel_forced_pct}% | choices ${report.soft.panel_choices_pct}%   <-- forced chỉ tồn tại khi bật cờ`)
 console.log(`FAIR play-spread ${report.fair.avg_play_spread} | worst-rest ${report.fair.avg_worst_rest}   <-- lower is fairer`)
+console.log(`FATIGUE tổng max consecutive_play mỗi phiên ${report.fair.summed_session_max_consecutive_play} | ghế cho người đã chơi >=2 liên tiếp ${report.fair.seated_at_or_past_rest_pct}%`)
 console.log(`board_hash ${boardHash}`)
 const tallied = [...repairTally.entries()].sort((a, b) => b[1] - a[1])
 console.log(`REPAIR passes that fired (${tallied.length} kinds):`)
