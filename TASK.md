@@ -4,6 +4,29 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
+## CHỜ HOST DUYỆT — chữ accessibility (pilot #42, commit `93ffaf9`)
+
+Pilot gắn nhãn cho thẻ trận gợi ý (`ScreenComponents.tsx`) — màn hình host bấm nhiều nhất. **Chưa nhân
+ra các màn hình còn lại**, vì mục đích của pilot là chốt cách đặt chữ trước: nhãn sai còn tệ hơn không
+nhãn, trình đọc màn hình sẽ đọc nó với sự tự tin tuyệt đối.
+
+Mẫu chữ cần duyệt:
+
+| nút | nhãn |
+|---|---|
+| Chơi luôn | `Chọn chơi luôn trận sân 3` |
+| Chờ sân | `Chọn chờ sân 2 hoặc 5 xong cho sân 3` |
+| Đổi phương án | `Chọn đổi phương án trận sân 3: ít lặp hơn` |
+| Đổi một người | `Đổi Nguyễn Văn A ở sân 2` |
+| Bắt đầu (đang bận) | `Đang bắt đầu trận sân 3` |
+| Bắt đầu (đang tạo lại) | `Đang tạo lại gợi ý cho sân 3` |
+| Bắt đầu (bị khoá) | `Chờ sân 3 xong trước khi bắt đầu lineup thay thế` |
+
+Hai quy tắc pilot áp dụng, host xác nhận có giữ không:
+- [ ] **Kèm số sân / tên người** — vì cùng một nút lặp mỗi sân; "Bắt đầu" đọc 6 lần thì vô dụng.
+- [ ] **Trạng thái bị khoá cũng có nhãn** thay vì im lặng, để lý do không bấm được là nghe thấy được.
+- [ ] Duyệt xong → nhân ra: host-match, host-live, rồi phần còn lại (376 touchable toàn repo).
+
 ## P2-1 — CANARY COST MODEL (host chốt 2026-08-11)
 
 ### Số đo trên corpus 60 phiên, cùng cây code, cùng dữ liệu
