@@ -1266,19 +1266,11 @@ Deno.serve(async (request) => {
     ) {
       const liveRowsWithoutRetainedPreviews = liveMatchRows.filter((match: any) => match?.status !== 'suggested')
       const fullBoardCount = Math.min(courtCount, openCourtIdxs.length)
-      const rescuedPayloads = buildSuggestedMatchPayloads({
-        count: fullBoardCount,
-        sessionId,
-        courtCount,
-        state,
-        rows: { liveMatchRows: liveRowsWithoutRetainedPreviews, liveStateVersion },
-        completingLiveMatchIds,
-        fairnessAdjustment: adjustment,
-        fairnessWarnings: warnings,
-        playersById,
-        pvnaTolerance,
-        options: { onIncompleteDump, onInstrumentEvent },
-      })
+      // Same engine as the board it is about to be compared against. This call used to pass only
+      // the two callbacks, so the rescue ran without blowoutRescue/rollingHorizon/capacity-lock and
+      // its board was then judged on PVNA against a board the full engine had produced -- a weaker
+      // engine losing a fair fight, or winning one it should not have.
+      const rescuedPayloads = runEngine(fullBoardCount, undefined, liveRowsWithoutRetainedPreviews)
       const rescuedBoard = buildFinalPreviewBoard({
         mode: 'full_board',
         payloads: rescuedPayloads,
