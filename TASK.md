@@ -151,21 +151,36 @@ Hai quy tắc pilot áp dụng, host xác nhận có giữ không:
 
 ## P2-1 — CANARY COST MODEL (host chốt 2026-08-11)
 
-### Số đo trên corpus 60 phiên, cùng cây code, cùng dữ liệu
-| | model cũ | cost model |
-|---|---|---|
-| avg cost | 2.8057 | **2.4681** |
-| over-tol | 13.54% | **9.72%** |
-| blowout | 3.30% | **1.81%** |
-| play-spread | 1.433 | **1.367** |
-| worst-rest | 1.767 | 1.750 |
-| intra>1 | **19.66%** | 25.87% |
-| repeat3 | **11.53%** | 12.34% |
-| **panel** | **6.93%** | **15.61%** |
+### Số đo trên corpus 60 phiên — BẢNG ĐÃ SỬA (rescue BẬT)
+⚠️ Bảng đầu tiên tôi đưa host đo với `blowoutRescue` **TẮT** (harness chưa bao giờ truyền cờ đó). Bảng
+dưới là số thật, cả hai vế cùng điều kiện.
 
-Cost model ghép cân hơn rõ rệt, giá phải trả là intra +6.2pp (ghép mạnh+yếu để cân tổng đội — KHÔNG phải
-cổng cứng, thang relaxation vẫn nới, 311/1520 trận corpus vốn đã vượt) và **panel gấp đôi**: host bị hỏi
-ở ~1/6 trận thay vì 1/14. Corpus **không đo được** "hỏi nhiều có phiền không" → host chốt chạy canary.
+| | model cũ | cost model | (bảng cũ, sai) |
+|---|---|---|---|
+| avg cost | 2.6475 | **2.427** | 2.8057 → 2.4681 |
+| over-tol | 12.5% | **9.36%** | 13.54 → 9.72% |
+| blowout | 1.17% | **1.04%** | 3.30 → 1.81% |
+| play-spread | 1.35 | **1.30** | 1.433 → 1.367 |
+| worst-rest | 1.8 | **1.733** | 1.767 → 1.750 |
+| intra>1 | **19.3%** | 24.81% | 19.66 → 25.87% |
+| repeat3 | **11.63%** | 12.6% | 11.53 → 12.34% |
+| **panel** | **7.19%** | **23.09%** | 6.93 → 15.61% |
+| — `forced` | **0%** | **11.14%** | 0.03% → 0.03% |
+| `blowoutPool` đổi board | 68 | 31 | — |
+
+**Hai điều tôi đã báo cáo SAI, nay sửa:**
+1. **Mối lo panel là ĐÚNG; "đính chính" của tôi mới sai.** `forced_tradeoff` là **0% ở model cũ, 11.14%
+   ở cost model** → ~11 trong 16 điểm chênh panel là **tính năng chỉ tồn tại khi bật cờ**, không phải
+   model hỏi nhiều hơn. Lần trước tôi đo được 0.03% và tuyên bố mối lo vô căn cứ — số đó lấy với rescue
+   TẮT. Phần thật sự do model là `choices` 7.19 → 15.84% (~8.6 điểm).
+2. **Lợi thế blowout bị tôi thổi phồng**: không phải 3.30 → 1.81% mà là **1.17 → 1.04%**, gần như ngang,
+   vì khi bật rescue thì pass sửa blowout của model cũ chữa 68 board còn cost model chỉ 31.
+
+Phần KHÔNG đổi: cost model vẫn ghép cân hơn (over-tol, avg cost) và công bằng nhỉnh hơn cả hai trục,
+đổi lại intra +5.5pp.
+
+→ Canary vẫn là quyết định đúng, nhưng thứ cần cảm nhận không phải "panel gấp đôi" mà là: **cứ ~9 trận
+thì có 1 trận bị hỏi một câu quyết định mà model cũ không bao giờ hỏi.**
 
 ### Trạng thái cờ trên prod (đã kiểm 2026-08-11)
 - `SESSION_QUALITY_COST_MODEL = "1"` (Management API trả **hash SHA-256**, phải dò ngược mới đọc được).
