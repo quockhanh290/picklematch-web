@@ -352,8 +352,18 @@ Ký hiệu: 🩹 = trị triệu chứng · 🌱 = trị gốc · ⛔ = chặn b
 
 ### P2 — Hợp nhất thật (chỉ sau P1)
 
-| # | Việc | Ghi chú |
-|---|---|---|
+> **Đã đo lại toàn bộ P2 ngày 2026-08-11.** Bốn trong bảy mục đã xong hoặc không còn đúng; hai mục nhỏ
+> hơn hẳn mô tả. Cột **ĐO ĐƯỢC** ghi số, không ghi ý kiến. P1 đã sạch nên P2 mở khoá.
+
+| # | Việc | ĐO ĐƯỢC 2026-08-11 | Ghi chú |
+|---|---|---|---|
+| P2-1 | Chọn 1 model, retire model kia | **Không phải "port 4 hard-gate"**. Rào tolerance tự triệt tiêu (CỐ Ý, có test); rematch đã khôi phục (ALGO 69); intra là định giá mềm có chủ ý; `consecutive_play` bỏ CỐ Ý (quality-cost-sim.ts:75 — "selection-layer metric"). Còn lại là **quyết định rollout**: cost model over-tol 13.54→9.72%, blowout 3.30→1.81%, spread 1.433→1.367, nhưng panel 6.93→15.61%. Codex đếm **10 điểm rẽ nhánh** theo cờ, ~120-170 dòng xoá được. → **host chốt chạy canary 1 kèo** | |
+| P2-2 | Gộp 7 post-pass thành 1 optimizer | **Chỉ 3 pass đổi board**: joint 60, early ~56, swap 2. **`blowoutPool` vào 2762 lần / đổi 0**, `participation` 60/0, `repeatPool` 60/0 — dưới CẢ HAI model. Ba pass đó là ứng viên **XOÁ**, không phải gộp. Chờ `debug_dumps` prod xác nhận | |
+| P2-3 | Hợp nhất options engine ở edge | chưa đo | ⚠️ HẠ CẤP — bug gốc đã BÁC BỎ, chỉ là cleanup |
+| P2-4 | Một bộ máy "Chờ Sân X" | **XONG**: BUG #9 (suất cứu per-sân, ALGO 72) + BUG #20 (`simulateWaitWouldClean` nhận `requiredIds`) | |
+| P2-5 | Mở rộng miền tất định | **Gần như XONG sẵn**: gate fast-path 20 **không còn tồn tại**; trần pool 28 **không bao giờ chạm** (pool lớn nhất trên corpus là 20, 0/60 phiên vượt); wall-clock ở hot path đã xử qua #22/#9/#21. Đã pin tính chất còn lại (board độc lập thứ tự đầu vào) | |
+| P2-6 | Gộp đường ghi hint | **XONG** qua P1-12: `sync_live_suggestion_hints` khớp court+team, caller luôn gọi kể cả board sạch (`index.ts:1536-1553`) | |
+| P2-7 | Gộp rest bookkeeping | **XONG SẴN**: cả `complete_` lẫn `cancel_` trên prod đều gọi chung `apply_live_match_rest_bookkeeping_event`. Tôi từng báo nhầm là bất đồng vì grep chuỗi trong thân hàm — nó uỷ quyền cho helper | |
 | P2-1 | **Chọn 1 model scoring, retire model kia.** Nếu giữ cost model: chuyển 4 hard-gate cũ (intra 0.75/1.0, tolerance, recent-group-rematch, severe-repeat) thành **bậc lexicographic** chứ không phải weight — đặc biệt "lặp-3" (chỉ thị host) và `hasRecentGroupRematch` (hiện **mất hoàn toàn**). Cần P1-8 trước, nếu không phải sửa file 4418 dòng cùng lúc. |
 | P2-2 | **Gộp 7 post-pass thành 1 optimizer** trên cùng objective, với hard-constraint tường minh (avoid-pair, intra cap, required-set, over-tol không tăng). Joint + cross-court swap + pull-from-bench thực chất là **cùng một bài toán** "gán N người vào K sân". Xoá luôn `invariantSafePayloads` (#70). |
 | P2-3 | **Hợp nhất options engine ở edge**: rescue toàn bàn (`index.ts:1276`) dùng lại y hệt options của `runEngine` (`:1136`). ⚠️ **HẠ CẤP** — bug "board mất degraded/rescue khi rescue thắng" đã bị **BÁC BỎ** (đường tới hậu quả không tới được). Giữ như cleanup chống bẫy tương lai, **không phải correctness fix**. |
