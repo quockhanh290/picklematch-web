@@ -103,13 +103,17 @@ type Score = {
   // The board metrics above price lineup quality only. Anything that constrains WHO may be seated buys
   // fairness and spends quality, and without these two the trade looks like a pure regression.
   playSpread: number; worstRest: number
+  // Panels come from two sources and only one is a scoring difference: tradeoff_choices exist under
+  // both models, forced_tradeoff/wait_rescue is built ONLY when the cost-model flag is on
+  // (live-preview.ts:5383). Counting them together compares a feature being present against absent.
+  panelsForced: number; panelsChoices: number
 }
 
 const emptyScore = (): Score => ({
   requested: 0, seated: 0, cost: 0,
   hardAvoidPartner: 0, intraOverCap: 0,
   overTol: 0, repeat3: 0, blowout: 0, panels: 0, lineups: [],
-  playSpread: 0, worstRest: 0,
+  playSpread: 0, worstRest: 0, panelsForced: 0, panelsChoices: 0,
 })
 
 function scoreMatchInto(acc: Score, s: SessionState, p: SuggestedMatchPayload, tol: number) {
@@ -135,6 +139,8 @@ function scoreMatchInto(acc: Score, s: SessionState, p: SuggestedMatchPayload, t
   if (qc.maxProjectedMeeting >= 3) acc.repeat3 += 1
   if (qc.gap > tol + 1.0) acc.blowout += 1
   if ((p.tradeoff_choices?.length ?? 0) > 0 || p.forced_tradeoff) acc.panels += 1
+  if (p.forced_tradeoff) acc.panelsForced += 1
+  if ((p.tradeoff_choices?.length ?? 0) > 0) acc.panelsChoices += 1
 }
 
 function run(sid: string): Score | null {
@@ -207,6 +213,8 @@ const report = {
     blowout_pct: +pct(totals.blowout).toFixed(2),
     intra_over_cap_pct: +pct(totals.intraOverCap).toFixed(2),
     panel_pct: +pct(totals.panels).toFixed(2),
+    panel_forced_pct: +pct(totals.panelsForced).toFixed(2),
+    panel_choices_pct: +pct(totals.panelsChoices).toFixed(2),
   },
   fair: {
     avg_play_spread: +(totals.playSpread / Math.max(1, sessions)).toFixed(3),
@@ -220,6 +228,7 @@ console.log(`--- board scorecard: ${sessions} sessions, ${totals.seated} matches
 console.log(`fill rate      ${report.fill_rate_pct}%  (${totals.seated}/${totals.requested})`)
 console.log(`HARD avoid-partner ${report.hard.avoid_partner}   <-- must stay 0`)
 console.log(`SOFT avg cost ${report.soft.avg_cost} | over-tol ${report.soft.over_tol_pct}% | intra>${INTRA_TEAM_PVNA_GAP_LIMIT} ${report.soft.intra_over_cap_pct}% | repeat3 ${report.soft.repeat3_pct}% | blowout ${report.soft.blowout_pct}% | panel ${report.soft.panel_pct}%`)
+console.log(`PANEL forced ${report.soft.panel_forced_pct}% | choices ${report.soft.panel_choices_pct}%   <-- forced chỉ tồn tại khi bật cờ`)
 console.log(`FAIR play-spread ${report.fair.avg_play_spread} | worst-rest ${report.fair.avg_worst_rest}   <-- lower is fairer`)
 console.log(`board_hash ${boardHash}`)
 console.log(`written to ${OUT}`)

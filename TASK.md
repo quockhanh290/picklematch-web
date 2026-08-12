@@ -29,6 +29,19 @@ cổng cứng, thang relaxation vẫn nới, 311/1520 trận corpus vốn đã v
 - `resolveQualityCostEnabledForSession` đòi cờ='1' **VÀ** session nằm trong allowlist → **hiện tắt với
   mọi phiên đang tồn tại**.
 
+### Hai thứ tìm ra khi kiểm kê bề mặt khai tử (Codex quét, tôi kiểm)
+- **Panel KHÔNG phải do tính năng bị gate.** `forced_tradeoff`/`wait_rescue_options` chỉ dựng khi cờ bật
+  (`live-preview.ts:5383`), nên tôi nghi phần lớn chênh lệch panel là "có tính năng vs không có". Đo tách
+  ra: **forced 0.03%, choices 15.61%** → gần như toàn bộ đến từ `tradeoff_choices`, thứ CẢ HAI model đều
+  dựng (khác luật, `live-preview.ts:3601`). **Bảng số ban đầu đúng; mối lo của tôi sai.** Panel tăng thật.
+- **`consecutive_play` không có trong cost model.** `quality-cost.ts` không có số hạng nào; nhánh cost
+  không set `consecutive_play_penalty`. **Không có test/comment nào chốt là chủ ý** — khác rào tolerance
+  vốn có test kèm lý do. Sức bền vẫn được xử ở tầng chọn người (`classify.ts:69,75` → `MUST_REST`), nên
+  lỗ hổng hẹp: chỉ lộ khi tier bị nới (rescue path, tier override) — lúc đó model cũ vẫn ngại chọn người
+  mệt qua điểm, cost model thì không.
+  - [ ] **CHƯA SỬA, cố ý**: thêm số hạng vào model ngay trước canary là đổi đúng thứ sắp được đo.
+        Quyết sau khi có kết quả canary.
+
 ### Các bước chạy canary
 - [ ] Host tạo kèo, đưa `session_id`.
 - [ ] `node scratch/cost-canary.mjs <session_id>` — đặt allowlist đúng một id đó. Mọi phiên khác vẫn model cũ.
