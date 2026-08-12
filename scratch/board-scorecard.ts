@@ -82,6 +82,19 @@ const asLive = (p: SuggestedMatchPayload, seq: number, lr: number): SessionLiveM
   suggested_at: new Date(seq * 1000).toISOString(), started_at: new Date(seq * 1000).toISOString(), ended_at: null,
 } as never)
 
+// P2-2 groundwork: before merging the seven post-passes into one optimizer, find out which of them still
+// fire at all. The engine already reports every repair through onInstrumentEvent, so counting is enough —
+// no ablation switch needed, and no risk of measuring a pass that was never entered.
+export const repairTally = new Map<string, number>()
+// Keep the phase. instrumentPostPass emits 'entered' when a pass is merely reached and 'changed' only
+// when it altered the board — collapsing them counts consideration as effect, which made blowoutPool
+// look like it fired on nearly every match.
+const tallyRepair = (detail: string) => {
+  const parts = detail.split(':')
+  const key = parts.length > 1 ? `${parts[0]}:${parts[1]}` : parts[0]
+  repairTally.set(key, (repairTally.get(key) ?? 0) + 1)
+}
+
 const suggest = (s: SessionState, live: SessionLiveMatchRow[], count: number, courts: number, ci?: number[]) =>
   buildSuggestedMatchPayloads({
     count, sessionId: s.session_id, courtCount: courts, state: s,
@@ -90,7 +103,10 @@ const suggest = (s: SessionState, live: SessionLiveMatchRow[], count: number, co
     fairnessWarnings: detectFairnessIssues(s),
     playersById: new Map([...s.players.keys()].map(id => [id, { name: id }])) as never,
     pvnaTolerance: s.config.pvna_tolerance,
-    options: { courtIdxs: ci, ignoreCapacityLock: true, rollingHorizon: false, rollingPlanTarget: null },
+    options: { courtIdxs: ci, ignoreCapacityLock: true, rollingHorizon: false, rollingPlanTarget: null,
+      onInstrumentEvent: (e: { event?: string; detail?: string }) => {
+        if (e?.event === 'repair' && typeof e.detail === 'string') tallyRepair(e.detail)
+      } },
   } as never)
 
 type Score = {
@@ -231,4 +247,8 @@ console.log(`SOFT avg cost ${report.soft.avg_cost} | over-tol ${report.soft.over
 console.log(`PANEL forced ${report.soft.panel_forced_pct}% | choices ${report.soft.panel_choices_pct}%   <-- forced chỉ tồn tại khi bật cờ`)
 console.log(`FAIR play-spread ${report.fair.avg_play_spread} | worst-rest ${report.fair.avg_worst_rest}   <-- lower is fairer`)
 console.log(`board_hash ${boardHash}`)
+const tallied = [...repairTally.entries()].sort((a, b) => b[1] - a[1])
+console.log(`REPAIR passes that fired (${tallied.length} kinds):`)
+for (const [kind, n] of tallied) console.log(`   ${String(n).padStart(6)}  ${kind}`)
+if (tallied.length === 0) console.log('   (không pass nào bắn)')
 console.log(`written to ${OUT}`)

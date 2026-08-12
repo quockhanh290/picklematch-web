@@ -4,6 +4,38 @@ Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 Branch: feat-next-match-suggester (đã merge main). 12 commit: 9418d9d → c32ba67.
 (Task cũ "Operation stabilization audit" → detail ở docs/OPERATION_STABILIZATION_AUDIT.md)
 
+## P2-2 — ĐO NỀN: pass nào còn đổi board (2026-08-11)
+
+Trước khi gộp 7 post-pass thành một optimizer, phải biết cái nào còn làm việc. Đếm qua kênh instrument
+sẵn có (`instrumentPostPass` phát `entered` khi pass được XÉT, `changed` khi nó ĐỔI board), 60 phiên /
+3088 trận, chạy cả hai model:
+
+| pass | model cũ | cost model |
+|---|---|---|
+| `joint` (chỉ cờ ON) | — | **60 đổi** |
+| `early` | 58 đổi | 54 đổi |
+| `swap` | — | **2 đổi** |
+| `blowoutPool` | **2762 vào / 0 đổi** | **2762 vào / 0 đổi** |
+| `participation` | 60 vào / 0 đổi | 60 vào / 0 đổi |
+| `repeatPool` | 60 vào / 0 đổi | 60 vào / 0 đổi |
+
+**Bằng chứng này MẠNH, không phải im lặng.** `blowoutPool:entered` nghĩa là `benchIdsForBlowoutRepair`
+KHÔNG rỗng — tức điều kiện tiên quyết ĐÃ thoả 2762 lần, và pass vẫn từ chối đổi mọi lần. Khác hẳn kiểu
+"không thấy nó bắn" (có thể do chưa bao giờ vào được nhánh) đã làm tôi kết luận sai sáng nay.
+
+**Bẫy suýt dính:** lần đếm đầu tôi gộp `entered` và `changed` → `blowoutPool` hiện 2762 trông như pass
+mạnh nhất hệ thống. Nhầm *tín hiệu đo được* với *điều muốn biết* — cùng lỗi với cái bẫy im lặng, ngược
+chiều.
+
+### Hệ quả cho P2-2
+- Không phải "gộp 7 pass". Chỉ **3 pass thật sự đổi board**: joint, early, swap.
+- Ba pass pool là ứng viên **XOÁ**, không phải gộp.
+- [ ] ⚠️ **Chưa xoá.** Corpus không phải production: luôn bắt đầu từ trắng, không có check-out giữa
+      chừng, không có huỷ trận. Phải kiểm trên `debug_dumps` prod xem chúng có từng `changed` ngoài thực
+      tế không — cần kèo thật.
+- [ ] Nếu prod cũng 0: kiểm xem guard của `blowoutPool` (`mayReplace`, `hasNearLevelPeer`) có phải lý do
+      nó luôn từ chối không — vì "pass vô dụng" và "pass bị guard chặn quá chặt" là hai kết luận rất khác.
+
 ## CHỜ HOST DUYỆT — chữ accessibility (pilot #42, commit `93ffaf9`)
 
 Pilot gắn nhãn cho thẻ trận gợi ý (`ScreenComponents.tsx`) — màn hình host bấm nhiều nhất. **Chưa nhân
