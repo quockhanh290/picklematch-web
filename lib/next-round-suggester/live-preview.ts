@@ -113,7 +113,7 @@ export function getRescueBudgetShareMs(totalMs: number, courtCount: number): num
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 75
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 76
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
