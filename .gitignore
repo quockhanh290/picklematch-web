@@ -63,3 +63,6 @@ __pycache__/
 *.pyc
 
 .vercel
+
+# Claude Code local settings — records raw command strings, a secret magnet
+.claude/settings.local.json
