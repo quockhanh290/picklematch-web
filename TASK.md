@@ -25,6 +25,59 @@ ghi `restSpread` là *"selection-layer metric, untouched by this task"* — đ�
 đúng kịch bản đang hỏi. Đây là bằng chứng cho board bình thường, KHÔNG phải cho board bị ép.
 - [ ] Kèo thật có board bị ép (sân lẻ, pool chật) là chỗ kiểm được điều này.
 
+## P2-2 — ĐO NỀN (2026-08-11, ĐÃ SỬA LẠI SAU KHI PHÁT HIỆN HARNESS TẮT TÍNH NĂNG)
+
+### ⚠️ Kết luận đầu tiên của tôi SAI — đã rút lại
+Tôi báo "3 pass không đổi board lần nào, `blowoutPool` vào 2762 lần / đổi 0". **Sai**: harness
+`board-scorecard.ts` **chưa bao giờ truyền `blowoutRescue: true`**, mà cờ đó gate cả khối phát hiện
+degraded → `degraded_reason` luôn rỗng → `blowoutPool` thoát ở cửa thứ hai, **chưa từng chạm một guard
+nào**. Tôi đo một tính năng **đang tắt** rồi kết luận về hiệu quả của nó.
+
+Chính counter tôi thêm mới phơi ra: **không một counter từ chối nào bắn**. Nếu chỉ nhìn "0 lần đổi" thì
+tôi đã đi xoá ba pass.
+
+**Đây là lần thứ TƯ trong ngày cùng lớp lỗi** — nhầm thứ đo được với thứ muốn biết: (1) board hash không
+đổi vì trường không bao giờ được đặt; (2) gộp `entered` với `changed`; (3) nói quá về ý nghĩa của
+`entered`; (4) đo với tính năng tắt. Điểm chung: **tin con số trước khi kiểm đường code có chạy không.**
+
+### Số THẬT, sau khi bật `blowoutRescue: true`
+| | |
+|---|---|
+| `blowoutPool:changed` | **68** |
+| từ chối: `intraCap` | **6773** |
+| từ chối: `mayReplace` | 1640 |
+| từ chối: `noImprovement` | 1459 |
+| từ chối: `nearLevelPeer` | 782 |
+| từ chối: `wouldCreateRepeat3` | 365 |
+| từ chối: đã trong tolerance | 50 |
+
+→ **`blowoutPool` KHÔNG vô dụng**, nó sửa 68 board. Cửa ải chính là **trần intra 1.0** — cân tổng hai đội
+buộc phải ghép mạnh+yếu, mà thế là vượt trần. Không xoá pass này.
+- [ ] `participation` và `repeatPool` vẫn 60 vào / 0 đổi **kể cả khi đã bật rescue** — nhưng sau bốn lần
+      sai, KHÔNG kết luận gì cho tới khi kiểm điều kiện tiên quyết của CHÚNG có bị tắt tương tự không.
+- [ ] ⚠️ Mọi số đo trước đó hôm nay đều lấy với rescue TẮT, gồm cả bảng so P2-1. Đang chạy lại cả hai vế.
+
+## P2-1 — `consecutive_play` bỏ khỏi cost model: CỐ Ý, và không tốn gì đo được
+
+Codex đào lịch sử, kết luận **CỐ Ý** kèm bằng chứng tài liệu: `scripts/diagnostics/quality-cost-sim.ts:75`
+ghi `restSpread` là *"selection-layer metric, untouched by this task"* — đợt hiệu chuẩn trọng số cố tình
+để sức bền ở tầng chọn người, không đưa vào tầng chi phí.
+
+Đo lại thay vì tin lập luận, 60 phiên, hai model:
+
+| | model cũ | cost model |
+|---|---|---|
+| tổng max `consecutive_play` mỗi phiên | 168 | 168 |
+| ghế cho người đã chơi ≥2 liên tiếp | 31.95% | 31.82% |
+
+→ **Không cần thêm số hạng nào trước khi khai tử model cũ.**
+
+⚠️ **Giới hạn của phép đo này, đừng bỏ qua:** lỗ hổng nằm ở đường forced/rescue (corrector đặt
+`MUST_PLAY` khi rest_violation, required ids bị ép, forced rescue nới hết cờ, exhaustive fallback bỏ
+`enforceRequired`). Trên corpus `forced_tradeoff` chỉ bắn **0.03%** — tức phép đo gần như KHÔNG chạm
+đúng kịch bản đang hỏi. Đây là bằng chứng cho board bình thường, KHÔNG phải cho board bị ép.
+- [ ] Kèo thật có board bị ép (sân lẻ, pool chật) là chỗ kiểm được điều này.
+
 ## P2-2 — ĐO NỀN: pass nào còn đổi board (2026-08-11)
 
 Trước khi gộp 7 post-pass thành một optimizer, phải biết cái nào còn làm việc. Đếm qua kênh instrument

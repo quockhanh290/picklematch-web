@@ -103,7 +103,11 @@ const suggest = (s: SessionState, live: SessionLiveMatchRow[], count: number, co
     fairnessWarnings: detectFairnessIssues(s),
     playersById: new Map([...s.players.keys()].map(id => [id, { name: id }])) as never,
     pvnaTolerance: s.config.pvna_tolerance,
+    // blowoutRescue gates the whole degraded-detection block, and degraded_reason is what the blowout
+    // repair keys on. Leaving it off meant every measurement of that pass was taken with the feature
+    // switched off — the pass bailed before reaching a single one of its guards.
     options: { courtIdxs: ci, ignoreCapacityLock: true, rollingHorizon: false, rollingPlanTarget: null,
+      blowoutRescue: true,
       onInstrumentEvent: (e: { event?: string; detail?: string }) => {
         if (e?.event === 'repair' && typeof e.detail === 'string') tallyRepair(e.detail)
       } },
