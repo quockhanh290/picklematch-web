@@ -25,6 +25,38 @@ ghi `restSpread` là *"selection-layer metric, untouched by this task"* — đ�
 đúng kịch bản đang hỏi. Đây là bằng chứng cho board bình thường, KHÔNG phải cho board bị ép.
 - [ ] Kèo thật có board bị ép (sân lẻ, pool chật) là chỗ kiểm được điều này.
 
+## SÀNG LỌC 51 MỤC BỊ RƠI — kết quả tới lúc này (2026-08-12)
+
+16 mục HIGH. Đã kiểm:
+| mục | trạng thái |
+|---|---|
+| `'both'` bị pass blowout bỏ qua | **LỖI THẬT — đã vá** (ALGO 74) |
+| cờ degraded không thu hồi sau khi sửa | **LỖI THẬT — đã vá** (ALGO 75) |
+| Stage 5.5 phát blowout không chặn | đã có guard `pair.ts:954` |
+| bộ đếm nghỉ đọc cột DB cũ | đã đổi sang `rest_seat_misses` (`state.ts:259`) |
+| fairness MUST_PLAY vượt mặt `deferLowViability` | **CHƯA KẾT LUẬN** — corrector tác động qua tier, không nạp vào required; hai cơ chế không biết nhau nhưng chưa chứng minh hậu quả |
+| **`mustPlayAt` hằng số 1 trong khi `mustRestAt` co giãn** | **CÒN SỐNG, xem dưới** |
+
+### `mustPlayAt: 1` — bất đối xứng làm tier MUST_PLAY mất khả năng phân biệt
+`classify.ts:31-37`:
+```
+mustRestAt = max(2, 1 + ceil(benchDepth/2)) + presetRestBonus   ← co giãn theo băng ghế
+mustPlayAt: 1                                                    ← hằng số cứng
+```
+`classify.ts:63`: `if (player.consecutive_rest >= mustPlayAt) return Tier.MUST_PLAY`
+
+→ Nghỉ đúng MỘT vòng là thành `MUST_PLAY`. Băng ghế 16 người thì sau một vòng **cả 16 đều MUST_PLAY**,
+tier không phân biệt được ai, trong khi required ids / quota guard hiểu MUST_PLAY là "buộc phải xếp".
+Đây có thể là gốc chung của mấy triệu chứng đã gặp: pool required phình to, `deferLowViability` phải
+liên tục hoãn người, và NO_VALID_MATCH giả khi bench > số ghế.
+
+`mustRestAt` có comment giải thích công thức; `mustPlayAt: 1` **không có dòng nào**. Nhưng vắng comment
+KHÔNG có nghĩa là lỗi (bài học hôm nay), nên **chưa sửa**.
+- [ ] Đo trước: mỗi vòng bao nhiêu % người chơi mang tier MUST_PLAY? Nếu gần 100% thì tier đúng là vô
+      nghĩa và cần cho `mustPlayAt` co giãn theo bench như `mustRestAt`.
+- [ ] Đây là thay đổi hiệu chuẩn, đổi ai được ưu tiên — phải đo, không sửa mò. Và nên đo SAU canary để
+      không trộn hai thay đổi vào một kèo.
+
 ## PHÁT HIỆN VỀ QUY TRÌNH: bảng 43 bug LÀM RƠI phát hiện thật
 
 Lỗi `'both'` tôi vá hôm nay (sân vừa lệch vừa lặp bị pass blowout bỏ qua) **đã nằm trong dữ liệu thô của
