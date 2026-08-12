@@ -1997,12 +1997,15 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   }
   const waitResultText = `Đội hình sạch hơn (${degradedRescueBenefit})`
   const waitCostText = `chờ Sân ${degradedRescueCourtIdxs.map(idx => idx + 1).join(' hoặc ')} xong · sân này để trống`
-  type DecisionCard = { key: string; testId: string; tone: 'play' | 'swap' | 'wait'; title: string; result: string; cost: string; selected: boolean; onPress: () => void }
+  type DecisionCard = { key: string; testId: string; tone: 'play' | 'swap' | 'wait'; title: string; result: string; cost: string; selected: boolean; onPress: () => void; accessibilityLabel: string }
   const decisionCards: DecisionCard[] = []
   if (forcedDecision) {
     for (const card of forcedDecision.cards) {
       decisionCards.push({
         ...card,
+        accessibilityLabel: card.tone === 'wait'
+          ? `Chọn chờ ${card.title.replace(/^Chờ\s+/, '')} xong cho sân ${cardCourtIdx + 1}`
+          : `Chọn ${card.title.toLowerCase()} cho trận sân ${cardCourtIdx + 1}`,
         onPress: () => {
           hostSelectedRef.current = true
           setForcedSelection(card.key)
@@ -2017,6 +2020,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       key: 'play', testId: `nrv2-decision-play-${cardCourtIdx}`, tone: 'play',
       title: 'Chơi luôn', result: playResultText, cost: playCostText,
       selected: !waitSelected && (!recommendedChoiceId || selectedChoiceId === recommendedChoiceId),
+      accessibilityLabel: `Chọn chơi luôn trận sân ${cardCourtIdx + 1}`,
       onPress: () => { hostSelectedRef.current = true; setWaitSelected(false); if (recommendedChoiceId) setSelectedChoiceId(recommendedChoiceId) },
     })
     for (const choice of swapChoices) {
@@ -2025,6 +2029,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
         key: choice.id, testId: `nrv2-decision-swap-${cardCourtIdx}-${choice.id}`, tone: 'swap',
         title: `Đổi sang: ${describeChoice(choice).title}`, result: rc.result, cost: rc.cost,
         selected: !waitSelected && selectedChoiceId === choice.id,
+        accessibilityLabel: `Chọn đổi phương án trận sân ${cardCourtIdx + 1}: ${describeChoice(choice).title.toLowerCase()}`,
         onPress: () => { hostSelectedRef.current = true; setWaitSelected(false); setSelectedChoiceId(choice.id) },
       })
     }
@@ -2032,6 +2037,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       decisionCards.push({
         key: 'wait', testId: `nrv2-decision-wait-${cardCourtIdx}`, tone: 'wait',
         title: 'Chờ sân khác xong', result: waitResultText, cost: waitCostText, selected: waitSelected,
+        accessibilityLabel: `Chọn chờ sân ${degradedRescueCourtIdxs.map(idx => idx + 1).join(' hoặc ')} xong cho sân ${cardCourtIdx + 1}`,
         onPress: () => { hostSelectedRef.current = true; setWaitSelected(true); if (recommendedChoiceId) setSelectedChoiceId(recommendedChoiceId) },
       })
     }
@@ -2087,6 +2093,22 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     })
   }, [availablePoolPreview])
   const availablePoolConfirmDisabled = busy || availablePoolPreview === 'loading' || hasSameCourtLock
+  const startMatchAccessibilityLabel = busy
+    ? `Đang bắt đầu trận sân ${cardCourtIdx + 1}`
+    : previewTrustIssue === 'fallback'
+      ? `Đang tạo lại gợi ý cho sân ${cardCourtIdx + 1}`
+      : previewTrustIssue === 'partial'
+        ? `Đang đồng bộ board cho sân ${cardCourtIdx + 1}`
+        : previewTrustIssue === 'unknown'
+          ? `Cần tạo lại gợi ý cho sân ${cardCourtIdx + 1}`
+          : waitSelected || isWaitingOnForcedRescue
+            ? `Đang chờ sân khác cho sân ${cardCourtIdx + 1}`
+            : `Bắt đầu trận sân ${cardCourtIdx + 1}`
+  const availablePoolConfirmAccessibilityLabel = availablePoolConfirmDisabled
+    ? hasSameCourtLock
+      ? `Chờ sân ${cardCourtIdx + 1} xong trước khi bắt đầu lineup thay thế`
+      : `Chưa thể bắt đầu lineup thay thế sân ${cardCourtIdx + 1}`
+    : `Bắt đầu lineup thay thế sân ${cardCourtIdx + 1}`
   return (
     <View testID={`nrv2-suggested-card-court-${cardCourtIdx}`} style={{ borderRadius: 16, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
@@ -2152,6 +2174,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
               <Pressable
                 key={card.key}
                 testID={card.testId}
+                accessibilityLabel={card.accessibilityLabel}
                 accessibilityState={{ selected: card.selected }}
                 onPress={card.onPress}
                 style={{
@@ -2305,6 +2328,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       <View style={{ backgroundColor: colors.surface, paddingHorizontal: 14, paddingTop: 0, paddingBottom: 14, flexDirection: 'row', gap: 10 }}>
         <TouchableOpacity
           testID={`nrv2-swap-open-court-${cardCourtIdx}`}
+          accessibilityLabel={`Đổi người trận sân ${cardCourtIdx + 1}`}
           onPress={() => onOpenSwap(visibleMatch)}
           activeOpacity={0.82}
           style={{ paddingHorizontal: 16, height: 46, borderRadius: RADIUS.lg, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
@@ -2315,6 +2339,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
           <View style={{ flex: 1, gap: 6 }}>
             <TouchableOpacity
               testID={`nrv2-available-pool-cancel-court-${cardCourtIdx}`}
+              accessibilityLabel={`Quay lại chờ sân ${cardCourtIdx + 1}`}
               onPress={() => onCancelAvailablePool(cardCourtIdx)}
               style={{ height: 38, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
             >
@@ -2322,6 +2347,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
             </TouchableOpacity>
             <TouchableOpacity
               testID={`nrv2-available-pool-confirm-court-${cardCourtIdx}`}
+              accessibilityLabel={availablePoolConfirmAccessibilityLabel}
               onPress={() => availablePoolPreview !== 'loading' && onConfirmStartNow(availablePoolPreview)}
               disabled={availablePoolConfirmDisabled}
               style={{ height: 46, borderRadius: RADIUS.lg, backgroundColor: availablePoolConfirmDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
@@ -2343,6 +2369,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
             {hasLockedPlayers ? (
               <TouchableOpacity
                 testID={`nrv2-available-pool-fetch-court-${cardCourtIdx}`}
+                accessibilityLabel={`Xem lineup thay thế cho sân ${cardCourtIdx + 1}`}
                 onPress={() => onFetchAvailablePool(activeMatch)}
                 disabled={busy}
                 style={{ height: 38, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
@@ -2358,6 +2385,7 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
         ) : (
           <TouchableOpacity
             testID={`nrv2-start-match-court-${cardCourtIdx}`}
+            accessibilityLabel={startMatchAccessibilityLabel}
             onPress={() => onStart(activeMatch)}
             disabled={startDisabled}
             style={{ flex: 1, height: 46, borderRadius: RADIUS.lg, backgroundColor: startDisabled ? theme.outlineVariant : colors.primary, alignItems: 'center', justifyContent: 'center' }}
@@ -2605,6 +2633,7 @@ export function SuggestedMatchTile({
           tone="green"
           side="left"
           team={match.team_a}
+          courtIdx={match.court_idx}
           state={state}
           playersById={playersById}
           onPlayerPress={onPlayerPress}
@@ -2615,6 +2644,7 @@ export function SuggestedMatchTile({
           tone="sand"
           side="right"
           team={match.team_b}
+          courtIdx={match.court_idx}
           state={state}
           playersById={playersById}
           onPlayerPress={onPlayerPress}
@@ -2649,6 +2679,7 @@ export function SuggestedTeamBlock({
   tone,
   side,
   team,
+  courtIdx,
   state,
   playersById,
   onPlayerPress,
@@ -2658,6 +2689,7 @@ export function SuggestedTeamBlock({
   tone: 'green' | 'sand'
   side: 'left' | 'right'
   team: [string, string]
+  courtIdx: number
   state: SessionState
   playersById: Map<string, ArrangementPlayer>
   onPlayerPress: (playerId: string) => void
@@ -2682,6 +2714,7 @@ export function SuggestedTeamBlock({
           {team.map((id, index) => (
             <TouchableOpacity
               key={id}
+              accessibilityLabel={`Đổi ${playerName(id, playersById)} ở sân ${courtIdx + 1}`}
               onPress={() => onPlayerPress(id)}
               activeOpacity={0.76}
               style={{ position: 'relative', marginLeft: index === 0 ? 0 : -8 }}
