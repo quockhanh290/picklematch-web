@@ -85,7 +85,13 @@ sân khác đang chạy"**. Ba thứ đã không đo được vì đúng lý do 
   im lặng. Phần "thông báo nói ngược lại" là chữ hiển thị, hẹp hơn — chưa kiểm, hậu quả thấp.
 
 ### Còn lại tôi làm được nhưng chưa làm
-- [ ] Truy test flaky trong gate (đỏ 1 lần, xanh khi chạy lại + chạy riêng). Cần chạy gate nhiều lượt
+- [x] Test flaky trong gate — XONG (2026-08-12, commit 6a581cf). KHÔNG phải bí ẩn: 4 assertion
+  wall-clock `toBeLessThan(1800)` trong khi engine tự cho phép chạy hết budget 1000ms, p99 đo
+  được 843ms → dư 2.1x, jest chạy song song nhiều worker là đỏ oan.
+  Đã kiểm chúng có mua được gì không: `force_budget_ms` nằm trong `Math.min` nên chỉ RÚT NGẮN
+  được deadline — probe đầu nâng lên 600s và thấy y nguyên vì núm không nối vào đâu. Vô hiệu hoá
+  thẳng 2 closure deadline: corpus max 843ms → 1182ms, VẪN dưới 1800. Tức bound đó không bắt nổi
+  chính regression nó trông như đang canh. Đã xoá; determinism/board-validity/budget_ms giữ nguyên.
       (~7 phút/lượt) mới bắt được — tốn, và chưa chặn việc gì.
 - [ ] Bỏ cổng ≥2 sân của `repeatPool`, và dạy `participation` biết ai đang bận. **Cả hai là đổi hành vi,
       cần đo trước-sau, và KHÔNG nên trộn vào kèo canary.**
