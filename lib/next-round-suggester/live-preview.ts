@@ -113,7 +113,7 @@ export function getRescueBudgetShareMs(totalMs: number, courtCount: number): num
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 73
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 74
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -2794,7 +2794,11 @@ export function repairPayloadBatchBlowoutFromPool(
   benchIds: string[],
 ) {
   if (payloads.length === 0 || benchIds.length === 0) return payloads
-  if (!payloads.some(payload => payload.degraded_reason === 'blowout')) return payloads
+  // Same 'both' oversight as the per-payload filter below: a board whose only blown-out court is also
+  // repeat-heavy used to bail out here before the pass looked at anything.
+  if (!payloads.some(payload => payload.degraded_reason === 'blowout' || payload.degraded_reason === 'both')) {
+    return payloads
+  }
 
   const splitsOfFour = (four: string[]): Array<[[string, string], [string, string]]> => ([
     [[four[0], four[1]], [four[2], four[3]]],
@@ -2831,7 +2835,11 @@ export function repairPayloadBatchBlowoutFromPool(
     let best: SuggestedMatchPayload[] | null = null
     let bestCost = Infinity
     for (let payloadIndex = 0; payloadIndex < current.length; payloadIndex += 1) {
-      if (current[payloadIndex].degraded_reason !== 'blowout') continue
+      // 'both' means blown out AND repeat-heavy, so the courts in the worst shape were the ones this
+      // pass refused to look at. The repeat side of the same file already tests for either
+      // (:5408); the exact match here was an oversight, not a decision.
+      const degradedReason = current[payloadIndex].degraded_reason
+      if (degradedReason !== 'blowout' && degradedReason !== 'both') continue
       const four = [...current[payloadIndex].team_a, ...current[payloadIndex].team_b]
       const currentGap = getPayloadPvnaGap(current[payloadIndex], state)
       // Stop once the court is balanced within tolerance — deferring further owed players to shave a
