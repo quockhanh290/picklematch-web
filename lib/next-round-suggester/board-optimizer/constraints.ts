@@ -4,11 +4,13 @@
 // ngữ nghĩa, để có đúng MỘT chỗ trả lời câu "board này có được phép không". Vi phạm là loại thẳng —
 // không có bậc nào ở đây đánh đổi được với chất lượng.
 //
-// Hai nhóm khác nhau ở chỗ so với cái gì, và đó là lý do hàm nhận cả `origin` lẫn `ctx.seed`:
-//   H3/H4/H5  "không tệ hơn board gốc"  → so với ctx.seed
-//   H6/H8     luật của TỪNG nước đi     → so với origin (board mà nước đi xuất phát)
-// Nếu H6 cũng so với seed thì một chuỗi nước đi, mỗi bước đều hợp lệ so với board gốc, vẫn có thể
-// cộng dồn thành việc bench đúng người đang bị nợ nhiều nhất.
+// Ba nhóm khác nhau ở chỗ so với cái gì, và đó là lý do hàm nhận cả `origin` lẫn `ctx.seed`:
+//   H3/H4/H5  "không tệ hơn board gốc"        → so với ctx.seed
+//   H8        tính chất của BĂNG GHẾ CUỐI      → so với ctx.seed
+//   H6        luật của TỪNG nước đi            → so với origin (board mà nước đi xuất phát)
+// H6 phải theo từng nước, nếu không thì một chuỗi nước đi mỗi bước đều hợp lệ so với board gốc vẫn
+// cộng dồn thành việc bench đúng người đang bị nợ nhiều nhất. H8 thì ngược lại: kiểm theo từng nước
+// là chưa đủ, vì người bạn cùng trình còn trên ghế lúc này có thể bị đẩy đi ở nước sau.
 
 // @ts-ignore Deno-style extension: the edge runtime resolves .ts, tsc strips it
 import { getPayloadIntraTeamGap, getPayloadProjectedMaxMeeting, hasAvoidedPartnerPair } from '../board-metrics.ts'
@@ -136,9 +138,20 @@ export function firstViolation(
     if (candidateMeeting >= 3 && seedMeeting < 3) return 'new_repeat3'
   }
 
-  // H6/H8 — luật của từng nước đi, so với board nó xuất phát.
-  const originSeated = new Set(seatedIds(origin))
+  // H8 — "bị bỏ lại một mình trên băng ghế" là tính chất của băng ghế CUỐI CÙNG, nên phải so với
+  // board gốc chứ không phải với nước đi vừa rồi. Kiểm theo từng nước là chưa đủ: mỗi bước đều thấy
+  // người vừa xuống còn bạn cùng trình, nhưng bước sau đẩy nốt người bạn ấy lên sân là người đầu bị
+  // kẹt lại một mình — property test bắt đúng ca này (#48) trước khi nó kịp ra tới corpus.
   const candidateSeated = new Set(seated)
+  const eligible = [...new Set([...seatedIds(ctx.seed), ...ctx.benchIds])]
+  const benchAfter = eligible.filter(id => !candidateSeated.has(id)).sort()
+  const benchedVersusSeed = seatedIds(ctx.seed).filter(id => !candidateSeated.has(id)).sort()
+  for (const outgoingId of benchedVersusSeed) {
+    if (!hasNearLevelPeer(ctx.state, ctx.pvnaTolerance, outgoingId, benchAfter)) return 'stranded_outlier'
+  }
+
+  // H6 — luật của từng nước đi, so với board nó xuất phát.
+  const originSeated = new Set(seatedIds(origin))
   const incoming = [...candidateSeated].filter(id => !originSeated.has(id)).sort()
   const outgoing = [...originSeated].filter(id => !candidateSeated.has(id)).sort()
 
@@ -156,12 +169,6 @@ export function firstViolation(
     const outgoingRanked = [...outgoing].sort(byOwedDesc)
     for (let i = 0; i < incomingRanked.length; i++) {
       if (!mayReplace(ctx.state, incomingRanked[i], outgoingRanked[i])) return 'owed_rank'
-    }
-
-    // H8 — người bị đẩy xuống băng ghế phải còn ai đó cùng trình ở đó.
-    const benchAfter = [...new Set([...ctx.benchIds, ...outgoing])].filter(id => !candidateSeated.has(id)).sort()
-    for (const outgoingId of outgoing) {
-      if (!hasNearLevelPeer(ctx.state, ctx.pvnaTolerance, outgoingId, benchAfter)) return 'stranded_outlier'
     }
   }
 
