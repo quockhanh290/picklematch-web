@@ -1,5 +1,9 @@
-// TEMP audit repro (read-only investigation). Not part of the repo test suite:
-// jest testMatch only picks up tests/**, this file is run via an explicit --testMatch override.
+// Board-latch guard (BUG#3). Originally a repro for "a rows change while a request is in flight
+// drops the re-request". The recovery path changed with the single-flight fix: a rows change no
+// longer cancels an in-flight request at all (cancelling cannot unwrite the board the edge already
+// persisted — it only adds a second lineup, the flicker measured on prod ff0ea657). What must still
+// hold is the property this file exists for: a request that never answers cannot leave the board
+// waiting forever. The soft timeout is the path that now guarantees it.
 import React from 'react'
 import { act, render } from '@testing-library/react-native'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -11,6 +15,8 @@ import type { RegisteredSessionPlayerRow } from '@/features/host/session-detail/
 import { mockApi, mockSupabaseRpc } from '@/tests/host-live/helpers/renderHostLive'
 import { NextRoundSuggesterScreenV2 } from '@/features/host/session-detail/NextRoundSuggesterScreenV2'
 import { liveSessionQueryKeys } from '@/features/host/session-detail/next-round-v2/queries'
+
+const LIVE_PREVIEW_SOFT_TIMEOUT_MS = 12000
 
 const SESSION_ID = 'latch-repro-session'
 const AT = '2026-07-27T00:00:00.000Z'
@@ -108,7 +114,6 @@ describe('preview in-flight latch repro', () => {
     await act(async () => { await jest.advanceTimersByTimeAsync(0) })
     await act(async () => { await jest.advanceTimersByTimeAsync(80) })
     expect(mockApi.fetchLiveMatchesPreview).toHaveBeenCalledTimes(1)
-    const firstBody = mockApi.fetchLiveMatchesPreview.mock.calls[0][1]
 
     // simulate startLiveMatch success: applyLiveMatches -> queryClient.setQueryData
     await act(async () => {
@@ -120,11 +125,15 @@ describe('preview in-flight latch repro', () => {
     })
     await act(async () => { await jest.advanceTimersByTimeAsync(0) })
     await act(async () => { await jest.advanceTimersByTimeAsync(200) })
-    await act(async () => { await jest.advanceTimersByTimeAsync(10000) })
+    // The rows change alone must NOT kill the request any more: the edge has already computed and
+    // persisted that board, so cancelling it only buys a second lineup for the same court (the
+    // flicker measured on prod ff0ea657). This mock never answers, so recovery is the soft timeout.
+    expect(mockApi.fetchLiveMatchesPreview).toHaveBeenCalledTimes(1)
+    await act(async () => { await jest.advanceTimersByTimeAsync(LIVE_PREVIEW_SOFT_TIMEOUT_MS + 1000) })
+    // The timeout's re-evaluation schedules the usual 80ms request debounce; give it its tick.
+    await act(async () => { await jest.advanceTimersByTimeAsync(200) })
 
-    // eslint-disable-next-line no-console
-    console.log('REPRO preview calls =', mockApi.fetchLiveMatchesPreview.mock.calls.length,
-      'first body courts =', JSON.stringify((firstBody as any)?.court_idxs), (firstBody as any)?.mode)
+    // ...and a hung request must still not latch the board: the timeout re-arms the re-request.
     expect(mockApi.fetchLiveMatchesPreview).toHaveBeenCalledTimes(2)
   })
 })

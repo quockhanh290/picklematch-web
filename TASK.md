@@ -914,7 +914,60 @@ warmup chỉ trả `{ok, warmed}`, không trả `algorithm_version`. Muốn ch�
 
 ## Defrag: P1 12/12 xong · P2 4/7 xong · P2-2 CHƯA ĐỘNG (phần lớn nhất còn lại)
 
-## FLICKER — ĐÃ SỬA (2026-08-12), CLIENT-ONLY, **cần rebuild app**
+## FLICKER phần 2 — NGUYÊN NHÂN CHÍNH (2026-08-13), client-only, **cần rebuild app**
+
+Kèo `ff0ea657` chạy VỚI fix phần 1 (đã kiểm bundle Metro: `rescueBaselineNonceByCourtRef` có,
+`rescueHandledNonceRef` không) mà vẫn flicker. Đo `session_audit_events` của chính kèo đó:
+
+| | |
+|---|---|
+| request preview lên lịch | **180** |
+| bắn tới edge | **75** |
+| câu trả lời được dùng | 37 |
+| câu trả lời **bị vứt vì stale** | **32** (43% số lần gọi edge) |
+
+32 lần đó edge **đã tính xong và đã ghi vào DB** rồi mới bị client vứt → host nhìn thấy → flicker.
+
+**Vòng lặp tự nuôi:** edge persist (2.8–5.4s) → `live_state_version` tăng → version-poll 4s reload →
+rows đổi → `previewRequestKey` đổi → cleanup effect gọi `abortPreviewRequest()` (bump serial + bắn
+lại) → request mới lại persist. Engine chậm hơn chu kỳ poll nên vòng gần như luôn khép kín. Hai
+nguồn huỷ khác cùng bản chất: **hoàn thành trận** chủ động huỷ request đang bay, và **watchdog 3s**
+của placeholder bắn trong khi câu trả lời còn đang trên đường (edge chạy 2.8–5.4s > 3s).
+
+**FIX (4 mảnh khớp nhau, không mảnh nào đứng một mình):**
+1. Cleanup effect chỉ huỷ khi câu trả lời **không còn ai dùng được**: unmount / đổi session
+   generation / rời phase `plan`. Board đổi thì để request chạy xong.
+2. Hoàn thành trận **không** huỷ request đang bay — completion chỉ giải phóng người, không thể gây
+   xung đột; `isPreviewInvalidatedByCompletedMatch` vốn đã lo đúng phần lane bị cũ.
+3. Watchdog placeholder **hoãn thêm 3s** nếu đang có request bay (soft-timeout 12s vẫn là chốt chặn).
+4. Nhu cầu "cứu sân degraded" đến trong lúc bận được tiêu thụ **một lần cho mỗi trận kết thúc**
+   (`rescueEvaluatedNonceRef`), và baseline được đóng dấu **lúc GỬI** request, hoàn tác nếu request
+   hỏng — đóng dấu lúc nhận thì mọi lượt đánh giá ở giữa lại hỏi lại (đo được: **61 request/1 test**).
+
+**BA lần tôi tự tạo bug mới trong lúc sửa, gate bắt được cả ba** — ghi lại vì cùng một lớp lỗi:
+- Bỏ cleanup ⇒ `wait-rescue-resuggest` chết: sân degraded **không bao giờ** được xin lại nữa (nhánh
+  cache nhanh nuốt nhu cầu cứu, vì trước đây completion vừa huỷ request vừa xoá cache trong một nhịp).
+- Bỏ qua cache theo *trạng thái* ⇒ storm 61 request. Phải chuyển sang tiêu thụ theo *sự kiện*.
+- Đánh thức lại effect sau **mọi** request ⇒ `mutation-flows` chết: lượt đánh giá thêm ngay sau khi
+  commit làm bộ lọc chất lượng **huỷ chính batch vừa hiện**, nên bấm "Bắt đầu trận" bị từ chối
+  *"Gợi ý vừa cũ hoặc chưa được xác nhận từ server"*. Nay chỉ đánh thức khi (a) câu trả lời không
+  commit được, hoặc (b) có trận kết thúc chưa được phục vụ.
+- [ ] **Lỗi có thật lộ ra từ đó, CHƯA sửa:** một lineup đã commit và đang hiển thị vẫn có thể bị
+  lượt đánh giá sau đó gỡ khỏi batch (`live-preview` client, nhánh `newMatches.length < min(...)`,
+  bộ lọc `hasHardPreviewQualityViolation`) → nút Bắt đầu báo "gợi ý vừa cũ" dù host vừa thấy nó.
+  Chỉ nổ khi có một lượt đánh giá chen giữa lúc hiện và lúc bấm. Cần repro riêng.
+
+Gate: **31 suite / 129 test xanh**, `tsc` 0, eslint 0 error. RED-check: bỏ fix → cả
+`preview-single-flight` lẫn `preview-latch` đỏ.
+- Test mới `tests/host-live/characterization/preview-single-flight.test.tsx` khoá 2 tính chất trong
+  một kịch bản: board đổi lúc đang bay thì **không** bắn request thứ hai, và khi câu trả lời về thì
+  **phải** tự đánh giá lại (xin sân vừa trống).
+- `preview-latch.test.tsx` đổi đường phục hồi (không còn huỷ theo rows đổi; request treo được cứu
+  bằng soft-timeout 12s) — tính chất "board không được kẹt" giữ nguyên và vẫn được kiểm.
+- [ ] Kèo tới: chạy lại `scratch/flicker-request-lifecycle.ts` — kỳ vọng `stale ≈ 0` và
+  `started ≈ answered`; và `scratch/flicker-wasted-rerolls.ts` (kèo này 5/10, kèo trước 10/13).
+
+## FLICKER phần 1 — ĐÃ SỬA (2026-08-12), CLIENT-ONLY, **cần rebuild app**
 
 **Root, đo từ prod `260878a4` (dump `debug_dumps` + `session_live_matches`, không suy đoán):**
 watermark "chờ cứu" là **một biến toàn cục** (`completedLiveMatchCommitNonce > rescueHandledNonceRef`,

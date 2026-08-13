@@ -178,6 +178,18 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
   const previewRetryTimeoutsRef = useRef(new Set<ReturnType<typeof setTimeout>>())
   const previewScheduledRetryKeysRef = useRef(new Set<string>())
   const sessionGenerationRef = useRef(0)
+  // Leaving the screen is the one moment nothing can consume a preview answer, and the preview
+  // effect's own cleanup can no longer carry that job: it stops aborting on board changes (see the
+  // cleanup below), so on unmount the last registered cleanup may belong to a run that never started
+  // a request. Registered here, ABOVE the preview effect, so its destroy runs first on unmount.
+  const previewScreenUnmountedRef = useRef(false)
+  const previewAbortControllerRef = useRef<AbortController | null>(null)
+  const previewPhaseRef = useRef(phase)
+  previewPhaseRef.current = phase
+  useEffect(() => () => {
+    previewScreenUnmountedRef.current = true
+    previewAbortControllerRef.current?.abort()
+  }, [])
   const activeSessionIdRef = useRef(sessionId)
   const previewBaseKeyRef = useRef<string | null>(null)
   const previewIncompleteRetryRef = useRef<{ key: string; count: number }>({ key: '', count: 0 })
@@ -191,6 +203,12 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
   // lineup may only wait for a completion that lands AFTER it exists; a single global watermark made
   // the completion that emptied a court also re-roll the lineup that same completion produced.
   const rescueBaselineNonceByCourtRef = useRef(new Map<number, number>())
+  // Highest completion nonce the preview effect has already given a full (non-cached) evaluation.
+  const rescueEvaluatedNonceRef = useRef(0)
+  // Live mirror of completedLiveMatchCommitNonce. The request body is built from previewBodyRef —
+  // also a live mirror — so the effect closure's copy of the state can be one render behind what the
+  // request actually sent, and stamping the baseline from it under-counts by one completion.
+  const completedLiveMatchCommitNonceRef = useRef(0)
   const cancelingLiveMatchIdsRef = useRef(new Set<string>())
   const [optimisticLiveMatches, setOptimisticLiveMatches] = useState<LiveDisplayMatchRow[]>([])
   const [liveMatchDisplayKeys, setLiveMatchDisplayKeys] = useState<Record<string, string>>({})
@@ -201,6 +219,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
   const [completingLiveMatchIds, setCompletingLiveMatchIds] = useState<Set<string>>(() => new Set())
   const [creatingNextMatchIds, setCreatingNextMatchIds] = useState<Set<string>>(() => new Set())
   const [completedLiveMatchCommitNonce, setCompletedLiveMatchCommitNonce] = useState(0)
+  completedLiveMatchCommitNonceRef.current = Math.max(completedLiveMatchCommitNonceRef.current, completedLiveMatchCommitNonce)
   const [completingLiveMatchPlaceholders, setCompletingLiveMatchPlaceholders] = useState<Map<string, SessionLiveMatchRow>>(() => new Map())
   const [previewRefreshNonce, setPreviewRefreshNonce] = useState(0)
   const [isSuggestingPreview, setIsSuggestingPreview] = useState(false)
@@ -975,6 +994,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           if (alreadyCompleted) {
             applyCompletedLiveMatch(alreadyCompleted, [], [], cached?.liveStateVersion)
             completedLiveMatchCommitIdsRef.current.add(match.id)
+            completedLiveMatchCommitNonceRef.current += 1
             setCompletedLiveMatchCommitNonce(value => value + 1)
             setOptimisticLiveMatches(current => current.filter(row => row.id !== alreadyCompleted.id))
             if (__DEV__) console.log('[NextRoundSuggesterV2] complete match already committed (idempotency), aborting retry', { matchId: match.id })
@@ -1030,9 +1050,15 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
             payload.live_state_version,
           )
           const applyMs = nowMs() - applyT0
-          // Any in-flight preview was built from the pre-completion player/pair state.
-          abortPreviewRequest()
+          // An in-flight preview WAS built from the pre-completion state, but killing it here does
+          // not unwrite it: the edge persists every board it computes, so the abort only guarantees a
+          // second write for the same court — the flicker the host reported. A completion cannot make
+          // that answer conflict either; it frees players, it never makes them busy. So let it land:
+          // isPreviewInvalidatedByCompletedMatch drops exactly the lanes this completion staled, and
+          // the request's `finally` re-evaluates the board, which is where the freed court gets
+          // filled. The 3s placeholder watchdog below still covers an answer that never arrives.
           completedLiveMatchCommitIdsRef.current.add(match.id)
+          completedLiveMatchCommitNonceRef.current += 1
           setCompletedLiveMatchCommitNonce(value => value + 1)
           suggestedPreviewBatchRef.current = null
           setStartedPreviewIds(new Set())
@@ -1120,9 +1146,19 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       }
       const previousWatchdog = completingCleanupTimeoutsRef.current.get(match.id)
       if (previousWatchdog) clearTimeout(previousWatchdog)
-      const cleanupId = setTimeout(() => {
+      const cleanupId = setTimeout(function completingPlaceholderWatchdog() {
         completingCleanupTimeoutsRef.current.delete(match.id)
         if (!completingLiveMatchPlaceholdersRef.current.has(match.id)) return
+        // The replacement usually IS on its way — prod edge calls ran 2.8-5.4s, past this 3s
+        // deadline — so firing the recovery while a request is in flight killed the answer that was
+        // about to clear this placeholder, and its already-persisted board then showed up anyway as
+        // a second lineup. Wait one more beat instead; the request's soft timeout (12s) guarantees
+        // this cannot wait forever.
+        if (previewRequestInFlightRef.current) {
+          const rearmedId = setTimeout(completingPlaceholderWatchdog, 3000)
+          completingCleanupTimeoutsRef.current.set(match.id, rearmedId)
+          return
+        }
         previewBlockedIncompleteKeysRef.current.clear()
         suggestedPreviewBatchRef.current = null
         setCreatingNextMatchIds(current => {
@@ -1321,7 +1357,10 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     const baselineNonce = courtIdx === null
       ? 0
       : rescueBaselineNonceByCourtRef.current.get(courtIdx) ?? 0
-    return completedLiveMatchCommitNonce > baselineNonce
+    // Both sides read the live mirror: a request built one render after the completion committed
+    // must already see it, or the court it was supposed to rescue is left out of that request.
+    // completedLiveMatchCommitNonce stays in the dep list so consumers re-render on the bump.
+    return completedLiveMatchCommitNonceRef.current > baselineNonce
   }, [completedLiveMatchCommitNonce])
   const isDegradedMatchAwaitingRescue = useCallback((match: SuggestedLiveMatchRow) =>
     Boolean(match.degraded_reason) && isAwaitingCompletionRescue(match)
@@ -1719,6 +1758,18 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     }
 
     let cachedBatch = suggestedPreviewBatchRef.current
+    // A completion that landed while a request held the in-flight slot is answered on the NEXT
+    // evaluation, and that evaluation must not be short-circuited by the batch cache: the cache only
+    // knows the lanes are reusable, not that a degraded court is still owed its "chờ Sân X xong sẽ
+    // đỡ" re-suggest. Before, the completion path aborted the request and cleared this cache in the
+    // same breath, so the fast path never had to know. Consumed once per COMPLETION, never per
+    // render — keyed on the condition instead, one court that the engine cannot improve turns every
+    // render into a request (measured: 61 calls in one test run).
+    if (cachedBatch !== null && completedLiveMatchCommitNonce > rescueEvaluatedNonceRef.current) {
+      suggestedPreviewBatchRef.current = null
+      cachedBatch = null
+    }
+    rescueEvaluatedNonceRef.current = completedLiveMatchCommitNonce
     if (cachedBatch !== null && !isPreviewBatchCacheCurrent(cachedBatch.key, previewLaneCacheKey)) {
       suggestedPreviewBatchRef.current = null
       suggestedLaneCacheRef.current.clear()
@@ -1954,11 +2005,14 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     let cancelledBeforeStart = false
     let requestStarted = false
     let previewAbortController: AbortController | null = null
+    let previewBatchCommitted = false
     let previewAbortReason: 'soft_timeout' | 'cleanup' | null = null
     const previewClientRequestId = createClientTraceId('preview')
     const requestSerial = previewRequestSerialRef.current + 1
     previewRequestSerialRef.current = requestSerial
     const requestSessionGeneration = sessionGenerationRef.current
+    // Read from the live mirror, not the effect closure: see completedLiveMatchCommitNonceRef.
+    const requestCompletionNonce = completedLiveMatchCommitNonceRef.current
     const isCurrentPreviewRequest = () =>
       previewRequestSerialRef.current === requestSerial
       && sessionGenerationRef.current === requestSessionGeneration
@@ -2066,6 +2120,22 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
         ? []
         : rawRequestedReplacementCourtIdxs
       const requestedReplacementCourtSet = new Set(requestedReplacementCourtIdxs)
+      // Consume the rescue AT DISPATCH, not when the answer lands: asking is what settles this
+      // completion for these courts. Consuming on the answer instead means every evaluation between
+      // dispatch and answer — and every evaluation after an answer the client discards — asks again,
+      // which measured as a 61-request storm. The rollback below re-arms it if the request FAILS, so
+      // a lost request still leaves the court owed its re-suggest.
+      const rescueBaselineRollback = new Map<number, number | undefined>()
+      requestedReplacementCourtIdxs.forEach(courtIdx => {
+        rescueBaselineRollback.set(courtIdx, rescueBaselineNonceByCourtRef.current.get(courtIdx))
+        rescueBaselineNonceByCourtRef.current.set(courtIdx, requestCompletionNonce)
+      })
+      const rollbackRescueBaselines = () => {
+        rescueBaselineRollback.forEach((previousNonce, courtIdx) => {
+          if (previousNonce === undefined) rescueBaselineNonceByCourtRef.current.delete(courtIdx)
+          else rescueBaselineNonceByCourtRef.current.set(courtIdx, previousNonce)
+        })
+      }
       const retainedPreviewBusyRows = effectivePreviewBoard
         .filter(match => {
           const courtIdx = getSuggestedLaneCourtIdx(match)
@@ -2136,6 +2206,7 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
       })
 
       previewAbortController = typeof AbortController !== 'undefined' ? new AbortController() : null
+      previewAbortControllerRef.current = previewAbortController
       withPreviewSoftTimeout(fetchLiveMatchesPreview(snap.sessionId, body, {
         requestId: previewClientRequestId,
         signal: previewAbortController?.signal,
@@ -2446,13 +2517,14 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
                 ? { key: previewLaneCacheKey, matches: committedCandidateMatches }
                 : null
               setSuggestedLiveMatches(committedCandidateMatches)
+              previewBatchCommitted = true
               // A lineup this response produced already seats everyone the completions so far freed,
               // so it starts out NOT awaiting rescue — only a LATER completion can improve it.
               stampedMatches.forEach(match => {
                 const courtIdx = getSuggestedLaneCourtIdx(match)
                 if (courtIdx === null) return
                 if (nextLaneCache.get(courtIdx)?.id !== match.id) return
-                rescueBaselineNonceByCourtRef.current.set(courtIdx, completedLiveMatchCommitNonce)
+                rescueBaselineNonceByCourtRef.current.set(courtIdx, requestCompletionNonce)
               })
             } else {
               suggestedPreviewBatchRef.current = null
@@ -2874,6 +2946,9 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           })
         })
         .catch(async err => {
+          // Re-arm the rescue consumed at dispatch: this request produced no answer, so the courts it
+          // was going to rescue are still owed one (pinned by rescue-nonce-retry.test.tsx).
+          rollbackRescueBaselines()
           if (!isCurrentPreviewRequest()) return
           // Update stuck hint for kind classification
           const errMsg = String(err?.message ?? '')
@@ -3034,6 +3109,9 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
           const isStillCurrent = isCurrentPreviewRequest()
           const ownsSlot = previewRequestInFlightSerialRef.current === requestSerial
           previewPendingRequestKeysRef.current.delete(incompleteRequestKey)
+          if (previewAbortControllerRef.current === previewAbortController) {
+            previewAbortControllerRef.current = null
+          }
           if (ownsSlot) {
             previewRequestInFlightRef.current = false
             previewRequestInFlightSerialRef.current = null
@@ -3041,6 +3119,17 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
             // changed mid-fetch. Without this, isSuggestingPreview latches true
             // (isCurrentPreviewRequest() returns false → old guard skips the clear).
             setIsSuggestingPreview(false)
+            // Releasing the slot is not enough: board changes that arrived while this request held
+            // it were deliberately NOT allowed to restart the effect, so the two cases that have
+            // something waiting must be woken explicitly (previewRefreshNonce feeds
+            // previewRequestKey). A committed answer is NOT one of them — it already moved the
+            // board, and re-entering the effect on top of a fresh commit lets the hard-quality
+            // filter drop the batch that the visible card was just started from, which surfaces to
+            // the host as "Gợi ý vừa cũ" the moment they press Bắt đầu (mutation-flows.test.tsx).
+            const hasUnansweredCompletion = completedLiveMatchCommitNonceRef.current > rescueEvaluatedNonceRef.current
+            if (!previewBatchCommitted || hasUnansweredCompletion) {
+              setPreviewRefreshNonce(value => value + 1)
+            }
           } else if (isStillCurrent) {
             setIsSuggestingPreview(false)
           }
@@ -3089,7 +3178,19 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
         previewRequestInFlightRef.current = false
         previewRequestInFlightSerialRef.current = null
       }
-      if (requestStarted && isCurrentPreviewRequest()) {
+      // A started request has ALREADY made the edge compute AND persist a board. Aborting it here
+      // cannot undo that write — it only guarantees a SECOND write for the same court, which is what
+      // the host sees as flicker (prod ff0ea657: 32 of 75 edge calls had their answer thrown away as
+      // stale, each one after the edge had persisted it). Worse, the persist bumps live_state_version,
+      // the 4s poll reloads on it, rows change, and this cleanup fired on that change — the request
+      // was killed by its own side effect. A board change must therefore NOT abort it: the in-flight
+      // guard at the top of the effect holds the slot, and the request's `finally` bumps
+      // previewRefreshNonce so exactly one re-evaluation runs once the answer lands.
+      // Only abort when no one could apply the answer any more.
+      const answerNoLongerApplicable = previewScreenUnmountedRef.current
+        || sessionGenerationRef.current !== requestSessionGeneration
+        || previewPhaseRef.current !== 'plan'
+      if (requestStarted && isCurrentPreviewRequest() && answerNoLongerApplicable) {
         previewAbortReason = 'cleanup'
         abortPreviewRequest()
         previewAbortController?.abort()
