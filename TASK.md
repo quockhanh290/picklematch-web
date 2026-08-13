@@ -965,9 +965,25 @@ của placeholder bắn trong khi câu trả lời còn đang trên đường (e
     prod từ 1/8. Bài học lặp lại: kiểm số trước khi sửa. Nhưng lỗi nền vẫn còn — [ ] một lineup đã
     commit vẫn có thể bị lượt đánh giá sau gỡ khỏi batch (bộ lọc `hasHardPreviewQualityViolation`);
     hiếm, chưa có bằng chứng prod, chưa sửa.
-  - Prod (từ 1/8) còn 2 nhóm lỗi dày chưa đụng: `persist_assignment_conflict_terminal` **32** +
-    retry 34, và `client_preview_fallback_not_committed` **45** (tên sự kiện này không còn trong code
-    → do client bản cũ).
+  - ⚠️ **ĐÍNH CHÍNH con số tôi đưa trước đó** ("32 conflict + 45 fallback từ 1/8"): sai, do query
+    dính trần dòng của PostgREST nên đếm trên mẫu bị cắt. Đếm đúng bằng `Prefer: count=exact`:
+
+    | sự kiện | tổng | từ 9/8 | mới nhất |
+    |---|---|---|---|
+    | `persist_assignment_conflict_terminal` | 608 | **0** | 2026-08-08 02:24 |
+    | `persist_assignment_conflict_retry_scheduled` | 620 | **0** | 2026-08-08 02:24 |
+    | `client_preview_fallback_not_committed` | 1341 | **0** | 2026-08-08 02:24 |
+    | `client_start_blocked_untrusted_preview` | 6 | 0 | 2026-07-16 |
+    | `client_preview_request_start` (đối chứng) | 5423 | **163** | 2026-08-13 08:45 |
+
+    Cả ba nhóm lỗi **ngưng hẳn cùng một phút** (8/8 02:24, kèo `2a88c04d`) trong khi kênh đối chứng
+    vẫn chạy đều (163 request từ 9/8, gồm cả hôm nay) → không phải "không ai chơi", mà là **hết lỗi**.
+    Toàn bộ 608 ca dồn vào 3 kèo / 3 ngày (3/8, 7/8, 8/8). Deploy ALGO 56 (CX-1, "metadata phái sinh
+    phải khớp lineup persist") lên lúc 8/8 20:03 — SAU ca cuối, nên **không phải nó**; ứng viên hợp
+    lý hơn là các fix client cùng đợt. Chưa truy nguyên, và **không đáng truy** khi tín hiệu đã tắt.
+- [ ] Nếu conflict quay lại: telemetry đã sẵn (`..._terminal` kèm `conflicting_player_ids`,
+  `conflicting_court_idxs`, `authoritative_live_state_version`), script `scratch/error-freshness.ts`
+  đếm đúng bằng `Prefer: count=exact` — đừng đếm bằng `limit` lớn, PostgREST cắt âm thầm.
 
 Gate: **31 suite / 129 test xanh**, `tsc` 0, eslint 0 error. RED-check: bỏ fix → cả
 `preview-single-flight` lẫn `preview-latch` đỏ.
