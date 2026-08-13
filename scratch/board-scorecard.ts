@@ -11,6 +11,13 @@
  *
  * Usage: npx tsx scratch/board-scorecard.ts [numSessions] [outFile]
  *   Run on the current tree, stash, run again, diff the two JSON files.
+ *
+ * P2-2 knobs (Task 7 matrix). Default OPT=0 keeps the flag-off path byte-identical (f1b6d8ac0b0c):
+ *   OPT=1|0                                 bật/tắt board optimizer (mặc định 0)
+ *   OPT_MOVES=split|bench|bench_unbounded    tập nước đi (mặc định bench)
+ *   OPT_OBJ=lex|cost                         thước đo (mặc định lex)
+ * bench_unbounded = tập WITH_BENCH nhưng trần vòng lặp 10000 — cận trên rẻ tiền của "chọn lại cả 4
+ * người mỗi sân" (spec §5). Cờ bật qua __setBoardOptimizerOverrideForTests, KHÔNG đụng env thật.
  */
 const FROZEN = 1_000_000
 Date.now = () => FROZEN
@@ -28,6 +35,13 @@ import {
 } from '../lib/next-round-suggester/live-preview'
 import { computeQualityCost } from '../lib/next-round-suggester/quality-cost'
 import { AVOID_PARTNER_PENALTY, getAvoidPenalty } from '../lib/next-round-suggester/avoid'
+import { __setBoardOptimizerOverrideForTests } from '../lib/next-round-suggester/board-optimizer-flag'
+import {
+  MOVE_SET_SPLIT_ONLY,
+  MOVE_SET_WITH_BENCH,
+  __setBoardOptimizerTuningForTests,
+  type BoardOptimizerTuning,
+} from '../lib/next-round-suggester/board-optimizer/index'
 import { INTRA_TEAM_PVNA_GAP_LIMIT } from '../lib/next-round-suggester/score'
 import { getEffectivePvna } from '../lib/next-round-suggester/state'
 import type { PlayerSessionState, SessionLiveMatchRow, SessionState, Team } from '../lib/next-round-suggester/types'
@@ -47,6 +61,22 @@ const rBySid: Record<string, any[]> = {}; for (const r of roster) (rBySid[r.sid]
 const NUM = Number(process.argv[2] || 30)
 const OUT = process.argv[3] || 'scratch/out/board-scorecard.json'
 const ROUNDS = 8
+
+// OPT=0 phải để MỌI thứ y như cũ: không bật cờ, không đặt tuning override, không đổi một byte nào của
+// đường greedy + sáu pass. Chỉ khi OPT=1 mới đụng vào hai hook test.
+const OPT_ON = process.env.OPT === '1'
+const OPT_MOVES = process.env.OPT_MOVES || 'bench'
+const OPT_OBJ = (process.env.OPT_OBJ || 'lex') as BoardOptimizerTuning['objective']
+if (OPT_OBJ !== 'lex' && OPT_OBJ !== 'cost') throw new Error(`OPT_OBJ không hợp lệ: ${OPT_OBJ}`)
+if (!['split', 'bench', 'bench_unbounded'].includes(OPT_MOVES)) throw new Error(`OPT_MOVES không hợp lệ: ${OPT_MOVES}`)
+if (OPT_ON) {
+  __setBoardOptimizerOverrideForTests(true)
+  __setBoardOptimizerTuningForTests({
+    objective: OPT_OBJ,
+    moveSet: OPT_MOVES === 'split' ? MOVE_SET_SPLIT_ONLY : MOVE_SET_WITH_BENCH,
+    maxIterations: OPT_MOVES === 'bench_unbounded' ? 10_000 : 30,
+  })
+}
 
 const sids = Object.keys(mBySid)
   .filter(sid => (rBySid[sid] || []).length > 0 && !(rBySid[sid] || []).some(r => r.co != null))
@@ -89,8 +119,14 @@ export const repairTally = new Map<string, number>()
 // Keep the phase. instrumentPostPass emits 'entered' when a pass is merely reached and 'changed' only
 // when it altered the board — collapsing them counts consideration as effect, which made blowoutPool
 // look like it fired on nearly every match.
+// 'optimizer:reject:<reason>' mang ba đoạn; cắt hai đoạn như các pass khác sẽ gộp mọi lý do vào một ô
+// và làm mất đúng thứ cần để đọc bảng. Giữ riêng lý do ở đây.
+const optimizerRejects = new Map<string, number>()
 const tallyRepair = (detail: string) => {
   const parts = detail.split(':')
+  if (parts[0] === 'optimizer' && parts[1] === 'reject' && parts[2]) {
+    optimizerRejects.set(parts[2], (optimizerRejects.get(parts[2]) ?? 0) + 1)
+  }
   const key = parts.length > 1 ? `${parts[0]}:${parts[1]}` : parts[0]
   repairTally.set(key, (repairTally.get(key) ?? 0) + 1)
 }
@@ -249,6 +285,12 @@ const pct = (n: number) => totals.seated ? (100 * n / totals.seated) : 0
 const boardHash = crypto.createHash('sha1').update(totals.lineups.join(',')).digest('hex').slice(0, 12)
 const report = {
   board_hash: boardHash,
+  optimizer: OPT_ON ? { moves: OPT_MOVES, objective: OPT_OBJ } : null,
+  // Số lần optimizer THỰC SỰ vào (nhãn 'optimizer:entered') và số board nó đổi. Trước khi tin bất kỳ
+  // con số chất lượng nào của một lượt OPT=1: invoked phải > 0, nếu không là phép đo hỏng.
+  optimizer_invoked: repairTally.get('optimizer:entered') ?? 0,
+  optimizer_changed: repairTally.get('optimizer:changed') ?? 0,
+  optimizer_rejects: Object.fromEntries([...optimizerRejects.entries()].sort((a, b) => b[1] - a[1])),
   sessions, requested: totals.requested, seated: totals.seated,
   fill_rate_pct: totals.requested ? +(100 * totals.seated / totals.requested).toFixed(2) : 0,
   hard: {
@@ -287,6 +329,12 @@ console.log(`FAIR play-spread ${report.fair.avg_play_spread} | worst-rest ${repo
 console.log(`OWED người rảnh mang tier MUST_PLAY (consecutive_rest>=1): ${report.fair.owed_share_of_idle_pct}%`)
 console.log(`FATIGUE tổng max consecutive_play mỗi phiên ${report.fair.summed_session_max_consecutive_play} | ghế cho người đã chơi >=2 liên tiếp ${report.fair.seated_at_or_past_rest_pct}%`)
 console.log(`board_hash ${boardHash}`)
+if (OPT_ON) {
+  console.log(`OPTIMIZER moves=${OPT_MOVES} obj=${OPT_OBJ} | invoked ${report.optimizer_invoked} | changed ${report.optimizer_changed}`)
+  const rejects = Object.entries(report.optimizer_rejects)
+  console.log(`OPTIMIZER rejects (${rejects.length} lý do): ${rejects.length ? rejects.map(([r, n]) => `${r}=${n}`).join(' · ') : '(không có)'}`)
+  if (report.optimizer_invoked === 0) console.log('!!! optimizer_invoked = 0 → PHÉP ĐO HỎNG, đừng tin số nào ở trên')
+}
 const tallied = [...repairTally.entries()].sort((a, b) => b[1] - a[1])
 console.log(`REPAIR passes that fired (${tallied.length} kinds):`)
 for (const [kind, n] of tallied) console.log(`   ${String(n).padStart(6)}  ${kind}`)

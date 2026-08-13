@@ -1,0 +1,41 @@
+{
+  "board_hash": "c77ddcadd431",
+  "optimizer": {
+    "moves": "bench_unbounded",
+    "objective": "lex"
+  },
+  "optimizer_invoked": 2762,
+  "optimizer_changed": 2162,
+  "optimizer_rejects": {
+    "intra_cap": 1905602,
+    "over_tol_increase": 638749,
+    "seat_integrity": 51960,
+    "owed_rank": 16921,
+    "stranded_outlier": 6618,
+    "new_repeat3": 4486
+  },
+  "sessions": 60,
+  "requested": 3088,
+  "seated": 3088,
+  "fill_rate_pct": 100,
+  "hard": {
+    "avoid_partner": 0
+  },
+  "soft": {
+    "avg_cost": 1.769,
+    "over_tol_pct": 3.37,
+    "repeat3_pct": 2.01,
+    "blowout_pct": 0.97,
+    "intra_over_cap_pct": 16.68,
+    "panel_pct": 3.56,
+    "panel_forced_pct": 0,
+    "panel_choices_pct": 3.56
+  },
+  "fair": {
+    "avg_play_spread": 1.217,
+    "avg_worst_rest": 1.167,
+    "summed_session_max_consecutive_play": 254,
+    "owed_share_of_idle_pct": 2.92,
+    "seated_at_or_past_rest_pct": 34.28
+  }
+}

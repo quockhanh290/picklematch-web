@@ -50,9 +50,8 @@ import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { isBoardOptimizerEnabled } from './board-optimizer-flag.ts'
 import {
-  DEFAULT_MAX_ITERATIONS,
-  MOVE_SET_WITH_BENCH,
   optimizeBoard,
+  resolveBoardOptimizerTuning,
   type BoardSnapshot,
   type ConstraintRejection,
   // @ts-ignore Deno edge-function bundling needs the local .ts extension.
@@ -2911,10 +2910,11 @@ export function runBoardOptimizerPass(
   const benchIds = [...state.players.values()]
     .filter(player => player.checked_out_at === null && !player.opted_rest && !selected.has(player.player_id))
     .map(player => player.player_id)
+  const tuning = resolveBoardOptimizerTuning()
   const result = optimizeBoard(
     seed,
     { state, pvnaTolerance, seed, benchIds, lockPlayerSet },
-    { objective: 'lex', moveSet: MOVE_SET_WITH_BENCH, maxIterations: DEFAULT_MAX_ITERATIONS, onReject },
+    { ...tuning, onReject },
   )
   if (!result.changed) return { payloads, ran: true, changed: false }
   const byCourt = new Map(result.board.map(court => [court.court_idx, court]))

@@ -11,7 +11,7 @@ import { firstViolation } from './constraints'
 import type { BoardSnapshot, ConstraintContext, ConstraintRejection } from './constraints'
 import { isBetter, scoreBoard } from './objective'
 import type { ObjectiveName } from './objective'
-import { generateMoves } from './moves'
+import { generateMoves, MOVE_SET_WITH_BENCH } from './moves'
 import type { MoveSet } from './moves'
 
 export { MOVE_SET_SPLIT_ONLY, MOVE_SET_WITH_BENCH } from './moves'
@@ -35,6 +35,34 @@ export type OptimizeResult = {
   board: BoardSnapshot
   iterations: number
   changed: boolean
+}
+
+/**
+ * Cấu hình engine dùng khi cờ BẬT. Task 8 sẽ chốt con số ở đây bằng bảng đo, nên nó phải là MỘT chỗ
+ * duy nhất — không rải literal ở live-preview.
+ */
+export type BoardOptimizerTuning = {
+  objective: ObjectiveName
+  moveSet: MoveSet
+  maxIterations: number
+}
+
+const DEFAULT_TUNING: BoardOptimizerTuning = {
+  objective: 'lex',
+  moveSet: MOVE_SET_WITH_BENCH,
+  maxIterations: DEFAULT_MAX_ITERATIONS,
+}
+
+let tuningOverride: BoardOptimizerTuning | null = null
+
+export function resolveBoardOptimizerTuning(): BoardOptimizerTuning {
+  return tuningOverride ?? DEFAULT_TUNING
+}
+
+// Chỉ dành cho test/harness đo (scratch/board-scorecard.ts). Cùng khuôn với
+// __setBoardOptimizerOverrideForTests: null = trả về mặc định của engine.
+export function __setBoardOptimizerTuningForTests(value: Partial<BoardOptimizerTuning> | null): void {
+  tuningOverride = value === null ? null : { ...DEFAULT_TUNING, ...value }
 }
 
 const boardKey = (board: BoardSnapshot): string =>
