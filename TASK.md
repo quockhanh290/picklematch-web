@@ -926,3 +926,44 @@ Xem memory `project-preview-flicker-repeat-request`. Root đã đo xong; **fix c
 **Số không đổi sau khi đã sửa phép đo = phép đo không chạy, KHÔNG phải thay đổi vô tác dụng.**
 Biến thể gặp hôm nay: núm vặn không nối vào đâu (`force_budget_ms` nằm trong `Math.min` nên chỉ
 rút ngắn được deadline); nhiễu để lâu thành chỗ trốn cho lỗi thật (16 lỗi lint rác che 1 lỗi thật).
+
+## SAU KHI XONG FLICKER → P2-2 (phần defrag lớn nhất còn lại)
+
+Chạy phiên RIÊNG cho việc này, đừng gộp với flicker (khác vùng code, và P2-2 cần
+worktree riêng). Prompt để mở phiên:
+
+```
+Làm P2-2: gộp 7 post-pass của engine thành 1 optimizer.
+
+Đọc TASK.md (mục "P2-2 — ĐO NỀN") và docs/ENGINE_FRAGMENTATION_AUDIT.md mục 7.11
+trước khi bắt đầu. Đã có số đo nền, đừng đo lại từ đầu.
+
+Vì sao đáng làm: post-pass viết lại 935/1160 payload (81%), tốn 1607 lượt viết để
+tạo ra 934 sân khác gốc → ~42% công là các pass ghi đè LẪN NHAU. Chúng không phải
+7 bài toán mà là cùng một bài "gán N người vào K sân" bị chẻ làm 7.
+
+BẮT BUỘC: dựng git worktree riêng trước khi bắt đầu (EnterWorktree). Sẽ có nhiều
+nhánh thử optimizer song song; chung working tree thì suite test đá nhau.
+
+Yêu cầu:
+- Một objective duy nhất, hard-constraint tường minh: avoid-pair, intra cap,
+  required-set, over-tol KHÔNG được tăng
+- Xoá invariantSafePayloads (#70)
+- Ưu tiên TẤT ĐỊNH: engine hiện không tất định theo search budget, và đó là một
+  nửa nguyên nhân bug flicker (memory project-preview-flicker-repeat-request).
+  Optimizer tất định làm nhẹ bug đó ngay cả khi client chưa sửa.
+- So corpus trước/sau bằng scratch/board-scorecard.ts (nhớ bật blowoutRescue:
+  true — đo với nó tắt đã từng cho kết luận sai)
+- KHÔNG deploy. Prod đang ALGO 77, chờ một kèo chạy êm đã.
+
+Nền hiện tại: gate 753/753, tsc 0, lint 0. Giữ cả ba xanh.
+
+Cạm bẫy đã ghi trong TASK.md, đọc trước khi tin bất kỳ con số nào:
+số không đổi sau khi đã sửa phép đo = phép đo không chạy, không phải thay đổi vô
+tác dụng.
+```
+
+Rồi mới tới **P3 (xoá code chết)** — P3 cần `debug_dumps` từ một kèo chạy ÊM để biết
+pass nào còn fire thật, nên nó xếp sau cả flicker lẫn P2-2.
+
+**Thứ tự chốt:** flicker → P2-2 → P3
