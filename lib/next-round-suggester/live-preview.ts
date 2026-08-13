@@ -49,6 +49,14 @@ import { computeQualityCost, jointRepartition, type Foursome } from './quality-c
 import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { buildFreshestLineup, findMinCostFoursome, simulateWaitWouldClean } from './forced-tradeoff.ts'
+import {
+  getPayloadIntraTeamGap,
+  getPayloadMaxHistoricalPairCount,
+  getPayloadPairKey,
+  getPayloadProjectedMaxMeeting,
+  hasAvoidedPartnerPair,
+  // @ts-ignore Deno edge-function bundling needs the local .ts extension.
+} from './board-metrics.ts'
 import type {
   Match,
   PlayerSessionState,
@@ -1860,14 +1868,6 @@ export function improvesPreviewBoardPvna(
   return left.totalOver < right.totalOver - 0.01
 }
 
-function getPayloadIntraTeamGap(payload: SuggestedMatchPayload, state: SessionState) {
-  const gap = (team: [string, string]) => Math.abs(
-    (state.players.get(team[0]) ? getEffectivePvna(state.players.get(team[0])!) : 0)
-      - (state.players.get(team[1]) ? getEffectivePvna(state.players.get(team[1])!) : 0),
-  )
-  return Math.max(gap(payload.team_a), gap(payload.team_b))
-}
-
 function hasPayloadRepeat(payload: SuggestedMatchPayload, state: SessionState) {
   const partnerPairs = [
     [payload.team_a[0], payload.team_a[1]],
@@ -1883,10 +1883,6 @@ function hasPayloadRepeat(payload: SuggestedMatchPayload, state: SessionState) {
     (state.players.get(left)?.opponent_counts.get(right) ?? 0) > 0,
   )
   return partner || opponent
-}
-
-function getPayloadPairKey(left: string, right: string) {
-  return left < right ? `${left}:${right}` : `${right}:${left}`
 }
 
 function getPayloadBatchStats(payloads: SuggestedMatchPayload[], state: SessionState, pvnaTolerance: number) {
@@ -2526,33 +2522,6 @@ function comparePayloadBatchParticipation(
   return 0
 }
 
-function hasAvoidedPartnerPair(payloads: SuggestedMatchPayload[], state: SessionState) {
-  const avoidPairs = new Set((state.config.avoid_pairs ?? []).map(pair =>
-    getPayloadPairKey(pair.player_a, pair.player_b)
-  ))
-  if (avoidPairs.size === 0) return false
-  return payloads.some(payload =>
-    avoidPairs.has(getPayloadPairKey(payload.team_a[0], payload.team_a[1]))
-    || avoidPairs.has(getPayloadPairKey(payload.team_b[0], payload.team_b[1]))
-  )
-}
-
-function getPayloadMaxHistoricalPairCount(payload: SuggestedMatchPayload, state: SessionState) {
-  const partnerCounts = [
-    state.players.get(payload.team_a[0])?.partner_counts.get(payload.team_a[1]) ?? 0,
-    state.players.get(payload.team_b[0])?.partner_counts.get(payload.team_b[1]) ?? 0,
-  ]
-  const opponentCounts = payload.team_a.flatMap(left =>
-    payload.team_b.map(right =>
-      state.players.get(left)?.opponent_counts.get(right) ?? 0
-    )
-  )
-  return {
-    partner: Math.max(0, ...partnerCounts),
-    opponent: Math.max(0, ...opponentCounts),
-  }
-}
-
 export function repairAllIdlePayloadBatchParticipation(
   payloads: SuggestedMatchPayload[],
   state: SessionState,
@@ -2685,11 +2654,6 @@ function repairPayloadBatchRepeatExposure(
     currentScore = bestScore
   }
   return current
-}
-
-function getPayloadProjectedMaxMeeting(payload: SuggestedMatchPayload, state: SessionState) {
-  const counts = getPayloadMaxHistoricalPairCount(payload, state)
-  return Math.max(counts.partner, counts.opponent) + 1
 }
 
 // Greedy per-court fill of a multi-court batch can seat a stale cluster into a 3rd meeting even when a
