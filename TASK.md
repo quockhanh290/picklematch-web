@@ -952,10 +952,22 @@ của placeholder bắn trong khi câu trả lời còn đang trên đường (e
   commit làm bộ lọc chất lượng **huỷ chính batch vừa hiện**, nên bấm "Bắt đầu trận" bị từ chối
   *"Gợi ý vừa cũ hoặc chưa được xác nhận từ server"*. Nay chỉ đánh thức khi (a) câu trả lời không
   commit được, hoặc (b) có trận kết thúc chưa được phục vụ.
-- [ ] **Lỗi có thật lộ ra từ đó, CHƯA sửa:** một lineup đã commit và đang hiển thị vẫn có thể bị
-  lượt đánh giá sau đó gỡ khỏi batch (`live-preview` client, nhánh `newMatches.length < min(...)`,
-  bộ lọc `hasHardPreviewQualityViolation`) → nút Bắt đầu báo "gợi ý vừa cũ" dù host vừa thấy nó.
-  Chỉ nổ khi có một lượt đánh giá chen giữa lúc hiện và lúc bấm. Cần repro riêng.
+- [x] **"Gợi ý vừa cũ sau khi có trận kết thúc" — ĐÃ SỬA.** Host xác nhận gặp thường xuyên. Đường
+  này (`startLiveMatch`, chỉ áp cho lineup KHÔNG do server persist = luồng "Xem lineup thay thế")
+  chặn khi **có trận nào đó** kết thúc sau lúc preview được tính, **không hỏi trận đó có liên quan
+  tới lineup không**. Trận kết thúc chỉ GIẢI PHÓNG người nên không thể làm hỏng lineup; hai guard
+  ngay sau nó (người trong lineup đang live / sân đã có người) mới là bản chính xác, và persist gửi
+  `live_state_version` HIỆN TẠI nên preview cũ không gây lỗi RPC. Đã thu hẹp còn "trận kết thúc trên
+  CHÍNH sân đó" (giữ an toàn round_no) + thêm telemetry `client_start_blocked_stale_after_completion`.
+  Test `manual-lineup-start-after-completion.test.tsx` khoá cả hai vế (sân khác → cho chạy, sân mình
+  → vẫn chặn); RED-check: bỏ fix thì vế đầu đỏ, vế sau vẫn xanh.
+  - **Đường tôi đoán ban đầu (`preview_not_committed`) là SAI:** telemetry của nó bắn **0 lần** trên
+    prod từ 1/8. Bài học lặp lại: kiểm số trước khi sửa. Nhưng lỗi nền vẫn còn — [ ] một lineup đã
+    commit vẫn có thể bị lượt đánh giá sau gỡ khỏi batch (bộ lọc `hasHardPreviewQualityViolation`);
+    hiếm, chưa có bằng chứng prod, chưa sửa.
+  - Prod (từ 1/8) còn 2 nhóm lỗi dày chưa đụng: `persist_assignment_conflict_terminal` **32** +
+    retry 34, và `client_preview_fallback_not_committed` **45** (tên sự kiện này không còn trong code
+    → do client bản cũ).
 
 Gate: **31 suite / 129 test xanh**, `tsc` 0, eslint 0 error. RED-check: bỏ fix → cả
 `preview-single-flight` lẫn `preview-latch` đỏ.

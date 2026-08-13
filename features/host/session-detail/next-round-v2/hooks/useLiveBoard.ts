@@ -547,14 +547,35 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     }
     const previewMaxSeqNo = typeof match.preview_max_sequence_no === 'number' ? match.preview_max_sequence_no : null
     const previewCountableMatchCountForCompare = previewCountableMatchCount ?? Number.POSITIVE_INFINITY
-    const hasCompletedAfterPreview = !usePersistedMatchStart && effectiveLiveMatchRows
+    // A completion only ever FREES players, so one on ANOTHER court cannot invalidate this lineup —
+    // and the two checks below (a player of this lineup now live, the court now occupied) are the
+    // precise version of what this guard was reaching for. Rejecting on any completion meant the host
+    // reading through "Xem lineup thay thế" lost their pick whenever some other court happened to
+    // finish, which on a 6-court board is most of the time. The persist sends the CURRENT
+    // live_state_version, so a stale preview does not endanger the RPC either.
+    // What stays: a completion on THIS court, which retires the cycle the lineup's round_no was
+    // computed for.
+    const hasCompletedOnThisCourtAfterPreview = !usePersistedMatchStart && effectiveLiveMatchRows
       .filter(row => row.status !== 'cancelled')
-      .some(row => row.status === 'completed' && (
-        previewMaxSeqNo !== null
-          ? row.sequence_no > previewMaxSeqNo
-          : row.sequence_no >= previewCountableMatchCountForCompare
-      ))
-    if (!usePersistedMatchStart && hasCompletedAfterPreview) {
+      .some(row => row.status === 'completed'
+        && getSuggestedLaneCourtIdx(row) === startedCourtIdx
+        && (
+          previewMaxSeqNo !== null
+            ? row.sequence_no > previewMaxSeqNo
+            : row.sequence_no >= previewCountableMatchCountForCompare
+        ))
+    if (!usePersistedMatchStart && hasCompletedOnThisCourtAfterPreview) {
+      // This path had no telemetry, which is why prod showed nothing while the host hit it often.
+      telemetry.trace('client_start_blocked_stale_after_completion', {
+        requestId: match.preview_request_key ?? match.id,
+        detail: {
+          match_id: match.id,
+          court_idx: startedCourtIdx,
+          preview_source: match.preview_source ?? null,
+          preview_countable_match_count: previewCountableMatchCount,
+          preview_max_sequence_no: previewMaxSeqNo,
+        },
+      })
       startingPreviewIdsRef.current.delete(match.id)
       if (startedCourtIdx !== null) suggestedLaneCacheRef.current.delete(startedCourtIdx)
       setSuggestedLiveMatches(current => current.filter(row => row.id !== match.id))
