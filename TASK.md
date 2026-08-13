@@ -1011,9 +1011,11 @@ Gate: **31 suite / 129 test xanh**, `tsc` 0, eslint 0 error. RED-check: bỏ fix
   nguyên — **20 lần `client_external_live_version_advanced`** (poll thấy version tăng rồi reload) —
   nhưng không lần nào giết được request đang bay nữa. Đó là bằng chứng nhân quả, không phải "tự
   nhiên hết". `client_preview_request_cancelled` (17 lần ở kèo trước) biến mất hoàn toàn.
-- [ ] Chưa kiểm được bằng số: cảm nhận của host (sân có còn nhảy trước mắt không) và guard
-  "gợi ý vừa cũ" mới (0 lần bắn — có thể vì đã sửa đúng, cũng có thể vì kèo này không ai dùng
-  "Xem lineup thay thế"). Telemetry đã sẵn cho lần sau.
+- [x] **HOST QA XONG: "không thấy nhảy đội hình"** trên kèo `2ef92e06`. Bug flicker ĐÓNG — số đo và
+  quan sát của host khớp nhau.
+- [ ] Còn treo, không chặn gì: guard "gợi ý vừa cũ" mới bắn 0 lần ở kèo này — có thể vì đã sửa đúng,
+  cũng có thể vì kèo này không ai dùng "Xem lineup thay thế". Telemetry
+  `client_start_blocked_stale_after_completion` đã sẵn, kèo sau tự biết.
 
 ## FLICKER phần 1 — ĐÃ SỬA (2026-08-12), CLIENT-ONLY, **cần rebuild app**
 
