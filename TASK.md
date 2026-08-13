@@ -890,3 +890,39 @@ Xác minh tới đâu: deploy log có upload lib/next-round-suggester/*, Managem
 version 266 ACTIVE. KHÔNG xác minh được ALGO version thực sự đang phục vụ — nhánh
 warmup chỉ trả `{ok, warmed}`, không trả `algorithm_version`. Muốn chắc thì đọc
 `algorithm_version` trong debug dump của suggest thật đầu tiên.
+
+---
+
+# CHỐT PHIÊN 2026-08-12/13
+
+## Trạng thái prod
+- edge `session-live-matches-suggest` **v268, ALGO 77** (xác minh qua `debug_dumps.engine_build.algorithm_version` của kèo thật, không phải suy đoán)
+- Canary quality-cost **TẮT** — allowlist rỗng. **BẪY:** `SESSION_QUALITY_COST_MODEL` vẫn `="1"`;
+  thứ giữ nó dormant là allowlist, KHÔNG phải master flag. Đừng đọc flag rồi kết luận "đang tắt".
+- Nhánh `feat-quality-cost-model` đã push lên remote (trước đó 231 commit chỉ nằm local).
+- gate 753/753 · tsc 0 · **lint 0** (trước là 17) · check:secrets, check:artifacts sạch
+
+## Việc chính đã xong phiên này
+- ALGO 76: `repeatPool` chạy được khi lấp 1 sân (corpus: lặp-3 11.63% → 1.98%); `participation` biết ai bận
+- ALGO 77 / P2-3: full-board rescue dùng chung `runEngine` — trước đó nó dựng board KHÔNG có
+  blowoutRescue/rollingHorizon/capacity-lock rồi đem so PVNA với board của engine đầy đủ
+- Xoá 4 assertion wall-clock không bắt được gì (gỡ hẳn deadline: max 843→1182ms, vẫn dưới bound 1800)
+- Lint 17→0: `scratch/**` thiếu trong ESLint ignore; dọn xong lộ ra 1 lỗi thật —
+  `simulate-live-preview-policy.ts` gọi `getPayloadPvnaGap` chưa import (ReferenceError), và hàm đó
+  là bản chép y hệt `getMatchPvnaGap` mà P1-9 bỏ lỡ
+- Purge Supabase PAT (đã thu hồi, 401) khỏi 26 commit + gitignore `.claude/settings.local.json`
+
+## Defrag: P1 12/12 xong · P2 4/7 xong · P2-2 CHƯA ĐỘNG (phần lớn nhất còn lại)
+
+## VIỆC TIẾP THEO — bug flicker (ưu tiên 1)
+Xem memory `project-preview-flicker-repeat-request`. Root đã đo xong; **fix chưa viết**.
+- Client xin lại cùng 1 sân 2–3 lần trong ~6s; engine non-deterministic → mỗi lần khác đội hình
+- Sân không bị xin lại thì đứng yên → flicker chỉ ở sân bị re-request
+- KHÔNG phải regression (kèo cũ ALGO 46/47 dày request gấp đôi: 8.2 vs 3.6/phút)
+- **Fix CX-4 CHƯA BAO GIỜ LANDED** (không commit nào nhắc CX-4; Codex hỏng token) →
+  rebuild app KHÔNG chữa được flicker
+
+## Bài học lặp lại nhiều lần phiên này
+**Số không đổi sau khi đã sửa phép đo = phép đo không chạy, KHÔNG phải thay đổi vô tác dụng.**
+Biến thể gặp hôm nay: núm vặn không nối vào đâu (`force_budget_ms` nằm trong `Math.min` nên chỉ
+rút ngắn được deadline); nhiễu để lâu thành chỗ trốn cho lỗi thật (16 lỗi lint rác che 1 lỗi thật).
