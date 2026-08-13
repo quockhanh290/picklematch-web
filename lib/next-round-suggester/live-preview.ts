@@ -48,6 +48,16 @@ import { computeQualityCost, jointRepartition, type Foursome } from './quality-c
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { isBoardOptimizerEnabled } from './board-optimizer-flag.ts'
+import {
+  DEFAULT_MAX_ITERATIONS,
+  MOVE_SET_WITH_BENCH,
+  optimizeBoard,
+  type BoardSnapshot,
+  type ConstraintRejection,
+  // @ts-ignore Deno edge-function bundling needs the local .ts extension.
+} from './board-optimizer/index.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { buildFreshestLineup, findMinCostFoursome, simulateWaitWouldClean } from './forced-tradeoff.ts'
 import {
   getPayloadIntraTeamGap,
@@ -2871,6 +2881,54 @@ export function applyJointRepartition(
   })
 }
 
+export type BoardOptimizerRun = {
+  payloads: SuggestedMatchPayload[]
+  /** false = the board was not shaped for the optimizer (a court without an index), nothing ran. */
+  ran: boolean
+  changed: boolean
+}
+
+// Flag-ON replacement for the six-post-pass chain (P2-2, spec §6). Everything it needs is already
+// computed by the caller — the seed is the greedy board, the bench is the same formula the blowout
+// pass uses, and the player-set lock is the same rolling-invariant target the revert pass reads.
+// Only team_a/team_b are written back: warnings, tradeoffs, degraded_reason and round_no belong to the
+// payload and are re-derived by the normalisation step that follows, exactly as on the flag-OFF path.
+export function runBoardOptimizerPass(
+  payloads: SuggestedMatchPayload[],
+  state: SessionState,
+  pvnaTolerance: number,
+  lockPlayerSet: boolean,
+  onReject?: (reason: ConstraintRejection) => void,
+): BoardOptimizerRun {
+  // Mirrors applyJointRepartition's guard: a court without an index cannot be mapped back.
+  if (payloads.some(pl => pl.court_idx === null)) return { payloads, ran: false, changed: false }
+  const seed: BoardSnapshot = payloads.map(pl => ({
+    court_idx: pl.court_idx as number,
+    team_a: [pl.team_a[0], pl.team_a[1]] as [string, string],
+    team_b: [pl.team_b[0], pl.team_b[1]] as [string, string],
+  }))
+  const selected = new Set(payloads.flatMap(pl => [...pl.team_a, ...pl.team_b]))
+  const benchIds = [...state.players.values()]
+    .filter(player => player.checked_out_at === null && !player.opted_rest && !selected.has(player.player_id))
+    .map(player => player.player_id)
+  const result = optimizeBoard(
+    seed,
+    { state, pvnaTolerance, seed, benchIds, lockPlayerSet },
+    { objective: 'lex', moveSet: MOVE_SET_WITH_BENCH, maxIterations: DEFAULT_MAX_ITERATIONS, onReject },
+  )
+  if (!result.changed) return { payloads, ran: true, changed: false }
+  const byCourt = new Map(result.board.map(court => [court.court_idx, court]))
+  return {
+    payloads: payloads.map(pl => {
+      const court = byCourt.get(pl.court_idx as number)
+      if (!court) return pl
+      return { ...pl, team_a: [...court.team_a] as Team, team_b: [...court.team_b] as Team }
+    }),
+    ran: true,
+    changed: true,
+  }
+}
+
 function seatedLineupKey(teamA: readonly string[], teamB: readonly string[]) {
   return [[...teamA].sort().join('+'), [...teamB].sort().join('+')].sort().join('|')
 }
@@ -5683,6 +5741,30 @@ export function buildSuggestedMatchPayloads({
   const instrumentPostPass = (pass: string, phase: 'entered' | 'changed') => {
     onRepairInstrument?.(`${pass}:${phase}`)
   }
+  // Derive warnings from the exact lineups returned to persistence. Rescue and
+  // repair paths must not leave over-cap quality metadata stale. Shared by both branches below.
+  const finalizeBatchPayloads = (finalPayloads: SuggestedMatchPayload[]) => finalPayloads.map(payload => {
+    const settled = dropStaleDerivedMetadata(normalizeRepairedPayload(payload, repairState, pvnaTolerance))
+    // Only step in where the passes cost the host their panel. A panel that still describes the seated
+    // lineup came from the full search and offers different PLAYERS, which is strictly more than a
+    // re-split can — leave it alone.
+    if ((settled.tradeoff_choices?.length ?? 0) > 0) return settled
+    return rebuildDerivedMetadataForSeatedLineup(settled, repairState, pvnaTolerance)
+  })
+  // P2-2: one optimizer instead of the six post-passes below. Default OFF — the flag-off path is the
+  // only rollback guarantee there is, so it must stay byte-identical (corpus hash f1b6d8ac0b0c).
+  if (isBoardOptimizerEnabled(repairState)) {
+    const optimized = runBoardOptimizerPass(
+      payloads,
+      repairState,
+      pvnaTolerance,
+      Boolean(getActiveRollingInvariantTarget(repairState, options.rollingPlanTarget)),
+      reason => onRepairInstrument?.(`optimizer:reject:${reason}`),
+    )
+    if (optimized.ran) instrumentPostPass('optimizer', 'entered')
+    if (optimized.changed) instrumentPostPass('optimizer', 'changed')
+    return finalizeBatchPayloads(optimized.payloads)
+  }
   const hasStartedOrCompletedLiveMatches = countableMatches.some(match =>
     match.status === 'live' || match.status === 'completed',
   )
@@ -5746,17 +5828,8 @@ export function buildSuggestedMatchPayloads({
   const invariantSafePayloads = shouldRevertForRollingInvariant
     ? payloads
     : blowoutPoolRepairedPayloads
-  // Derive warnings from the exact lineups returned to persistence. Rescue and
-  // repair paths must not leave over-cap quality metadata stale.
   const jointRepartitionedPayloads = options.disableJointRepartition
     ? invariantSafePayloads
     : applyJointRepartition(invariantSafePayloads, repairState, pvnaTolerance, onRepairInstrument)
-  return jointRepartitionedPayloads.map(payload => {
-    const settled = dropStaleDerivedMetadata(normalizeRepairedPayload(payload, repairState, pvnaTolerance))
-    // Only step in where the passes cost the host their panel. A panel that still describes the seated
-    // lineup came from the full search and offers different PLAYERS, which is strictly more than a
-    // re-split can — leave it alone.
-    if ((settled.tradeoff_choices?.length ?? 0) > 0) return settled
-    return rebuildDerivedMetadataForSeatedLineup(settled, repairState, pvnaTolerance)
-  })
+  return finalizeBatchPayloads(jointRepartitionedPayloads)
 }

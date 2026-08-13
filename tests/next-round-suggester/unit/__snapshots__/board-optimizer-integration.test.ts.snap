@@ -1,0 +1,28 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`board optimizer integration flag OFF: the board is exactly what the six-pass chain produced before the optimizer existed 1`] = `
+[
+  [
+    0,
+    [
+      "p2",
+      "p4",
+    ],
+    [
+      "p3",
+      "r1",
+    ],
+  ],
+  [
+    1,
+    [
+      "q2",
+      "q4",
+    ],
+    [
+      "q3",
+      "r3",
+    ],
+  ],
+]
+`;

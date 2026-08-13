@@ -98,6 +98,9 @@ export type SessionState = {
     // Session-scoped quality-cost rollout flag, resolved at the request boundary
     // (resolveQualityCostEnabledForSession). Undefined → engine falls back to the global env flag.
     quality_cost_enabled?: boolean
+    // Session-scoped board-optimizer rollout flag (resolveBoardOptimizerEnabledForSession).
+    // Undefined → OFF; the six-post-pass chain runs unchanged.
+    board_optimizer_enabled?: boolean
   }
   players: Map<string, PlayerSessionState>
   rounds: RoundRecord[]
