@@ -187,10 +187,10 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
   const startingPreviewIdsRef = useRef(new Set<string>())
   const endingLiveMatchIdsRef = useRef(new Set<string>())
   const completedLiveMatchCommitIdsRef = useRef(new Set<string>())
-  // Highest completion-commit nonce already consumed for degraded re-suggest. A degraded suggestion
-  // stays "awaiting rescue" only until the completion that just freed players has been re-suggested
-  // against — set at dispatch so each completion triggers exactly one re-suggest (no render thrash).
-  const rescueHandledNonceRef = useRef(0)
+  // Completion-commit nonce a court's CURRENT lineup was produced against, per court. A degraded
+  // lineup may only wait for a completion that lands AFTER it exists; a single global watermark made
+  // the completion that emptied a court also re-roll the lineup that same completion produced.
+  const rescueBaselineNonceByCourtRef = useRef(new Map<number, number>())
   const cancelingLiveMatchIdsRef = useRef(new Set<string>())
   const [optimisticLiveMatches, setOptimisticLiveMatches] = useState<LiveDisplayMatchRow[]>([])
   const [liveMatchDisplayKeys, setLiveMatchDisplayKeys] = useState<Record<string, string>>({})
@@ -1311,11 +1311,21 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
   // the edge's board-wide pass every request (so the just-completed court is often no longer in the
   // list), and neither sequence_no nor countable-match-count change when a live match completes —
   // so every render-time heuristic misses it. completedLiveMatchCommitNonce bumps once per committed
-  // completion; a degraded court is "awaiting rescue" from that bump until we dispatch its re-suggest
-  // (rescueHandledNonceRef caught up), which frees the just-freed players into a cleaner lineup.
+  // completion; a court is "awaiting rescue" while completions have landed SINCE its current lineup
+  // was produced (rescueBaselineNonceByCourtRef, stamped when a response writes that court). Comparing
+  // against a global watermark instead made a court re-roll against the very completion that produced
+  // it: prod 260878a4 re-suggested court 1 2.1s after its own refill, no completion in between, and
+  // the non-deterministic engine returned a different — still degraded — lineup (visible flicker).
+  const isAwaitingCompletionRescue = useCallback((match: SuggestedLiveMatchRow) => {
+    const courtIdx = getSuggestedLaneCourtIdx(match)
+    const baselineNonce = courtIdx === null
+      ? 0
+      : rescueBaselineNonceByCourtRef.current.get(courtIdx) ?? 0
+    return completedLiveMatchCommitNonce > baselineNonce
+  }, [completedLiveMatchCommitNonce])
   const isDegradedMatchAwaitingRescue = useCallback((match: SuggestedLiveMatchRow) =>
-    Boolean(match.degraded_reason) && completedLiveMatchCommitNonce > rescueHandledNonceRef.current
-  , [completedLiveMatchCommitNonce])
+    Boolean(match.degraded_reason) && isAwaitingCompletionRescue(match)
+  , [isAwaitingCompletionRescue])
   // Forced-court (no clean lineup) analogue of isDegradedMatchAwaitingRescue: the host explicitly
   // picked "Chờ Sân Y" (forcedWaitSelectedMatchIds, set via setForcedWaitSelection from the card's
   // wait decision) on a match whose forced_tradeoff/wait_rescue_options say a completion CAN clean
@@ -1326,8 +1336,8 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
     Boolean(match.forced_tradeoff)
     && (match.wait_rescue_options?.length ?? 0) > 0
     && forcedWaitSelectedMatchIds.has(match.id)
-    && completedLiveMatchCommitNonce > rescueHandledNonceRef.current
-  , [forcedWaitSelectedMatchIds, completedLiveMatchCommitNonce])
+    && isAwaitingCompletionRescue(match)
+  , [forcedWaitSelectedMatchIds, isAwaitingCompletionRescue])
   const busyLiveMatchPlayerIds = useMemo(() => new Set(
     effectiveLiveMatchRows
       .filter(match => match.status === 'live')
@@ -2056,9 +2066,6 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
         ? []
         : rawRequestedReplacementCourtIdxs
       const requestedReplacementCourtSet = new Set(requestedReplacementCourtIdxs)
-      const requestedRescueCourtIdxs = snapDegradedRescueCourtIdxs.filter(courtIdx =>
-        shouldRequestFullBoardPreview || requestedReplacementCourtSet.has(courtIdx)
-      )
       const retainedPreviewBusyRows = effectivePreviewBoard
         .filter(match => {
           const courtIdx = getSuggestedLaneCourtIdx(match)
@@ -2439,18 +2446,20 @@ export function useLiveBoard(deps: UseLiveBoardDeps) {
                 ? { key: previewLaneCacheKey, matches: committedCandidateMatches }
                 : null
               setSuggestedLiveMatches(committedCandidateMatches)
+              // A lineup this response produced already seats everyone the completions so far freed,
+              // so it starts out NOT awaiting rescue — only a LATER completion can improve it.
+              stampedMatches.forEach(match => {
+                const courtIdx = getSuggestedLaneCourtIdx(match)
+                if (courtIdx === null) return
+                if (nextLaneCache.get(courtIdx)?.id !== match.id) return
+                rescueBaselineNonceByCourtRef.current.set(courtIdx, completedLiveMatchCommitNonce)
+              })
             } else {
               suggestedPreviewBatchRef.current = null
             }
             const replacementCourts = new Set(
               [...replacementCourtIdxs].filter(courtIdx => nextLaneCache.has(courtIdx)),
             )
-            if (
-              requestedRescueCourtIdxs.length > 0
-              && requestedRescueCourtIdxs.some(courtIdx => replacementCourts.has(courtIdx))
-            ) {
-              rescueHandledNonceRef.current = completedLiveMatchCommitNonce
-            }
             completingLiveMatchPlaceholdersRef.current.forEach((match, matchId) => {
               if (!replacementCourts.has(Number(match.court_idx ?? -1))) return
               const watchdog = completingCleanupTimeoutsRef.current.get(matchId)

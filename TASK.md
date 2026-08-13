@@ -914,13 +914,40 @@ warmup chỉ trả `{ok, warmed}`, không trả `algorithm_version`. Muốn ch�
 
 ## Defrag: P1 12/12 xong · P2 4/7 xong · P2-2 CHƯA ĐỘNG (phần lớn nhất còn lại)
 
-## VIỆC TIẾP THEO — bug flicker (ưu tiên 1)
-Xem memory `project-preview-flicker-repeat-request`. Root đã đo xong; **fix chưa viết**.
-- Client xin lại cùng 1 sân 2–3 lần trong ~6s; engine non-deterministic → mỗi lần khác đội hình
-- Sân không bị xin lại thì đứng yên → flicker chỉ ở sân bị re-request
-- KHÔNG phải regression (kèo cũ ALGO 46/47 dày request gấp đôi: 8.2 vs 3.6/phút)
-- **Fix CX-4 CHƯA BAO GIỜ LANDED** (không commit nào nhắc CX-4; Codex hỏng token) →
-  rebuild app KHÔNG chữa được flicker
+## FLICKER — ĐÃ SỬA (2026-08-12), CLIENT-ONLY, **cần rebuild app**
+
+**Root, đo từ prod `260878a4` (dump `debug_dumps` + `session_live_matches`, không suy đoán):**
+watermark "chờ cứu" là **một biến toàn cục** (`completedLiveMatchCommitNonce > rescueHandledNonceRef`,
+`useLiveBoard.ts:1316`). Cú kết thúc làm trống sân X bump nonce; cú lấp sân X **không tiêu thụ** nonce
+(lúc đó chưa có sân degraded nào để xin), nên **đội hình degraded do chính cú kết thúc đó sinh ra**
+lập tức bị coi là "đang chờ cú kết thúc" → xin lại ~2s sau, engine non-deterministic trả đội hình khác.
+
+| sân 1 | sân 4 |
+|---|---|
+| 04:18:05.7 trận sân 1 kết thúc | 04:18:21.9 trận sân 4 kết thúc |
+| 04:18:09.1 seq 58 (degraded `repeat`) | 04:18:25.1 seq 63 (degraded `repeat`) |
+| **04:18:11.8 seq 59 — không có trận nào kết thúc xen giữa** | **04:18:28.5 seq 64 — như trên** |
+| 04:18:15.4 seq 60 (sau khi sân 2 xong THẬT) → sạch | 04:18:31.1 seq 65 (sau khi sân 5 xong THẬT) |
+
+Toàn kèo: **10/13** đề-xuất bị thay trước khi host bấm Bắt đầu là **không có trận nào kết thúc xen
+giữa**; 7 trong số đó có dump `replace_courts` nhắm đúng sân mà board client đang gắn cờ degraded
+(3 cái còn lại chưa truy nguyên nhân, đừng tính vào công của fix này).
+
+**FIX:** baseline nonce **theo từng sân** (`rescueBaselineNonceByCourtRef`) — đóng dấu khi một
+response ghi đội hình cho sân đó; sân chỉ chờ những cú kết thúc xảy ra SAU khi đội hình của nó ra đời.
+Xoá `rescueHandledNonceRef` và `requestedRescueCourtIdxs` (chết theo). Tính năng "chờ Sân X xong sẽ
+đỡ" giữ nguyên: một cú kết thúc THẬT vẫn re-suggest sân degraded.
+- Test: `tests/host-live/characterization/degraded-reroll-same-nonce.test.tsx` (tái hiện đúng hình
+  dạng prod: `[0] v=2` → `[0] v=3 board=[0!repeat]`). **RED-check đã chạy** (stash fix → đỏ).
+- **BẪY harness, mất 3 lượt mới ra:** repro xanh giả 2 lần vì (1) snapshot mock đứng yên nên sân vừa
+  xong vẫn `live` → preview bị loại như sân đang bận; (2) `AppState.currentState` không phải `'active'`
+  nên **version-poll không chạy** — mà poll chính là thứ kích lại effect ở prod. Test giờ tự khẳng định
+  `fetchLiveSessionVersion` đã được gọi, để một lần nữa không đo nhầm thứ đang tắt.
+- Gate: host-live + next-round-v2 **30 suite / 128 test xanh**, `tsc` 0, eslint 0 error.
+- [ ] **Cần rebuild app** — đây là fix client. Nửa còn lại (engine không tất định nên mỗi lần xin trả
+      đội hình khác) thuộc P2-2, chưa đụng: sau fix này sân degraded vẫn đổi đội hình **một lần** khi
+      có sân khác xong thật — đó là tính năng, không phải bug.
+- KHÔNG phải regression ALGO 76/77 (kèo cũ ALGO 46/47 dày request gấp đôi: 8.2 vs 3.6/phút)
 
 ## Bài học lặp lại nhiều lần phiên này
 **Số không đổi sau khi đã sửa phép đo = phép đo không chạy, KHÔNG phải thay đổi vô tác dụng.**
