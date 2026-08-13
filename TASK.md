@@ -976,8 +976,10 @@ của placeholder bắn trong khi câu trả lời còn đang trên đường (e
     | `client_start_blocked_untrusted_preview` | 6 | 0 | 2026-07-16 |
     | `client_preview_request_start` (đối chứng) | 5423 | **163** | 2026-08-13 08:45 |
 
-    Cả ba nhóm lỗi **ngưng hẳn cùng một phút** (8/8 02:24, kèo `2a88c04d`) trong khi kênh đối chứng
-    vẫn chạy đều (163 request từ 9/8, gồm cả hôm nay) → không phải "không ai chơi", mà là **hết lỗi**.
+    Cả ba nhóm lỗi **ngưng hẳn cùng một phút** (8/8 02:24, kèo `2a88c04d`).
+    ⚠️ **Đối chứng yếu hơn tôi nói lúc đầu:** 163 request đó **toàn bộ là của HÔM NAY**
+    (`260878a4` 88 + `ff0ea657` 75); từ 9/8 đến 12/8 **không có kèo nào**. Nên kết luận đúng chỉ là
+    *"2 kèo gần nhất không tái diễn"* (n=2), KHÔNG phải *"đã hết lỗi"*. Cần thêm kèo mới dám chốt.
     Toàn bộ 608 ca dồn vào 3 kèo / 3 ngày (3/8, 7/8, 8/8). Deploy ALGO 56 (CX-1, "metadata phái sinh
     phải khớp lineup persist") lên lúc 8/8 20:03 — SAU ca cuối, nên **không phải nó**; ứng viên hợp
     lý hơn là các fix client cùng đợt. Chưa truy nguyên, và **không đáng truy** khi tín hiệu đã tắt.
@@ -992,8 +994,26 @@ Gate: **31 suite / 129 test xanh**, `tsc` 0, eslint 0 error. RED-check: bỏ fix
   **phải** tự đánh giá lại (xin sân vừa trống).
 - `preview-latch.test.tsx` đổi đường phục hồi (không còn huỷ theo rows đổi; request treo được cứu
   bằng soft-timeout 12s) — tính chất "board không được kẹt" giữ nguyên và vẫn được kiểm.
-- [ ] Kèo tới: chạy lại `scratch/flicker-request-lifecycle.ts` — kỳ vọng `stale ≈ 0` và
-  `started ≈ answered`; và `scratch/flicker-wasted-rerolls.ts` (kèo này 5/10, kèo trước 10/13).
+- [x] **XÁC NHẬN TRÊN KÈO THẬT — kèo `2ef92e06` (2026-08-13 12:55→13:07, 6 sân, 8 vòng, 54 trận),
+  chạy với cả 3 fix:**
+
+  | chỉ số | `ff0ea657` (trước) | `2ef92e06` (sau) |
+  |---|---|---|
+  | request lên lịch | 180 | 97 |
+  | bắn tới edge | 75 | **49** |
+  | câu trả lời được dùng | 37 | **49** |
+  | **bị vứt vì stale** | **32** (43%) | **0** |
+  | đề xuất bị thay trước khi host bấm | 10 | **0** |
+  | trong đó không có trận nào xong xen giữa | 5 | **0** |
+  | sự kiện lỗi (conflict / blocked / discarded) | — | **0** |
+
+  `started == answered == 49` khít nhau: không câu trả lời nào bị vứt. Nguyên nhân kích vẫn còn
+  nguyên — **20 lần `client_external_live_version_advanced`** (poll thấy version tăng rồi reload) —
+  nhưng không lần nào giết được request đang bay nữa. Đó là bằng chứng nhân quả, không phải "tự
+  nhiên hết". `client_preview_request_cancelled` (17 lần ở kèo trước) biến mất hoàn toàn.
+- [ ] Chưa kiểm được bằng số: cảm nhận của host (sân có còn nhảy trước mắt không) và guard
+  "gợi ý vừa cũ" mới (0 lần bắn — có thể vì đã sửa đúng, cũng có thể vì kèo này không ai dùng
+  "Xem lineup thay thế"). Telemetry đã sẵn cho lần sau.
 
 ## FLICKER phần 1 — ĐÃ SỬA (2026-08-12), CLIENT-ONLY, **cần rebuild app**
 
