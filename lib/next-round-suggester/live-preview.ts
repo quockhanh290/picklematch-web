@@ -42,7 +42,7 @@ import {
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { reconstructLiveRounds } from './live-rounds.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { getEffectivePvna } from './state.ts'
+import { getEffectivePvna, getMatchPvnaGap } from './state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { computeQualityCost, jointRepartition, type Foursome } from './quality-cost.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
@@ -1817,15 +1817,8 @@ function setPayloadPlayer(payload: SuggestedMatchPayload, position: number, play
   return { ...payload, team_a: teamA, team_b: teamB }
 }
 
-function getPayloadPvnaGap(payload: SuggestedMatchPayload, state: SessionState) {
-  const teamSum = (team: [string, string]) => team.reduce(
-    (sum, playerId) => {
-      const player = state.players.get(playerId)
-      return sum + (player ? getEffectivePvna(player) : 0)
-    },
-    0,
-  )
-  return Math.abs(teamSum(payload.team_a) - teamSum(payload.team_b))
+export function getPayloadPvnaGap(payload: SuggestedMatchPayload, state: SessionState) {
+  return getMatchPvnaGap(payload.team_a, payload.team_b, state)
 }
 
 export function getPreviewBoardPvnaRescueScore(
