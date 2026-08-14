@@ -97,17 +97,40 @@ NHƯNG mất loại trúng mà khoá cũ có: hai thứ tự KHÁC nhau dẫn t�
 (`rolling-horizon.test.ts` có test đúng ca đó, chuyển đỏ). Khoá theo TẬP thay vì chuỗi thì cần chứng
 minh `projectMatch` giao hoán — chưa chứng minh nên không làm. Đã revert.
 
-### ⚠️ QUYẾT ĐỊNH CHỜ HOST — 2 assertion đỏ còn lại trong `rolling-horizon-chain.test.ts`
+### Beam rolling-horizon — ĐÃ ĐO ĐƯỢC LẦN ĐẦU (2026-08-14)
 
-Không còn là chuyện độ trễ (đã sửa xong). Còn đúng một đánh đổi chất lượng:
-- 2× `totalTeamGap/totalMatches ≤ 0.15` → **0.163**. Beam đổi lựa chọn để giữ lane sau khả thi, trả
-  giá bằng chênh-đội trung bình. Các chỉ số khác trong cùng test (maxTeamGap ≤1, intra, lặp, số trận)
-  vẫn xanh.
+**Đã chốt cho lần ship này: `DEFAULT_MAX_FUTURE_SEARCHES = 6`** = đúng hành vi prod xưa nay, toàn bộ
+test rolling xanh trở lại (18/18). P2-5 vì thế là thay đổi THUẦN tất định, không kèm bật tính năng nào —
+canary có gì lạ thì quy được trách nhiệm.
 
-Ba lựa chọn, host chọn:
-1. **Giữ nguyên (đang là vậy)** — beam hoạt động thật, chênh-đội trung bình +0.013, độ trễ đã ổn.
-2. **Hạ `DEFAULT_MAX_FUTURE_SEARCHES`** (vd 6) — bám sát hành vi cũ, nhưng beam lại gần như vô dụng.
-3. **Tắt hẳn rolling beam** — nếu đằng nào nó cũng chưa từng chạy thật thì đây là xoá code chết (P3).
+Đo A/B được là nhờ chính P2-5: trước đó engine chạy 2 lần ra 2 kết quả nên so beam bật/tắt là vô nghĩa.
+Rig: `ROLLING=1 BEAM=<n> npx tsx scratch/board-scorecard.ts 20` (20 kèo, 1008 trận, đường rolling).
+
+| trần | board_hash | cost | vượt-tol | intra | blowout | panel | play-spread | worst-rest | p50 | p90 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 (nằm im) | `947878949cd3` | 2.7054 | 9.42% | 21.13% | 1.49% | 6.45% | 1.40 | 1.65 | **46** | 234 |
+| **6 (đang ship)** | `947878949cd3` | 2.7054 | 9.42% | 21.13% | 1.49% | 6.45% | 1.40 | 1.65 | **139** | 389 |
+| 12 (chạy thật) | `86723000f4ce` | **2.6657** | 10.32% | 21.83% | 1.79% | 7.54% | **1.35** | **1.55** | **239** | 594 |
+
+**Ba điều bảng này nói:**
+1. **Ở trần 6, beam so sánh ứng viên rồi chọn ra ĐÚNG board như khi nó nằm im** (cùng hash, 1008/1008
+   trận) — mà tốn thêm ~93ms/sân. Đây là chi phí prod ĐANG trả hôm nay, không phải cái P2-5 tạo ra.
+2. **Ở trần 12 nó đổi board thật, và đánh đổi rõ:** tốt hơn ở cost tổng và ở CÔNG BẰNG (play-spread
+   1.40→1.35, worst-rest 1.65→1.55 — đúng thứ một bước nhìn xa nên mua được), xấu hơn ở chất lượng bàn
+   (vượt-tol +0.9pp, intra +0.7pp, blowout +0.3pp) và host thấy nhiều panel đánh đổi hơn (+1.1pp).
+3. **Giá của nó là 5× thời gian trung vị** (46→239ms mỗi lần lấp sân).
+4. Trần 1 làm đỏ unit test `prefers a slightly weaker immediate match...` — tức trần 1 = tắt beam, không
+   phải "beam gọn nhẹ".
+
+**Tôi đoán SAI một nửa:** tôi cược beam là đồ bỏ. Nó có mua được thứ thật (công bằng), chỉ là mua đắt và
+đồng thời làm xấu chất lượng bàn. Không phải "chắc chắn xoá", mà là "đánh đổi thật, cần host cân".
+
+**Ba lựa chọn cho lần sau, host chọn:**
+1. **Giữ trần 6** — không đổi gì so với hôm nay. Nhưng đang trả 93ms/sân cho một phép so sánh chưa từng
+   đổi board nào trên 1008 trận.
+2. **Hạ về 1 / xoá beam** — tiết kiệm ~93ms/sân, board y hệt. Phải xử lý unit test kia (nó đang canh
+   đúng tính năng này).
+3. **Nâng lên 12** — chấp nhận 5× độ trễ để đổi lấy công bằng tốt hơn, chất lượng bàn xấu hơn một chút.
 
 **Đã thử và LOẠI:** chỉnh tỉ giá (100→50→10) KHÔNG sửa được độ trễ — ở cả ba mức ca chậm vẫn ~2.2–2.6s
 → chi phí nằm ở phần việc ngân sách không tính, không phải ở tìm kiếm (đúng, và tối ưu ở trên mới là
@@ -121,8 +144,8 @@ thứ sửa được nó). Và **tính 1 đơn vị mỗi SÂN thay vì mỗi pa
 - `full-session`: 2 đỏ CÓ SẴN (giá trị không đổi, nay tất định)
 - `production-chain-timing`: 4 đỏ CÓ SẴN — `await import()` cần `--experimental-vm-modules`; **đã A/B
   trên mã cũ: đỏ y hệt 4/4**, không dính gì tới P2-5
-- `rolling-horizon-chain`: 2 đỏ MỚI (mục quyết định ở trên; assertion độ trễ đã hết đỏ sau tăng tốc)
-  · `rolling-horizon-matrix` xanh
+- `rolling-horizon-chain` + `rolling-horizon-matrix` + `unit/rolling-horizon`: **18/18 XANH** (sau khi
+  đặt trần beam về 6 = hành vi prod)
 - `tsc` 0 lỗi · eslint 0 error trên các file đã sửa
 
 ### Trạng thái bàn giao P2-2 (2026-08-14)

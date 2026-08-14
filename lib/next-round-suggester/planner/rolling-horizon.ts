@@ -86,7 +86,20 @@ type ProjectMatch = (
 ) => SessionState
 
 const NO_FEASIBLE_FUTURE_PENALTY = 5_000
-const DEFAULT_MAX_FUTURE_SEARCHES = 12
+// How many lookahead searches the beam may run per court.
+//
+// This used to be a 300ms clock budget, and one lookahead cost more than that, so the beam always
+// stopped after examining exactly ONE candidate — it never compared anything. Removing the clock woke it
+// up, which is a behaviour change nobody has measured. 6 keeps it where production has actually been
+// while the countable-budget work ships on its own; raise it once an A/B says the lookahead earns its
+// latency (scratch/board-scorecard.ts ROLLING=1 BEAM=<n>).
+const DEFAULT_MAX_FUTURE_SEARCHES = 6
+let maxFutureSearchesOverride: number | null = null
+
+// Test/measurement hook only — never read an env var from inside the engine.
+export function __setRollingBeamMaxFutureSearchesForTests(value: number | null) {
+  maxFutureSearchesOverride = value
+}
 const DEFAULT_HORIZON_EVENTS = 2
 const FLEXIBILITY_CONSUMPTION_WEIGHT = 1
 
@@ -562,7 +575,9 @@ export function chooseRollingHorizonAlternative(options: {
   )
   const futureCache = new Map<string, SuggestionAlternative | null>()
   let evaluatedCandidateCount = 0
-  const maxFutureSearches = Math.max(1, Math.floor(options.maxFutureSearches ?? DEFAULT_MAX_FUTURE_SEARCHES))
+  const maxFutureSearches = Math.max(1, Math.floor(
+    options.maxFutureSearches ?? maxFutureSearchesOverride ?? DEFAULT_MAX_FUTURE_SEARCHES,
+  ))
   let futureSearchCalls = 0
   let futureCacheHits = 0
   let budgetExhausted = false

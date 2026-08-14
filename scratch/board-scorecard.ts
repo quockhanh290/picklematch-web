@@ -19,9 +19,15 @@
  * bench_unbounded = tập WITH_BENCH nhưng trần vòng lặp 10000 — cận trên rẻ tiền của "chọn lại cả 4
  * người mỗi sân" (spec §5). Cờ bật qua __setBoardOptimizerOverrideForTests, KHÔNG đụng env thật.
  */
+// REALCLOCK=1 leaves the clock alone. Freezing it is what USED to make this harness reproducible; the
+// point of P2-5 is that it no longer has to. Run twice under REALCLOCK=1 and diff the board_hash.
+// Captured before any freeze so the latency probe still measures real time.
+const REAL_NOW = (typeof performance !== 'undefined' ? performance.now.bind(performance) : Date.now) as () => number
 const FROZEN = 1_000_000
-Date.now = () => FROZEN
-if (typeof performance !== 'undefined') performance.now = () => FROZEN
+if (process.env.REALCLOCK !== '1') {
+  Date.now = () => FROZEN
+  if (typeof performance !== 'undefined') performance.now = () => FROZEN
+}
 
 import fs from 'node:fs'
 import crypto from 'node:crypto'
@@ -36,6 +42,7 @@ import {
 import { computeQualityCost } from '../lib/next-round-suggester/quality-cost'
 import { AVOID_PARTNER_PENALTY, getAvoidPenalty } from '../lib/next-round-suggester/avoid'
 import { __setBoardOptimizerOverrideForTests } from '../lib/next-round-suggester/board-optimizer-flag'
+import { __setRollingBeamMaxFutureSearchesForTests } from '../lib/next-round-suggester/planner/rolling-horizon'
 import {
   MOVE_SET_NO_ROTATION,
   MOVE_SET_SPLIT_ONLY,
@@ -68,6 +75,14 @@ const ROUNDS = 8
 const OPT_ON = process.env.OPT === '1'
 const REFILL_BATCH = Math.max(1, Number(process.env.REFILL_BATCH || 1))
 const OPT_MOVES = process.env.OPT_MOVES || 'bench'
+// Beam A/B (2026-08-14). ROLLING=1 bật đường rolling-horizon — đường DUY NHẤT beam sống. BEAM=<n> đặt
+// trần số lượt nhìn trước: 1 = beam không so sánh gì (đúng hành vi prod xưa nay), 12+ = beam chạy thật.
+const ROLLING_ON = process.env.ROLLING === '1'
+const BEAM_MAX_FUTURE_SEARCHES = process.env.BEAM ? Number(process.env.BEAM) : null
+if (BEAM_MAX_FUTURE_SEARCHES !== null) {
+  if (!Number.isFinite(BEAM_MAX_FUTURE_SEARCHES) || BEAM_MAX_FUTURE_SEARCHES < 1) throw new Error(`BEAM không hợp lệ: ${process.env.BEAM}`)
+  __setRollingBeamMaxFutureSearchesForTests(BEAM_MAX_FUTURE_SEARCHES)
+}
 const OPT_OBJ = (process.env.OPT_OBJ || 'lex') as BoardOptimizerTuning['objective']
 if (OPT_OBJ !== 'lex' && OPT_OBJ !== 'cost') throw new Error(`OPT_OBJ không hợp lệ: ${OPT_OBJ}`)
 if (!['split', 'bench', 'bench_unbounded', 'bench_norot'].includes(OPT_MOVES)) throw new Error(`OPT_MOVES không hợp lệ: ${OPT_MOVES}`)
@@ -135,7 +150,16 @@ const tallyRepair = (detail: string) => {
   repairTally.set(key, (repairTally.get(key) ?? 0) + 1)
 }
 
-const suggest = (s: SessionState, live: SessionLiveMatchRow[], count: number, courts: number, ci?: number[]) =>
+// Per-call wall time for the live entry point. The averages over a whole corpus hide the tail, and the
+// tail is what an edge timeout actually sees.
+export const suggestLatencies: number[] = []
+const suggest = (s: SessionState, live: SessionLiveMatchRow[], count: number, courts: number, ci?: number[]) => {
+  const startedAt = REAL_NOW()
+  const out = suggestInner(s, live, count, courts, ci)
+  suggestLatencies.push(REAL_NOW() - startedAt)
+  return out
+}
+const suggestInner = (s: SessionState, live: SessionLiveMatchRow[], count: number, courts: number, ci?: number[]) =>
   buildSuggestedMatchPayloads({
     count, sessionId: s.session_id, courtCount: courts, state: s,
     rows: { liveMatchRows: live, liveStateVersion: live.length },
@@ -146,7 +170,7 @@ const suggest = (s: SessionState, live: SessionLiveMatchRow[], count: number, co
     // blowoutRescue gates the whole degraded-detection block, and degraded_reason is what the blowout
     // repair keys on. Leaving it off meant every measurement of that pass was taken with the feature
     // switched off — the pass bailed before reaching a single one of its guards.
-    options: { courtIdxs: ci, ignoreCapacityLock: true, rollingHorizon: false, rollingPlanTarget: null,
+    options: { courtIdxs: ci, ignoreCapacityLock: true, rollingHorizon: ROLLING_ON, rollingPlanTarget: null,
       blowoutRescue: true,
       onInstrumentEvent: (e: { event?: string; detail?: string }) => {
         if (e?.event === 'repair' && typeof e.detail === 'string') tallyRepair(e.detail)
@@ -297,8 +321,21 @@ for (const sid of sids) {
 
 const pct = (n: number) => totals.seated ? (100 * n / totals.seated) : 0
 const boardHash = crypto.createHash('sha1').update(totals.lineups.join(',')).digest('hex').slice(0, 12)
+const sortedLatencies = [...suggestLatencies].sort((a, b) => a - b)
+const pctl = (q: number) => sortedLatencies.length
+  ? +sortedLatencies[Math.min(sortedLatencies.length - 1, Math.floor(q * sortedLatencies.length))].toFixed(1)
+  : 0
 const report = {
   board_hash: boardHash,
+  rolling: ROLLING_ON ? { beam_max_future_searches: BEAM_MAX_FUTURE_SEARCHES ?? 'default' } : null,
+  latency_ms: {
+    calls: sortedLatencies.length,
+    p50: pctl(0.5),
+    p90: pctl(0.9),
+    p99: pctl(0.99),
+    max: sortedLatencies.length ? +sortedLatencies[sortedLatencies.length - 1].toFixed(1) : 0,
+    total: +sortedLatencies.reduce((a, b) => a + b, 0).toFixed(0),
+  },
   refill_batch: REFILL_BATCH,
   optimizer: OPT_ON ? { moves: OPT_MOVES, objective: OPT_OBJ } : null,
   // Số lần optimizer THỰC SỰ vào (nhãn 'optimizer:entered') và số board nó đổi. Trước khi tin bất kỳ
@@ -343,7 +380,8 @@ console.log(`PANEL forced ${report.soft.panel_forced_pct}% | choices ${report.so
 console.log(`FAIR play-spread ${report.fair.avg_play_spread} | worst-rest ${report.fair.avg_worst_rest}   <-- lower is fairer`)
 console.log(`OWED người rảnh mang tier MUST_PLAY (consecutive_rest>=1): ${report.fair.owed_share_of_idle_pct}%`)
 console.log(`FATIGUE tổng max consecutive_play mỗi phiên ${report.fair.summed_session_max_consecutive_play} | ghế cho người đã chơi >=2 liên tiếp ${report.fair.seated_at_or_past_rest_pct}%`)
-console.log(`board_hash ${boardHash}`)
+console.log(`board_hash ${boardHash}${ROLLING_ON ? `  [rolling ON, beam=${BEAM_MAX_FUTURE_SEARCHES ?? 'default'}]` : ''}`)
+console.log(`LATENCY per suggest call (ms): p50 ${report.latency_ms.p50} | p90 ${report.latency_ms.p90} | p99 ${report.latency_ms.p99} | max ${report.latency_ms.max} over ${report.latency_ms.calls} calls`)
 if (OPT_ON) {
   console.log(`OPTIMIZER moves=${OPT_MOVES} obj=${OPT_OBJ} | invoked ${report.optimizer_invoked} | changed ${report.optimizer_changed}`)
   const rejects = Object.entries(report.optimizer_rejects)
