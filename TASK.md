@@ -1,3 +1,56 @@
+## VIỆC TIẾP THEO — P2-5: bỏ wall-clock khỏi hot path (ưu tiên 1)
+
+Prompt mở phiên (dán nguyên):
+
+```
+Làm P2-5: bỏ ngân sách-theo-đồng-hồ khỏi hot path của engine, thay bằng ngân sách đếm được.
+
+Đọc TASK.md mục "RÀ SOÁT P2" và "P2-2 — XONG" trước. ĐỪNG đo lại những gì đã có số.
+
+Vì sao đáng làm, bằng chứng đã có:
+- 19 chỗ đọc Date.now()/performance.now() trong lib/next-round-suggester/ (ngoài board-optimizer).
+  suggest.ts:601-602 cắt tìm kiếm theo deadline; pair.ts:772 break khi hết maxRuntimeMs.
+- Đây là NỬA SAU của bug flicker: cùng bench, xin lại cùng sân ra đội hình khác
+  (memory project-suggest-nondeterministic-search-budget).
+- Nó làm nhiễu MỌI phép đo A/B: replay cùng một kèo hai lần cho hai kết quả khác nhau ở
+  nhánh cờ-tắt (intra 2.42->2.84 lần một, 3.4->2.8 lần hai).
+- Hai test đỏ có sẵn (simulation/full-session.test.ts: chuỗi nghỉ, gender preference) rất
+  có thể là triệu chứng của chính nó — engine bị cắt tìm kiếm sớm khi máy chậm. Đã A/B với
+  commit 2b756d2: đỏ y hệt trước P2-2, nên KHÔNG phải hồi quy.
+
+Khuôn đã có sẵn để bắt chước: board-optimizer dùng trần SỐ VÒNG LẶP, không đọc đồng hồ, và
+được đóng đinh bằng test tất định.
+
+Thước đo: scratch/board-scorecard.ts (hash baseline f1b6d8ac0b0c với cờ optimizer TẮT).
+Thay ngân sách xong thì hash SẼ đổi — đó là dự kiến; cái phải chứng minh là chất lượng không
+tệ đi và hai test kia hết đỏ.
+
+KHÔNG deploy. Prod đang ALGO 77.
+```
+
+### Trạng thái bàn giao (2026-08-14)
+
+- Nhánh `feat-p2-2-optimizer`, worktree `.claude/worktrees/p2-2-optimizer`. **CHƯA MERGE.**
+  ⚠️ Mọi ghi chú của phiên 13-14/08 (spec, plan, TASK.md này) nằm TRÊN NHÁNH. Mở phiên mới ở `main`
+  sẽ KHÔNG thấy. Hoặc merge (an toàn: cờ tắt cho ra đúng hash baseline), hoặc mở phiên trong worktree.
+- Cờ `SESSION_BOARD_OPTIMIZER` **TẮT**, allowlist rỗng. Chưa canary, chưa deploy.
+- Gate trong worktree: `npx jest --testMatch "**/tests/**/*.test.ts" --testMatch "**/tests/**/*.test.tsx" --forceExit`
+  (`npm test` khớp 0 file vì worktree nằm dưới `.claude/`).
+- Cần cho worktree mới: junction `node_modules` + `scratch/data`, copy `expo-env.d.ts` + `.expo/types`
+  (đều gitignore nên không theo nhánh).
+- ⚠️ **Supabase trả HTTP 522 lúc cuối phiên** (Cloudflare không tới được origin, query bảng timeout 20s).
+  Không phải do thay đổi nào của chúng ta. Nếu còn 522 thì app của host cũng hỏng — kiểm dashboard trước
+  khi kết luận bug.
+
+### Sau P2-5
+
+- **P2-1**: chọn 1 model scoring (8 điểm rẽ nhánh còn sống) — chờ host chạy canary.
+- **P3 xoá code chết**: nhóm rủi ro ~0 làm được ngay (BUG #40, #33, #34, #39, `fixedTeamPairing.ts`).
+  **Thêm `repairPayloadBatchRepeatExposure`/`repeatPool`** — đã đo được là đổi 0 board ở đúng hình dạng
+  nó sinh ra để xử (REFILL_BATCH=2), không còn là "chưa đo được".
+  ⚠️ Sáu post-pass cũ CHƯA xoá được: nhánh cờ-tắt còn dùng. Chỉ xoá sau khi optimizer bật mặc định.
+- **P4 UI/UX**: gộp `playCostText` + `capacityInfoLines` thành một hàm thuần (lỗi hiển thị host thấy).
+
 ## GOM SÂN (REFILL_BATCH) — ĐÃ ĐO, HOST CHỐT KHÔNG LÀM (2026-08-14)
 
 Sửa `scratch/board-scorecard.ts` để giữ lại k sân xong trước khi lấp (`REFILL_BATCH=k`) — đây là thứ
