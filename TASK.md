@@ -328,13 +328,20 @@ KHÔNG phải do đồng hồ** (đã bác bỏ bằng phép thử đóng băng 
   - **4 script mồ côi** (`test-session-suggest`, `sim-per-court-beam`, `sim-beam-vs-greedy`, `eval-weights`) — không được `package.json` tham chiếu, type đã trôi. `git mv` sang `scratch/` (rename, hoàn tác 1 lệnh). `npm run diagnose` dùng `scripts/diagnose-session.ts`, khác hẳn, vẫn sạch.
 - [~] **Backfill trong migration `20260809000001`: KHÔNG sửa, cố ý.** Đã kết luận không cần chạy (counter tự lành ở trận kế tiếp — xem `scratch/sim-session-p07.sql`). Nhưng migration đã APPLY và đã commit, mà quy ước dự án là **file migration bất biến sau khi merge**. Sửa kể cả comment cũng tạo tiền lệ xấu. Khối comment ở lại; ghi ở đây là ĐỦ để người sau biết không phải chạy nó.
 - [x] **4 test `projected live match state`: ĐÃ XANH, không phải nợ.** Mục này từng ghi "lỗi thời từ ALGO 53, cần viết lại" — **SAI**. Chúng đỏ vì **bug thật** (fast-path gọi `makeAlternative` với `allowRecentGroupRematch` cố định false → sân trống khi 4 người rảnh duy nhất vừa đánh với nhau), và commit `95b2da5` (ALGO 58) đã sửa bằng retry relaxed. Chạy lại ở HEAD: **35/35 xanh**. Bài học: đừng mặc định "test cũ thì bỏ" — hai lần trong đợt này test cũ hoá ra đang chỉ đúng bug.
-- [ ] **`repeatPool` — DỪNG LẠI, KHÔNG xoá (14/08).** TASK.md từng ghi nó "đã đo được là đổi 0 board" nên
-  sẵn sàng xoá. Đọc kỹ lại thì mục đó trỏ nhầm hàm: post-pass `repeatPool` gọi
-  `repairPayloadBatchSevereRepeatFromPool` — **đây là bản FIX đã ship (ALGO47) cho một bug host báo thật**
-  ("sân 2 vòng 5 không cứu được lặp 3"), và chính memory của nó ghi "**sim không cover live path**". Xoá nó
-  dựa trên một corpus vốn không dựng lại được hình dạng đó là đúng cái bẫy mục dưới đây cảnh báo. Muốn xoá
-  thì phải xác nhận trên `debug_dumps` prod trước.
-- [ ] **3 post-pass không bắn phát nào** (participation / blowoutPool / invariantGuard, đo ở §7.11). ⚠️ CHƯA ĐƯỢC XOÁ dựa trên sim — blowoutPool cần bench, invariantGuard cần plan đang tắt. Phải xác nhận trên `debug_dumps` prod trước.
+- [x] **~~`repeatPool` là ứng viên xoá~~ — SAI, ĐÃ ĐO LẠI 14/08. KHÔNG được xoá.** Chạy lại chính harness
+  đó ở `REFILL_BATCH=2`: **`repeatPool:entered` 482 lần, `repeatPool:changed` 34 lần** (20 kèo). Nó bắn và
+  nó ĐỔI BOARD. Con số "chg=0" trong ghi chú cũ là sai. Thêm một lý do độc lập: post-pass này gọi
+  `repairPayloadBatchSevereRepeatFromPool` = bản FIX đã ship (ALGO47) cho bug host báo thật ("sân 2 vòng 5
+  không cứu được lặp 3").
+- [x] **~~3 post-pass không bắn phát nào~~ — SAI với 2/3.** Cùng lượt đo: **`participation:changed` 150**,
+  **`blowoutPool:changed` 7**. Cả hai đều đang làm việc. Chỉ `invariantGuardRevert` là không thấy bắn, và
+  nó cần rolling plan target vốn đang TẮT nên vẫn chưa kết luận được.
+- ⚠️ **Vì sao hai ghi chú trên sai:** cả hai đều bắt nguồn từ một lượt đo mà pass KHÔNG VÀO (`entered=0`)
+  rồi đọc thành "vào mà không đổi gì". Trước khi tin `changed=0`, phải nhìn `entered` trước — đúng luật đã
+  ghi ở mục BẪY ĐO LƯỜNG.
+- **Dữ liệu prod trên đĩa KHÔNG dùng để xác nhận post-pass được:** `tmp/session-*/engine_instrumentation.jsonl`
+  chỉ có `stage_resolved` / `repair` / `rescue` và có từ 2026-07-12, tức là TRƯỚC khi `instrumentPostPass`
+  tồn tại. Quét 156 file trong `tmp/` cho 0 hit với MỌI tên post-pass — kể cả những pass chắc chắn có bắn.
 - [ ] **`ab-comparison.test.ts` chiếm ~15+ phút** mỗi lần chạy full suite. Tách khỏi vòng kiểm nhanh; chỉ chạy khi thay đổi THỰC SỰ đụng lineup.
 - [ ] **Vùng gate đúng cho thay đổi đường live** = `unit/property/scenario/fairness` + `host-live` + `production-chain-timing` + `production-live-chain`. Phần simulation còn lại gọi thẳng `suggestNextRound`, KHÔNG đi qua `buildSuggestedMatchPayloads` → chạy 60 phút mà không phủ được gì.
 
