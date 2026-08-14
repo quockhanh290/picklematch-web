@@ -15,7 +15,7 @@ kiểm bằng code trong phiên 14/08 — nhãn trong file audit có chỗ sai (
 | P2-6 | gộp đường ghi hint | XONG |
 | P2-7 | gộp rest bookkeeping | XONG SẴN (báo cáo gốc sai, chưa từng hỏng) |
 | **P3** | xoá code chết | **CHƯA** — nhóm rủi ro ~0 làm được ngay: BUG #40, #33, #34, #39, `lib/scheduler/fixedTeamPairing.ts`. **MỚI: `repeatPool`/`repairPayloadBatchRepeatExposure` đã đo được là đổi 0 board ở đúng hình dạng nó sinh ra để xử** → hết "chưa đo được". ⚠️ Sáu post-pass cũ CHƯA xoá được: nhánh cờ-tắt còn dùng, chỉ xoá sau khi optimizer bật mặc định |
-| **P4** | UI/UX (không chặn engine) | **CHƯA** — đáng nhất: gộp `playCostText` + `capacityInfoLines` thành một hàm thuần (lỗi hiển thị host thấy: "không đánh đổi gì" mâu thuẫn với "hai đội chênh nhau hơn bình thường") |
+| **P4** | UI/UX (không chặn engine) | **mục đáng nhất XONG 14/08** — `match-compromises.ts` (hàm thuần) suy ra một danh sách đánh đổi duy nhất; thẻ "Chơi luôn" và các dòng dưới cùng render từ nó nên không thể mâu thuẫn. Kèm 2 lỗ hổng: cost line trước đây KHÔNG có từ nào cho intra-team, và hai bên dùng hai nguồn pvna khác nhau. **⚠️ client-only → phải rebuild app mới thấy** |
 
 **Ngoài roadmap, đã xong trong hai phiên 13-14/08:** bug flicker (3 fix client, xác nhận trên kèo thật,
 host QA xong) và bug "Gợi ý vừa cũ sau khi có trận kết thúc".
