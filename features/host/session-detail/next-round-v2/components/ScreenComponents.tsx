@@ -84,11 +84,6 @@ import {
 import type { SuggestedLiveMatchRow } from '../preview'
 import { buildForcedDecision, getRepeatDetailLines, type ForcedSelection } from '../forced-decision'
 
-const LIVE_TRADEOFF_ALTERNATIVE_LIMIT = 4
-const BALANCED_PVNA_COST_WEIGHT = 10
-const BALANCED_REPEAT_COST_WEIGHT = 3
-const BALANCED_AFFECTED_PLAYER_COST_WEIGHT = 1
-
 function fairnessLabel(score: SessionFairnessScore) {
   if (score.grade === 'excellent') return 'Rất đều'
   if (score.grade === 'good') return 'Đều'
@@ -110,20 +105,6 @@ function feasibilityLabel(feasibility: string) {
   return feasibility
 }
 
-function warningTitle(type: string) {
-  if (type === 'match_count_imbalance') return 'Lệch số trận'
-  if (type === 'projected_match_count_imbalance') return 'Sắp lệch số trận'
-  if (type === 'underplayed') return 'Có người chơi ít hơn'
-  if (type === 'partner_repeat') return 'Lặp partner (đồng đội)'
-  if (type === 'opponent_repeat') return 'Lặp đối thủ'
-  if (type === 'opponent_repeat_burden') return 'Một người gặp lại nhiều đối thủ'
-  if (type === 'projected_opponent_repeat_burden') return 'Sắp lặp đối thủ nhiều'
-  if (type === 'missing_pvna') return 'Thiếu PVNA'
-  if (type === 'rest_violation') return 'Nghỉ liên tiếp'
-  if (type === 'gender_pref_unsatisfied') return 'Sở thích giới tính chưa tốt'
-  if (type === 'gender_pref_impossible') return 'Sở thích giới tính khó đáp ứng'
-  return type.replace(/_/g, ' ')
-}
 
 
 function warningTone(theme: ReturnType<typeof useAppTheme>, severity: FairnessWarning['severity'] | 'ok') {
@@ -224,42 +205,8 @@ function RepeatCapBoardNotice() {
   )
 }
 
-function nowMs() {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now()
-}
-
-function waitForUiFrame() {
-  return new Promise<void>(resolve => {
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => resolve())
-      return
-    }
-    setTimeout(resolve, 0)
-  })
-}
-
-function createClientRequestId(action: 'start' | 'end' | 'match') {
-  const randomPart = Math.random().toString(36).slice(2, 10)
-  return `${action}_${Date.now().toString(36)}_${randomPart}`
-}
-
-type ActionResult = {
-  reload?: boolean
-}
-
-type BuildSuggestedMatchOptions = {
-  courtIdx?: number
-  stateOverride?: SessionState
-  liveMatchRowsOverride?: SessionLiveMatchRow[]
-}
-
 type LiveDisplayMatchRow = SessionLiveMatchRow & {
   client_preview_id?: string
-}
-
-type SuggestedPreviewBatch = {
-  key: string
-  matches: SuggestedLiveMatchRow[]
 }
 
 
@@ -1588,19 +1535,6 @@ export const CourtLaneLiveMatchBoard = React.memo(function CourtLaneLiveMatchBoa
   )
 })
 
-function groupMatchesByLogicalRound<TMatch extends SessionLiveMatchRow>(
-  matches: TMatch[],
-  logicalRoundByMatchId: Map<string, number>,
-) {
-  const groups = new Map<number, TMatch[]>()
-  for (const match of [...matches].sort((left, right) => left.sequence_no - right.sequence_no)) {
-    const key = logicalRoundByMatchId.get(match.id) ?? ((match.round_no ?? 0) + 1)
-    groups.set(key, [...(groups.get(key) ?? []), match])
-  }
-  return [...groups.entries()]
-    .sort(([left], [right]) => left - right)
-    .map(([roundNo, groupMatches]) => ({ roundNo, matches: groupMatches }))
-}
 
 export function buildLogicalRoundDisplayMap(matches: SessionLiveMatchRow[], roundSize: number) {
   const reconstructedRounds = reconstructLiveRounds(matches, roundSize)
@@ -1838,11 +1772,6 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   const qualityGap = lockedBeamQuality != null && availablePoolQuality != null
     ? availablePoolQuality - lockedBeamQuality
     : null
-  const showWaitUI = hasBlockingLivePlayers && (
-    availablePoolQuality === undefined ||
-    qualityGap === null ||
-    qualityGap >= 0.2
-  )
   // Degraded-rescue (Phase 1 blowout / Phase 2 repeat): the lineup is seated & startable ("Chơi
   // luôn"); if waiting for a specific live court would give a better match, surface it as an
   // optional, non-blocking hint.
@@ -2583,7 +2512,6 @@ export function SuggestedMatchTile({
   onPlayerPress: (playerId: string, match?: SuggestedLiveMatchRow) => void
   lockedPlayerCourtMap?: Map<string, number>
 }) {
-  const theme = useAppTheme()
   const effectivePvnaTolerance = pvnaTolerance ?? state.config.pvna_tolerance
   const matchVerdict = useMemo(
     () => computeMatchVerdict(match.team_a, match.team_b, state, effectivePvnaTolerance),
