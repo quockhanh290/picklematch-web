@@ -14,7 +14,7 @@ kiểm bằng code trong phiên 14/08 — nhãn trong file audit có chỗ sai (
 | P2-5 | **bỏ wall-clock khỏi hot path** | **XONG + ĐÃ DEPLOY 14/08** — ngân sách đếm được (`search-budget.ts`), engine tất định. Edge v269 / ALGO 78. Chờ kèo thật để đọc `timing_ms` Deno |
 | P2-6 | gộp đường ghi hint | XONG |
 | P2-7 | gộp rest bookkeeping | XONG SẴN (báo cáo gốc sai, chưa từng hỏng) |
-| **P3** | xoá code chết | **CHƯA** — nhóm rủi ro ~0 làm được ngay: BUG #40, #33, #34, #39, `lib/scheduler/fixedTeamPairing.ts`. **MỚI: `repeatPool`/`repairPayloadBatchRepeatExposure` đã đo được là đổi 0 board ở đúng hình dạng nó sinh ra để xử** → hết "chưa đo được". ⚠️ Sáu post-pass cũ CHƯA xoá được: nhánh cờ-tắt còn dùng, chỉ xoá sau khi optimizer bật mặc định |
+| **P3** | xoá code chết | **PHẦN LỚN ĐÃ XONG TỪ TRƯỚC** — kiểm 14/08: BUG #40, #33, #34, #39, `fixedTeamPairing.ts` đều **0 hit, đã bị xoá ở phiên nào đó mà danh sách chưa cập nhật**. Xoá nốt 11 khai báo chết trong `ScreenComponents.tsx` (`7765b17`). ⚠️ `repeatPool` **KHÔNG xoá** — xem ghi chú dưới. ⚠️ Sáu post-pass cũ CHƯA xoá được: nhánh cờ-tắt còn dùng |
 | **P4** | UI/UX (không chặn engine) | **mục đáng nhất XONG 14/08** — `match-compromises.ts` (hàm thuần) suy ra một danh sách đánh đổi duy nhất; thẻ "Chơi luôn" và các dòng dưới cùng render từ nó nên không thể mâu thuẫn. Kèm 2 lỗ hổng: cost line trước đây KHÔNG có từ nào cho intra-team, và hai bên dùng hai nguồn pvna khác nhau. **⚠️ client-only → phải rebuild app mới thấy** |
 
 **Ngoài roadmap, đã xong trong hai phiên 13-14/08:** bug flicker (3 fix client, xác nhận trên kèo thật,
@@ -328,6 +328,12 @@ KHÔNG phải do đồng hồ** (đã bác bỏ bằng phép thử đóng băng 
   - **4 script mồ côi** (`test-session-suggest`, `sim-per-court-beam`, `sim-beam-vs-greedy`, `eval-weights`) — không được `package.json` tham chiếu, type đã trôi. `git mv` sang `scratch/` (rename, hoàn tác 1 lệnh). `npm run diagnose` dùng `scripts/diagnose-session.ts`, khác hẳn, vẫn sạch.
 - [~] **Backfill trong migration `20260809000001`: KHÔNG sửa, cố ý.** Đã kết luận không cần chạy (counter tự lành ở trận kế tiếp — xem `scratch/sim-session-p07.sql`). Nhưng migration đã APPLY và đã commit, mà quy ước dự án là **file migration bất biến sau khi merge**. Sửa kể cả comment cũng tạo tiền lệ xấu. Khối comment ở lại; ghi ở đây là ĐỦ để người sau biết không phải chạy nó.
 - [x] **4 test `projected live match state`: ĐÃ XANH, không phải nợ.** Mục này từng ghi "lỗi thời từ ALGO 53, cần viết lại" — **SAI**. Chúng đỏ vì **bug thật** (fast-path gọi `makeAlternative` với `allowRecentGroupRematch` cố định false → sân trống khi 4 người rảnh duy nhất vừa đánh với nhau), và commit `95b2da5` (ALGO 58) đã sửa bằng retry relaxed. Chạy lại ở HEAD: **35/35 xanh**. Bài học: đừng mặc định "test cũ thì bỏ" — hai lần trong đợt này test cũ hoá ra đang chỉ đúng bug.
+- [ ] **`repeatPool` — DỪNG LẠI, KHÔNG xoá (14/08).** TASK.md từng ghi nó "đã đo được là đổi 0 board" nên
+  sẵn sàng xoá. Đọc kỹ lại thì mục đó trỏ nhầm hàm: post-pass `repeatPool` gọi
+  `repairPayloadBatchSevereRepeatFromPool` — **đây là bản FIX đã ship (ALGO47) cho một bug host báo thật**
+  ("sân 2 vòng 5 không cứu được lặp 3"), và chính memory của nó ghi "**sim không cover live path**". Xoá nó
+  dựa trên một corpus vốn không dựng lại được hình dạng đó là đúng cái bẫy mục dưới đây cảnh báo. Muốn xoá
+  thì phải xác nhận trên `debug_dumps` prod trước.
 - [ ] **3 post-pass không bắn phát nào** (participation / blowoutPool / invariantGuard, đo ở §7.11). ⚠️ CHƯA ĐƯỢC XOÁ dựa trên sim — blowoutPool cần bench, invariantGuard cần plan đang tắt. Phải xác nhận trên `debug_dumps` prod trước.
 - [ ] **`ab-comparison.test.ts` chiếm ~15+ phút** mỗi lần chạy full suite. Tách khỏi vòng kiểm nhanh; chỉ chạy khi thay đổi THỰC SỰ đụng lineup.
 - [ ] **Vùng gate đúng cho thay đổi đường live** = `unit/property/scenario/fairness` + `host-live` + `production-chain-timing` + `production-live-chain`. Phần simulation còn lại gọi thẳng `suggestNextRound`, KHÔNG đi qua `buildSuggestedMatchPayloads` → chạy 60 phút mà không phủ được gì.
