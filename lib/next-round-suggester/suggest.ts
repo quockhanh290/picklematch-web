@@ -762,6 +762,16 @@ export function suggestNextRound(
       if (matchCountA.range !== matchCountB.range) return matchCountA.range - matchCountB.range
     }
 
+    // A floor under match-count balance. `excess` is already zero while the spread stays inside the
+    // tolerated ±1 band, so this is a no-op on a level board — but once the spread is genuinely wide,
+    // balance stops losing to repeat avoidance. Without it, one repeated partner outranked ANY
+    // imbalance, however large: measured on 9 players / 2 courts / 9 rounds, the engine benched the
+    // player with the FEWEST matches in round 4 (excess 1.0) to avoid a single partner repeat, and the
+    // same player finished the session on 7 matches while two others had 9.
+    const balanceFloorA = getProjectedMatchCountExcess(a, state)
+    const balanceFloorB = getProjectedMatchCountExcess(b, state)
+    if (balanceFloorA.excess !== balanceFloorB.excess) return balanceFloorA.excess - balanceFloorB.excess
+
     // Recent repeat cost (deprioritized in closing — last-round repeats don't affect future)
     if (!isClosing) {
       const recentRepeatDiff = compareRecentRepeatCost(a, b, state)
