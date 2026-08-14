@@ -21,8 +21,8 @@ kiểm bằng code trong phiên 14/08 — nhãn trong file audit có chỗ sai (
 host QA xong) và bug "Gợi ý vừa cũ sau khi có trận kết thúc".
 
 **Còn treo, không thuộc defrag:**
-- 2 test đỏ `simulation/full-session.test.ts` (chuỗi nghỉ, gender preference) — đã A/B: đỏ có sẵn
-  trước P2-2. **ĐÃ BÁC BỎ giả thuyết "triệu chứng của P2-5"** — xem dưới.
+- `full-session.test.ts`: **chuỗi nghỉ ĐÃ XANH** (14/08, sàn cân bằng số trận — xem mục riêng).
+  **gender preference vẫn đỏ và là đánh đổi cố ý, không phải bug** — xem mục riêng.
 - Quyết định canary/deploy P2-2 — chờ host, không có hạn.
 - Supabase trả HTTP 522 lúc cuối phiên 14/08 — kiểm dashboard nếu app hỏng.
 
@@ -184,6 +184,53 @@ thứ sửa được nó). Và **tính 1 đơn vị mỗi SÂN thay vì mỗi pa
   nó sinh ra để xử (REFILL_BATCH=2), không còn là "chưa đo được".
   ⚠️ Sáu post-pass cũ CHƯA xoá được: nhánh cờ-tắt còn dùng. Chỉ xoá sau khi optimizer bật mặc định.
 - **P4 UI/UX**: gộp `playCostText` + `capacityInfoLines` thành một hàm thuần (lỗi hiển thị host thấy).
+
+## HAI TEST ĐỎ `full-session.test.ts` — ĐÃ ĐÀO TỚI GỐC (2026-08-14)
+
+Cả hai đều KHÔNG phải do wall-clock (đã bác bỏ bằng phép thử đóng băng đồng hồ). Đào riêng ra thì là
+**hai bệnh khác nhau ở hai tầng khác nhau**, không phải một.
+
+### (a) chuỗi nghỉ — LÀ BUG THẬT, ĐÃ SỬA (`581a7bf`)
+
+9 người / 2 sân / 9 vòng có lịch hoàn hảo (72 ghế = 9 người × 8 trận). Engine ra std 0.667.
+
+Vòng 4, engine dựng ra CẢ HAI phương án rồi tự chọn cái tệ hơn:
+
+| | recentRepeat.partner | matchCount excess |
+|---|---|---|
+| cho p09 nghỉ (**ít trận nhất**) | 0 | **1.000** |
+| cho p02 nghỉ (đang dẫn) | 1 | 0.000 |
+
+Bộ so sánh phân định ở **nấc 3** (`recentRepeat.partner`); cân bằng số trận là **nấc 6**, không tới lượt.
+Tức là **một cặp lặp partner đủ thắng mọi mức lệch, dù lớn tới đâu** — không có sàn. p09 kết thúc 7 trận
+trong khi p02/p08 có 9.
+
+**Fix:** so `matchCount.excess` TRƯỚC `recentRepeatCost`. `excess` vốn đã bằng 0 khi độ lệch còn trong
+biên ±1 trận, nên trên bàn cân bằng đây là no-op; chỉ cắn khi lệch thật sự rộng. std 0.667 → **0.471**.
+Corpus 60 kèo: mọi chỉ số xê dịch trong nhiễu, lặp-3 còn TỐT hơn (1.98% → 1.91%), play-spread và
+worst-rest không đổi. Hash `f1b6d8ac0b0c` → `fe413c452181`.
+
+### (b) gender preference — KHÔNG phải bug, là đánh đổi có chủ ý
+
+Fixture: 6 người F đều đòi partner là F. 3 cặp F-F mỗi vòng × 6 vòng = **18 lần ghép** trong khi chỉ có
+**C(6,2) = 15 cặp F-F khác nhau** → lặp là BẮT BUỘC về mặt cấu trúc, không phải do engine kém.
+
+⚠️ **Tôi đã kết luận SAI giữa chừng rồi tự đính chính — ghi lại để không ai đi lại:** phép đo đầu tiên
+cho ra `score=Infinity` cả hai bàn (cổng cứng repeat-overflow chặn), tôi so hai `Infinity` và tuyên bố
+"bàn gender tốt hơn → lỗi TÌM KIẾM". Sai. Hỏi thẳng `bestPartitioning` với đúng options từng pass thì:
+
+| | score | gender |
+|---|---|---|
+| pass C engine tự tìm | **507.86** | 4/6 |
+| bàn F-F dựng tay (hoàn hảo về gender) | 828.31 | 6/6 |
+
+Bàn 6/6 **đắt hơn 320 điểm** vì nó gánh 7 cặp lặp partner thay vì 1. Engine loại nó là ĐÚNG theo thang
+điểm hiện tại. Nới ngân sách 500× chỉ kéo 22/36 → 24/36 (0.611 → 0.667), vẫn dưới bar 0.7 → không phải
+đói ngân sách.
+
+**Đây là câu hỏi cho host, không phải lỗi để sửa:** tránh-lặp có nên thắng gender-pref không? Có tiền lệ
+đã chốt theo hướng đó ([[project-severe-repeat-over-gender]]: lặp-3 thắng gender-pref). Nếu giữ nguyên
+hướng đó thì **bar 0.7 của test là sai kỳ vọng**, nên sửa test chứ không sửa engine.
 
 ## GOM SÂN (REFILL_BATCH) — ĐÃ ĐO, HOST CHỐT KHÔNG LÀM (2026-08-14)
 
