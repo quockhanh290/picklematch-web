@@ -1,3 +1,33 @@
+# TÌNH TRẠNG DEFRAG (cập nhật 2026-08-14) — đọc mục này trước
+
+Nguồn gốc: `docs/ENGINE_FRAGMENTATION_AUDIT.md` (roadmap P0→P4). Bảng dưới là trạng thái THẬT, đã
+kiểm bằng code trong phiên 14/08 — nhãn trong file audit có chỗ sai (P2-5, P2-7).
+
+| | việc | trạng thái |
+|---|---|---|
+| **P0** | 5 việc chặn máu | XONG |
+| **P1** | hợp nhất định nghĩa (12 mục) | XONG 12/12 |
+| P2-1 | chọn 1 model scoring | **CHƯA** — 8 điểm rẽ nhánh `isQualityCostModelEnabled` còn sống; chờ host chạy canary |
+| P2-2 | gộp post-pass thành 1 optimizer | **XONG** 13-14/08, cờ TẮT, đã merge, chưa canary |
+| P2-3 | hợp nhất options edge | XONG (`a79f88b`) |
+| P2-4 | bộ máy "Chờ Sân X" | XONG |
+| P2-5 | **bỏ wall-clock khỏi hot path** | **CHƯA — VIỆC TIẾP THEO.** 19 chỗ đọc đồng hồ; audit ghi "gần như xong sẵn" là SAI |
+| P2-6 | gộp đường ghi hint | XONG |
+| P2-7 | gộp rest bookkeeping | XONG SẴN (báo cáo gốc sai, chưa từng hỏng) |
+| **P3** | xoá code chết | **CHƯA** — nhóm rủi ro ~0 làm được ngay: BUG #40, #33, #34, #39, `lib/scheduler/fixedTeamPairing.ts`. **MỚI: `repeatPool`/`repairPayloadBatchRepeatExposure` đã đo được là đổi 0 board ở đúng hình dạng nó sinh ra để xử** → hết "chưa đo được". ⚠️ Sáu post-pass cũ CHƯA xoá được: nhánh cờ-tắt còn dùng, chỉ xoá sau khi optimizer bật mặc định |
+| **P4** | UI/UX (không chặn engine) | **CHƯA** — đáng nhất: gộp `playCostText` + `capacityInfoLines` thành một hàm thuần (lỗi hiển thị host thấy: "không đánh đổi gì" mâu thuẫn với "hai đội chênh nhau hơn bình thường") |
+
+**Ngoài roadmap, đã xong trong hai phiên 13-14/08:** bug flicker (3 fix client, xác nhận trên kèo thật,
+host QA xong) và bug "Gợi ý vừa cũ sau khi có trận kết thúc".
+
+**Còn treo, không thuộc defrag:**
+- 2 test đỏ `simulation/full-session.test.ts` (chuỗi nghỉ, gender preference) — đã A/B: đỏ có sẵn
+  trước P2-2. Nhiều khả năng là triệu chứng của P2-5.
+- Quyết định canary/deploy P2-2 — chờ host, không có hạn.
+- Supabase trả HTTP 522 lúc cuối phiên 14/08 — kiểm dashboard nếu app hỏng.
+
+---
+
 ## VIỆC TIẾP THEO — P2-5: bỏ wall-clock khỏi hot path (ưu tiên 1)
 
 Prompt mở phiên (dán nguyên):
@@ -1052,7 +1082,7 @@ warmup chỉ trả `{ok, warmed}`, không trả `algorithm_version`. Muốn ch�
   là bản chép y hệt `getMatchPvnaGap` mà P1-9 bỏ lỡ
 - Purge Supabase PAT (đã thu hồi, 401) khỏi 26 commit + gitignore `.claude/settings.local.json`
 
-## Defrag: P1 12/12 xong · P2 4/7 xong · P2-2 CHƯA ĐỘNG (phần lớn nhất còn lại)
+## (Ảnh chụp cũ 2026-08-12, ĐÃ LỖI THỜI — xem "TÌNH TRẠNG DEFRAG" ở đầu file)
 
 ## FLICKER phần 2 — NGUYÊN NHÂN CHÍNH (2026-08-13), client-only, **cần rebuild app**
 
