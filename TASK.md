@@ -1,3 +1,61 @@
+## P2-2 — XONG (2026-08-13/14), CỜ TẮT, CHƯA MERGE, CHƯA CANARY
+
+Nhánh `feat-p2-2-optimizer` (worktree `.claude/worktrees/p2-2-optimizer`). Spec + kế hoạch:
+`docs/superpowers/{specs,plans}/2026-08-13-board-optimizer*`.
+
+**Một optimizer thay sáu post-pass**: `lib/next-round-suggester/board-optimizer/` (constraints H1–H8 /
+objective lex+cost / moves W1–W4 / steepest descent tất định), cắm sau cờ `SESSION_BOARD_OPTIMIZER`
+(khuôn allowlist của quality-cost, mặc định TẮT).
+
+**Cấu hình đã chốt bằng số: W1–W3 + O-lex.**
+
+| kiểm ở đâu | phạm vi | kết quả |
+|---|---|---|
+| test | 150 test, 120 board ngẫu nhiên × 3 cấu hình | xanh |
+| corpus tổng hợp | 60 phiên / 3088 board | vượt-tol 353→107 board · lặp-3 61→64 · cost 2.574→1.710 |
+| **replay kèo THẬT** | **53 kèo / 2158 board** | **vượt-tol 14→0 · lặp-3 86→6 · intra 175→62 · 0/53 kèo xấu đi** |
+
+**Bảo chứng lùi được:** cờ TẮT cho ra đúng `board_hash f1b6d8ac0b0c` = byte-identical với đường cũ.
+Merge với cờ tắt KHÔNG đổi hành vi prod.
+
+**Bốn kết luận mua bằng phép đo, đừng làm lại:**
+- Phương án "chọn lại toàn bộ 4 người/sân" **chết**: bỏ trần vòng lặp cho ra hash y hệt → leo dốc đã
+  cạn nước đi trước khi chạm trần 30.
+- Bỏ W3 (đổi với băng ghế) → lặp-3 nổ 1.98% → 11.46%. H5 chỉ bảo vệ TỪNG board; corpus replay cả phiên.
+- **W4 (xoay vòng 3 sân) không đáng**: 77% khối lượng (2560/3304 ứng viên) để mua 0.1pp, còn thua ở
+  blowout/intra/cost.
+- Tôi ĐOÁN SAI chỗ tốn thời gian: cache sân-không-đụng chỉ −19%; đo ra `computeQualityCost` chiếm 70%,
+  trả cho 79% ứng viên sắp bị vứt → tính lười. 2542 → 331 ms.
+
+**CHƯA chứng minh:**
+- [ ] **Đường rolling chưa hề đo** — mọi phép đo đều lấp cả bàn một lượt; kèo thật lấp từng sân. Đó là
+      nơi `repeatPool` sống và nơi flicker xảy ra.
+- [ ] Chưa chạy thật lần nào trên edge (Deno).
+- [ ] Kèo 40+ người chưa kiểm — latency tỉ lệ thuận với băng ghế (331ms ở băng ghế 20).
+- [ ] Panel giảm 5.67% → 4.21%: host thấy ít lời mời "chờ sân/chơi luôn" hơn.
+- [ ] `invariantSafePayloads` (#70) chưa xoá vật lý — nhánh cờ-tắt còn cần.
+
+## RÀ SOÁT P2 (2026-08-14) — còn đúng hai mục
+
+| mục | bằng chứng | trạng thái |
+|---|---|---|
+| P2-1 chọn 1 model scoring | **8 điểm rẽ nhánh** `isQualityCostModelEnabled` còn sống | CHƯA — chờ host quyết canary |
+| P2-2 gộp post-pass | xem trên | xong, cờ tắt |
+| P2-3 hợp nhất options edge | rescue toàn bàn `:1273` dùng chung `runEngine` với `:1212` | XONG (a79f88b) |
+| P2-4 bộ máy "Chờ Sân X" | `rescue_search_truncated` có và được truyền | XONG |
+| P2-5 mở rộng miền tất định | **19 chỗ đọc đồng hồ**; `suggest.ts:601` cắt theo `Date.now()`, `pair.ts:772` break khi hết `maxRuntimeMs` | **CHƯA — nhãn "gần như xong sẵn" trong audit là SAI** |
+| P2-6 gộp đường ghi hint | đúng 1 call site `sync_live_suggestion_hints` | XONG |
+| P2-7 gộp rest bookkeeping | migration `20260809000001` helper dùng chung | XONG SẴN (báo cáo gốc sai) |
+
+**P2-5 nên là việc tiếp theo**, không phải P3. Lý do đo được ngay trong phiên này: replay cùng một kèo
+hai lần cho hai kết quả khác nhau ở nhánh cờ-TẮT (intra 2.42→2.84 lần một, 3.4→2.8 lần hai). Engine
+không tất định làm nhiễu MỌI phép đo A/B trên nó, và host thấy nó dưới dạng "cùng bench mà đội hình
+khác" — nửa sau bug flicker.
+
+**Gate:** 2 test trong `simulation/full-session.test.ts` (chuỗi nghỉ, gender preference) đỏ. **Đã A/B
+với commit `2b756d2` trước toàn bộ P2-2 — đỏ y hệt**, nên là lỗi CÓ SẴN trên nhánh, không phải hồi quy.
+Đáng đào vì nó nói engine đang thua ở hai chỉ số công bằng thật.
+
 ## Task: Debug & tối ưu live-session + suggester (session f2fd04b4 + sweep audit)
 Status: DONE (server-side đã live; chờ user rebuild app cho phần client)
 

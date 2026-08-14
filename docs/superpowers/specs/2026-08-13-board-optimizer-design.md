@@ -225,3 +225,44 @@ tải nặng — cùng loại TASK.md đã từng xoá 4 cái vì không bắt �
 
 **Chưa làm, có lý do:** `invariantSafePayloads` (#70) chưa xoá vật lý vì nhánh cờ-tắt còn cần; cột
 "board đổi mà 6 pass cũ chưa từng đụng" chưa đo (cần chạy song song hai nhánh trên cùng seed).
+
+
+## 12. Replay kèo THẬT (2026-08-14) — 53 kèo / 2158 board
+
+Corpus ở §11 là dữ liệu tổng hợp, luôn bắt đầu từ bàn trắng (§10 đã ghi là giới hạn). Phép đo này
+dựng lại state THẬT của kèo đã kết thúc từ DB (`buildCompletedLiveCycleRows` + `rebuildStateThroughRound`,
+cùng đường `npm run diagnose` dùng), rồi bắn qua engine hai lần trên cùng input.
+
+Không replay từ `debug_dumps` vì chúng ở mức `lite`, không mang khối state đầy đủ — `partner_counts`
+phải suy ra từ bản rút gọn, và một con số lặp-3 sai mà trông hợp lệ đúng là lỗi dự án này dính nhiều lần.
+
+| | cờ TẮT | cờ BẬT |
+|---|---|---|
+| board đo | 2158 | 2158 |
+| vượt tolerance | 14 (0.65%) | **0 (0.00%)** |
+| tổng mức vượt | 4.14 | **0.00** |
+| lặp-3 | 86 (3.99%) | **6 (0.28%)** |
+| intra vượt trần | 175.53 | **62.02** |
+| thời gian | 340.7s | 342.0s (+0.4%) |
+
+**0/53 kèo xấu đi** ở vượt-tolerance hoặc lặp-3. Mẫu 28 kèo cho cùng xu hướng, nên không phải may mắn
+của một nhóm kèo.
+
+**Điều này đính chính con số "+3 board lặp-3" ở §11.** Hai phép đo trả lời hai câu khác nhau: corpus
+replay cả phiên nên board vòng 3 đổi làm lịch sử vòng 7 đổi (hiệu ứng cộng dồn); replay kèo thật dựng
+lại state từ lịch sử THẬT mỗi vòng nên đo đúng "cho state này, board có tốt hơn không". Trên mọi state
+thật gặp phải, optimizer **luôn** ghép ít lặp-3 hơn. "+3" là hệ quả của phiên đi theo đường khác, không
+phải ghép tệ hơn.
+
+**Đính chính thứ hai — nỗi lo latency là kịch bản nhân tạo.** 331 ms/board đo trên 6 sân với băng ghế
+20 người. Kèo thật băng ghế nhỏ hơn nhiều (33 người / 6 sân = 9 chờ) và W3 sinh ứng viên tỉ lệ thuận
+với băng ghế: chênh lệch thật là **+1.3 giây trên 340 giây**. ⚠️ Nhưng kèo 40+ người sẽ về gần kịch bản
+20-chờ — chưa có kèo nào cỡ đó trong 53 kèo này để kiểm.
+
+### CHƯA chứng minh (đừng đọc bảng trên thành "đã an toàn tuyệt đối")
+
+1. **Đường rolling chưa hề được đo.** Mọi phép đo tới giờ đều lấp CẢ BÀN một lượt. Kèo thật lấp từng
+   sân khi có sân xong — đó là nơi `repeatPool` sống và cũng là nơi bug flicker xảy ra.
+2. **Chưa chạy thật lần nào** trên edge (Deno runtime, request thật).
+3. **Panel giảm** (corpus: 5.67% → 4.21%) — host sẽ thấy ít lời mời "chờ sân / chơi luôn" hơn. Đúng
+   hướng (ít board xấu hơn thì ít phải hỏi hơn) nhưng là thay đổi host nhìn thấy.
