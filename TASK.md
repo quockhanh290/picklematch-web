@@ -11,7 +11,7 @@ kiểm bằng code trong phiên 14/08 — nhãn trong file audit có chỗ sai (
 | P2-2 | gộp post-pass thành 1 optimizer | **XONG** 13-14/08, cờ TẮT, đã merge, chưa canary |
 | P2-3 | hợp nhất options edge | XONG (`a79f88b`) |
 | P2-4 | bộ máy "Chờ Sân X" | XONG |
-| P2-5 | **bỏ wall-clock khỏi hot path** | **XONG 14/08** — ngân sách đếm được (`search-budget.ts`), engine tất định; CHƯA deploy, còn 1 quyết định cho host (xem dưới) |
+| P2-5 | **bỏ wall-clock khỏi hot path** | **XONG + ĐÃ DEPLOY 14/08** — ngân sách đếm được (`search-budget.ts`), engine tất định. Edge v269 / ALGO 78. Chờ kèo thật để đọc `timing_ms` Deno |
 | P2-6 | gộp đường ghi hint | XONG |
 | P2-7 | gộp rest bookkeeping | XONG SẴN (báo cáo gốc sai, chưa từng hỏng) |
 | **P3** | xoá code chết | **CHƯA** — nhóm rủi ro ~0 làm được ngay: BUG #40, #33, #34, #39, `lib/scheduler/fixedTeamPairing.ts`. **MỚI: `repeatPool`/`repairPayloadBatchRepeatExposure` đã đo được là đổi 0 board ở đúng hình dạng nó sinh ra để xử** → hết "chưa đo được". ⚠️ Sáu post-pass cũ CHƯA xoá được: nhánh cờ-tắt còn dùng, chỉ xoá sau khi optimizer bật mặc định |
