@@ -63,6 +63,11 @@ import { useAppTheme } from '@/lib/theme-context'
 import { Card, PlayerAvatar, SheetTitle } from '../components'
 import { COURT_DURATION_OPTIONS, COURT_PRESET_OPTIONS, PVNA_TOLERANCE_OPTIONS } from '../constants'
 import { ChoiceRow } from '../controls'
+import {
+  getCompromiseInfoLines,
+  getMatchCompromises,
+  getPlayCostText,
+} from '../match-compromises'
 import { buildCourtLaneModels } from '../court-lanes'
 import {
   BreakdownRow,
@@ -1965,22 +1970,20 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
   // to SEE it's degraded (via the Chơi-luôn cost line); the "Chờ sân khác" card stays gated on an
   // actual rescue court below, so an unavoidable repeat shows the warning without a dead wait option.
   const showDecisionPanel = !showingAvailablePoolPreview && (swapChoices.length > 0 || isDegradedRescue)
+  const visiblePvnaOverBy = pvnaTradeoff?.over_by ?? pvnaOverBy
   const playRepeatCount = recommendedChoice?.metrics.max_opponent_pair ?? 0
   const playResultText = `Đội hình hiện tại, chênh đội ${formatNumber(pvnaDiff, 2)}`
-  const playCostText = match.degraded_reason === 'blowout'
-    ? 'giữ trận hơi lệch trình'
-    : match.degraded_reason === 'repeat'
-      ? (playRepeatCount >= 3 ? `giữ lặp đối thủ ${playRepeatCount} lần` : 'giữ trận bị trùng người')
-      : match.degraded_reason === 'both'
-        ? 'giữ trận hơi lệch & trùng'
-        : playRepeatCount >= 3
-          ? `giữ lặp đối thủ ${playRepeatCount} lần`
-          // A lineup can be over tolerance without earning a degraded_reason — the blowout flag only
-          // fires past a 1.5 gap floor, so the whole band between the tolerance and that floor used to
-          // read "không đánh đổi gì" while the line right above it said the teams were 0,85 apart.
-          : pvnaCapExceeded
-            ? `giữ trận chênh ${formatNumber(pvnaOverBy, 2)} quá mức cân`
-            : 'không đánh đổi gì'
+  // One derivation for both the cost line and the lines underneath — they used to be computed separately
+  // and contradicted each other in front of the host.
+  const matchCompromises = getMatchCompromises({
+    degradedReason: match.degraded_reason ?? null,
+    maxOpponentPair: playRepeatCount,
+    pvnaOverBy: visiblePvnaOverBy,
+    pvnaCapExceeded,
+    intraTeamRelaxed,
+    repeatOverBy: repeatTradeoff?.over_by ?? 0,
+  })
+  const playCostText = getPlayCostText(matchCompromises)
   const swapResultCost = (choice: SuggestionTradeoffChoice) => {
     const m = choice.metrics
     const before = recommendedChoice?.metrics.max_opponent_pair ?? m.max_opponent_pair
@@ -2042,7 +2045,6 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
       })
     }
   }
-  const visiblePvnaOverBy = pvnaTradeoff?.over_by ?? pvnaOverBy
   const totalActivePlayers = [...state.players.values()].filter(
     p => p.checked_out_at === null && !p.opted_rest,
   ).length
@@ -2051,19 +2053,10 @@ export const SuggestedLiveMatchCard = React.memo(function SuggestedLiveMatchCard
     : totalActivePlayers
   const capacityInfoLines: string[] = []
   if (liveAvailabilityContext) {
-    const qualityOk = visiblePvnaOverBy === 0 && !intraTeamRelaxed && (!repeatTradeoff || (repeatTradeoff.over_by ?? 0) === 0)
-    if (!qualityOk) {
+    if (matchCompromises.length > 0) {
       capacityInfoLines.push(`Tốt nhất từ ${availableCount}/${totalActivePlayers} người đang rảnh`)
     }
-    if (intraTeamRelaxed) {
-      capacityInfoLines.push('Hai người cùng đội chênh trình độ')
-    }
-    if (visiblePvnaOverBy > 0) {
-      capacityInfoLines.push(`Hai đội chênh nhau hơn bình thường`)
-    }
-    if (repeatTradeoff && (repeatTradeoff.over_by ?? 0) > 0) {
-      capacityInfoLines.push(`Đã từng đấu với nhau gần đây`)
-    }
+    capacityInfoLines.push(...getCompromiseInfoLines(matchCompromises))
     capacityInfoLines.push(hasSameCourtLock && !hasLockedPlayers
       ? `Tự cập nhật khi sân ${cardCourtIdx + 1} hoàn thành`
       : `Tự cập nhật khi có sân khác hoàn thành`)
