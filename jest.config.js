@@ -9,5 +9,13 @@ module.exports = {
     '^nativewind$': '<rootDir>/tests/mocks/nativewind.js',
   },
   testMatch: ['<rootDir>/tests/**/*.test.{ts,tsx}'],
-  testPathIgnorePatterns: ['/node_modules/', '/e2e/'],
+  // ab-comparison alone is 15+ minutes and stress is another 10, so a plain `npm test` spent most of its
+  // wall clock on two files that only matter when a change actually moves lineups. They still run, on
+  // purpose, via `npm run sim:ab` / `npm run sim:stress` (jest.slow.config.js drops this exclusion).
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/e2e/',
+    '/simulation/ab-comparison\.test\.ts$',
+    '/simulation/stress\.test\.ts$',
+  ],
 };
