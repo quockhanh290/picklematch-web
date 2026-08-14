@@ -179,3 +179,49 @@ HARD = 0 vi phạm · lặp-3 và over-tol không tệ hơn baseline · test t�
 - **Mở rộng phạm vi tác động** khi bỏ cổng `degraded_reason` (mục 6) — đo riêng.
 - **Corpus không phải production**: luôn bắt đầu từ bàn trắng, không có check-out giữa phiên. Kết luận
   từ corpus phải được xác nhận lại bằng `debug_dumps` kèo thật trước khi bật cờ cho kèo nào.
+
+
+---
+
+## 11. KẾT QUẢ (2026-08-13) — cấu hình đã chốt: W1–W3 + O-lex
+
+Bảng corpus 60 phiên / 3088 board. HARD `avoid_partner` = **0** ở mọi cấu hình.
+
+| cấu hình | lặp-3 | vượt tol | blowout | intra vượt | avg cost | worst-rest | ms/board (6 sân) |
+|---|---|---|---|---|---|---|---|
+| baseline (6 pass cũ) | 1.98 | 11.43 | 1.39 | 19.56 | 2.574 | 1.550 | — |
+| split (W1,W2,W4) · lex | 11.46 | 12.05 | 2.40 | 19.46 | 2.691 | 1.733 | 753 |
+| split · cost | 12.01 | 12.14 | 2.40 | 19.24 | 2.682 | 1.733 | — |
+| bench (W1–W4) · lex | 2.01 | 3.37 | 0.97 | 16.68 | 1.769 | 1.167 | 1620 |
+| bench · cost | 2.04 | 7.09 | 0.87 | 20.53 | 1.647 | 1.183 | — |
+| bench_unbounded · lex/cost | **hash y hệt bench** | | | | | | — |
+| **W1–W3 · lex (CHỐT)** | 2.07 | 3.47 | **0.74** | **15.74** | **1.710** | 1.167 | **331** |
+
+**Bốn kết luận, tất cả bằng số:**
+
+1. **Phương án "chọn lại toàn bộ 4 người mỗi sân" chết.** `bench_unbounded` cho ra **đúng cùng hash**
+   với `bench` — bỏ trần vòng lặp không đổi một board nào, tức leo dốc đã cạn nước đi trước khi chạm
+   trần 30. Không cần làm phương án đó.
+2. **Bỏ nước đi đổi-với-băng-ghế là thảm hoạ**: lặp-3 1.98% → 11.46%. Ràng buộc H5 chỉ bảo vệ TỪNG
+   board; corpus là replay cả phiên nên đổi board vòng 3 làm lịch sử vòng 7 khác đi. Hiệu ứng này chỉ
+   corpus mới thấy, test đơn vị không bao giờ thấy.
+3. **W4 (xoay vòng 3 sân) không đáng giá**: ngốn 77% khối lượng (2560/3304 ứng viên mỗi vòng) để mua
+   0.1pp vượt-tolerance, trong khi THUA ở blowout, intra và cost. Luận điểm "local 2-opt không với tới
+   re-partition 3+ người" trong audit đúng về lý thuyết nhưng không mua được gì đo được ở đây.
+4. **Thời gian là ràng buộc thật, không phải chi tiết.** Prod `engine_search` 131–785 ms. Bản đầu tiên
+   của tôi mất 2542 ms/board. Đường tới 331 ms: dùng lại số đo sân không bị đụng (−19%, giả thuyết của
+   tôi SAI), rồi ĐO xem giờ đi đâu (`computeQualityCost` = 70%, trả cho 79% ứng viên sắp bị vứt) → tính
+   cost lười, rồi bỏ W4.
+
+**Điều kiện "xong" (mục 9) đối chiếu:** HARD 0 ✓ · vượt-tol 11.43 → 3.47 ✓ · tất định ✓ (150 test,
+gồm 120 board ngẫu nhiên × 3 cấu hình) · cờ tắt cho ra đúng `f1b6d8ac0b0c` ✓ · `tsc` 0 ✓ ·
+**lặp-3 1.98 → 2.07 (+3 board/3088) ✗** — trượt tiêu chí "không tệ hơn" đúng 3 board. Chưa nới tiêu
+chí, để host quyết.
+
+**Gate:** hai test trong `simulation/full-session.test.ts` (chuỗi nghỉ, gender preference) đỏ — **đã
+A/B: đỏ y hệt tại commit gốc `2b756d2` trước toàn bộ P2-2**, nên là lỗi có sẵn trên nhánh, không phải
+hồi quy của optimizer. Nhóm `Production Chain Timing` / `Phase A` là assertion đồng hồ thật, đỏ khi máy
+tải nặng — cùng loại TASK.md đã từng xoá 4 cái vì không bắt được thứ chúng trông như đang canh.
+
+**Chưa làm, có lý do:** `invariantSafePayloads` (#70) chưa xoá vật lý vì nhánh cờ-tắt còn cần; cột
+"board đổi mà 6 pass cũ chưa từng đụng" chưa đo (cần chạy song song hai nhánh trên cùng seed).
