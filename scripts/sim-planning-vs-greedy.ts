@@ -10,7 +10,8 @@ import seedrandom from 'seedrandom'
 import { commitCompletedRound } from '../lib/next-round-suggester/commit'
 import { correctForFairness, applyFairnessAdjustment } from '../lib/next-round-suggester/fairness/corrector'
 import { computeSessionFairness } from '../lib/next-round-suggester/fairness/metrics'
-import { suggestNextRound } from '../lib/next-round-suggester/suggest'
+import { createSearchBudget } from '../lib/next-round-suggester/search-budget'
+import { SEARCH_UNITS_PER_LEGACY_MS, suggestNextRound } from '../lib/next-round-suggester/suggest'
 import type { PlayerSessionState, RoundRecord, SessionPairHistoryRow, SessionState } from '../lib/next-round-suggester/types'
 import { generatePlayers, initState } from '../tests/next-round-suggester/simulation/generators'
 import type { SimulationConfig } from '../tests/next-round-suggester/simulation/runner'
@@ -70,7 +71,7 @@ function commitRound(state: SessionState, round: RoundRecord): SessionState {
 
 type SimResult = { fairness: number; pvnaAvg: number; pvnaMax: number; pvnaWorstRound: number }
 
-// Lean simulation: no post-processing, max_runtime_ms cap per round
+// Lean simulation: no post-processing, search budget cap per round
 function simulateForward(initialState: SessionState, maxRounds: number, firstRoundAltIdx = 0): SimResult {
   let state = initialState
   const pvnaDiffs: number[] = []
@@ -83,7 +84,7 @@ function simulateForward(initialState: SessionState, maxRounds: number, firstRou
     const suggestion = suggestNextRound(effectiveState, {
       tier_overrides: adjustment?.tier_overrides ?? {},
       max_alternatives: altIdx > 0 ? altIdx + 1 : 1,
-      max_runtime_ms: 500,
+      search_budget: createSearchBudget(500 * SEARCH_UNITS_PER_LEGACY_MS),
     })
     const alternative = suggestion.alternatives[altIdx] ?? suggestion.alternatives[0]
     if (!alternative) break

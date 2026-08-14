@@ -1,5 +1,14 @@
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { getEffectivePvna } from '../state.ts'
+import {
+  searchBudgetExhausted,
+  searchBudgetRemaining,
+  searchBudgetSpent,
+  spendSearchBudget,
+  subSearchBudget,
+  type SearchBudget,
+  // @ts-ignore Node's strip-only test runner needs the local .ts extension.
+} from '../search-budget.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import type { SessionLiveMatchRow, SessionState, SuggestionAlternative } from '../types.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
@@ -18,7 +27,7 @@ export type RollingHorizonDiagnostics = {
   future_search_calls: number
   future_cache_hits: number
   budget_exhausted: boolean
-  elapsed_ms: number
+  spent_units: number
   selected_candidate_index: number
   selected_immediate_quality_cost: number
   selected_projected_fairness_cost: number
@@ -68,7 +77,7 @@ export type RollingPlanTarget = {
 type FutureSuggestion = (options: {
   state: SessionState
   busyIds: Set<string>
-  maxRuntimeMs: number
+  budget: SearchBudget
 }) => SuggestionAlternative | null
 
 type ProjectMatch = (
@@ -77,6 +86,7 @@ type ProjectMatch = (
 ) => SessionState
 
 const NO_FEASIBLE_FUTURE_PENALTY = 5_000
+const DEFAULT_MAX_FUTURE_SEARCHES = 12
 const DEFAULT_HORIZON_EVENTS = 2
 const FLEXIBILITY_CONSUMPTION_WEIGHT = 1
 
@@ -415,20 +425,19 @@ export function chooseRollingHorizonAlternative(options: {
   state: SessionState
   baseBusyIds: ReadonlySet<string>
   liveCommitments: SessionLiveMatchRow[]
-  budgetMs: number
+  budget: SearchBudget
   suggestFuture: FutureSuggestion
   projectMatch: ProjectMatch
   candidateLimit?: number
+  // Hard cap on lookahead searches. A future search costs far more than the partition evaluations it
+  // charges the budget for (it rebuilds the state and re-sorts the whole pool), so the unit budget alone
+  // let the beam run ~30 of them per court. Counting the calls is what actually bounds it.
+  maxFutureSearches?: number
   qualityReference?: SuggestionAlternative | null
   horizonEvents?: number
   planTarget?: RollingPlanTarget | null
-  now?: () => number
 }): RollingHorizonChoice | null {
-  const clock = options.now ?? (() => (
-    typeof performance !== 'undefined' ? performance.now() : Date.now()
-  ))
-  const startedAt = clock()
-  const deadline = startedAt + Math.max(1, options.budgetMs)
+  const budget = options.budget
   const rawCandidates = options.candidates.filter(candidate => candidate.matches.length > 0)
   const allCandidates = filterRollingInvariantAlternatives({
     alternatives: rawCandidates,
@@ -448,7 +457,7 @@ export function chooseRollingHorizonAlternative(options: {
         future_search_calls: 0,
         future_cache_hits: 0,
         budget_exhausted: false,
-        elapsed_ms: clock() - startedAt,
+        spent_units: searchBudgetSpent(budget),
         selected_candidate_index: rawCandidates.indexOf(allCandidates[0]),
         selected_immediate_quality_cost: matchQualityCost(
           allCandidates[0],
@@ -547,12 +556,13 @@ export function chooseRollingHorizonAlternative(options: {
     options.liveCommitments.length,
   ))
   const pathCount = Math.max(1, candidates.length * orders.length * horizonEvents)
-  const perStepBudgetMs = Math.max(12, Math.floor(options.budgetMs / pathCount))
+  const perStepUnits = Math.max(12, Math.floor(searchBudgetRemaining(budget) / pathCount))
   const flexibilityCosts = buildCandidateFlexibilityCosts(
     candidates.map(candidate => candidate.alternative),
   )
   const futureCache = new Map<string, SuggestionAlternative | null>()
   let evaluatedCandidateCount = 0
+  const maxFutureSearches = Math.max(1, Math.floor(options.maxFutureSearches ?? DEFAULT_MAX_FUTURE_SEARCHES))
   let futureSearchCalls = 0
   let futureCacheHits = 0
   let budgetExhausted = false
@@ -569,12 +579,15 @@ export function chooseRollingHorizonAlternative(options: {
 
   for (const prepared of candidates) {
     const { alternative: candidate, candidateIndex } = prepared
-    if (clock() >= deadline && evaluatedCandidateCount > 0) {
+    if (searchBudgetExhausted(budget) && evaluatedCandidateCount > 0) {
       budgetExhausted = true
       break
     }
     const candidateMatch = asLiveMatch(candidate, options.state, 'rolling-horizon-candidate')
     if (!candidateMatch) continue
+    // Projecting a candidate and walking its completion orders is the work this budget pays for; the
+    // future searches below charge their own on top.
+    spendSearchBudget(budget)
     evaluatedCandidateCount += 1
     const candidateIds = playerIds(candidate)
     const flexibilityCost = flexibilityCosts.get(candidate) ?? 0
@@ -586,7 +599,7 @@ export function chooseRollingHorizonAlternative(options: {
     let truncatedPaths = false
 
     for (const order of orders) {
-      if (clock() >= deadline && pathScores.length > 0) {
+      if (searchBudgetExhausted(budget) && pathScores.length > 0) {
         budgetExhausted = true
         truncatedPaths = true
         break
@@ -598,6 +611,7 @@ export function chooseRollingHorizonAlternative(options: {
         + projectedFairnessCost
 
       for (const completion of order.slice(0, horizonEvents)) {
+        spendSearchBudget(budget)
         simState = options.projectMatch(simState, completion)
         for (const playerId of [...completion.team_a, ...completion.team_b]) simBusy.delete(playerId)
         const playableCount = [...simState.players.values()].filter(player => (
@@ -605,8 +619,7 @@ export function chooseRollingHorizonAlternative(options: {
           && !player.opted_rest
           && !simBusy.has(player.player_id)
         )).length
-        const remainingMs = Math.floor(deadline - clock())
-        if (remainingMs <= 0) {
+        if (searchBudgetExhausted(budget) || futureSearchCalls >= maxFutureSearches) {
           budgetExhausted = true
           break
         }
@@ -619,7 +632,7 @@ export function chooseRollingHorizonAlternative(options: {
           future = options.suggestFuture({
             state: simState,
             busyIds: new Set(simBusy),
-            maxRuntimeMs: Math.max(4, Math.min(perStepBudgetMs, remainingMs)),
+            budget: subSearchBudget(budget, perStepUnits),
           })
           futureCache.set(cacheKey, future)
         }
@@ -672,7 +685,7 @@ export function chooseRollingHorizonAlternative(options: {
           future_search_calls: futureSearchCalls,
           future_cache_hits: futureCacheHits,
           budget_exhausted: budgetExhausted,
-          elapsed_ms: clock() - startedAt,
+          spent_units: searchBudgetSpent(budget),
           selected_candidate_index: candidateIndex,
           selected_immediate_quality_cost: immediateQualityCost,
           selected_projected_fairness_cost: projectedFairnessCost,
@@ -695,7 +708,7 @@ export function chooseRollingHorizonAlternative(options: {
   selectedBest.diagnostics.future_search_calls = futureSearchCalls
   selectedBest.diagnostics.future_cache_hits = futureCacheHits
   selectedBest.diagnostics.budget_exhausted = budgetExhausted
-  selectedBest.diagnostics.elapsed_ms = clock() - startedAt
+  selectedBest.diagnostics.spent_units = searchBudgetSpent(budget)
   const rejected = evaluated
     .filter(item => item.alternative !== selectedBest.alternative)
     .sort((left, right) => left.score - right.score)[0]

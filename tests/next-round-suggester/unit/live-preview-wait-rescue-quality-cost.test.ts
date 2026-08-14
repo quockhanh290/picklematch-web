@@ -1,3 +1,4 @@
+import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget'
 import { computeMatchDegradedRescue } from '../../../lib/next-round-suggester/live-preview'
 import { __setQualityCostModelOverrideForTests } from '../../../lib/next-round-suggester/quality-cost-flag'
 import { createPlayer, createState, setPartnerRepeats } from '../helpers/factories'
@@ -91,8 +92,7 @@ describe('computeMatchDegradedRescue — quality-cost re-anchor (flag-gated)', (
         liveCourtPlayers: scene.liveCourtPlayers,
         busyIds: scene.busyIds,
         pvnaTolerance: 0.5,
-        budgetMs: 2000,
-        nowMsFn: () => performance.now(),
+        budget: createSearchBudget(200000),
       })
       expect(result.degradedReason).toBe('blowout')
       expect(result.rescueCourtIdxs).toEqual([])
@@ -109,8 +109,7 @@ describe('computeMatchDegradedRescue — quality-cost re-anchor (flag-gated)', (
         liveCourtPlayers: scene.liveCourtPlayers,
         busyIds: scene.busyIds,
         pvnaTolerance: 0.5,
-        budgetMs: 2000,
-        nowMsFn: () => performance.now(),
+        budget: createSearchBudget(200000),
       })
       expect(result.degradedReason).toBe('blowout')
       expect(result.rescueCourtIdxs).toEqual([0])
@@ -127,8 +126,7 @@ describe('computeMatchDegradedRescue — quality-cost re-anchor (flag-gated)', (
         liveCourtPlayers: scene.liveCourtPlayers,
         busyIds: scene.busyIds,
         pvnaTolerance: 0.5,
-        budgetMs: 2000,
-        nowMsFn: () => performance.now(),
+        budget: createSearchBudget(200000),
       })
       const exhaustedBudget = computeMatchDegradedRescue({
         teamA: ['X1', 'X2'],
@@ -139,8 +137,7 @@ describe('computeMatchDegradedRescue — quality-cost re-anchor (flag-gated)', (
         liveCourtPlayers: scene.liveCourtPlayers,
         busyIds: scene.busyIds,
         pvnaTolerance: 0.5,
-        budgetMs: 0,
-        nowMsFn: () => performance.now(),
+        budget: createSearchBudget(0),
       })
 
       expect(fullBudget.rescueCourtIdxs).toEqual([0])
@@ -160,8 +157,7 @@ describe('computeMatchDegradedRescue — quality-cost re-anchor (flag-gated)', (
         liveCourtPlayers: new Map(),
         busyIds: new Set(),
         pvnaTolerance: 0.5,
-        budgetMs: 2000,
-        nowMsFn: () => performance.now(),
+        budget: createSearchBudget(200000),
       })
       expect(result.degradedReason).toBeUndefined()
       expect(result.rescueCourtIdxs).toEqual([])
@@ -178,8 +174,7 @@ describe('computeMatchDegradedRescue — quality-cost re-anchor (flag-gated)', (
         liveCourtPlayers: new Map(),
         busyIds: new Set(),
         pvnaTolerance: 0.5,
-        budgetMs: 2000,
-        nowMsFn: () => performance.now(),
+        budget: createSearchBudget(200000),
       })
       expect(result.degradedReason).toBeUndefined()
     })
@@ -199,8 +194,7 @@ describe('computeMatchDegradedRescue — quality-cost re-anchor (flag-gated)', (
         liveCourtPlayers: scene.liveCourtPlayers,
         busyIds: scene.busyIds,
         pvnaTolerance: 0.5,
-        budgetMs: 2000,
-        nowMsFn: () => performance.now(),
+        budget: createSearchBudget(200000),
       })
       expect(result.degradedReason).toBe('blowout')
       expect(result.rescueCourtIdxs).toEqual([0])
@@ -217,8 +211,7 @@ describe('computeMatchDegradedRescue — quality-cost re-anchor (flag-gated)', (
         liveCourtPlayers: new Map(),
         busyIds: new Set(),
         pvnaTolerance: 0.5,
-        budgetMs: 2000,
-        nowMsFn: () => performance.now(),
+        budget: createSearchBudget(200000),
       })
       expect(result.degradedReason).toBe('repeat')
     })

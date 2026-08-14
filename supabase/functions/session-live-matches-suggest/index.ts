@@ -17,6 +17,8 @@ import {
   shouldRunReplacementFullBoardRescue,
   LIVE_PREVIEW_ALGORITHM_VERSION,
 } from '../../../lib/next-round-suggester/live-preview.ts'
+import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget.ts'
+import { SEARCH_UNITS_PER_LEGACY_MS } from '../../../lib/next-round-suggester/suggest.ts'
 import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state.ts'
 import { resolveQualityCostEnabledForSession } from '../../../lib/next-round-suggester/quality-cost-flag.ts'
 import {
@@ -1471,7 +1473,9 @@ Deno.serve(async (request) => {
       const checkedInIds = [...state.players.values()]
         .filter(p => p.checked_out_at === null && !p.opted_rest)
         .map(p => p.player_id)
-      let boardRescueBudgetMs = 400
+      // One countable budget for the whole board pass — it drains as courts consume it, so a slow
+      // worker no longer decides which courts got a rescue list.
+      const boardRescueBudget = createSearchBudget(400 * SEARCH_UNITS_PER_LEGACY_MS)
       // Recompute degraded_reason / rescue_court_idxs / match_explanations AUTHORITATIVELY for EVERY
       // suggested court against its CURRENT lineup — never trust the value carried on the row. A
       // retained lane's fields come from the client's current_preview_board (which can be stale: a
@@ -1495,10 +1499,8 @@ Deno.serve(async (request) => {
           liveCourtPlayers,
           busyIds,
           pvnaTolerance,
-          budgetMs: boardRescueBudgetMs,
-          nowMsFn: () => performance.now(),
+          budget: boardRescueBudget,
         })
-        boardRescueBudgetMs -= result.elapsedMs
         payload.degraded_reason = result.degradedReason ?? undefined
         payload.rescue_court_idxs = result.degradedReason && result.rescueCourtIdxs.length > 0
           ? result.rescueCourtIdxs

@@ -35,6 +35,16 @@ import {
 } from './score.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { findMinCostFoursome } from './forced-tradeoff.ts'
+import {
+  createSearchBudget,
+  searchBudgetExhausted,
+  searchBudgetRemaining,
+  searchBudgetSpent,
+  spendSearchBudget,
+  subSearchBudget,
+  type SearchBudget,
+  // @ts-ignore Deno edge-function bundling needs the local .ts extension.
+} from './search-budget.ts'
 
 export type EngineInstrumentEvent = {
   event: 'stage_resolved' | 'rescue' | 'repair' | 'forced_pass' | 'rolling_horizon'
@@ -48,19 +58,21 @@ export type SuggestNextRoundOptions = {
   diagnostics?: SuggestionDiagnostic
   partition_cache?: boolean
   max_alternatives?: number
-  max_runtime_ms?: number
+  // How much SEARCH the caller is willing to pay for, counted in partition evaluations. It used to be a
+  // duration, which made the lineup depend on how loaded the machine was: the same bench re-requested
+  // gave different teams, and no A/B measurement on the engine could be repeated.
+  search_budget?: SearchBudget
   exhaustive_fallback?: boolean
   forced_required_player_ids?: string[]
   availability_metrics?: AvailabilityMetrics
   preview_seed?: string
   active_courts?: number      // override court count for this suggestion
   fixed_courts?: Match[]      // courts already assigned; suggest remaining courts only
-  // What is left of the rescue budget shared across all courts in one buildSuggestedMatchPayloads call,
-  // as a duration. Prevents each court from resetting rescue time and stacking work until the worker
-  // limit. The public runtime deadline still caps the individual call.
-  // A duration, not a timestamp: the caller measures the elapsed share on its own clock, so producer and
-  // consumer never have to agree on an epoch.
-  force_budget_ms?: number
+  // What is left of the rescue allowance shared across all courts in one buildSuggestedMatchPayloads
+  // call. Prevents each court from resetting the rescue work and stacking it up to the worker limit.
+  // Shared object, not a number: the caller hands the same budget to every court and it drains as the
+  // batch progresses.
+  force_search_budget?: SearchBudget
   onInstrumentEvent?: (event: EngineInstrumentEvent) => void
 }
 
@@ -71,7 +83,7 @@ export type ExhaustiveFallbackDiagnostic = {
   combinationsEvaluated: number
   bestPvnaDiff: number | null
   bestHasTradeoffs: boolean
-  elapsedMs: number
+  spentUnits: number
   deterministicFastPath?: boolean
   _seenAfterStage1?: number
   _altsAfterStage1?: number
@@ -104,8 +116,8 @@ export type SuggestionDiagnostic = {
   max_iterations: number
   exhaustive: boolean
   timed_out?: boolean
-  elapsed_ms?: number
-  budget_ms?: number
+  budget_units?: number
+  spent_units?: number
 }
 
 function combinationKey(players: PlayerSessionState[]): string {
@@ -272,11 +284,17 @@ function emptyStats(): MatchStats {
 
 const MAX_CANDIDATES_PER_STRATEGY = 60
 const MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY = 8
-export const DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS = 1000
-const RUNTIME_DEADLINE_GUARD_MS = 50
-// Time held back from the regular search so the forced/exhaustive rescue pass can always run.
-const RESCUE_BUDGET_RESERVE_MS = 200
-const DEADLINE_RESCUE_CANDIDATE_BUDGET_MS = 400
+// One unit = one partition evaluated. The scale was fixed by measuring the old ms constants against
+// real corpus sessions (~100 evaluations per ms), so a budget that used to read 1000ms reads 100k units.
+export const SEARCH_UNITS_PER_LEGACY_MS = 100
+export const DEFAULT_SUGGEST_NEXT_ROUND_SEARCH_UNITS = 1000 * SEARCH_UNITS_PER_LEGACY_MS
+// Held back from the regular search so the forced/exhaustive rescue pass can always run.
+const RESCUE_BUDGET_RESERVE_UNITS = 200 * SEARCH_UNITS_PER_LEGACY_MS
+const MIN_REGULAR_SEARCH_UNITS = 50 * SEARCH_UNITS_PER_LEGACY_MS
+const LARGE_BUDGET_REGULAR_SEARCH_UNITS = 100 * SEARCH_UNITS_PER_LEGACY_MS
+const DEADLINE_RESCUE_CANDIDATE_SEARCH_UNITS = 400 * SEARCH_UNITS_PER_LEGACY_MS
+const MAX_EXHAUSTIVE_FALLBACK_SEARCH_UNITS = 2500 * SEARCH_UNITS_PER_LEGACY_MS
+const MIN_EXHAUSTIVE_FALLBACK_SEARCH_UNITS = 100 * SEARCH_UNITS_PER_LEGACY_MS
 const BURDEN_TIE_BREAK_SCORE_WINDOW = 3
 const PROJECTED_REPEAT_BURDEN_THRESHOLD = 3
 const PVNA_TRADEOFF_WEIGHT = 10
@@ -443,7 +461,7 @@ function makeAlternative(
   allowRecentGroupRematch = false,
   seedSalt?: string,
   thresholds?: { mustRestAt?: number; partnerRepeatCap?: number; opponentRepeatCap?: number },
-  maxRuntimeMs?: number,
+  budget?: SearchBudget,
   deadlineRescue = false,
 ): SuggestionAlternative | null {
   const partition = bestPartitioning(selected, state, {
@@ -456,7 +474,7 @@ function makeAlternative(
     mustRestAt: thresholds?.mustRestAt,
     partnerRepeatCap: thresholds?.partnerRepeatCap,
     opponentRepeatCap: thresholds?.opponentRepeatCap,
-    maxRuntimeMs,
+    budget,
     deadlineRescue,
   })
   if (!partition) return null
@@ -579,35 +597,32 @@ export function suggestNextRound(
   const maxAcceptedPerStrategy = Math.min(MAX_ACCEPTED_ALTERNATIVES_PER_STRATEGY, maxAlternatives)
   const seen = new Set<string>()
   const diagnostics = options.diagnostics
-  const startedAt = Date.now()
-  const maxRuntimeMs = options.max_runtime_ms && options.max_runtime_ms > 0
-    ? Math.max(50, Math.floor(options.max_runtime_ms))
-    : DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS
-  const runtimeDeadline = Math.min(
-    startedAt + Math.max(1, maxRuntimeMs - RUNTIME_DEADLINE_GUARD_MS),
-    options.force_budget_ms !== undefined
-      ? startedAt + Math.max(0, options.force_budget_ms)
-      : Number.POSITIVE_INFINITY,
+  const callerBudget = options.search_budget
+  const maxSearchUnits = callerBudget
+    ? searchBudgetRemaining(callerBudget)
+    : DEFAULT_SUGGEST_NEXT_ROUND_SEARCH_UNITS
+  const overallBudget = createSearchBudget(
+    maxSearchUnits,
+    [callerBudget, options.force_search_budget].filter(Boolean) as SearchBudget[],
   )
-  // Always leave a reserve for the forced/exhaustive rescue pass. At the default 1000ms budget the
-  // regular deadline used to equal the overall deadline (zero reserve), so a slow/large pool spent the
-  // whole budget on the regular search and the rescue — the ONLY pass that caps the required set and can
-  // seat an over-constrained rester foursome without a blowout — was skipped, surfacing as a false
-  // NO_VALID_MATCH ("stuck"). Reserve a slice so the rescue always gets to run.
-  const regularBudgetMs = maxRuntimeMs > DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS
-    ? 100
-    : Math.max(50, maxRuntimeMs - RESCUE_BUDGET_RESERVE_MS)
-  const regularSearchDeadline = Math.min(runtimeDeadline, startedAt + regularBudgetMs)
-  const timedOut = () => Date.now() >= regularSearchDeadline
-  const overallTimedOut = () => Date.now() >= runtimeDeadline
-  const remainingRuntimeMs = (includeRescueReserve = false) => Math.max(
-    0,
-    (includeRescueReserve ? runtimeDeadline : regularSearchDeadline) - Date.now(),
+  // Always leave a reserve for the forced/exhaustive rescue pass. With a single shared budget the
+  // regular search used to be able to eat all of it, and the rescue — the ONLY pass that caps the
+  // required set and can seat an over-constrained rester foursome without a blowout — was skipped,
+  // surfacing as a false NO_VALID_MATCH ("stuck"). Reserve a slice so the rescue always gets to run.
+  // A caller that asks for more than the default is asking for rescue headroom, not a longer regular
+  // search (see the sim runner): keep the regular slice small and leave the rest to the forced pass.
+  const regularBudget = subSearchBudget(
+    overallBudget,
+    maxSearchUnits > DEFAULT_SUGGEST_NEXT_ROUND_SEARCH_UNITS
+      ? LARGE_BUDGET_REGULAR_SEARCH_UNITS
+      : Math.max(MIN_REGULAR_SEARCH_UNITS, maxSearchUnits - RESCUE_BUDGET_RESERVE_UNITS),
   )
+  const timedOut = () => searchBudgetExhausted(regularBudget)
+  const overallTimedOut = () => searchBudgetExhausted(overallBudget)
   const finalizeDiagnostics = () => {
     if (!diagnostics) return
-    diagnostics.elapsed_ms = Date.now() - startedAt
-    diagnostics.budget_ms = maxRuntimeMs
+    diagnostics.budget_units = maxSearchUnits
+    diagnostics.spent_units = searchBudgetSpent(overallBudget)
     diagnostics.timed_out = timedOut()
   }
   const partitioningCache = options.partition_cache === false
@@ -689,8 +704,8 @@ export function suggestNextRound(
           options.preview_seed,
           thresholds,
           force
-            ? Math.min(remainingRuntimeMs(true), DEADLINE_RESCUE_CANDIDATE_BUDGET_MS)
-            : remainingRuntimeMs(false),
+            ? subSearchBudget(overallBudget, DEADLINE_RESCUE_CANDIDATE_SEARCH_UNITS)
+            : regularBudget,
           force,
         )
         if (!alternative) continue
@@ -840,7 +855,7 @@ export function suggestNextRound(
             false,
             options.preview_seed,
             thresholds,
-            remainingRuntimeMs(true),
+            overallBudget,
           )
           if (!alternative) continue
           alternatives.push(alternative)
@@ -871,7 +886,6 @@ export function suggestNextMatch(
   state: SessionState,
   options: SuggestNextMatchOptions = {},
 ): SuggestionResult {
-  const startedAt = Date.now()
   const busyIds = new Set([...(options.busy_player_ids ?? [])].map(String))
   const now = new Date()
   const players = new Map(
@@ -938,15 +952,11 @@ export function suggestNextMatch(
   )
   if (!shouldCheckFallback) return mappedResult
   // A single match always runs the fallback (bounded & deterministic for small pools via the
-  // findMinCostFoursome fast path below) — the remaining budget is kept only as a safety net for
-  // the legacy > 20-player timed combo loop.
-  const remainingRuntimeMs = options.max_runtime_ms === undefined
-    ? undefined
-    : Math.max(0, options.max_runtime_ms - (Date.now() - startedAt))
-
+  // findMinCostFoursome fast path below) — the shared budget is passed through only as a safety net
+  // for the legacy > 20-player combo loop.
   const diag: ExhaustiveFallbackDiagnostic = {
     ran: false, timedOut: false, eligibleCount: 0,
-    combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+    combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
   }
   if (options._exhaustiveDiag) Object.assign(options._exhaustiveDiag, diag)
   const fallback = suggestNextMatchExhaustiveFallback(matchState, {
@@ -954,7 +964,6 @@ export function suggestNextMatch(
     _exhaustiveDiag: options._exhaustiveDiag ?? diag,
     court_idx: courtIdx,
     max_alternatives: options.max_alternatives ?? 1,
-    max_runtime_ms: remainingRuntimeMs,
   })
   if (fallback.alternatives.length === 0) return mappedResult
 
@@ -1098,7 +1107,7 @@ function suggestNextMatchExhaustiveFallback(
   // Deterministic fast path for realistic single-court pools: pick the best foursome by a
   // cheap exhaustive scan (no wall-clock, no per-combo makeAlternative), then materialize it once. This
   // removes the timing-dependent truncation that let a repeat-3 slip through when a clean lineup exists.
-  // Budget-independent by design — runs regardless of options.max_runtime_ms, since it's bounded and
+  // Budget-independent by design — runs regardless of options.search_budget, since it's bounded and
   // cheap on its own; do not gate this block on the caller's remaining budget.
   // Skipped when allow_recent_group_rematch is true: that's the rare escape-hatch rescue path (e.g.
   // live-preview.ts's unified social tradeoff), called from suggestNextMatch's early branch that has NO
@@ -1127,7 +1136,7 @@ function suggestNextMatchExhaustiveFallback(
             combinationsEvaluated: 0,
             bestPvnaDiff: alternative.matches[0]?.stats?.pvna_diff ?? null,
             bestHasTradeoffs: (alternative.tradeoffs?.length ?? 0) > 0,
-            elapsedMs: 0,
+            spentUnits: 0,
             deterministicFastPath: true,
           })
         }
@@ -1164,7 +1173,7 @@ function suggestNextMatchExhaustiveFallback(
             combinationsEvaluated: 0,
             bestPvnaDiff: relaxed.matches[0]?.stats?.pvna_diff ?? null,
             bestHasTradeoffs: (relaxed.tradeoffs?.length ?? 0) > 0,
-            elapsedMs: 0,
+            spentUnits: 0,
             deterministicFastPath: true,
           })
         }
@@ -1186,7 +1195,7 @@ function suggestNextMatchExhaustiveFallback(
           combinationsEvaluated: 0,
           bestPvnaDiff: null,
           bestHasTradeoffs: false,
-          elapsedMs: 0,
+          spentUnits: 0,
           deterministicFastPath: true,
         })
       }
@@ -1198,11 +1207,9 @@ function suggestNextMatchExhaustiveFallback(
 
   // The deterministic fast path above is budget-independent, but pools > 20 (or a pool shape
   // findMinCostFoursome genuinely can't handle — over its internal cap, or no subset contains every
-  // required id) fall through to the legacy timed loop below. That loop's own budget check
-  // (`options.max_runtime_ms && options.max_runtime_ms > 0`) treats an exhausted budget of exactly
-  // `0` as falsy and silently balloons to the full 2500ms default — fail fast here instead, mirroring
-  // the near-zero-budget bail that suggestNextMatch used to do before this always called the fallback.
-  if (options.max_runtime_ms !== undefined && options.max_runtime_ms <= 100) {
+  // required id) fall through to the combinatorial loop below, which enumerates and sorts every
+  // 4-subset before it evaluates one. That is not worth starting on a nearly spent budget.
+  if (options.search_budget && searchBudgetRemaining(options.search_budget) <= MIN_EXHAUSTIVE_FALLBACK_SEARCH_UNITS) {
     if (options._exhaustiveDiag) {
       Object.assign(options._exhaustiveDiag, {
         ran: false,
@@ -1211,7 +1218,7 @@ function suggestNextMatchExhaustiveFallback(
         combinationsEvaluated: 0,
         bestPvnaDiff: null,
         bestHasTradeoffs: false,
-        elapsedMs: 0,
+        spentUnits: 0,
       })
     }
     return { alternatives: [], warnings, should_end: false }
@@ -1222,11 +1229,11 @@ function suggestNextMatchExhaustiveFallback(
   const seen = new Set<string>()
   let combinationsEvaluated = 0
 
-  const startMs = Date.now()
-  const timeoutMs = options.max_runtime_ms && options.max_runtime_ms > 0
-    ? Math.min(2500, Math.max(50, Math.floor(options.max_runtime_ms)))
-    : 2500
-  const timedOut = () => Date.now() - startMs >= timeoutMs
+  const fallbackBudget = subSearchBudget(
+    options.search_budget ?? createSearchBudget(MAX_EXHAUSTIVE_FALLBACK_SEARCH_UNITS),
+    MAX_EXHAUSTIVE_FALLBACK_SEARCH_UNITS,
+  )
+  const timedOut = () => searchBudgetExhausted(fallbackBudget)
   // Pre-sort once by pvna so each generated combo is already in pvna order —
   // the comparator can then use index 0/3 directly, avoiding O(n log n) inner
   // array allocations that made sorting 35 k+ combos exceed the timeout budget.
@@ -1249,6 +1256,9 @@ function suggestNextMatchExhaustiveFallback(
 
     for (const selected of combinations) {
       if (timedOut()) break
+      // Every combination costs something even when it is skipped: it was generated and sorted with the
+      // rest. Charging for the touch is what keeps this loop bounded now that no clock stops it.
+      spendSearchBudget(fallbackBudget)
       if (
         enforceRequired &&
         requiredPlayerIds.size > 0 &&
@@ -1274,6 +1284,7 @@ function suggestNextMatchExhaustiveFallback(
         allowRecentGroupRematch,
         options.preview_seed,
         thresholds,
+        fallbackBudget,
       )
       seen.add(key)
       if (!alternative) continue
@@ -1332,16 +1343,15 @@ function suggestNextMatchExhaustiveFallback(
 
   alternatives.sort((a, b) => sortSingleMatchAlternatives(a, b, state))
 
-  const elapsedMs = Date.now() - startMs
   if (options._exhaustiveDiag) {
     const best = alternatives[0]
     options._exhaustiveDiag.ran = true
-    options._exhaustiveDiag.timedOut = elapsedMs >= timeoutMs
+    options._exhaustiveDiag.timedOut = timedOut()
     options._exhaustiveDiag.eligibleCount = eligiblePlayers.length
     options._exhaustiveDiag.combinationsEvaluated = combinationsEvaluated
     options._exhaustiveDiag.bestPvnaDiff = best?.matches[0]?.stats?.pvna_diff ?? null
     options._exhaustiveDiag.bestHasTradeoffs = (best?.tradeoffs?.length ?? 0) > 0
-    options._exhaustiveDiag.elapsedMs = elapsedMs
+    options._exhaustiveDiag.spentUnits = searchBudgetSpent(fallbackBudget)
     options._exhaustiveDiag._alternatives = alternatives.map(a => ({
       teamA: a.matches[0]?.team_a,
       teamB: a.matches[0]?.team_b,

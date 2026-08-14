@@ -1,3 +1,4 @@
+import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget'
 import { commitCompletedRound } from '../../../lib/next-round-suggester/commit'
 import { DEFAULT_SCORING_WEIGHTS } from '../../../lib/next-round-suggester/state'
 import { suggestNextRound } from '../../../lib/next-round-suggester/suggest'
@@ -35,7 +36,7 @@ export type SimulationOptions = {
   rounds: number
   pvnaRange?: [number, number]
   genderMode?: 'none' | 'balanced' | 'mixedPrefs'
-  maxRuntimeMs?: number
+  searchUnits?: number
 }
 
 export type SimulationResult = {
@@ -182,7 +183,7 @@ export function simulateSession(options: SimulationOptions): SimulationResult {
     const adjustment = correctForFairness(state)
     const suggestion = suggestNextRound(applyFairnessAdjustment(state, adjustment), {
       tier_overrides: adjustment.tier_overrides,
-      max_runtime_ms: options.maxRuntimeMs,
+      search_budget: options.searchUnits === undefined ? undefined : createSearchBudget(options.searchUnits),
     }).alternatives[0]
     if (!suggestion) break
     state = simulateRound(state, suggestion.matches, suggestion.resting)

@@ -20,7 +20,9 @@ type PairSwapSearchOptions<Metrics> = {
   isAllowed?: (candidate: Metrics) => boolean
   checkpoint?: PairSwapCheckpoint
   maxCourtPairs?: number
-  maxRuntimeMs?: number
+  // Counted in candidate boards evaluated, not milliseconds: a plan that changes with machine load is
+  // not a plan anyone can reproduce or A/B.
+  maxCandidates?: number
 }
 
 function cloneBoard(board: PlannedBoardMatch[]) {
@@ -73,9 +75,7 @@ export function runPairSwapSearch<Metrics>(options: PairSwapSearchOptions<Metric
   const cursor: PairSwapCheckpoint = options.checkpoint
     ? { ...options.checkpoint, board: cloneBoard(options.checkpoint.board) }
     : { board: cloneBoard(options.initialBoard), pass: 0, left: 0, right: 1, improved_in_pass: false }
-  const deadline = options.maxRuntimeMs === undefined
-    ? Number.POSITIVE_INFINITY
-    : performance.now() + options.maxRuntimeMs
+  const maxCandidates = options.maxCandidates ?? Number.POSITIVE_INFINITY
   let courtPairsProcessed = 0
   let candidatesEvaluated = 0
   let timedOut = false
@@ -92,7 +92,7 @@ export function runPairSwapSearch<Metrics>(options: PairSwapSearchOptions<Metric
       continue
     }
     if (courtPairsProcessed >= (options.maxCourtPairs ?? Number.POSITIVE_INFINITY)) break
-    if (performance.now() >= deadline) {
+    if (candidatesEvaluated >= maxCandidates) {
       timedOut = true
       break
     }

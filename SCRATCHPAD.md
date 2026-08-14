@@ -1,3 +1,23 @@
+# GOTCHAS — P2-5 ngân sách đếm được (2026-08-14)
+
+## Gotchas
+- **Harness đóng băng đồng hồ = đo một đường prod không chạy.** `scratch/board-scorecard.ts` ghi đè `Date.now`/`performance.now` ở dòng đầu tiên. Hệ quả: mọi baseline của nó (kể cả `f1b6d8ac0b0c`) là đường "tìm kiếm đầy đủ", còn prod bị deadline cắt sớm. Vì thế P2-5 làm prod đổi hành vi hẳn mà hash baseline KHÔNG đổi. Đã thêm `REALCLOCK=1` để chạy với đồng hồ thật — chạy 2 lần rồi so hash là cách chứng minh (bất) tất định.
+- **Đo tỉ giá đơn vị/ms phải đo trên hình dạng THẬT.** `bestPartitioning` với history rỗng cho ~100 đơn vị/ms; đường live 1 sân trên roster 36 người chỉ ~11 đơn vị/ms, vì phần lớn thời gian ở việc KHÔNG được tính (dựng state, sort pool 4 chiến lược, post-pass, metadata). Đừng suy tỉ giá từ một phép đo tổng hợp rồi áp cho mọi đường.
+- **Ngân sách đếm partition KHÔNG chặn được đường có nhiều lần gọi nhỏ.** Beam rolling-horizon gọi ~30 lượt nhìn trước, mỗi lượt tốn ~80ms nhưng chỉ bị tính ~900 đơn vị → ngân sách 30k không bao giờ cạn. Thứ chặn được nó là **đếm chính cái nó làm** (`maxFutureSearches`), giống khuôn board-optimizer đếm vòng lặp.
+- **Beam rolling-horizon xưa nay không chạy.** Instrument event cũ luôn là `evaluated=1; calls=6; exhausted=1` — nó cạn 300ms sau ĐÚNG một ứng viên. Bất kỳ kết luận nào trước đây về "beam giúp/không giúp" đều là kết luận về một tính năng đang tắt.
+- **`git stash push -- lib scripts supabase tests` là cách A/B mã cũ/mới nhanh** mà không đụng `scratch/` (untracked nên không bị stash) — dùng liên tục trong phiên này. Nhớ `git checkout --` lại file test nếu chỉ còn khác biệt CRLF.
+
+## Rejected approaches (2026-08-14)
+- **Tính 1 đơn vị mỗi SÂN thay vì mỗi partition** (để ngân sách bind sớm hơn trên roster lớn): đo ra tỉ giá lệch TỆ HƠN — 92→682 đơn vị/ms theo cỡ pool, so với 40→110 khi tính mỗi partition. Chi phí một partition gần như không tăng theo số sân (cache team-split). Đã revert.
+- **Hạ `SEARCH_UNITS_PER_LEGACY_MS` để cứu độ trễ đường rolling**: thử 100 → 50 → 10, ca chậm vẫn 2.2–2.6s ở cả ba mức → chi phí không nằm trong tìm kiếm. Chỉnh tỉ giá chỉ đổi chất lượng, không đổi độ trễ đó.
+- **"2 test đỏ full-session là triệu chứng của wall-clock"**: bác bỏ bằng phép thử đóng băng đồng hồ — cùng con số (0.6667 / 0.6667). Pool 9 và 12 người quá nhỏ để chạm deadline 800ms.
+
+## Open questions
+- Beam rolling-horizon: giữ trần 12, hạ xuống ~6, hay xoá hẳn? (3 assertion đỏ trong `rolling-horizon-chain.test.ts` phụ thuộc lựa chọn này.)
+- Tỉ giá 100 đơn vị/ms đo trên máy dev Node; trên Deno edge chưa đo. Ngân sách đếm được giữ CHẤT LƯỢNG cố định giữa các máy, nên cái đổi theo máy giờ là ĐỘ TRỄ — cần đo trên edge trước khi deploy.
+
+---
+
 # GOTCHAS — blowout-defer + gender-gap + fragmentation (2026-08-07)
 
 ## Gotchas

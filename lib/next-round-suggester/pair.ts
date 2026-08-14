@@ -16,6 +16,12 @@ import {
 } from './score.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { isQualityCostModelEnabled } from './quality-cost-flag.ts'
+import {
+  searchBudgetExhausted,
+  spendSearchBudget,
+  type SearchBudget,
+  // @ts-ignore Deno edge-function bundling needs the local .ts extension.
+} from './search-budget.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { getEffectivePvna } from './state.ts'
 // @ts-ignore Deno edge-function bundling needs the local .ts extension.
@@ -661,7 +667,7 @@ export function bestPartitioning(
     mustRestAt?: number
     partnerRepeatCap?: number
     opponentRepeatCap?: number
-    maxRuntimeMs?: number
+    budget?: SearchBudget
     deadlineRescue?: boolean
   } = {},
 ): PartitioningResult | null {
@@ -669,7 +675,7 @@ export function bestPartitioning(
 
   const normalizedPlayers = [...players].sort((a, b) => a.player_id.localeCompare(b.player_id))
   const maxIterations = options.maxIterations ?? defaultMaxIterations(normalizedPlayers.length)
-  const partitionStartMs = options.maxRuntimeMs != null ? Date.now() : 0
+  const budget = options.budget
   const partitionCount = estimateUniqueCourtPartitions(normalizedPlayers.length)
   const canSearchExhaustively = partitionCount > 0 && partitionCount <= maxIterations
   const blockRounds = getRematchBlockRounds(normalizedPlayers.length)
@@ -704,6 +710,8 @@ export function bestPartitioning(
 
     function consider(groups: PlayerSessionState[][]) {
       if (iterations >= maxIterations) return
+      if (searchBudgetExhausted(budget)) return
+      spendSearchBudget(budget)
       iterations += 1
       const result = evaluatePartition(groups, searchState, iterations, options.cache, {
         ...searchOptions,
@@ -723,6 +731,7 @@ export function bestPartitioning(
     if (canSearchExhaustively) {
       function walk(remaining: PlayerSessionState[], groups: PlayerSessionState[][], useConflictFilter: boolean) {
         if (iterations >= maxIterations) return
+        if (searchBudgetExhausted(budget)) return
         if (remaining.length === 0) {
           consider(groups)
           return
@@ -769,7 +778,7 @@ export function bestPartitioning(
     const historySeedKey = options.seedSalt ?? historySignature(normalizedPlayers)
     const seedBase = hashString(`${state.current_round}|${playerSeedKey}|${historySeedKey}`)
     while (iterations < maxIterations) {
-      if (options.maxRuntimeMs != null && Date.now() - partitionStartMs >= options.maxRuntimeMs) break
+      if (searchBudgetExhausted(budget)) break
       const sh = shuffled(normalizedPlayers, seedBase + iterations)
       const playersToChunk = conflictMap.size > 0
         ? separateConflictPairs(sh, conflictMap)

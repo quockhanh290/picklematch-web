@@ -1,3 +1,4 @@
+import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget'
 import { suggestNextMatch, type ExhaustiveFallbackDiagnostic } from '../../../lib/next-round-suggester/suggest'
 import { __setQualityCostModelOverrideForTests } from '../../../lib/next-round-suggester/quality-cost-flag'
 import { createPlayer, createState } from '../helpers/factories'
@@ -38,10 +39,10 @@ describe('single-court deterministic lineup', () => {
     const state = enableQualityCost(flakyState())
     const diag: ExhaustiveFallbackDiagnostic = {
       ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
-      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
     }
     const res = suggestNextMatch(state, {
-      court_idx: 5, max_alternatives: 1, max_runtime_ms: 1, _exhaustiveDiag: diag,
+      court_idx: 5, max_alternatives: 1, search_budget: createSearchBudget(1), _exhaustiveDiag: diag,
     })
     expect(res.alternatives).toHaveLength(1)
     expect(diag.deterministicFastPath).toBe(true)
@@ -51,17 +52,17 @@ describe('single-court deterministic lineup', () => {
     __setQualityCostModelOverrideForTests(true)
     const shortDiag: ExhaustiveFallbackDiagnostic = {
       ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
-      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
     }
     const longDiag: ExhaustiveFallbackDiagnostic = {
       ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
-      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
     }
     suggestNextMatch(enableQualityCost(flakyState()), {
-      court_idx: 5, max_alternatives: 1, max_runtime_ms: 1, _exhaustiveDiag: shortDiag,
+      court_idx: 5, max_alternatives: 1, search_budget: createSearchBudget(1), _exhaustiveDiag: shortDiag,
     })
     suggestNextMatch(enableQualityCost(flakyState()), {
-      court_idx: 5, max_alternatives: 1, max_runtime_ms: 100000, _exhaustiveDiag: longDiag,
+      court_idx: 5, max_alternatives: 1, search_budget: createSearchBudget(10_000_000), _exhaustiveDiag: longDiag,
     })
     expect(shortDiag.deterministicFastPath).toBe(true)
     expect(longDiag.deterministicFastPath).toBe(true)
@@ -85,11 +86,11 @@ describe('single-court deterministic lineup', () => {
     const state = flakyState()
     const diag: ExhaustiveFallbackDiagnostic = {
       ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
-      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
     }
 
     suggestNextMatch(state, {
-      court_idx: 5, max_alternatives: 1, max_runtime_ms: 1, _exhaustiveDiag: diag,
+      court_idx: 5, max_alternatives: 1, search_budget: createSearchBudget(1), _exhaustiveDiag: diag,
     })
 
     expect(diag.deterministicFastPath).toBe(true)
@@ -110,10 +111,10 @@ describe('single-court deterministic lineup', () => {
     state.config.quality_cost_enabled = true
     const diag: ExhaustiveFallbackDiagnostic = {
       ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
-      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
     }
     const res = suggestNextMatch(state, {
-      court_idx: 5, max_alternatives: 1, max_runtime_ms: 1, _exhaustiveDiag: diag,
+      court_idx: 5, max_alternatives: 1, search_budget: createSearchBudget(1), _exhaustiveDiag: diag,
     })
     // diag.timedOut flips true only inside the exhaustive fallback's near-zero-budget bail, so this also
     // proves the fallback was actually invoked (shouldCheckFallback was true) rather than the assertions
@@ -150,12 +151,12 @@ describe('single-court deterministic lineup', () => {
     })
     const diag: ExhaustiveFallbackDiagnostic = {
       ran: false, timedOut: false, eligibleCount: 0, combinationsEvaluated: 0,
-      bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+      bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
     }
     // Ample budget (well over the 100ms fast-fail threshold) — this must resolve via the deterministic
     // fast path's own bail, not by falling through to spend that budget in the legacy timed loop.
     suggestNextMatch(state, {
-      court_idx: 0, max_alternatives: 1, max_runtime_ms: 100000, _exhaustiveDiag: diag,
+      court_idx: 0, max_alternatives: 1, search_budget: createSearchBudget(10_000_000), _exhaustiveDiag: diag,
     })
     // Same outcome as the flag-ON case above: the flag picks the ranking model, not whether the
     // deterministic scan runs.

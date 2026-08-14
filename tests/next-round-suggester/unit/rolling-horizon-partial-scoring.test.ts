@@ -1,3 +1,4 @@
+import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget'
 import { buildProjectedStateAfterLiveMatch } from '../../../lib/next-round-suggester/live-preview'
 import { chooseRollingHorizonAlternative } from '../../../lib/next-round-suggester/planner/rolling-horizon'
 import type { SessionLiveMatchRow, SuggestionAlternative } from '../../../lib/next-round-suggester/types'
@@ -52,7 +53,7 @@ describe('a candidate cut short by the budget does not compete against fully sco
       state,
       baseBusyIds: new Set(commitments.flatMap(row => [...row.team_a, ...row.team_b])),
       liveCommitments: commitments,
-      budgetMs: 100,
+      budget: createSearchBudget(10000),
       projectMatch: buildProjectedStateAfterLiveMatch,
       suggestFuture: () => null,
       now: () => {

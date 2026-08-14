@@ -1,11 +1,12 @@
 import { buildSuggestedMatchPayloads } from '../../../lib/next-round-suggester/live-preview'
-import { suggestNextRound } from '../../../lib/next-round-suggester/suggest'
+import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget'
+import { SEARCH_UNITS_PER_LEGACY_MS, suggestNextRound } from '../../../lib/next-round-suggester/suggest'
 import { createPlayers, createState } from '../helpers/factories'
 
 // The batch-wide force-rescue budget used to cross the module boundary as an absolute timestamp, so the
 // producer and the consumer had to agree on an epoch. They did not: live-preview built it from
 // performance.now() while suggest compared it against Date.now(), which expired the budget before the
-// search began. A duration cannot carry that disagreement.
+// search began. It is a counter now, and a counter cannot carry that disagreement.
 describe('force budget', () => {
   it('starves the search when the caller hands over a spent budget', () => {
     const state = createState({ courts: 1, pvnaTolerance: 0.5, players: createPlayers(12) })
@@ -13,7 +14,7 @@ describe('force budget', () => {
 
     const result = suggestNextRound(state, {
       max_alternatives: 3,
-      force_budget_ms: 0,
+      force_search_budget: createSearchBudget(0),
       onInstrumentEvent: event => { events.push(event) },
     })
 
@@ -27,7 +28,7 @@ describe('force budget', () => {
 
     const result = suggestNextRound(state, {
       max_alternatives: 3,
-      force_budget_ms: 1500,
+      force_search_budget: createSearchBudget(1500 * SEARCH_UNITS_PER_LEGACY_MS),
       onInstrumentEvent: event => { events.push(event) },
     })
 

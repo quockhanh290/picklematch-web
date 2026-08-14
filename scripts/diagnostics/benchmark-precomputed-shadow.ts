@@ -70,7 +70,7 @@ function main() {
     return argument ? Number(argument.split('=')[1]) : undefined
   }
   const passesArg = process.argv.find(argument => argument.startsWith('--passes='))
-  const roundBudgetMs = numericArg('round-budget-ms')
+  const roundBudgetCandidates = numericArg('round-budget-ms')
   const localSearchPasses = passesArg ? Number(passesArg.split('=')[1]) : full ? 3 : 1
   const selectedPlayers = numericArg('players')
   const selectedCourts = numericArg('courts')
@@ -92,14 +92,14 @@ function main() {
       let checkpoint: SessionPlanChunkCheckpoint | null = null
       let chunk = buildPrecomputedSessionPlanChunk(state, scenario.rounds, scenario.courts, checkpoint, {
         localSearchPasses,
-        maxRoundRuntimeMs: roundBudgetMs,
+        maxRoundSearchCandidates: roundBudgetCandidates,
       })
       chunkRuntimes.push(chunk.chunk_runtime_ms)
       while (!chunk.completed) {
         checkpoint = JSON.parse(JSON.stringify(chunk.checkpoint)) as SessionPlanChunkCheckpoint
         chunk = buildPrecomputedSessionPlanChunk(state, scenario.rounds, scenario.courts, checkpoint, {
           localSearchPasses,
-          maxRoundRuntimeMs: roundBudgetMs,
+          maxRoundSearchCandidates: roundBudgetCandidates,
         })
         chunkRuntimes.push(chunk.chunk_runtime_ms)
       }
@@ -108,7 +108,7 @@ function main() {
     } else {
       shadow = buildPrecomputedSessionPlan(state, scenario.rounds, scenario.courts, {
         localSearchPasses,
-        maxRoundRuntimeMs: roundBudgetMs,
+        maxRoundSearchCandidates: roundBudgetCandidates,
       })
     }
     const wallMs = performance.now() - wallStartedAt
@@ -157,7 +157,7 @@ function main() {
   console.log(JSON.stringify({
     mode: `${selectedPlayers ? 'custom' : full ? 'full' : 'quick'}${chunked ? '_chunked' : ''}`,
     local_search_passes: localSearchPasses,
-    round_budget_ms: roundBudgetMs ?? null,
+    round_budget_ms: roundBudgetCandidates ?? null,
     scenario_count: results.length,
     edge_cpu_budget_ms: 2000,
     results,

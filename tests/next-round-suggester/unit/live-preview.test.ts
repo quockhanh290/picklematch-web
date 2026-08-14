@@ -4,7 +4,7 @@ import {
   buildFinalPreviewBoard,
   getPreviewMatchesToPersist,
   deferLowViabilityRequiredIdsForCourt,
-  getLivePreviewCourtBudgetMs,
+  getLivePreviewCourtBudgetUnits,
   isLiveRoundFullyCompleted,
   warnLiveRoundProjectionDrift,
   buildLiveTierOverrides,
@@ -153,11 +153,11 @@ describe('buildLiveTierOverrides', () => {
   })
 })
 
-describe('getLivePreviewCourtBudgetMs', () => {
+describe('getLivePreviewCourtBudgetUnits', () => {
   it('divides remaining batch time while reserving minimum time for later courts', () => {
-    expect(getLivePreviewCourtBudgetMs(3800, 4)).toBeCloseTo(687.5)
-    expect(getLivePreviewCourtBudgetMs(3800, 1)).toBe(900)
-    expect(getLivePreviewCourtBudgetMs(600, 3)).toBe(350)
+    expect(getLivePreviewCourtBudgetUnits(380_000, 4)).toBe(68_750)
+    expect(getLivePreviewCourtBudgetUnits(380_000, 1)).toBe(90_000)
+    expect(getLivePreviewCourtBudgetUnits(60_000, 3)).toBe(35_000)
   })
 })
 
@@ -2101,7 +2101,7 @@ describe('findStrictCleanLiveAlternative', () => {
         'soft-rest-1': Tier.SHOULD_REST,
         'soft-rest-2': Tier.SHOULD_REST,
       },
-      timeoutMs: 300,
+      searchUnits: 30_000,
     })
 
     expect(rescued).not.toBeNull()

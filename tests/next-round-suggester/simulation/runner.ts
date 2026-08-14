@@ -16,7 +16,8 @@ import {
   type SessionFairnessScore,
 } from '../../../lib/next-round-suggester/fairness/metrics'
 import { buildFairnessPreview, buildLatestFairnessAudit } from '../../../lib/next-round-suggester/fairness/audit'
-import { suggestNextRound } from '../../../lib/next-round-suggester/suggest'
+import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget'
+import { SEARCH_UNITS_PER_LEGACY_MS, suggestNextRound } from '../../../lib/next-round-suggester/suggest'
 import type {
   Match,
   PlayerSessionState,
@@ -95,7 +96,7 @@ export type SimulationResult = {
 // tồn tại → sim stall ở vòng 2. Production live KHÔNG dùng path này (nó chạy per-court suggestNextMatch
 // với rescue riêng), nên sim cấp budget rộng để engine có headroom chạy rescue — phản ánh đúng "engine đủ
 // thời gian tìm nghiệm", không phải che lỗi.
-const SIM_SUGGEST_RUNTIME_MS = 5000
+const SIM_SUGGEST_SEARCH_UNITS = 5000 * SEARCH_UNITS_PER_LEGACY_MS
 
 export async function runSimulation(config: SimulationConfig): Promise<SimulationResult> {
   const rng = seedrandom(String(config.seed))
@@ -131,7 +132,7 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
     const altIdx = roundNo === 1 ? (config.first_round_alt_idx ?? 0) : 0
     const suggestion = suggestNextRound(effectiveState, {
       tier_overrides: adjustment?.tier_overrides ?? {},
-      max_runtime_ms: SIM_SUGGEST_RUNTIME_MS,
+      search_budget: createSearchBudget(SIM_SUGGEST_SEARCH_UNITS),
     })
     const elapsedMs = performance.now() - startedAt
     totalSuggestTimeMs += elapsedMs
@@ -300,7 +301,7 @@ function previewScoreAfterSuggestion(
   const effectiveState = adjustment ? applyFairnessAdjustment(state, adjustment) : state
   const suggestion = suggestNextRound(effectiveState, {
     tier_overrides: adjustment?.tier_overrides ?? {},
-    max_runtime_ms: SIM_SUGGEST_RUNTIME_MS,
+    search_budget: createSearchBudget(SIM_SUGGEST_SEARCH_UNITS),
   })
   const alternative = suggestion.alternatives[0]
   if (!alternative) return undefined

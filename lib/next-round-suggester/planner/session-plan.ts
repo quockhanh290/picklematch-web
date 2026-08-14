@@ -31,7 +31,7 @@ export type SessionPlanBoardMetrics = SocialPlannerMetrics & {
 
 export type SessionPlanOptions = {
   localSearchPasses?: number
-  maxRoundRuntimeMs?: number
+  maxRoundSearchCandidates?: number
   startingRound?: number
   initialDebt?: ReadonlyMap<string, number>
 }
@@ -270,7 +270,7 @@ function optimizeBoard(
   state: SessionState,
   debt: ReadonlyMap<string, number>,
   localSearchPasses: number,
-  maxRuntimeMs: number | undefined,
+  maxCandidates: number | undefined,
   searchStats: { timedOut: boolean; candidatesEvaluated: number },
 ) {
   const matchMetricsCache = new Map<string, MatchMetrics>()
@@ -316,7 +316,7 @@ function optimizeBoard(
     ),
     isAllowed: metrics => isWithinSocialPlannerCaps(metrics, invariantCaps),
     isBetter: isBetterSocialPlan,
-    maxRuntimeMs,
+    maxCandidates,
   })
   searchStats.timedOut = result.timedOut
   searchStats.candidatesEvaluated = result.candidatesEvaluated
@@ -436,7 +436,7 @@ export function buildPrecomputedSessionPlan(
       state,
       debt,
       localSearchPasses,
-      options.maxRoundRuntimeMs,
+      options.maxRoundSearchCandidates,
       searchStats,
     )
     const optimizeMs = performance.now() - optimizeStartedAt
@@ -593,7 +593,7 @@ export function buildPrecomputedSessionPlanChunk(
       state,
       debt,
       localSearchPasses,
-      options.maxRoundRuntimeMs,
+      options.maxRoundSearchCandidates,
       searchStats,
     )
     const optimizeMs = performance.now() - optimizeStartedAt

@@ -385,7 +385,7 @@ function buildState(snapshot: Snapshot, sessionId: string, courts: number, pvnaT
 function buildPlanTarget(initialState: SessionState, rounds: number, courts: number) {
   const plan = buildPrecomputedSessionPlan(initialState, rounds, courts, {
     localSearchPasses: 3,
-    maxRoundRuntimeMs: 500,
+    maxRoundSearchCandidates: 500,
   })
   const baselinePlayers = [...initialState.players.values()].map(player => ({
     ...player,

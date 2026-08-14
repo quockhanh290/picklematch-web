@@ -88,7 +88,7 @@ const LOCAL_SEARCH_PASSES = 3
 
 export type ShadowPlannerOptions = {
   localSearchPasses?: number
-  maxRoundRuntimeMs?: number
+  maxRoundSearchCandidates?: number
   startingRound?: number
   initialDebt?: ReadonlyMap<string, number>
 }
@@ -471,7 +471,7 @@ export function buildShadowPrecomputedPlan(
       debt,
       'shadow_precomputed',
       localSearchPasses,
-      options.maxRoundRuntimeMs,
+      options.maxRoundSearchCandidates,
       searchStats,
     )
     const optimizeMs = performance.now() - optimizeStartedAt
@@ -565,7 +565,7 @@ function main() {
   const passesArg = process.argv.find(argument => argument.startsWith('--passes='))
   const roundBudgetArg = process.argv.find(argument => argument.startsWith('--round-budget-ms='))
   const localSearchPasses = passesArg ? Number(passesArg.split('=')[1]) : LOCAL_SEARCH_PASSES
-  const maxRoundRuntimeMs = roundBudgetArg ? Number(roundBudgetArg.split('=')[1]) : undefined
+  const maxRoundSearchCandidates = roundBudgetArg ? Number(roundBudgetArg.split('=')[1]) : undefined
   if (!directory) {
     throw new Error('Usage: npx tsx scripts/diagnostics/evaluate-session-quality-counterfactual.ts <session-data-directory>')
   }
@@ -591,7 +591,7 @@ function main() {
       .map(variant => runVariant(variant, initialState, rounds))
   const shadow = buildShadowPrecomputedPlan(initialState, rounds.length, courts, {
     localSearchPasses,
-    maxRoundRuntimeMs,
+    maxRoundSearchCandidates,
   })
   const elapsedMs = performance.now() - startedAt
   const compactMetrics = (metrics: BoardMetrics) => ({

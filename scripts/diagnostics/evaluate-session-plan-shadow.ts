@@ -119,11 +119,11 @@ function pairStats(plan: SessionPlan): PairStats {
   }
 }
 
-function compactResult(plan: SessionPlan, passes: number, wallMs: number, roundBudgetMs?: number) {
+function compactResult(plan: SessionPlan, passes: number, wallMs: number, roundBudgetCandidates?: number) {
   const quality = summarizeSessionPlan(plan)
   return {
     passes,
-    round_budget_ms: roundBudgetMs ?? null,
+    round_budget_ms: roundBudgetCandidates ?? null,
     wall_ms: Math.round(wallMs),
     active_compute_ms: Math.round(plan.timings.total_ms),
     candidates_evaluated: plan.timings.rounds.reduce((sum, round) => sum + round.candidates_evaluated, 0),
@@ -156,8 +156,8 @@ async function main() {
     .filter(value => Number.isInteger(value) && value > 0)
   if (passes.length === 0) throw new Error('--passes must contain positive integers')
   const rawRoundBudgetMs = argument('--round-budget-ms')
-  const roundBudgetMs = rawRoundBudgetMs === undefined ? undefined : Number(rawRoundBudgetMs)
-  if (roundBudgetMs !== undefined && (!Number.isFinite(roundBudgetMs) || roundBudgetMs <= 0)) {
+  const roundBudgetCandidates = rawRoundBudgetMs === undefined ? undefined : Number(rawRoundBudgetMs)
+  if (roundBudgetCandidates !== undefined && (!Number.isFinite(roundBudgetCandidates) || roundBudgetCandidates <= 0)) {
     throw new Error('--round-budget-ms must be a positive number')
   }
   const playedRounds = Number(argument('--played-rounds') ?? 0)
@@ -217,14 +217,14 @@ async function main() {
     const startedAt = performance.now()
     const plan = buildPrecomputedSessionPlan(state, remainingRounds, job.court_count, {
       localSearchPasses: passCount,
-      maxRoundRuntimeMs: roundBudgetMs,
+      maxRoundSearchCandidates: roundBudgetCandidates,
       startingRound: state.current_round,
       initialDebt,
     })
     const selectedIds = plan.rounds.flatMap(round => round.matches)
       .flatMap(match => [...match.team_a, ...match.team_b])
     return {
-      ...compactResult(plan, passCount, performance.now() - startedAt, roundBudgetMs),
+      ...compactResult(plan, passCount, performance.now() - startedAt, roundBudgetCandidates),
       round_numbers: plan.rounds.map(round => round.round),
       mutated_player_selections: mutatedPlayerId
         ? selectedIds.filter(id => id === mutatedPlayerId).length

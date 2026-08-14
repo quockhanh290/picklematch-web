@@ -1,3 +1,4 @@
+import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget'
 import { bestPartitioning } from '../../../lib/next-round-suggester/pair'
 import { createPlayer, createState } from '../helpers/factories'
 
@@ -35,10 +36,10 @@ describe('bestPartitioning determinism', () => {
       'p10:p15>p1:p11|p12:p19>p14:p9|p13:p7>p16:p3|p17:p2>p18:p4|p20:p8>p5:p6'
 
     const oneMsClock = withMockedDateNow(1, () =>
-      bestPartitioning(players, state, { maxIterations: 12, maxRuntimeMs: 1_000 }),
+      bestPartitioning(players, state, { maxIterations: 12, budget: createSearchBudget(100_000) }),
     )
     const twoMsClock = withMockedDateNow(2, () =>
-      bestPartitioning(players, state, { maxIterations: 12, maxRuntimeMs: 1_000 }),
+      bestPartitioning(players, state, { maxIterations: 12, budget: createSearchBudget(100_000) }),
     )
 
     expect(boardKey(oneMsClock)).toBe(expectedBoard)

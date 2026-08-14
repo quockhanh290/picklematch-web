@@ -262,7 +262,7 @@ async function main() {
       // Run algorithm
       const exhaustiveDiag: ExhaustiveFallbackDiagnostic = {
         ran: false, timedOut: false, eligibleCount: 0,
-        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
       }
       const result = suggestNextMatch(currentState, {
         busy_player_ids: [...courtBusyIds],
@@ -302,7 +302,7 @@ async function main() {
         const validity = computeActualComboValidity(actualTeamA, actualTeamB, currentState, pvnaTolerance)
         const intraTag = validity.isClean ? 'CLEAN' : `intra=${validity.intraGap.toFixed(2)}`
         const diagStr = exhaustiveDiag.ran
-          ? `exhaustive: ${exhaustiveDiag.combinationsEvaluated} combos, ${exhaustiveDiag.elapsedMs}ms`
+          ? `exhaustive: ${exhaustiveDiag.combinationsEvaluated} combos, ${exhaustiveDiag.spentUnits} units`
           : 'exhaustive: không chạy (primary tìm thấy clean combo)'
         if (validity.isValid) {
           console.log(`  ⚠️  VALID COMBO không trong pool — pvna=${validity.pvnaGap.toFixed(2)} ${intraTag} (${diagStr})`)

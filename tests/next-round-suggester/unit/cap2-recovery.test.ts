@@ -6,6 +6,7 @@
  * Engine is deterministic; tests are stable and flaky-free.
  */
 
+import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget'
 import { commitCompletedRound } from '../../../lib/next-round-suggester/commit'
 import {
   buildSuggestedMatchPayloads,
@@ -171,7 +172,7 @@ describe('A: board fill — 40-player / 6-court pool', () => {
     const instrumentEvents: EngineInstrumentEvent[] = []
     const startedAt = performance.now()
     const result = suggestNextRound(stressedState, {
-      max_runtime_ms: 2000,
+      search_budget: createSearchBudget(200_000),
       diagnostics,
       onInstrumentEvent: event => instrumentEvents.push(event),
     })

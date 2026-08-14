@@ -1,3 +1,4 @@
+import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget'
 import { Tier } from '../../../lib/next-round-suggester/classify'
 import { DEFAULT_SUGGEST_NEXT_ROUND_RUNTIME_MS, suggestNextMatch, suggestNextRound, type SuggestionDiagnostic } from '../../../lib/next-round-suggester/suggest'
 import { createPlayer, createPlayers, createState, setOpponentRepeats, setPartnerRepeats } from '../helpers/factories'
@@ -172,7 +173,7 @@ describe('suggestNextRound', () => {
       allow_recent_group_rematch: true,
       exhaustive_fallback: true,
       max_alternatives: 20,
-      max_runtime_ms: 1000,
+      search_budget: createSearchBudget(100_000),
     })
     const previousIds = new Set(['p01', 'p02', 'p03', 'p04'])
     const overlaps = result.alternatives.map(item => {

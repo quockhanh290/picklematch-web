@@ -25,7 +25,22 @@ import {
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import { bestPartitioning } from './pair.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
-import { suggestNextMatch, type EngineInstrumentEvent, type ExhaustiveFallbackDiagnostic } from './suggest.ts'
+import {
+  SEARCH_UNITS_PER_LEGACY_MS,
+  suggestNextMatch,
+  type EngineInstrumentEvent,
+  type ExhaustiveFallbackDiagnostic,
+  // @ts-ignore Deno edge-function bundling needs the local .ts extension.
+} from './suggest.ts'
+import {
+  createSearchBudget,
+  searchBudgetExhausted,
+  searchBudgetRemaining,
+  spendSearchBudget,
+  subSearchBudget,
+  type SearchBudget,
+  // @ts-ignore Deno edge-function bundling needs the local .ts extension.
+} from './search-budget.ts'
 // @ts-ignore Node's strip-only test runner needs the local .ts extension.
 import {
   chooseRollingHorizonAlternative,
@@ -87,29 +102,33 @@ const LIVE_SOCIAL_TRADEOFF_MIN_PVNA_IMPROVEMENT = 0.35
 const LIVE_SOCIAL_TRADEOFF_EXACT_REMATCH_LIMIT = 0
 const LIVE_SOCIAL_TRADEOFF_MAX_NEAR_REMATCH = 1
 const LIVE_STRICT_RESCUE_ELIGIBLE_LIMIT = 20
-const LIVE_STRICT_RESCUE_TIMEOUT_MS = 300
-const LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3800
-const LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS = 350
-const LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS = 900
+// Every budget below is counted in search units (one partition evaluated), not milliseconds: the board
+// a host gets must not depend on how loaded the machine was. The numbers are the old ms values at the
+// measured exchange rate, so the amount of search bought is unchanged on a nominal machine.
+const LIVE_STRICT_RESCUE_SEARCH_UNITS = 300 * SEARCH_UNITS_PER_LEGACY_MS
+const LIVE_PREVIEW_BATCH_SEARCH_UNITS = 3800 * SEARCH_UNITS_PER_LEGACY_MS
+const LIVE_PREVIEW_MIN_COURT_SEARCH_UNITS = 350 * SEARCH_UNITS_PER_LEGACY_MS
+const LIVE_PREVIEW_MAX_COURT_SEARCH_UNITS = 900 * SEARCH_UNITS_PER_LEGACY_MS
 // Shared force-rescue budget for the whole buildSuggestedMatchPayloads call.
 // effectiveCount already prevents engine from running on impossible courts,
 // so this only needs to guard legitimately hard search cases.
-const FORCE_RESCUE_TOTAL_MS = 1500
+const FORCE_RESCUE_TOTAL_SEARCH_UNITS = 1500 * SEARCH_UNITS_PER_LEGACY_MS
 // One shared budget for ALL degraded courts' rescue-court verification in a batch. Each
 // findRescueCourts runs a suggest per live court, so a per-court budget would multiply latency on
 // multi-court fills. Degraded courts past this budget still seat + explain, just without a rescue list.
-const LIVE_RESCUE_TOTAL_BUDGET_MS = 400
+const LIVE_RESCUE_TOTAL_SEARCH_UNITS = 400 * SEARCH_UNITS_PER_LEGACY_MS
 // Smallest slice a rescue search can do anything with. Below this it returns "none found" without having
 // looked, and the host cannot tell that from a genuine answer.
-const MIN_RESCUE_SEARCH_MS = 80
+const MIN_RESCUE_SEARCH_UNITS = 80 * SEARCH_UNITS_PER_LEGACY_MS
+const RESCUE_PER_COURT_SEARCH_UNITS = 100 * SEARCH_UNITS_PER_LEGACY_MS
 
 // The pool used to be drained in visit order, so a court late in the array could find it empty and come
 // back with no wait options at all — never searched, indistinguishable from searched-and-found-nothing.
 // Splitting by court count costs a lone degraded court some search time, which is the trade: a shorter
 // search still answers the question.
-export function getRescueBudgetShareMs(totalMs: number, courtCount: number): number {
+export function getRescueBudgetShareUnits(totalUnits: number, courtCount: number): number {
   const courts = Math.max(1, Math.floor(courtCount))
-  return Math.max(MIN_RESCUE_SEARCH_MS, Math.floor(totalMs / courts))
+  return Math.max(MIN_RESCUE_SEARCH_UNITS, Math.floor(totalUnits / courts))
 }
 
 // --- Wait-rescue "how lopsided is lopsided" thresholds ---------------------------------------
@@ -135,7 +154,7 @@ export const LIVE_PREVIEW_ALGORITHM_VERSION = 77
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
 const BEAM_ACTIVE_PLAYER_LIMIT = 50
-const BEAM_PER_CANDIDATE_MAX_MS = 100
+const BEAM_PER_CANDIDATE_MAX_SEARCH_UNITS = 100 * SEARCH_UNITS_PER_LEGACY_MS
 
 export function isLiveRoundFullyCompleted(
   roundNo: number,
@@ -209,14 +228,14 @@ export function warnLiveRoundProjectionDrift({
   })
 }
 
-export function getLivePreviewCourtBudgetMs(remainingBatchMs: number, remainingCourts: number) {
+export function getLivePreviewCourtBudgetUnits(batchUnits: number, remainingCourts: number) {
   const safeRemainingCourts = Math.max(1, Math.floor(remainingCourts))
-  const reservedForFutureCourts = LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS * Math.max(0, safeRemainingCourts - 1)
-  const fairShare = (remainingBatchMs - reservedForFutureCourts) / safeRemainingCourts
-  return Math.min(
-    LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS,
-    Math.max(LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS, fairShare),
-  )
+  const reservedForFutureCourts = LIVE_PREVIEW_MIN_COURT_SEARCH_UNITS * Math.max(0, safeRemainingCourts - 1)
+  const fairShare = (batchUnits - reservedForFutureCourts) / safeRemainingCourts
+  return Math.floor(Math.min(
+    LIVE_PREVIEW_MAX_COURT_SEARCH_UNITS,
+    Math.max(LIVE_PREVIEW_MIN_COURT_SEARCH_UNITS, fairShare),
+  ))
 }
 
 const BALANCED_PVNA_COST_WEIGHT = 10
@@ -566,7 +585,7 @@ type StrictRescueOptions = {
   tierOverrides: Record<string, Tier>
   warnings?: string[]
   maxEligiblePlayers?: number
-  timeoutMs?: number
+  searchUnits?: number
   seedSalt?: string
 }
 
@@ -3387,8 +3406,7 @@ export function findStrictCleanLiveAlternative(
   options: StrictRescueOptions,
 ): SuggestionAlternative | null {
   const maxEligiblePlayers = Math.max(4, Math.floor(options.maxEligiblePlayers ?? LIVE_STRICT_RESCUE_ELIGIBLE_LIMIT))
-  const timeoutMs = Math.max(50, Math.floor(options.timeoutMs ?? LIVE_STRICT_RESCUE_TIMEOUT_MS))
-  const startedAt = nowMs()
+  const budget = createSearchBudget(options.searchUnits ?? LIVE_STRICT_RESCUE_SEARCH_UNITS)
   const allPresent = [...state.players.values()]
     .filter(player => player.checked_out_at === null)
     .sort((left, right) => left.player_id.localeCompare(right.player_id))
@@ -3421,7 +3439,8 @@ export function findStrictCleanLiveAlternative(
   let best: SuggestionAlternative | null = null
   const seen = new Set<string>()
   for (const selected of combinations) {
-    if (nowMs() - startedAt > timeoutMs) break
+    if (searchBudgetExhausted(budget)) break
+    spendSearchBudget(budget)
     const key = combinationKey(selected)
     if (seen.has(key)) continue
     seen.add(key)
@@ -3769,10 +3788,6 @@ function getBlockedRecentGroupRematchKeys(
   return keys
 }
 
-export function nowMs() {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now()
-}
-
 type LiveTierOverrideMap = Record<string, Tier>
 
 export function buildLiveTierOverrides({
@@ -3844,7 +3859,7 @@ function pickRollingBeamAlternative(
   state: SessionState,
   baseSimBusy: Set<string>,
   liveCommitments: SessionLiveMatchRow[],
-  budgetMs: number,
+  budget: SearchBudget,
   candidateLimit: number,
   qualityReference: SuggestionAlternative,
   planTarget?: RollingPlanTarget | null,
@@ -3854,14 +3869,14 @@ function pickRollingBeamAlternative(
     state,
     baseBusyIds: baseSimBusy,
     liveCommitments,
-    budgetMs,
+    budget,
     candidateLimit,
     qualityReference,
-    suggestFuture: ({ state: futureState, busyIds, maxRuntimeMs }) => (
+    suggestFuture: ({ state: futureState, busyIds, budget: futureBudget }) => (
       suggestNextMatch(futureState, {
         busy_player_ids: busyIds,
         max_alternatives: 1,
-        max_runtime_ms: maxRuntimeMs,
+        search_budget: futureBudget,
       }).alternatives[0] ?? null
     ),
     projectMatch: buildProjectedStateAfterLiveMatch,
@@ -3917,12 +3932,12 @@ function pickLegacyBeamAlternative(
   futureCourtsCount: number,
   state: SessionState,
   baseSimBusy: Set<string>,
-  budgetMs: number,
+  budget: SearchBudget,
 ): SuggestionAlternative | null {
   const validCandidates = candidates.filter(alt => alt.matches.length > 0)
   if (validCandidates.length <= 1) return null
   const weights = legacyBeamWeights(baseSimBusy, state)
-  const perCandidateMs = Math.floor(budgetMs / validCandidates.length)
+  const perCandidateUnits = Math.floor(searchBudgetRemaining(budget) / validCandidates.length)
   let bestAlt: SuggestionAlternative | null = null
   let bestScore = Infinity
   for (const alt of validCandidates) {
@@ -3930,7 +3945,7 @@ function pickLegacyBeamAlternative(
     if (!match) continue
     const simBusy = new Set([...baseSimBusy, ...match.team_a, ...match.team_b])
     let totalScore = legacyBeamMatchScore(match.team_a, match.team_b, state, weights.inter, weights.intra)
-    const simStart = nowMs()
+    const candidateBudget = subSearchBudget(budget, perCandidateUnits)
     let simState = buildProjectedStateAfterLiveMatch(state, {
       id: 'legacy-beam-lookahead', session_id: state.session_id, sequence_no: 0,
       round_no: state.current_round, court_idx: 0, status: 'completed',
@@ -3938,11 +3953,11 @@ function pickLegacyBeamAlternative(
       suggested_at: new Date().toISOString(), started_at: null, ended_at: null,
     })
     for (let index = 0; index < futureCourtsCount; index += 1) {
-      if (nowMs() - simStart >= perCandidateMs) break
+      if (searchBudgetExhausted(candidateBudget)) break
       const future = suggestNextMatch(simState, {
         busy_player_ids: simBusy,
         max_alternatives: 1,
-        max_runtime_ms: Math.max(20, perCandidateMs - (nowMs() - simStart)),
+        search_budget: candidateBudget,
       }).alternatives[0]
       const futureMatch = future?.matches[0]
       if (!future || !futureMatch) break
@@ -4037,15 +4052,13 @@ function findRescueCourts(input: {
   busyIds: Set<string>
   liveCourtPlayers: Map<number, string[]>
   isFixed: (teamA: Team, teamB: Team) => boolean
-  perCourtRuntimeMs: number
-  budgetMs: number
-  nowMsFn: () => number
+  perCourtSearchUnits: number
+  budget: SearchBudget
 }): { courtIdxs: number[]; truncated: boolean } {
   const rescue: number[] = []
-  const startedAt = input.nowMsFn()
   let truncated = false
   for (const [liveCourt, players] of input.liveCourtPlayers) {
-    if (input.nowMsFn() - startedAt > input.budgetMs) {
+    if (searchBudgetExhausted(input.budget)) {
       truncated = true
       break
     }
@@ -4058,7 +4071,7 @@ function findRescueCourts(input: {
     const refill = suggestNextMatch(input.state, {
       busy_player_ids: [...freedBusy],
       court_idx: liveCourt,
-      max_runtime_ms: input.perCourtRuntimeMs,
+      search_budget: subSearchBudget(input.budget, input.perCourtSearchUnits),
     })
     const refillMatch = refill.alternatives?.[0]?.matches?.[0]
     const busyAfterRefill = new Set(freedBusy)
@@ -4068,7 +4081,7 @@ function findRescueCourts(input: {
     const result = suggestNextMatch(input.state, {
       busy_player_ids: [...busyAfterRefill],
       court_idx: input.courtIdx,
-      max_runtime_ms: input.perCourtRuntimeMs,
+      search_budget: subSearchBudget(input.budget, input.perCourtSearchUnits),
     })
     const candidate = result.alternatives?.[0]?.matches?.[0]
     if (!candidate) continue
@@ -4085,8 +4098,8 @@ function findRescueCourts(input: {
 // Degraded-match detection + rescue-court search for a SINGLE match, reusable outside the per-court
 // fill loop. The edge runs this board-wide (over EVERY suggested court, including retained/committed
 // ones the fill loop didn't recompute) so the "Chờ Sân X" panel appears on all degraded courts, not
-// just the one just refilled. Rescue search is the expensive part — the caller passes a shared budget
-// (elapsedMs is returned so it can decrement it across courts) and gets [] when the budget is spent.
+// just the one just refilled. Rescue search is the expensive part — the caller passes ONE shared budget
+// object that drains across courts, and a court reaching it empty gets [] without having looked.
 export function computeMatchDegradedRescue(input: {
   teamA: Team
   teamB: Team
@@ -4096,10 +4109,9 @@ export function computeMatchDegradedRescue(input: {
   liveCourtPlayers: Map<number, string[]>
   busyIds: Set<string>
   pvnaTolerance: number
-  budgetMs: number
-  nowMsFn: () => number
-}): { degradedReason: SuggestedMatchPayload['degraded_reason']; rescueCourtIdxs: number[]; rescueSearchTruncated: boolean; elapsedMs: number } {
-  const { teamA, teamB, courtIdx, state, liveCourtIdxs, liveCourtPlayers, busyIds, pvnaTolerance, budgetMs, nowMsFn } = input
+  budget: SearchBudget
+}): { degradedReason: SuggestedMatchPayload['degraded_reason']; rescueCourtIdxs: number[]; rescueSearchTruncated: boolean } {
+  const { teamA, teamB, courtIdx, state, liveCourtIdxs, liveCourtPlayers, busyIds, pvnaTolerance, budget } = input
   const pv = (id: string) => {
     const player = state.players.get(id)
     return player ? getEffectivePvna(player) : 0
@@ -4127,14 +4139,12 @@ export function computeMatchDegradedRescue(input: {
   // liveCourtIdxs.size > 0 cleared genuine repeat-3 lanes whenever the whole board was suggested (no
   // live courts), so the host lost the repeat warning. Only the rescue SEARCH needs a live court.
   if (!(isBlowout || isRepeat)) {
-    return { degradedReason: undefined, rescueCourtIdxs: [], rescueSearchTruncated: false, elapsedMs: 0 }
+    return { degradedReason: undefined, rescueCourtIdxs: [], rescueSearchTruncated: false }
   }
   const degradedReason: SuggestedMatchPayload['degraded_reason'] = isBlowout && isRepeat ? 'both' : isBlowout ? 'blowout' : 'repeat'
   let rescueCourtIdxs: number[] = []
   let rescueSearchTruncated = false
-  let elapsedMs = 0
-  if (budgetMs > 0 && liveCourtIdxs.size > 0) {
-    const startedAt = nowMsFn()
+  if (!searchBudgetExhausted(budget) && liveCourtIdxs.size > 0) {
     const rescueSearch = findRescueCourts({
       state,
       courtIdx,
@@ -4158,17 +4168,15 @@ export function computeMatchDegradedRescue(input: {
         }
         return true
       },
-      perCourtRuntimeMs: 100,
-      budgetMs,
-      nowMsFn,
+      perCourtSearchUnits: RESCUE_PER_COURT_SEARCH_UNITS,
+      budget,
     })
     rescueCourtIdxs = rescueSearch.courtIdxs
     rescueSearchTruncated = rescueSearch.truncated
-    elapsedMs = nowMsFn() - startedAt
-  } else if (budgetMs <= 0 && liveCourtIdxs.size > 0) {
+  } else if (searchBudgetExhausted(budget) && liveCourtIdxs.size > 0) {
     rescueSearchTruncated = true
   }
-  return { degradedReason, rescueCourtIdxs, rescueSearchTruncated, elapsedMs }
+  return { degradedReason, rescueCourtIdxs, rescueSearchTruncated }
 }
 
 const EXPLAIN_LOPSIDED_MIN_GAP = 1.0
@@ -4301,8 +4309,11 @@ export function buildSuggestedMatchPayloads({
   options = {},
   debugOut,
 }: BuildSuggestedMatchPayloadsParams): SuggestedMatchPayload[] {
-  const batchStartedAt = nowMs()
-  const forceBudgetDeadline = nowMs() + FORCE_RESCUE_TOTAL_MS
+  // One countable budget for the whole batch, and named slices carved out of it. Nothing below reads a
+  // clock to decide how much search a court gets, so the same request produces the same board.
+  const batchBudget = createSearchBudget(LIVE_PREVIEW_BATCH_SEARCH_UNITS)
+  const forceRescueBudget = subSearchBudget(batchBudget, FORCE_RESCUE_TOTAL_SEARCH_UNITS)
+  const rescueCourtBudget = subSearchBudget(batchBudget, LIVE_RESCUE_TOTAL_SEARCH_UNITS)
   const baseSuggestionState = options.stateOverride ?? state
   let suggestionState = applyFairnessAdjustment(baseSuggestionState, {
     type: fairnessAdjustment.config_changes && Object.keys(fairnessAdjustment.config_changes).length > 0
@@ -4557,8 +4568,6 @@ export function buildSuggestedMatchPayloads({
   let roundCourtIdxs = getInitialRoundCourtIdxs(projectedRoundNo)
   
   for (let index = 0; index < effectiveCount; index += 1) {
-    const remainingBatchMs = LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)
-    const courtStartedAt = nowMs()
     // Each court gets the same slice, decided by how many courts were asked for and nothing else. It
     // used to be carved out of the time actually left, with the loop breaking once that ran low: a
     // slower machine returned fewer courts from identical input, and a host had no way to tell a court
@@ -4567,11 +4576,12 @@ export function buildSuggestedMatchPayloads({
     //
     // The total stays bounded by construction: the share reserves the minimum for every other court, so
     // effectiveCount slices never exceed the batch budget.
-    const courtBudgetMs = getLivePreviewCourtBudgetMs(LIVE_PREVIEW_BATCH_TIMEOUT_MS, effectiveCount)
-    const getRemainingCourtBudgetMs = (capMs = LIVE_PREVIEW_MAX_COURT_TIMEOUT_MS) => Math.min(
-      capMs,
-      Math.max(20, courtBudgetMs - (nowMs() - courtStartedAt)),
+    const courtBudget = createSearchBudget(
+      getLivePreviewCourtBudgetUnits(LIVE_PREVIEW_BATCH_SEARCH_UNITS, effectiveCount),
+      [batchBudget],
     )
+    const courtSearchBudget = (capUnits = LIVE_PREVIEW_MAX_COURT_SEARCH_UNITS) =>
+      subSearchBudget(courtBudget, capUnits)
     if (projectedRoundMatchCount >= courtCapacity) {
       projectedRoundNo += 1
       projectedRoundMatchCount = 0
@@ -4710,7 +4720,7 @@ export function buildSuggestedMatchPayloads({
     
     const exhaustiveDiag: ExhaustiveFallbackDiagnostic = {
       ran: false, timedOut: false, eligibleCount: 0,
-      combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+      combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
     }
     const suggestionStateForCourt = withRecentGroupRematchKeys(
       { ...suggestionState, current_round: payloadRoundNo },
@@ -4755,12 +4765,12 @@ export function buildSuggestedMatchPayloads({
       court_idx: courtIdx,
       max_alternatives: LIVE_TRADEOFF_ALTERNATIVE_LIMIT,
       exhaustive_fallback: true,
-      max_runtime_ms: getRemainingCourtBudgetMs(),
+      search_budget: courtSearchBudget(),
       _exhaustiveDiag: exhaustiveDiag,
       forced_required_player_ids: requiredForThisCourt,
       availability_metrics: getAvailabilityMetricsForState(suggestionStateForCourt),
       preview_seed: previewSeed,
-      force_budget_ms: Math.max(0, forceBudgetDeadline - nowMs()),
+      force_search_budget: forceRescueBudget,
       onInstrumentEvent: options.onInstrumentEvent,
     }
     const debugEligible = debugOut ? [...suggestionStateForCourt.players.values()]
@@ -4790,14 +4800,14 @@ export function buildSuggestedMatchPayloads({
       // with compatible PVNA to rescue the court, while protecting true over-quota players.
       const intraRescueDiag: ExhaustiveFallbackDiagnostic = {
         ran: false, timedOut: false, eligibleCount: 0,
-        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
       }
       const intraRescueResult = suggestNextMatch(suggestionStateForCourt, {
         ...suggestOptions,
         busy_player_ids: buildBusyIdsForProtected(liveSelectionGuard.intraRescueProtectedIds),
         tier_overrides: relaxedTierOverrides as any,
         max_alternatives: LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT,
-        max_runtime_ms: getRemainingCourtBudgetMs(),
+        search_budget: courtSearchBudget(),
         _exhaustiveDiag: intraRescueDiag,
       })
       if (intraRescueResult.alternatives.length > 0 && !hasOnlyHardIntraViolations(intraRescueResult.alternatives)) {
@@ -4821,14 +4831,14 @@ export function buildSuggestedMatchPayloads({
         if (result.alternatives.length > 0) break
         const relaxedDiag: ExhaustiveFallbackDiagnostic = {
           ran: false, timedOut: false, eligibleCount: 0,
-          combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+          combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
         }
         const relaxedResult = suggestNextMatch(suggestionStateForCourt, {
           ...suggestOptions,
           busy_player_ids: buildBusyIdsForProtected(relaxationStage.protectedIds),
           tier_overrides: relaxedTierOverrides as any,
           max_alternatives: LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT,
-          max_runtime_ms: getRemainingCourtBudgetMs(),
+          search_budget: courtSearchBudget(),
           _exhaustiveDiag: relaxedDiag,
         })
         if (relaxedResult.alternatives.length === 0) continue
@@ -4870,13 +4880,13 @@ export function buildSuggestedMatchPayloads({
       )
       const quotaRelaxedDiag: ExhaustiveFallbackDiagnostic = {
         ran: false, timedOut: false, eligibleCount: 0,
-        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
       }
       const quotaRelaxedResult = suggestNextMatch(suggestionStateForCourt, {
         ...suggestOptions,
         busy_player_ids: buildBusyIdsForProtected(quotaRelaxedProtectedIds),
         max_alternatives: LIVE_QUOTA_RESCUE_ALTERNATIVE_LIMIT,
-        max_runtime_ms: getRemainingCourtBudgetMs(500),
+        search_budget: courtSearchBudget(500 * SEARCH_UNITS_PER_LEGACY_MS),
         _exhaustiveDiag: quotaRelaxedDiag,
       })
       const quotaRelaxedRescue = findQuotaRelaxedQualityRescue(
@@ -4913,13 +4923,13 @@ export function buildSuggestedMatchPayloads({
       )
       const outlierDiag: ExhaustiveFallbackDiagnostic = {
         ran: false, timedOut: false, eligibleCount: 0,
-        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
       }
       const outlierResult = suggestNextMatch(suggestionStateForCourt, {
         ...suggestOptions,
         busy_player_ids: buildBusyIdsForProtected(protectedWithoutQuota),
         max_alternatives: LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT,
-        max_runtime_ms: getRemainingCourtBudgetMs(700),
+        search_budget: courtSearchBudget(700 * SEARCH_UNITS_PER_LEGACY_MS),
         _exhaustiveDiag: outlierDiag,
       })
       const outlierRescue = findPvnaOutlierRescue(
@@ -4950,12 +4960,12 @@ export function buildSuggestedMatchPayloads({
     ) {
       const deepDiag: ExhaustiveFallbackDiagnostic = {
         ran: false, timedOut: false, eligibleCount: 0,
-        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+        combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
       }
       const deepResult = suggestNextMatch(suggestionStateForCourt, {
         ...suggestOptions,
         max_alternatives: LIVE_TRADEOFF_DEEP_ALTERNATIVE_LIMIT,
-        max_runtime_ms: getRemainingCourtBudgetMs(),
+        search_budget: courtSearchBudget(),
         _exhaustiveDiag: deepDiag,
       })
       if (deepResult.alternatives.length > result.alternatives.length) {
@@ -5014,7 +5024,7 @@ export function buildSuggestedMatchPayloads({
     if (
       baselineForConditionalSearch
       && effectiveCount >= courtCount
-      && remainingBatchMs > LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS + 100
+      && searchBudgetRemaining(batchBudget) > LIVE_PREVIEW_MIN_COURT_SEARCH_UNITS
     ) {
       const baselineMetrics = getTradeoffChoiceMetrics(
         baselineForConditionalSearch,
@@ -5028,9 +5038,9 @@ export function buildSuggestedMatchPayloads({
       if (shouldSearchConditionalRescue) {
         const conditionalDiag: ExhaustiveFallbackDiagnostic = {
           ran: false, timedOut: false, eligibleCount: 0,
-          combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, elapsedMs: 0,
+          combinationsEvaluated: 0, bestPvnaDiff: null, bestHasTradeoffs: false, spentUnits: 0,
         }
-        const conditionalBudgetMs = getRemainingCourtBudgetMs(100)
+        const conditionalBudget = courtSearchBudget(100 * SEARCH_UNITS_PER_LEGACY_MS)
         const conditionalProtectedIds =
           liveSelectionGuard.relaxationStages[liveSelectionGuard.relaxationStages.length - 1]?.protectedIds
           ?? liveSelectionGuard.protectedIds
@@ -5040,10 +5050,10 @@ export function buildSuggestedMatchPayloads({
           court_idx: courtIdx,
           max_alternatives: LIVE_CONDITIONAL_RESCUE_ALTERNATIVE_LIMIT,
           exhaustive_fallback: true,
-          max_runtime_ms: conditionalBudgetMs,
+          search_budget: conditionalBudget,
           _exhaustiveDiag: conditionalDiag,
           forced_required_player_ids: requiredForThisCourt,
-          force_budget_ms: conditionalBudgetMs,
+          force_search_budget: forceRescueBudget,
         })
         conditionalQualityRescue = findConditionalLiveQualityRescue(
           conditionalResult.alternatives,
@@ -5077,7 +5087,7 @@ export function buildSuggestedMatchPayloads({
     if (
       count === 1
       && baselineForConditionalSearch
-      && remainingBatchMs > LIVE_PREVIEW_MIN_COURT_TIMEOUT_MS + 100
+      && searchBudgetRemaining(batchBudget) > LIVE_PREVIEW_MIN_COURT_SEARCH_UNITS
     ) {
       const baselineMetrics = getTradeoffChoiceMetrics(
         baselineForConditionalSearch,
@@ -5088,7 +5098,7 @@ export function buildSuggestedMatchPayloads({
         baselineMetrics.pvna_gap > configuredPvnaTolerance + GUARDED_LIVE_QUALITY_TIER_C_PVNA_EXTRA
         || baselineMetrics.intra_team_gap > GUARDED_LIVE_QUALITY_TIER_C_INTRA_LIMIT
       if (shouldSearchSocialTradeoff) {
-        const socialBudgetMs = getRemainingCourtBudgetMs(400)
+        const socialBudget = courtSearchBudget(400 * SEARCH_UNITS_PER_LEGACY_MS)
         const socialProtectedIds =
           liveSelectionGuard.relaxationStages[liveSelectionGuard.relaxationStages.length - 1]?.protectedIds
           ?? liveSelectionGuard.protectedIds
@@ -5099,9 +5109,9 @@ export function buildSuggestedMatchPayloads({
           max_alternatives: LIVE_CONDITIONAL_RESCUE_ALTERNATIVE_LIMIT,
           exhaustive_fallback: true,
           allow_recent_group_rematch: true,
-          max_runtime_ms: socialBudgetMs,
+          search_budget: socialBudget,
           forced_required_player_ids: requiredForThisCourt,
-          force_budget_ms: socialBudgetMs,
+          force_search_budget: forceRescueBudget,
         })
         unifiedSocialTradeoff = findUnifiedSocialTradeoffRescue(
           socialResult.alternatives,
@@ -5191,10 +5201,7 @@ export function buildSuggestedMatchPayloads({
       .filter(p => p.checked_out_at === null && !p.opted_rest).length
     if (rollingCommitments.length > 0 && finalAlternatives.length > 1 && beamPlayerCount <= BEAM_ACTIVE_PLAYER_LIMIT) {
       const rollingCandidateLimit = rollingBeamCandidateLimit(rollingCommitments.length)
-      const beamBudgetMs = Math.min(
-        getRemainingCourtBudgetMs(BEAM_PER_CANDIDATE_MAX_MS * BEAM_K),
-        BEAM_PER_CANDIDATE_MAX_MS * BEAM_K,
-      )
+      const beamBudget = courtSearchBudget(BEAM_PER_CANDIDATE_MAX_SEARCH_UNITS * BEAM_K)
       const beamBaseSimBusy = new Set([
         ...batchBusyIds,
         ...[...courtRoundBusyIds].filter(id => !liveLockedPlayerIds.has(id)),
@@ -5204,7 +5211,7 @@ export function buildSuggestedMatchPayloads({
         suggestionStateForCourt,
         beamBaseSimBusy,
         rollingCommitments,
-        beamBudgetMs,
+        beamBudget,
         rollingCandidateLimit,
         alternative,
         options.rollingPlanTarget,
@@ -5224,7 +5231,7 @@ export function buildSuggestedMatchPayloads({
               `calls=${beamAlt.diagnostics.future_search_calls}`,
               `cache=${beamAlt.diagnostics.future_cache_hits}`,
               `exhausted=${beamAlt.diagnostics.budget_exhausted ? 1 : 0}`,
-              `elapsed=${beamAlt.diagnostics.elapsed_ms.toFixed(1)}`,
+              `units=${beamAlt.diagnostics.spent_units}`,
               `pick=${beamAlt.diagnostics.selected_candidate_index}`,
               `quality=${beamAlt.diagnostics.selected_immediate_quality_cost.toFixed(2)}`,
               `fairness=${beamAlt.diagnostics.selected_projected_fairness_cost.toFixed(2)}`,
@@ -5256,10 +5263,7 @@ export function buildSuggestedMatchPayloads({
           ...batchBusyIds,
           ...[...courtRoundBusyIds].filter(id => !liveLockedPlayerIds.has(id)),
         ]),
-        Math.min(
-          getRemainingCourtBudgetMs(BEAM_PER_CANDIDATE_MAX_MS * BEAM_K),
-          BEAM_PER_CANDIDATE_MAX_MS * BEAM_K,
-        ),
+        courtSearchBudget(BEAM_PER_CANDIDATE_MAX_SEARCH_UNITS * BEAM_K),
       )
       if (legacyAlt) alternative = legacyAlt
     }
@@ -5304,10 +5308,11 @@ export function buildSuggestedMatchPayloads({
           liveCourtPlayers.set(playerCourtIdx, players)
         }
         // This court's own share, not whatever earlier courts left behind.
-        const rescueBudgetMs = Math.min(
-          getRescueBudgetShareMs(LIVE_RESCUE_TOTAL_BUDGET_MS, effectiveCount),
-          Math.max(0, LIVE_PREVIEW_BATCH_TIMEOUT_MS - (nowMs() - batchStartedAt)),
+        const courtRescueBudget = subSearchBudget(
+          rescueCourtBudget,
+          getRescueBudgetShareUnits(LIVE_RESCUE_TOTAL_SEARCH_UNITS, effectiveCount),
         )
+        const rescueBudgetSpent = searchBudgetExhausted(courtRescueBudget)
         const degraded = computeMatchDegradedRescue({
           teamA: match.team_a,
           teamB: match.team_b,
@@ -5317,15 +5322,14 @@ export function buildSuggestedMatchPayloads({
           liveCourtPlayers,
           busyIds,
           pvnaTolerance: configuredPvnaTolerance,
-          budgetMs: rescueBudgetMs,
-          nowMsFn: nowMs,
+          budget: courtRescueBudget,
         })
         degradedReason = degraded.degradedReason
         rescueCourtIdxs = degraded.rescueCourtIdxs
         // A degraded lineup with no budget left never searched, which is what truncated means. The
         // shared detector reports truncation from the search itself and cannot know it was skipped.
         rescueSearchTruncated = degraded.rescueSearchTruncated
-          || (degraded.degradedReason !== undefined && rescueBudgetMs <= 0)
+          || (degraded.degradedReason !== undefined && rescueBudgetSpent)
         if (degradedReason !== undefined) {
           try {
             options.onInstrumentEvent?.({

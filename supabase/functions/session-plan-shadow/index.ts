@@ -124,7 +124,7 @@ Deno.serve(async (request) => {
   if (chunked && !persist) {
     return jsonResponse({ ok: false, error: 'chunked planning requires persist=true' }, 400, request)
   }
-  const maxRoundRuntimeMs = positiveInteger(body.max_round_runtime_ms) ?? undefined
+  const maxRoundSearchCandidates = positiveInteger(body.max_round_search_candidates) ?? undefined
   const localSearchPasses = positiveInteger(body.local_search_passes) ?? 2
   if (localSearchPasses > MAX_LOCAL_SEARCH_PASSES) {
     return jsonResponse({ ok: false, error: `local_search_passes must be <= ${MAX_LOCAL_SEARCH_PASSES}` }, 400, request)
@@ -432,7 +432,7 @@ Deno.serve(async (request) => {
       if (!jobId) throw new Error('Chunked plan job identity is missing')
       const chunk = buildPrecomputedSessionPlanChunk(state, requestedRounds, courts, checkpoint, {
         localSearchPasses,
-        maxRoundRuntimeMs,
+        maxRoundSearchCandidates,
         startingRound: state.current_round,
       })
       const chunkComputeMs = previousChunkComputeMs + chunk.chunk_runtime_ms
@@ -502,7 +502,7 @@ Deno.serve(async (request) => {
     } else {
       plan = buildPrecomputedSessionPlan(state, requestedRounds, courts, {
         localSearchPasses,
-        maxRoundRuntimeMs,
+        maxRoundSearchCandidates,
         startingRound: state.current_round,
       })
       runtimeSummary = plan.timings as unknown as Record<string, unknown>

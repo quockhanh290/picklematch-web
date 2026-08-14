@@ -1,3 +1,4 @@
+import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget'
 import { buildProjectedStateAfterLiveMatch } from '../../../lib/next-round-suggester/live-preview'
 import { chooseRollingHorizonAlternative } from '../../../lib/next-round-suggester/planner/rolling-horizon'
 import type { SessionLiveMatchRow, SuggestionAlternative } from '../../../lib/next-round-suggester/types'
@@ -76,7 +77,7 @@ describe('rolling court-lane horizon', () => {
       state,
       baseBusyIds: new Set(commitments.flatMap(row => [...row.team_a, ...row.team_b])),
       liveCommitments: commitments,
-      budgetMs: 300,
+      budget: createSearchBudget(30000),
       projectMatch: buildProjectedStateAfterLiveMatch,
       suggestFuture: ({ busyIds }) => {
         busyIds.forEach(playerId => observedBusy.add(playerId))
@@ -106,7 +107,7 @@ describe('rolling court-lane horizon', () => {
       state,
       baseBusyIds: new Set(),
       liveCommitments: [],
-      budgetMs: 300,
+      budget: createSearchBudget(30000),
       projectMatch: buildProjectedStateAfterLiveMatch,
       suggestFuture: () => null,
     })).toBeNull()
@@ -127,7 +128,7 @@ describe('rolling court-lane horizon', () => {
       state,
       baseBusyIds: new Set(commitments.flatMap(row => [...row.team_a, ...row.team_b])),
       liveCommitments: commitments,
-      budgetMs: 300,
+      budget: createSearchBudget(30000),
       projectMatch: buildProjectedStateAfterLiveMatch,
       suggestFuture: () => future,
       planTarget: {
@@ -167,7 +168,7 @@ describe('rolling court-lane horizon', () => {
       state,
       baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
       liveCommitments: [commitment],
-      budgetMs: 300,
+      budget: createSearchBudget(30000),
       projectMatch: buildProjectedStateAfterLiveMatch,
       suggestFuture: () => null,
       planTarget: {
@@ -212,7 +213,7 @@ describe('rolling court-lane horizon', () => {
       state,
       baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
       liveCommitments: [commitment],
-      budgetMs: 300,
+      budget: createSearchBudget(30000),
       projectMatch: buildProjectedStateAfterLiveMatch,
       suggestFuture: () => null,
     })
@@ -251,7 +252,7 @@ describe('rolling court-lane horizon', () => {
       state,
       baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
       liveCommitments: [commitment],
-      budgetMs: 300,
+      budget: createSearchBudget(30000),
       projectMatch: buildProjectedStateAfterLiveMatch,
       suggestFuture: () => alternative(['p13', 'p14'], ['p15', 'p16'], 0),
       planTarget: {
@@ -284,7 +285,7 @@ describe('rolling court-lane horizon', () => {
       state,
       baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
       liveCommitments: [commitment],
-      budgetMs: 300,
+      budget: createSearchBudget(30000),
       projectMatch: buildProjectedStateAfterLiveMatch,
       suggestFuture: () => alternative(['p01', 'p02'], ['p03', 'p04'], 0),
       planTarget: {
@@ -316,7 +317,7 @@ describe('rolling court-lane horizon', () => {
       state,
       baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
       liveCommitments: [commitment],
-      budgetMs: 300,
+      budget: createSearchBudget(30000),
       projectMatch: buildProjectedStateAfterLiveMatch,
       suggestFuture: () => alternative(['p09', 'p10'], ['p11', 'p12'], 0),
     })
@@ -332,20 +333,15 @@ describe('rolling court-lane horizon', () => {
     const first = alternative(['p01', 'p02'], ['p03', 'p04'], 0)
     const second = alternative(['p05', 'p06'], ['p07', 'p08'], 0)
     const commitment = liveRow('live-1', 1, ['p09', 'p10'], ['p11', 'p12'], '2026-07-16T12:00:00.000Z')
-    let now = 0
 
     const choice = chooseRollingHorizonAlternative({
       candidates: [first, second],
       state,
       baseBusyIds: new Set([...commitment.team_a, ...commitment.team_b]),
       liveCommitments: [commitment],
-      budgetMs: 15,
+      budget: createSearchBudget(1),
       projectMatch: buildProjectedStateAfterLiveMatch,
       suggestFuture: () => null,
-      now: () => {
-        now += 5
-        return now
-      },
     })
 
     expect(choice?.alternative).toBe(first)
@@ -371,7 +367,7 @@ describe('rolling court-lane horizon', () => {
       state,
       baseBusyIds: new Set(commitments.flatMap(row => [...row.team_a, ...row.team_b])),
       liveCommitments: commitments,
-      budgetMs: 300,
+      budget: createSearchBudget(30000),
       projectMatch: buildProjectedStateAfterLiveMatch,
       suggestFuture: () => null,
     })

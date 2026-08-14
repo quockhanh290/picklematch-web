@@ -11,7 +11,7 @@ kiểm bằng code trong phiên 14/08 — nhãn trong file audit có chỗ sai (
 | P2-2 | gộp post-pass thành 1 optimizer | **XONG** 13-14/08, cờ TẮT, đã merge, chưa canary |
 | P2-3 | hợp nhất options edge | XONG (`a79f88b`) |
 | P2-4 | bộ máy "Chờ Sân X" | XONG |
-| P2-5 | **bỏ wall-clock khỏi hot path** | **CHƯA — VIỆC TIẾP THEO.** 19 chỗ đọc đồng hồ; audit ghi "gần như xong sẵn" là SAI |
+| P2-5 | **bỏ wall-clock khỏi hot path** | **XONG 14/08** — ngân sách đếm được (`search-budget.ts`), engine tất định; CHƯA deploy, còn 1 quyết định cho host (xem dưới) |
 | P2-6 | gộp đường ghi hint | XONG |
 | P2-7 | gộp rest bookkeeping | XONG SẴN (báo cáo gốc sai, chưa từng hỏng) |
 | **P3** | xoá code chết | **CHƯA** — nhóm rủi ro ~0 làm được ngay: BUG #40, #33, #34, #39, `lib/scheduler/fixedTeamPairing.ts`. **MỚI: `repeatPool`/`repairPayloadBatchRepeatExposure` đã đo được là đổi 0 board ở đúng hình dạng nó sinh ra để xử** → hết "chưa đo được". ⚠️ Sáu post-pass cũ CHƯA xoá được: nhánh cờ-tắt còn dùng, chỉ xoá sau khi optimizer bật mặc định |
@@ -22,43 +22,86 @@ host QA xong) và bug "Gợi ý vừa cũ sau khi có trận kết thúc".
 
 **Còn treo, không thuộc defrag:**
 - 2 test đỏ `simulation/full-session.test.ts` (chuỗi nghỉ, gender preference) — đã A/B: đỏ có sẵn
-  trước P2-2. Nhiều khả năng là triệu chứng của P2-5.
+  trước P2-2. **ĐÃ BÁC BỎ giả thuyết "triệu chứng của P2-5"** — xem dưới.
 - Quyết định canary/deploy P2-2 — chờ host, không có hạn.
 - Supabase trả HTTP 522 lúc cuối phiên 14/08 — kiểm dashboard nếu app hỏng.
 
 ---
 
-## VIỆC TIẾP THEO — P2-5: bỏ wall-clock khỏi hot path (ưu tiên 1)
+## P2-5 — XONG (2026-08-14), CHƯA DEPLOY. Một quyết định chờ host.
 
-Prompt mở phiên (dán nguyên):
+**Đã làm:** `lib/next-round-suggester/search-budget.ts` — ngân sách đếm được (1 đơn vị = 1 partition
+được đánh giá), lồng nhau được (con tiêu cả vào cha), không đọc đồng hồ. Thay TOÀN BỘ ngân sách
+theo-đồng-hồ trong: `pair.ts` (vòng lấy mẫu), `suggest.ts` (regular / rescue reserve / exhaustive
+fallback), `live-preview.ts` (batch, per-court, beam, wait-rescue, strict rescue), `planner/`
+(rolling-horizon, pair-swap-search, session-plan), và edge `session-live-matches-suggest` (pass rescue
+toàn bàn). Tỉ giá `SEARCH_UNITS_PER_LEGACY_MS = 100` là **đo được**, không phải đoán (≈100 partition/ms
+trên corpus thật) — mọi hằng số ms cũ được viết lại nguyên giá trị nhân tỉ giá đó.
 
-```
-Làm P2-5: bỏ ngân sách-theo-đồng-hồ khỏi hot path của engine, thay bằng ngân sách đếm được.
+**Bốn con số mua bằng phép đo:**
 
-Đọc TASK.md mục "RÀ SOÁT P2" và "P2-2 — XONG" trước. ĐỪNG đo lại những gì đã có số.
+| câu hỏi | cách đo | kết quả |
+|---|---|---|
+| engine có còn phụ thuộc máy? | scorecard `REALCLOCK=1` chạy 2 lần (20 kèo) | **CŨ: `d6a489a0e263` vs `7673f82e9aa3` — KHÁC NHAU.** MỚI: `84fd9b05424d` cả hai lần |
+| chất lượng có tệ đi? | scorecard 60 kèo | **`board_hash f1b6d8ac0b0c`** = ĐÚNG baseline. cost 2.5742 · vượt-tol 11.43% · lặp-3 1.98% · blowout 1.39% · intra 19.56% — trùng khít bảng "lấp 1 sân · cờ TẮT" |
+| núm có nối vào đâu không? | hạ tỉ giá 100→3 | hash đổi `1ef417fec081`, chất lượng xấu đi (cost 2.70, intra 22.12%) → **có nối** |
+| đắt hơn bao nhiêu? | scorecard 20 kèo, đo p50/p90/p99/max mỗi lần gọi | CŨ p50 126 · p90 301 · p99 766 · max 1243 ms → MỚI p50 125 · p90 407 · p99 880 · **max 1388** |
 
-Vì sao đáng làm, bằng chứng đã có:
-- 19 chỗ đọc Date.now()/performance.now() trong lib/next-round-suggester/ (ngoài board-optimizer).
-  suggest.ts:601-602 cắt tìm kiếm theo deadline; pair.ts:772 break khi hết maxRuntimeMs.
-- Đây là NỬA SAU của bug flicker: cùng bench, xin lại cùng sân ra đội hình khác
-  (memory project-suggest-nondeterministic-search-budget).
-- Nó làm nhiễu MỌI phép đo A/B: replay cùng một kèo hai lần cho hai kết quả khác nhau ở
-  nhánh cờ-tắt (intra 2.42->2.84 lần một, 3.4->2.8 lần hai).
-- Hai test đỏ có sẵn (simulation/full-session.test.ts: chuỗi nghỉ, gender preference) rất
-  có thể là triệu chứng của chính nó — engine bị cắt tìm kiếm sớm khi máy chậm. Đã A/B với
-  commit 2b756d2: đỏ y hệt trước P2-2, nên KHÔNG phải hồi quy.
+Vì sao hash 60-kèo KHÔNG đổi dù người ta dự kiến nó đổi: harness luôn **đóng băng đồng hồ**, tức là
+nó vẫn luôn đo đường "tìm kiếm đầy đủ". Ngân sách đếm được ở tỉ giá 100 **không cắt gì trên corpus
+này** → cho ra đúng đường tìm-kiếm-đầy-đủ đó. Cái đổi là đường THẬT (đồng hồ chạy) giờ cũng ra kết quả
+ấy, thay vì một kết quả khác mỗi lần.
 
-Khuôn đã có sẵn để bắt chước: board-optimizer dùng trần SỐ VÒNG LẶP, không đọc đồng hồ, và
-được đóng đinh bằng test tất định.
+**Giả thuyết BỊ BÁC BỎ, đừng điều tra lại:** 2 test đỏ `full-session.test.ts` KHÔNG phải do wall-clock.
+Chạy lại đúng hai kịch bản đó với đồng hồ đóng băng (`scratch/p25-frozen-probe.ts`) cho **con số y hệt**
+(0.6667 và 0.6667) — pool 9/12 người quá nhỏ, deadline 800ms không bao giờ chạm tới. Chúng vẫn đỏ, với
+đúng giá trị cũ, và giờ là giá trị TẤT ĐỊNH.
 
-Thước đo: scratch/board-scorecard.ts (hash baseline f1b6d8ac0b0c với cờ optimizer TẮT).
-Thay ngân sách xong thì hash SẼ đổi — đó là dự kiến; cái phải chứng minh là chất lượng không
-tệ đi và hai test kia hết đỏ.
+### Phát hiện phụ, đáng giá hơn cả việc chính: beam rolling-horizon xưa nay là đồ trang trí
 
-KHÔNG deploy. Prod đang ALGO 77.
-```
+Đo `rolling_horizon` instrument event trên `rolling-horizon-chain.test.ts`:
 
-### Trạng thái bàn giao (2026-08-14)
+| | evaluated | calls | exhausted | mỗi lần gọi |
+|---|---|---|---|---|
+| CŨ | **1** | 6 | **1** (luôn hết giờ) | ~330ms beam / ~420ms tổng |
+| MỚI, không trần | 2–3 | 29–30 | 0 | ~1.3–2.5s |
+| MỚI, trần 12 lượt nhìn trước | 2–3 | 12 | 1 | ~600–1100ms |
+
+Beam **luôn** cạn ngân sách 300ms sau khi xét ĐÚNG MỘT ứng viên, tức là nó chưa bao giờ so sánh gì —
+tính năng nằm im vì chính ngân sách của nó. Bỏ đồng hồ ra thì nó chạy thật và tốn tiền thật. Đã thêm
+trần đếm được `DEFAULT_MAX_FUTURE_SEARCHES = 12` (đơn vị không đủ tính đúng giá một lượt nhìn trước:
+một lượt dựng lại state + sort lại cả pool nhưng chỉ bị tính vài đơn vị).
+
+### ⚠️ QUYẾT ĐỊNH CHỜ HOST — 3 assertion đỏ MỚI trong `rolling-horizon-chain.test.ts`
+
+Đây là hệ quả THẬT của việc beam bắt đầu hoạt động, không phải lỗi kỹ thuật:
+- 2× `totalTeamGap/totalMatches ≤ 0.15` → **0.163**. Beam đổi lựa chọn để giữ lane sau khả thi, trả
+  giá bằng chênh-đội trung bình. Các chỉ số khác trong cùng test (maxTeamGap ≤1, intra, lặp, số trận)
+  vẫn xanh.
+- 1× `elapsedMs < 2000` → **2197ms** ở ca "slow middle courts". Phần lớn KHÔNG phải beam (beam ~700ms):
+  phần còn lại là tìm kiếm chính không còn bị đồng hồ cắt trên roster 36 người.
+
+Ba lựa chọn, host chọn:
+1. **Giữ nguyên (đang là vậy)** — beam hoạt động thật, +200–600ms mỗi lần lấp sân, chênh-đội +0.013.
+2. **Hạ `DEFAULT_MAX_FUTURE_SEARCHES`** (vd 6) — bám sát chi phí cũ, nhưng beam lại gần như vô dụng.
+3. **Tắt hẳn rolling beam** — nếu đằng nào nó cũng chưa từng chạy thật thì đây là xoá code chết (P3).
+
+**Đã thử và LOẠI:** chỉnh tỉ giá (100→50→10) KHÔNG sửa được độ trễ đó — ở cả ba mức, ca chậm vẫn
+~2.2–2.6s → chi phí nằm ở phần việc ngân sách không tính (dựng state, sort pool, post-pass), không
+phải ở tìm kiếm. Và **tính 1 đơn vị mỗi SÂN thay vì mỗi partition làm tỉ giá lệch TỆ HƠN** (92→682
+đơn vị/ms thay vì 40→110) → đã revert.
+
+### Gate sau P2-5
+
+- `unit` + `property` + `scenario` + `fairness`: **89 suite / 774 test XANH**
+- `host-live` + `production-live-chain`: **24 suite / 76 test XANH**
+- `full-session`: 2 đỏ CÓ SẴN (giá trị không đổi, nay tất định)
+- `production-chain-timing`: 4 đỏ CÓ SẴN — `await import()` cần `--experimental-vm-modules`; **đã A/B
+  trên mã cũ: đỏ y hệt 4/4**, không dính gì tới P2-5
+- `rolling-horizon-chain`: 3 đỏ MỚI (mục quyết định ở trên) · `rolling-horizon-matrix` xanh
+- `tsc` 0 lỗi · eslint 0 error trên các file đã sửa
+
+### Trạng thái bàn giao P2-2 (2026-08-14)
 
 - **ĐÃ MERGE** vào `feat-quality-cost-model` (fast-forward `2b756d2` → `e741e0f`, 14/08). Worktree
   `.claude/worktrees/p2-2-optimizer` còn trên đĩa nhưng đã thừa — xoá được.
@@ -71,8 +114,9 @@ KHÔNG deploy. Prod đang ALGO 77.
   Không phải do thay đổi nào của chúng ta. Nếu còn 522 thì app của host cũng hỏng — kiểm dashboard trước
   khi kết luận bug.
 
-### Sau P2-5
+### Việc tiếp theo
 
+- **Quyết định beam rolling-horizon** (3 lựa chọn ở mục P2-5 trên) — chặn việc deploy P2-5.
 - **P2-1**: chọn 1 model scoring (8 điểm rẽ nhánh còn sống) — chờ host chạy canary.
 - **P3 xoá code chết**: nhóm rủi ro ~0 làm được ngay (BUG #40, #33, #34, #39, `fixedTeamPairing.ts`).
   **Thêm `repairPayloadBatchRepeatExposure`/`repeatPool`** — đã đo được là đổi 0 board ở đúng hình dạng
@@ -155,18 +199,17 @@ Merge với cờ tắt KHÔNG đổi hành vi prod.
 | P2-2 gộp post-pass | xem trên | xong, cờ tắt |
 | P2-3 hợp nhất options edge | rescue toàn bàn `:1273` dùng chung `runEngine` với `:1212` | XONG (a79f88b) |
 | P2-4 bộ máy "Chờ Sân X" | `rescue_search_truncated` có và được truyền | XONG |
-| P2-5 mở rộng miền tất định | **19 chỗ đọc đồng hồ**; `suggest.ts:601` cắt theo `Date.now()`, `pair.ts:772` break khi hết `maxRuntimeMs` | **CHƯA — nhãn "gần như xong sẵn" trong audit là SAI** |
+| P2-5 mở rộng miền tất định | replay 2 lần ra cùng board (cũ: 2 hash khác nhau) | **XONG 14/08** — `search-budget.ts`; còn 1 quyết định beam |
 | P2-6 gộp đường ghi hint | đúng 1 call site `sync_live_suggestion_hints` | XONG |
 | P2-7 gộp rest bookkeeping | migration `20260809000001` helper dùng chung | XONG SẴN (báo cáo gốc sai) |
 
-**P2-5 nên là việc tiếp theo**, không phải P3. Lý do đo được ngay trong phiên này: replay cùng một kèo
-hai lần cho hai kết quả khác nhau ở nhánh cờ-TẮT (intra 2.42→2.84 lần một, 3.4→2.8 lần hai). Engine
-không tất định làm nhiễu MỌI phép đo A/B trên nó, và host thấy nó dưới dạng "cùng bench mà đội hình
-khác" — nửa sau bug flicker.
+**P2-5 đã xong 14/08** — xem mục riêng ở trên. Bằng chứng đóng lại: `REALCLOCK=1` chạy scorecard hai
+lần cho hai hash khác nhau trên mã cũ (`d6a489a0e263` / `7673f82e9aa3`) và một hash duy nhất trên mã
+mới (`84fd9b05424d`).
 
-**Gate:** 2 test trong `simulation/full-session.test.ts` (chuỗi nghỉ, gender preference) đỏ. **Đã A/B
-với commit `2b756d2` trước toàn bộ P2-2 — đỏ y hệt**, nên là lỗi CÓ SẴN trên nhánh, không phải hồi quy.
-Đáng đào vì nó nói engine đang thua ở hai chỉ số công bằng thật.
+**Gate:** 2 test trong `simulation/full-session.test.ts` (chuỗi nghỉ, gender preference) vẫn đỏ, **và
+KHÔNG phải do đồng hồ** (đã bác bỏ bằng phép thử đóng băng đồng hồ — cùng con số). Chúng nói engine
+đang thua thật ở hai chỉ số công bằng; giờ ít nhất chúng đỏ một cách tất định.
 
 
 ## NỢ DỌN DẸP (đừng để thành phân mảnh mới — đây chính là thứ audit đang đo)
@@ -194,6 +237,11 @@ với commit `2b756d2` trước toàn bộ P2-2 — đỏ y hệt**, nên là l�
 
 
 ## BẪY ĐO LƯỜNG — đã trả giá nhiều lần, đọc trước khi tin bất kỳ con số nào
+
+**Đóng băng đồng hồ trong harness = đo một đường mà prod không chạy.** `scratch/board-scorecard.ts` ghi
+đè `Date.now`/`performance.now` ngay dòng đầu, nên mọi con số của nó xưa nay là đường "tìm kiếm đầy đủ",
+còn prod thì bị deadline cắt. Đó là lý do baseline `f1b6d8ac0b0c` không đổi sau P2-5 dù hành vi prod đổi
+hẳn. Có `REALCLOCK=1` để chạy với đồng hồ thật.
 
 **Số không đổi sau khi đã sửa phép đo = phép đo KHÔNG CHẠY, không phải thay đổi vô tác dụng.**
 Biến thể đã gặp: núm vặn không nối vào đâu (`force_budget_ms` nằm trong `Math.min`); nhiễu để lâu
