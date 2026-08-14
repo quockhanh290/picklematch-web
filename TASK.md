@@ -342,11 +342,15 @@ KHÔNG phải do đồng hồ** (đã bác bỏ bằng phép thử đóng băng 
 - **Dữ liệu prod trên đĩa KHÔNG dùng để xác nhận post-pass được:** `tmp/session-*/engine_instrumentation.jsonl`
   chỉ có `stage_resolved` / `repair` / `rescue` và có từ 2026-07-12, tức là TRƯỚC khi `instrumentPostPass`
   tồn tại. Quét 156 file trong `tmp/` cho 0 hit với MỌI tên post-pass — kể cả những pass chắc chắn có bắn.
-- [ ] **`ab-comparison.test.ts` chiếm ~15+ phút** mỗi lần chạy full suite. Tách khỏi vòng kiểm nhanh; chỉ chạy khi thay đổi THỰC SỰ đụng lineup.
+- [x] **`ab-comparison.test.ts` + `stress.test.ts` đã tách khỏi vòng kiểm nhanh** (14/08, `cd55484`).
+  `jest.config.js` loại đúng hai file đó; `jest.slow.config.js` = cùng config trừ dòng loại trừ, để
+  `npm run sim:ab` / `npm run sim:stress` vẫn chạy mà không đẻ nguồn sự thật thứ hai.
 - [ ] **Vùng gate đúng cho thay đổi đường live** = `unit/property/scenario/fairness` + `host-live` + `production-chain-timing` + `production-live-chain`. Phần simulation còn lại gọi thẳng `suggestNextRound`, KHÔNG đi qua `buildSuggestedMatchPayloads` → chạy 60 phút mà không phủ được gì.
 
 
 ## Trạng thái prod
+- edge `session-plan-shadow` **v42** (deploy 14/08 10:03) — khớp nhánh, tham số đổi tên
+  `max_round_runtime_ms` → `max_round_search_candidates`. Shadow, ngoài đường live.
 - edge `session-live-matches-suggest` **v269, ALGO 78** (deploy 2026-08-14 08:49, status ACTIVE qua
   Management API). ⚠️ Chưa xác minh bằng `debug_dumps.engine_build.algorithm_version` của kèo thật —
   làm việc đó ở kèo đầu tiên sau deploy, cùng lúc đọc `timing_ms` để có số độ trễ Deno.
