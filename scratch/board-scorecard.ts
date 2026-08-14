@@ -57,7 +57,12 @@ import type { PlayerSessionState, SessionLiveMatchRow, SessionState, Team } from
 const rd = (f: string) => JSON.parse(fs.readFileSync(f, 'utf8'))
 const gmap = (g: any) => g === 'female' ? 'F' : g === 'male' ? 'M' : null
 const pmap = (p: any) => typeof p === 'string' && p.includes('female') ? 'F' : typeof p === 'string' && p.includes('male') ? 'M' : 'any'
-const BASE_W = { pvna: 1, partner_repeat: 3, opponent_repeat: 1.5, group_bonus: 6, partner_gender_pref: 4, opponent_gender_pref: 2, consecutive_play: 4 }
+// GPREF/OPREF: quét trọng số ý muốn giới tính. Mặc định 4/2 = đúng DEFAULT_SCORING_WEIGHTS của engine.
+// Engine đang thoả 55.28% đồng đội trên corpus thật, trong khi ghép BỪA được 49.54% — quét để thấy
+// đường đánh đổi giữa "thoả ý muốn" và "tránh lặp" thay vì chọn mù.
+const GPREF = process.env.GPREF ? Number(process.env.GPREF) : 4
+const OPREF = process.env.OPREF ? Number(process.env.OPREF) : 2
+const BASE_W = { pvna: 1, partner_repeat: 3, opponent_repeat: 1.5, group_bonus: 6, partner_gender_pref: GPREF, opponent_gender_pref: OPREF, consecutive_play: 4 }
 
 const matches = rd('scratch/data/matches.json')
 const roster = rd('scratch/data/roster2.json')
@@ -199,6 +204,20 @@ type Score = {
   // mustRestAt scales with bench depth. If nearly everyone idle carries that tier, the tier cannot
   // discriminate and everything downstream reading it as "must be seated" is working from noise.
   owedSamples: number; owedIdle: number
+  // Ý muốn về giới tính đồng đội/đối thủ: 65.69% người chơi THẬT trong corpus có đặt (1455/2215, cả
+  // 60/60 kèo). Test tổng hợp `full-session` đo 0.611 trên một fixture ép cực đoan; cho tới khi đo trên
+  // kèo thật thì không ai biết engine đang phục vụ nhóm này tốt hay tệ.
+  partnerPrefChecked: number; partnerPrefSatisfied: number
+  opponentPrefChecked: number; opponentPrefSatisfied: number
+  // Trần khả dĩ khi BỘ TỨ đã chốt: trong 4 người đã ngồi cùng sân, chỉ có 3 cách chia đội. Nếu số thực
+  // tế xấp xỉ trần này thì tầng chia-đội đã làm hết sức, và chỗ mất nằm ở tầng TRÊN — ai được xếp chung
+  // sân với ai. Nâng trọng số không sửa được tầng trên.
+  partnerPrefBestInFoursome: number
+  // Trần khi chỉ xét cách chia có cân bằng KHÔNG TỆ HƠN cái engine đã chọn (gap ≤ gap đã chọn VÀ intra ≤
+  // intra đã chọn). Chênh giữa nó và số thực tế là phần lấy được mà KHÔNG PHẢI TRẢ GÌ.
+  // (Bản trước so với tolerance danh nghĩa là SAI: trận vốn đã vượt tolerance thì không cách chia nào hợp
+  // lệ, bị tính 0, kéo tụt trung bình xuống dưới cả số thực tế.)
+  partnerPrefBestNoWorseBalance: number
 }
 
 const emptyScore = (): Score => ({
@@ -207,6 +226,10 @@ const emptyScore = (): Score => ({
   overTol: 0, repeat3: 0, blowout: 0, panels: 0, lineups: [],
   playSpread: 0, worstRest: 0, panelsForced: 0, panelsChoices: 0, worstPlay: 0, seatedTired: 0,
   owedSamples: 0, owedIdle: 0,
+  partnerPrefChecked: 0, partnerPrefSatisfied: 0,
+  opponentPrefChecked: 0, opponentPrefSatisfied: 0,
+  partnerPrefBestInFoursome: 0,
+  partnerPrefBestNoWorseBalance: 0,
 })
 
 function scoreMatchInto(acc: Score, s: SessionState, p: SuggestedMatchPayload, tol: number) {
@@ -220,6 +243,48 @@ function scoreMatchInto(acc: Score, s: SessionState, p: SuggestedMatchPayload, t
     const cp = s.players.get(id)?.consecutive_play ?? 0
     if (cp > acc.worstPlay) acc.worstPlay = cp
     if (cp >= 2) acc.seatedTired += 1
+  }
+  {
+    const four = [...A, ...B]
+    const SPLITS: Array<[number, number, number, number]> = [[0, 1, 2, 3], [0, 2, 1, 3], [0, 3, 1, 2]]
+    let best = 0
+    let bestLegal = 0
+    for (const [a1, a2, b1, b2] of SPLITS) {
+      let sat = 0
+      for (const [id, mate] of [[four[a1], four[a2]], [four[a2], four[a1]], [four[b1], four[b2]], [four[b2], four[b1]]] as const) {
+        const self = s.players.get(id)
+        if (!self || self.partner_gender_pref === 'any') continue
+        const partner = s.players.get(mate)
+        if (!partner?.gender || partner.gender === self.partner_gender_pref) sat += 1
+      }
+      if (sat > best) best = sat
+      const gap = Math.abs(pv(four[a1]) + pv(four[a2]) - pv(four[b1]) - pv(four[b2]))
+      const intraSplit = Math.max(Math.abs(pv(four[a1]) - pv(four[a2])), Math.abs(pv(four[b1]) - pv(four[b2])))
+      const chosenGap = Math.abs(pv(A[0]) + pv(A[1]) - pv(B[0]) - pv(B[1]))
+      if (gap <= chosenGap + 1e-9 && intraSplit <= intra + 1e-9 && sat > bestLegal) bestLegal = sat
+    }
+    acc.partnerPrefBestInFoursome += best
+    acc.partnerPrefBestNoWorseBalance += bestLegal
+  }
+  // Đếm giống hệt cách `full-session.test.ts` đếm: chỉ tính người CÓ đòi hỏi, và đồng đội không rõ giới
+  // tính thì tính là thoả (không có gì để trái ý).
+  for (const [team, other] of [[A, B], [B, A]] as const) {
+    for (const [id, mate] of [[team[0], team[1]], [team[1], team[0]]] as const) {
+      const self = s.players.get(id)
+      if (!self) continue
+      if (self.partner_gender_pref !== 'any') {
+        acc.partnerPrefChecked += 1
+        const partner = s.players.get(mate)
+        if (!partner?.gender || partner.gender === self.partner_gender_pref) acc.partnerPrefSatisfied += 1
+      }
+      if (self.opponent_gender_pref !== 'any') {
+        for (const oppId of other) {
+          acc.opponentPrefChecked += 1
+          const opp = s.players.get(oppId)
+          if (!opp?.gender || opp.gender === self.opponent_gender_pref) acc.opponentPrefSatisfied += 1
+        }
+      }
+    }
   }
   acc.lineups.push(`${p.court_idx}:${[...A].sort().join('+')}|${[...B].sort().join('+')}`)
   acc.seated += 1
@@ -358,6 +423,19 @@ const report = {
     panel_forced_pct: +pct(totals.panelsForced).toFixed(2),
     panel_choices_pct: +pct(totals.panelsChoices).toFixed(2),
   },
+  gender_pref: {
+    weights: { partner: GPREF, opponent: OPREF },
+    partner_checked: totals.partnerPrefChecked,
+    partner_satisfied_pct: totals.partnerPrefChecked
+      ? +(100 * totals.partnerPrefSatisfied / totals.partnerPrefChecked).toFixed(2) : 0,
+    partner_ceiling_given_foursome_pct: totals.partnerPrefChecked
+      ? +(100 * totals.partnerPrefBestInFoursome / totals.partnerPrefChecked).toFixed(2) : 0,
+    partner_ceiling_no_worse_balance_pct: totals.partnerPrefChecked
+      ? +(100 * totals.partnerPrefBestNoWorseBalance / totals.partnerPrefChecked).toFixed(2) : 0,
+    opponent_checked: totals.opponentPrefChecked,
+    opponent_satisfied_pct: totals.opponentPrefChecked
+      ? +(100 * totals.opponentPrefSatisfied / totals.opponentPrefChecked).toFixed(2) : 0,
+  },
   fair: {
     avg_play_spread: +(totals.playSpread / Math.max(1, sessions)).toFixed(3),
     avg_worst_rest: +(totals.worstRest / Math.max(1, sessions)).toFixed(3),
@@ -380,6 +458,9 @@ console.log(`PANEL forced ${report.soft.panel_forced_pct}% | choices ${report.so
 console.log(`FAIR play-spread ${report.fair.avg_play_spread} | worst-rest ${report.fair.avg_worst_rest}   <-- lower is fairer`)
 console.log(`OWED người rảnh mang tier MUST_PLAY (consecutive_rest>=1): ${report.fair.owed_share_of_idle_pct}%`)
 console.log(`FATIGUE tổng max consecutive_play mỗi phiên ${report.fair.summed_session_max_consecutive_play} | ghế cho người đã chơi >=2 liên tiếp ${report.fair.seated_at_or_past_rest_pct}%`)
+console.log(`GENDER trần khi cân bằng KHÔNG TỆ HƠN cái đã chọn: ${report.gender_pref.partner_ceiling_no_worse_balance_pct}%  <-- phần này lấy được mà KHÔNG phải trả gì`)
+console.log(`GENDER trần khả dĩ khi bộ tứ đã chốt: ${report.gender_pref.partner_ceiling_given_foursome_pct}%  <-- nếu thực tế ~ trần này thì chỗ mất nằm ở tầng chọn bộ tứ`)
+console.log(`GENDER PREF đồng đội ${report.gender_pref.partner_satisfied_pct}% (${totals.partnerPrefSatisfied}/${totals.partnerPrefChecked}) | đối thủ ${report.gender_pref.opponent_satisfied_pct}% (${totals.opponentPrefSatisfied}/${totals.opponentPrefChecked})`)
 console.log(`board_hash ${boardHash}${ROLLING_ON ? `  [rolling ON, beam=${BEAM_MAX_FUTURE_SEARCHES ?? 'default'}]` : ''}`)
 console.log(`LATENCY per suggest call (ms): p50 ${report.latency_ms.p50} | p90 ${report.latency_ms.p90} | p99 ${report.latency_ms.p99} | max ${report.latency_ms.max} over ${report.latency_ms.calls} calls`)
 if (OPT_ON) {

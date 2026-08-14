@@ -251,9 +251,54 @@ Bàn 6/6 **đắt hơn 320 điểm** vì nó gánh 7 cặp lặp partner thay v�
 điểm hiện tại. Nới ngân sách 500× chỉ kéo 22/36 → 24/36 (0.611 → 0.667), vẫn dưới bar 0.7 → không phải
 đói ngân sách.
 
-**Đây là câu hỏi cho host, không phải lỗi để sửa:** tránh-lặp có nên thắng gender-pref không? Có tiền lệ
-đã chốt theo hướng đó ([[project-severe-repeat-over-gender]]: lặp-3 thắng gender-pref). Nếu giữ nguyên
-hướng đó thì **bar 0.7 của test là sai kỳ vọng**, nên sửa test chứ không sửa engine.
+### ĐÃ ĐO TIẾP (14/08) — gender-pref trên KÈO THẬT, và vì sao nâng trọng số là sai lever
+
+Câu hỏi ban đầu là "bar 0.7 của fixture có hợp lý không". Đo ra thì fixture chỉ đang phóng to một điểm
+yếu CÓ THẬT, nhưng lever để sửa lại không phải cái ai cũng nghĩ.
+
+**1. Tính năng này KHÔNG hiếm:** 1455/2215 lượt người chơi (**65,69%**) có đặt ý muốn giới tính đồng đội,
+**60/60 kèo** đều có, mỗi kèo 16–33 người. Giới tính chia gần đúng 50/50 (1093 F / 1122 M), **không ai bỏ
+trống**, ý muốn chia đều (737 muốn F · 718 muốn M · 760 'any'). Nền so sánh sạch.
+
+**2. Engine chỉ hơn ngẫu nhiên 6 điểm.** Corpus 60 kèo, 8100 lượt kiểm:
+
+| | tỉ lệ thoả |
+|---|---|
+| ghép BỪA (tính toán giải tích) | **49,54%** |
+| engine hiện tại | **55,28%** |
+| đối thủ: ngẫu nhiên ~50% · engine | 52,00% |
+
+**3. Núm trọng số CÓ nối nhưng gần như bất lực.** Quét `partner_gender_pref` 4 → 6 → 8 → 12 → 24 → 1000
+(20 kèo): tỉ lệ thoả đi từ 56,79% → 58,70%. Ép **250 lần** chỉ mua được **1,9 điểm**. Board có đổi (hash
+đổi, cost/lặp-3 đổi) nên núm không hỏng — nó chỉ không với tới được chỗ cần với.
+
+**4. Vì sao: chỗ mất nằm ở tầng TRÊN, không phải ở thang điểm.**
+
+| | tỉ lệ thoả |
+|---|---|
+| thực tế | 56,79% |
+| trần khi cân bằng **không tệ hơn** cái engine đã chọn | **56,87%** |
+| trần khi bỏ qua cân bằng, cùng bộ tứ đó | **74,26%** |
+
+Engine **đã vắt gần hết phần miễn phí** — chỉ còn 0,08 điểm lấy được mà không phải trả gì. 17,5 điểm còn
+lại **chỉ mua được bằng cách chấp nhận đội lệch hơn**. Trong một bộ tứ chỉ có 3 cách chia đội, và cách
+chia gần như bị cân-bằng quyết định xong trước khi gender kịp lên tiếng.
+
+**Hệ quả cho quyết định:**
+- **Nâng trọng số là lever SAI** — đã đo, ép 250× vẫn không nhúc nhích.
+- Muốn hơn thì chỉ có hai đường: **(a)** chấp nhận đội lệch hơn một cách có chủ ý, hoặc **(b)** can thiệp
+  SỚM hơn — ở tầng chọn ai ngồi chung sân, để người hợp gu rơi vào cùng bộ tứ ngay từ đầu. (b) mới là chỗ
+  17,5 điểm kia nằm, và nó chưa từng được thử.
+- **Bar 0.7 của fixture:** hạ nó xuống tức là đóng dấu chấp nhận mức gần-ngẫu-nhiên trên một tính năng
+  2/3 người chơi đang dùng. Nhưng giữ nó mà không làm (b) thì engine không đạt được.
+
+⚠️ **Một phép đo TÔI ĐÃ LÀM SAI rồi tự sửa, ghi lại để đừng lặp:** lần đầu tôi so trần với *tolerance danh
+nghĩa* và ra 50,35% — THẤP HƠN cả số thực tế. Lý do: trận vốn đã vượt tolerance thì không cách chia nào
+"hợp lệ", bị tính 0, kéo tụt trung bình. Phải so với **cân bằng engine THỰC SỰ đã chọn**, không phải với
+ngưỡng danh nghĩa.
+
+**Rig:** `GPREF=<n> OPREF=<n> npx tsx scratch/board-scorecard.ts 20` — scorecard giờ in cả ba dòng
+(thực tế · trần-không-tệ-hơn · trần-bỏ-qua-cân-bằng).
 
 ## GOM SÂN (REFILL_BATCH) — ĐÃ ĐO, HOST CHỐT KHÔNG LÀM (2026-08-14)
 
