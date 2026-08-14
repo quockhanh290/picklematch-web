@@ -30,14 +30,13 @@ KHÔNG deploy. Prod đang ALGO 77.
 
 ### Trạng thái bàn giao (2026-08-14)
 
-- Nhánh `feat-p2-2-optimizer`, worktree `.claude/worktrees/p2-2-optimizer`. **CHƯA MERGE.**
-  ⚠️ Mọi ghi chú của phiên 13-14/08 (spec, plan, TASK.md này) nằm TRÊN NHÁNH. Mở phiên mới ở `main`
-  sẽ KHÔNG thấy. Hoặc merge (an toàn: cờ tắt cho ra đúng hash baseline), hoặc mở phiên trong worktree.
-- Cờ `SESSION_BOARD_OPTIMIZER` **TẮT**, allowlist rỗng. Chưa canary, chưa deploy.
-- Gate trong worktree: `npx jest --testMatch "**/tests/**/*.test.ts" --testMatch "**/tests/**/*.test.tsx" --forceExit`
-  (`npm test` khớp 0 file vì worktree nằm dưới `.claude/`).
-- Cần cho worktree mới: junction `node_modules` + `scratch/data`, copy `expo-env.d.ts` + `.expo/types`
-  (đều gitignore nên không theo nhánh).
+- **ĐÃ MERGE** vào `feat-quality-cost-model` (fast-forward `2b756d2` → `e741e0f`, 14/08). Worktree
+  `.claude/worktrees/p2-2-optimizer` còn trên đĩa nhưng đã thừa — xoá được.
+- **Kiểm sau merge: `board_hash f1b6d8ac0b0c`** = đúng baseline trước P2-2 → toàn bộ code mới nằm sau
+  cờ tắt, đường cũ chạy y nguyên từng bit. `tsc` sạch.
+- Cờ `SESSION_BOARD_OPTIMIZER` **TẮT**, allowlist rỗng. Chưa canary, chưa deploy. Prod vẫn ALGO 77.
+- Gate ở repo chính: `npm test` chạy bình thường. (Lưu ý lịch sử: trong worktree dưới `.claude/` thì
+  `npm test` khớp 0 file — chỉ đúng khi làm trong worktree, không phải ở đây.)
 - ⚠️ **Supabase trả HTTP 522 lúc cuối phiên** (Cloudflare không tới được origin, query bảng timeout 20s).
   Không phải do thay đổi nào của chúng ta. Nếu còn 522 thì app của host cũng hỏng — kiểm dashboard trước
   khi kết luận bug.
