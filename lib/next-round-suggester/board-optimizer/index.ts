@@ -11,10 +11,11 @@ import { firstViolation } from './constraints'
 import type { BoardSnapshot, ConstraintContext, ConstraintRejection } from './constraints'
 import { isBetter, scoreBoard } from './objective'
 import type { ObjectiveName } from './objective'
-import { generateMoves, MOVE_SET_WITH_BENCH } from './moves'
+import { generateMoves, MOVE_SET_NO_ROTATION } from './moves'
+import { boardMetrics, createCourtCostCache } from './court-metrics'
 import type { MoveSet } from './moves'
 
-export { MOVE_SET_SPLIT_ONLY, MOVE_SET_WITH_BENCH } from './moves'
+export { MOVE_SET_NO_ROTATION, MOVE_SET_SPLIT_ONLY, MOVE_SET_WITH_BENCH } from './moves'
 export type { BoardSnapshot, ConstraintContext, ConstraintRejection } from './constraints'
 export type { ObjectiveName } from './objective'
 export type { MoveKind, MoveSet } from './moves'
@@ -47,9 +48,14 @@ export type BoardOptimizerTuning = {
   maxIterations: number
 }
 
+// Chốt bằng bảng corpus 60 phiên, không bằng lập luận (spec §8):
+//   W1–W4 (có xoay vòng 3 sân): overtol 3.37 · rep3 2.01 · cost 1.769 — nhưng 1620 ms/board
+//   W1–W3 (bỏ xoay vòng):       overtol 3.47 · rep3 2.07 · cost 1.710 —  331 ms/board
+// W4 ngốn 77% khối lượng để mua 0.1pp overtol, còn thua ở blowout/intra/cost. Prod engine_search
+// hiện 131–785 ms, nên 1.6 giây là tự đánh sập thứ optimizer định chữa.
 const DEFAULT_TUNING: BoardOptimizerTuning = {
   objective: 'lex',
-  moveSet: MOVE_SET_WITH_BENCH,
+  moveSet: MOVE_SET_NO_ROTATION,
   maxIterations: DEFAULT_MAX_ITERATIONS,
 }
 
@@ -76,23 +82,33 @@ export function optimizeBoard(
   opts: OptimizeOptions,
 ): OptimizeResult {
   const seedKey = boardKey(seed)
+  // Số đo của board gốc tính đúng một lần cho cả lượt chạy: H3/H4/H5 luôn so với nó.
+  const seedMetrics = boardMetrics(ctx.seed, ctx)
+  const costCache = createCourtCostCache()
   let current = seed
-  let currentScore = scoreBoard(current, ctx, opts.objective)
+  let currentMetrics = current === ctx.seed ? seedMetrics : boardMetrics(current, ctx)
+  let currentScore = scoreBoard(current, ctx, opts.objective, currentMetrics, costCache)
 
   for (let iteration = 0; iteration < opts.maxIterations; iteration++) {
     let best: BoardSnapshot | null = null
+    let bestMetrics: typeof currentMetrics | null = null
     let bestScore = currentScore
 
     for (const candidate of generateMoves(current, ctx.benchIds, opts.moveSet)) {
-      // `current` là origin: H6/H8 là luật của từng nước đi, còn H3/H4/H5 so với ctx.seed.
-      const rejection = firstViolation(candidate, current, ctx)
+      // Một nước đi đụng nhiều nhất 3 sân, và moves.ts giữ nguyên tham chiếu các sân không đụng —
+      // nên chỉ những sân đó phải chấm lại. Đây thuần tăng tốc: kết quả không đổi một bit, và hash
+      // corpus là thứ chứng minh điều đó.
+      const candidateMetrics = boardMetrics(candidate, ctx, { board: current, metrics: currentMetrics })
+      // `current` là origin: H6 là luật của từng nước đi, còn H3/H4/H5/H8 so với ctx.seed.
+      const rejection = firstViolation(candidate, current, ctx, { candidate: candidateMetrics, seed: seedMetrics })
       if (rejection) {
         opts.onReject?.(rejection)
         continue
       }
-      const score = scoreBoard(candidate, ctx, opts.objective)
+      const score = scoreBoard(candidate, ctx, opts.objective, candidateMetrics, costCache)
       if (!isBetter(score, bestScore, OPTIMIZER_EPSILON)) continue
       best = candidate
+      bestMetrics = candidateMetrics
       bestScore = score
     }
 
@@ -100,6 +116,7 @@ export function optimizeBoard(
       return { board: current, iterations: iteration, changed: boardKey(current) !== seedKey }
     }
     current = best
+    currentMetrics = bestMetrics!
     currentScore = bestScore
     opts.onAccept?.(iteration)
   }

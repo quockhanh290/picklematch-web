@@ -13,13 +13,15 @@
 // là chưa đủ, vì người bạn cùng trình còn trên ghế lúc này có thể bị đẩy đi ở nước sau.
 
 // @ts-ignore Deno-style extension: the edge runtime resolves .ts, tsc strips it
-import { getPayloadIntraTeamGap, getPayloadProjectedMaxMeeting, hasAvoidedPartnerPair } from '../board-metrics.ts'
+import { hasAvoidedPartnerPair } from '../board-metrics.ts'
 // @ts-ignore
 import { INTRA_TEAM_PVNA_GAP_LIMIT } from '../score.ts'
 // @ts-ignore
-import { getEffectivePvna, getMatchPvnaGap } from '../state.ts'
+import { getEffectivePvna } from '../state.ts'
 import type { SessionState } from '../types'
 import type { SuggestedMatchPayload } from '../live-preview'
+import { courtMetrics } from './court-metrics'
+import type { BoardMetrics } from './court-metrics'
 
 export type CourtSnapshot = {
   court_idx: number
@@ -57,9 +59,6 @@ const seatedIds = (board: BoardSnapshot): string[] =>
 
 const playerSetKey = (board: BoardSnapshot): string => [...seatedIds(board)].sort().join('|')
 
-const courtByIdx = (board: BoardSnapshot, courtIdx: number): CourtSnapshot | undefined =>
-  board.find(court => court.court_idx === courtIdx)
-
 /** Giống hệt `owedRank` trong hai pass kéo băng ghế: nghỉ trước, rồi tới số trận đã chơi. */
 const owedRank = (state: SessionState, playerId: string) => {
   const player = state.players.get(playerId)
@@ -85,15 +84,13 @@ const hasNearLevelPeer = (state: SessionState, pvnaTolerance: number, playerId: 
   return pool.some(other => other !== playerId && Math.abs(pvnaOf(state, other) - pv) <= pvnaTolerance)
 }
 
-const overTolStats = (board: BoardSnapshot, ctx: ConstraintContext) => {
+const overTolStats = (metrics: BoardMetrics) => {
   let courts = 0
   let total = 0
-  for (const court of board) {
-    const gap = getMatchPvnaGap(court.team_a, court.team_b, ctx.state)
-    const over = gap - ctx.pvnaTolerance
-    if (over > 0) {
+  for (const metric of metrics) {
+    if (metric.over > 0) {
       courts += 1
-      total += over
+      total += metric.over
     }
   }
   return { courts, total }
@@ -103,6 +100,8 @@ export function firstViolation(
   candidate: BoardSnapshot,
   origin: BoardSnapshot,
   ctx: ConstraintContext,
+  /** Số đo dựng sẵn (court-metrics). Bỏ trống thì tính tại chỗ — kết quả y hệt, chỉ chậm hơn. */
+  precomputed?: { candidate: BoardMetrics; seed: BoardMetrics },
 ): ConstraintRejection | null {
   // H2 — mỗi sân đúng 4 người, không ai hai chỗ, chỉ người engine biết.
   const seated = seatedIds(candidate)
@@ -117,25 +116,29 @@ export function firstViolation(
   // H1 — cặp tránh nhau.
   if (hasAvoidedPartnerPair(candidate.map(asPayload), ctx.state)) return 'avoid_pair'
 
+  // Số đo dùng chung cho H3/H4/H5. Chỉ số của mảng seed khớp theo court_idx, không theo vị trí, vì
+  // ứng viên luôn giữ nguyên thứ tự sân của board gốc (moves.ts chỉ thay nội dung, không xáo mảng).
+  const candidateMetrics = precomputed?.candidate ?? candidate.map(court => courtMetrics(court, ctx))
+  const seedMetrics = precomputed?.seed ?? ctx.seed.map(court => courtMetrics(court, ctx))
+  const seedIndexByCourt = new Map(ctx.seed.map((court, index) => [court.court_idx, index]))
+
   // H3 — trần intra, từng sân so với chính sân đó ở board gốc.
-  for (const court of candidate) {
-    const seedCourt = courtByIdx(ctx.seed, court.court_idx)
-    if (!seedCourt) return 'seat_integrity'
-    const cap = Math.max(INTRA_TEAM_PVNA_GAP_LIMIT, getPayloadIntraTeamGap(asPayload(seedCourt), ctx.state))
-    if (getPayloadIntraTeamGap(asPayload(court), ctx.state) > cap + 1e-9) return 'intra_cap'
+  for (let i = 0; i < candidate.length; i++) {
+    const seedIndex = seedIndexByCourt.get(candidate[i].court_idx)
+    if (seedIndex === undefined) return 'seat_integrity'
+    const cap = Math.max(INTRA_TEAM_PVNA_GAP_LIMIT, seedMetrics[seedIndex].intra)
+    if (candidateMetrics[i].intra > cap + 1e-9) return 'intra_cap'
   }
 
   // H4 — (số sân vượt tolerance, tổng mức vượt) không vế nào được tăng.
-  const before = overTolStats(ctx.seed, ctx)
-  const after = overTolStats(candidate, ctx)
+  const before = overTolStats(seedMetrics)
+  const after = overTolStats(candidateMetrics)
   if (after.courts > before.courts || after.total > before.total + 1e-9) return 'over_tol_increase'
 
   // H5 — không tạo lần gặp thứ 3 mà board gốc chưa có.
-  for (const court of candidate) {
-    const seedCourt = courtByIdx(ctx.seed, court.court_idx)!
-    const candidateMeeting = getPayloadProjectedMaxMeeting(asPayload(court), ctx.state)
-    const seedMeeting = getPayloadProjectedMaxMeeting(asPayload(seedCourt), ctx.state)
-    if (candidateMeeting >= 3 && seedMeeting < 3) return 'new_repeat3'
+  for (let i = 0; i < candidate.length; i++) {
+    const seedIndex = seedIndexByCourt.get(candidate[i].court_idx)!
+    if (candidateMetrics[i].meeting >= 3 && seedMetrics[seedIndex].meeting < 3) return 'new_repeat3'
   }
 
   // H8 — "bị bỏ lại một mình trên băng ghế" là tính chất của băng ghế CUỐI CÙNG, nên phải so với

@@ -14,7 +14,7 @@
  *
  * P2-2 knobs (Task 7 matrix). Default OPT=0 keeps the flag-off path byte-identical (f1b6d8ac0b0c):
  *   OPT=1|0                                 bật/tắt board optimizer (mặc định 0)
- *   OPT_MOVES=split|bench|bench_unbounded    tập nước đi (mặc định bench)
+ *   OPT_MOVES=split|bench|bench_norot|bench_unbounded    tập nước đi (mặc định bench)
  *   OPT_OBJ=lex|cost                         thước đo (mặc định lex)
  * bench_unbounded = tập WITH_BENCH nhưng trần vòng lặp 10000 — cận trên rẻ tiền của "chọn lại cả 4
  * người mỗi sân" (spec §5). Cờ bật qua __setBoardOptimizerOverrideForTests, KHÔNG đụng env thật.
@@ -37,6 +37,7 @@ import { computeQualityCost } from '../lib/next-round-suggester/quality-cost'
 import { AVOID_PARTNER_PENALTY, getAvoidPenalty } from '../lib/next-round-suggester/avoid'
 import { __setBoardOptimizerOverrideForTests } from '../lib/next-round-suggester/board-optimizer-flag'
 import {
+  MOVE_SET_NO_ROTATION,
   MOVE_SET_SPLIT_ONLY,
   MOVE_SET_WITH_BENCH,
   __setBoardOptimizerTuningForTests,
@@ -68,12 +69,14 @@ const OPT_ON = process.env.OPT === '1'
 const OPT_MOVES = process.env.OPT_MOVES || 'bench'
 const OPT_OBJ = (process.env.OPT_OBJ || 'lex') as BoardOptimizerTuning['objective']
 if (OPT_OBJ !== 'lex' && OPT_OBJ !== 'cost') throw new Error(`OPT_OBJ không hợp lệ: ${OPT_OBJ}`)
-if (!['split', 'bench', 'bench_unbounded'].includes(OPT_MOVES)) throw new Error(`OPT_MOVES không hợp lệ: ${OPT_MOVES}`)
+if (!['split', 'bench', 'bench_unbounded', 'bench_norot'].includes(OPT_MOVES)) throw new Error(`OPT_MOVES không hợp lệ: ${OPT_MOVES}`)
 if (OPT_ON) {
   __setBoardOptimizerOverrideForTests(true)
   __setBoardOptimizerTuningForTests({
     objective: OPT_OBJ,
-    moveSet: OPT_MOVES === 'split' ? MOVE_SET_SPLIT_ONLY : MOVE_SET_WITH_BENCH,
+    moveSet: OPT_MOVES === 'split'
+      ? MOVE_SET_SPLIT_ONLY
+      : OPT_MOVES === 'bench_norot' ? MOVE_SET_NO_ROTATION : MOVE_SET_WITH_BENCH,
     maxIterations: OPT_MOVES === 'bench_unbounded' ? 10_000 : 30,
   })
 }

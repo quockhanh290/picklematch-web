@@ -15,6 +15,10 @@ export type MoveSet = readonly MoveKind[]
 
 export const MOVE_SET_SPLIT_ONLY: MoveSet = ['W1', 'W2', 'W4']
 export const MOVE_SET_WITH_BENCH: MoveSet = ['W1', 'W2', 'W3', 'W4']
+// Bỏ W4. Lý do là giá, không phải nguyên tắc: W4 sinh 2560/3304 ứng viên mỗi vòng (77%) và kéo một
+// board 6 sân lên 1.7 giây, trong khi engine_search trên prod chỉ 131–785 ms. Có đáng đổi hay không
+// thì corpus trả lời, không phải lập luận.
+export const MOVE_SET_NO_ROTATION: MoveSet = ['W1', 'W2', 'W3']
 
 /** Bốn ghế của một sân: 0,1 = team_a; 2,3 = team_b. */
 const SEATS = [0, 1, 2, 3] as const

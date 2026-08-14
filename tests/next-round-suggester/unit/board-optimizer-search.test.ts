@@ -5,10 +5,10 @@
 //   2. tất định — chạy lại cho kết quả giống hệt
 //   3. không bao giờ trả về board vi phạm ràng buộc cứng
 
-import { optimizeBoard } from '@/lib/next-round-suggester/board-optimizer'
+import { optimizeBoard, resolveBoardOptimizerTuning } from '@/lib/next-round-suggester/board-optimizer'
 import { firstViolation } from '@/lib/next-round-suggester/board-optimizer/constraints'
 import type { BoardSnapshot, ConstraintContext } from '@/lib/next-round-suggester/board-optimizer/constraints'
-import { MOVE_SET_SPLIT_ONLY, MOVE_SET_WITH_BENCH } from '@/lib/next-round-suggester/board-optimizer/moves'
+import { MOVE_SET_NO_ROTATION, MOVE_SET_SPLIT_ONLY, MOVE_SET_WITH_BENCH } from '@/lib/next-round-suggester/board-optimizer/moves'
 import { createPlayer, createState } from '../helpers/factories'
 
 function buildCtx(seed: BoardSnapshot, benchIds: string[] = []): ConstraintContext {
@@ -96,5 +96,17 @@ describe('optimizeBoard', () => {
     const rejections: string[] = []
     optimizeBoard(seed, buildCtx(seed, ['e']), { ...OPTS, onReject: reason => rejections.push(reason) })
     expect(rejections.length).toBeGreaterThan(0)
+  })
+})
+
+describe('cau hinh mac dinh cua engine', () => {
+  it('mac dinh la bo xoay vong — chot bang bang corpus, khong phai so thich', () => {
+    // W4 mua 0.1pp overtol nhung ngon 77% khoi luong: 1620 ms/board so voi 331 ms. Prod
+    // engine_search hien 131-785 ms, nen mac dinh phai la tap khong co W4.
+    expect(resolveBoardOptimizerTuning()).toEqual({
+      objective: 'lex',
+      moveSet: MOVE_SET_NO_ROTATION,
+      maxIterations: 30,
+    })
   })
 })
