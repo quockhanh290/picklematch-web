@@ -375,19 +375,23 @@ function bestTeamSplitWithTolerance(
 
   let best: TeamSplitResult | null = null
 
+  // Same for all three splits, so build it once. `tolerance` is still ABSENT rather than undefined when
+  // the caller did not set one — scoreMatch reads that difference.
+  const scoreOptions: Parameters<typeof scoreMatch>[3] = {
+    allowRepeatOverflow: options.allowRepeatOverflow,
+    allowRecentGroupRematch: options.allowRecentGroupRematch,
+    intraTeamGapLimit: options.intraTeamGapLimit,
+    allowIntraTeamGapOverflow: options.allowIntraTeamGapOverflow,
+    mustRestAt: options.mustRestAt,
+    partnerRepeatCap: options.partnerRepeatCap,
+    opponentRepeatCap: options.opponentRepeatCap,
+  }
+  if (options.tolerance !== undefined) scoreOptions.tolerance = options.tolerance
+
   for (const [a1, a2, b1, b2] of SPLIT_INDEXES) {
     const teamA: Team = [players[a1].player_id, players[a2].player_id]
     const teamB: Team = [players[b1].player_id, players[b2].player_id]
-    const scored = scoreMatch(teamA, teamB, state, {
-      ...(options.tolerance === undefined ? {} : { tolerance: options.tolerance }),
-      allowRepeatOverflow: options.allowRepeatOverflow,
-      allowRecentGroupRematch: options.allowRecentGroupRematch,
-      intraTeamGapLimit: options.intraTeamGapLimit,
-      allowIntraTeamGapOverflow: options.allowIntraTeamGapOverflow,
-      mustRestAt: options.mustRestAt,
-      partnerRepeatCap: options.partnerRepeatCap,
-      opponentRepeatCap: options.opponentRepeatCap,
-    })
+    const scored = scoreMatch(teamA, teamB, state, scoreOptions)
 
     if (!Number.isFinite(scored.score)) continue
 
@@ -707,21 +711,23 @@ export function bestPartitioning(
   ): { result: PartitioningResult | null; iterations: number } {
     let best: PartitioningResult | null = null
     let iterations = 0
+    // Fixed for the whole search — it was being rebuilt for every partition considered.
+    const partitionOptions = {
+      ...searchOptions,
+      allowRepeatOverflow: options.allowRepeatOverflow,
+      allowRecentGroupRematch: options.allowRecentGroupRematch,
+      mustRestAt: options.mustRestAt,
+      partnerRepeatCap: options.partnerRepeatCap,
+      opponentRepeatCap: options.opponentRepeatCap,
+      recentKeySignature,
+    }
 
     function consider(groups: PlayerSessionState[][]) {
       if (iterations >= maxIterations) return
       if (searchBudgetExhausted(budget)) return
       spendSearchBudget(budget)
       iterations += 1
-      const result = evaluatePartition(groups, searchState, iterations, options.cache, {
-        ...searchOptions,
-        allowRepeatOverflow: options.allowRepeatOverflow,
-        allowRecentGroupRematch: options.allowRecentGroupRematch,
-        mustRestAt: options.mustRestAt,
-        partnerRepeatCap: options.partnerRepeatCap,
-        opponentRepeatCap: options.opponentRepeatCap,
-        recentKeySignature,
-      })
+      const result = evaluatePartition(groups, searchState, iterations, options.cache, partitionOptions)
       if (!result) return
       if (shouldReplaceBestPartition(result, best, searchState, options.cache)) {
         best = result

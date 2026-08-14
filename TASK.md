@@ -72,23 +72,46 @@ tính năng nằm im vì chính ngân sách của nó. Bỏ đồng hồ ra thì
 trần đếm được `DEFAULT_MAX_FUTURE_SEARCHES = 12` (đơn vị không đủ tính đúng giá một lượt nhìn trước:
 một lượt dựng lại state + sort lại cả pool nhưng chỉ bị tính vài đơn vị).
 
-### ⚠️ QUYẾT ĐỊNH CHỜ HOST — 3 assertion đỏ MỚI trong `rolling-horizon-chain.test.ts`
+### Tăng tốc engine (2026-08-14, sau P2-5) — trả xong phần độ trễ
 
-Đây là hệ quả THẬT của việc beam bắt đầu hoạt động, không phải lỗi kỹ thuật:
+Hai chỗ nóng lấy từ CPU profile, cả hai **không đổi một byte lineup nào** (hash vẫn `f1b6d8ac0b0c`):
+
+1. **`getProjectedRepeatSummary` thôi clone 8 map.** Nó chạy mỗi lần chia đội (hàng chục nghìn lần/board)
+   và clone 8 map đếm chỉ để tăng 6 ô. Một map chiếu khác map gốc đúng ở các ô trận này đụng tới, và một
+   ô chỉ vượt ngưỡng "lặp" khi nó đang ở 1 → tính thẳng, không dựng.
+2. **Hoist object spread trong `pair.ts`.** Options cho `scoreMatch` dựng lại 3 lần mỗi split; options cho
+   `evaluatePartition` dựng lại mỗi partition. Cả hai bất biến trong một lượt search.
+
+| | p50 | p90 | p99 | max | 60 kèo |
+|---|---|---|---|---|---|
+| CŨ (đồng hồ) | 126 | 301 | 766 | 1243 | — |
+| P2-5 | 125 | 407 | 880 | 1388 | 516s |
+| **+ tăng tốc** | **116** | **364** | **792** | **1215** | **424s** |
+
+→ đã **nhanh hơn cả mã cũ dùng đồng hồ** ở p99/max, và `elapsedMs < 2000` trong
+`rolling-horizon-chain` **hết đỏ**.
+
+**ĐÃ LOẠI — khoá cache lượt-nhìn-trước theo đường đi:** khoá cũ (serialize toàn bộ count map + lịch sử)
+đắt và gần như không trúng (cache=0/12). Thay bằng khoá "candidate + chuỗi sân đã xong" thì đúng và rẻ,
+NHƯNG mất loại trúng mà khoá cũ có: hai thứ tự KHÁC nhau dẫn tới cùng một state
+(`rolling-horizon.test.ts` có test đúng ca đó, chuyển đỏ). Khoá theo TẬP thay vì chuỗi thì cần chứng
+minh `projectMatch` giao hoán — chưa chứng minh nên không làm. Đã revert.
+
+### ⚠️ QUYẾT ĐỊNH CHỜ HOST — 2 assertion đỏ còn lại trong `rolling-horizon-chain.test.ts`
+
+Không còn là chuyện độ trễ (đã sửa xong). Còn đúng một đánh đổi chất lượng:
 - 2× `totalTeamGap/totalMatches ≤ 0.15` → **0.163**. Beam đổi lựa chọn để giữ lane sau khả thi, trả
   giá bằng chênh-đội trung bình. Các chỉ số khác trong cùng test (maxTeamGap ≤1, intra, lặp, số trận)
   vẫn xanh.
-- 1× `elapsedMs < 2000` → **2197ms** ở ca "slow middle courts". Phần lớn KHÔNG phải beam (beam ~700ms):
-  phần còn lại là tìm kiếm chính không còn bị đồng hồ cắt trên roster 36 người.
 
 Ba lựa chọn, host chọn:
-1. **Giữ nguyên (đang là vậy)** — beam hoạt động thật, +200–600ms mỗi lần lấp sân, chênh-đội +0.013.
-2. **Hạ `DEFAULT_MAX_FUTURE_SEARCHES`** (vd 6) — bám sát chi phí cũ, nhưng beam lại gần như vô dụng.
+1. **Giữ nguyên (đang là vậy)** — beam hoạt động thật, chênh-đội trung bình +0.013, độ trễ đã ổn.
+2. **Hạ `DEFAULT_MAX_FUTURE_SEARCHES`** (vd 6) — bám sát hành vi cũ, nhưng beam lại gần như vô dụng.
 3. **Tắt hẳn rolling beam** — nếu đằng nào nó cũng chưa từng chạy thật thì đây là xoá code chết (P3).
 
-**Đã thử và LOẠI:** chỉnh tỉ giá (100→50→10) KHÔNG sửa được độ trễ đó — ở cả ba mức, ca chậm vẫn
-~2.2–2.6s → chi phí nằm ở phần việc ngân sách không tính (dựng state, sort pool, post-pass), không
-phải ở tìm kiếm. Và **tính 1 đơn vị mỗi SÂN thay vì mỗi partition làm tỉ giá lệch TỆ HƠN** (92→682
+**Đã thử và LOẠI:** chỉnh tỉ giá (100→50→10) KHÔNG sửa được độ trễ — ở cả ba mức ca chậm vẫn ~2.2–2.6s
+→ chi phí nằm ở phần việc ngân sách không tính, không phải ở tìm kiếm (đúng, và tối ưu ở trên mới là
+thứ sửa được nó). Và **tính 1 đơn vị mỗi SÂN thay vì mỗi partition làm tỉ giá lệch TỆ HƠN** (92→682
 đơn vị/ms thay vì 40→110) → đã revert.
 
 ### Gate sau P2-5
@@ -98,7 +121,8 @@ phải ở tìm kiếm. Và **tính 1 đơn vị mỗi SÂN thay vì mỗi parti
 - `full-session`: 2 đỏ CÓ SẴN (giá trị không đổi, nay tất định)
 - `production-chain-timing`: 4 đỏ CÓ SẴN — `await import()` cần `--experimental-vm-modules`; **đã A/B
   trên mã cũ: đỏ y hệt 4/4**, không dính gì tới P2-5
-- `rolling-horizon-chain`: 3 đỏ MỚI (mục quyết định ở trên) · `rolling-horizon-matrix` xanh
+- `rolling-horizon-chain`: 2 đỏ MỚI (mục quyết định ở trên; assertion độ trễ đã hết đỏ sau tăng tốc)
+  · `rolling-horizon-matrix` xanh
 - `tsc` 0 lỗi · eslint 0 error trên các file đã sửa
 
 ### Trạng thái bàn giao P2-2 (2026-08-14)

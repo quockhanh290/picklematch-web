@@ -8,9 +8,16 @@
 - **`git stash push -- lib scripts supabase tests` là cách A/B mã cũ/mới nhanh** mà không đụng `scratch/` (untracked nên không bị stash) — dùng liên tục trong phiên này. Nhớ `git checkout --` lại file test nếu chỉ còn khác biệt CRLF.
 
 ## Rejected approaches (2026-08-14)
+- **Khoá cache lượt-nhìn-trước của beam theo ĐƯỜNG ĐI** (`candidate + chuỗi sân đã xong`): đúng và rẻ hơn hẳn khoá cũ (serialize mọi count map + lịch sử trận), nhưng MẤT loại trúng mà khoá cũ có — hai thứ tự hoàn thành khác nhau dẫn tới cùng một state. `rolling-horizon.test.ts` có test đúng ca đó và chuyển đỏ. Khoá theo TẬP (thay vì chuỗi) sẽ bắt được cả hai, nhưng cần chứng minh `projectMatch` giao hoán — chưa chứng minh nên không làm. Đã revert.
 - **Tính 1 đơn vị mỗi SÂN thay vì mỗi partition** (để ngân sách bind sớm hơn trên roster lớn): đo ra tỉ giá lệch TỆ HƠN — 92→682 đơn vị/ms theo cỡ pool, so với 40→110 khi tính mỗi partition. Chi phí một partition gần như không tăng theo số sân (cache team-split). Đã revert.
 - **Hạ `SEARCH_UNITS_PER_LEGACY_MS` để cứu độ trễ đường rolling**: thử 100 → 50 → 10, ca chậm vẫn 2.2–2.6s ở cả ba mức → chi phí không nằm trong tìm kiếm. Chỉnh tỉ giá chỉ đổi chất lượng, không đổi độ trễ đó.
 - **"2 test đỏ full-session là triệu chứng của wall-clock"**: bác bỏ bằng phép thử đóng băng đồng hồ — cùng con số (0.6667 / 0.6667). Pool 9 và 12 người quá nhỏ để chạm deadline 800ms.
+
+## Tăng tốc engine — hai chỗ đáng tiền (đo bằng CPU profile)
+- **`getProjectedRepeatSummary` clone 8 map để tăng 6 ô.** Chạy mỗi lần chia đội, tức hàng chục nghìn lần mỗi board. Map chiếu khác map gốc đúng ở các ô trận này đụng tới, và một ô chỉ vượt ngưỡng "lặp" khi đang ở 1 → tính thẳng. Hash không đổi.
+- **Object spread trong `pair.ts`** dựng lại options mỗi split / mỗi partition dù bất biến trong một lượt search. Hoist ra là xong.
+- Kết quả gộp: p99 880→792ms, max 1388→1215ms (nhanh hơn cả mã cũ dùng đồng hồ), 60 kèo 516s→424s. **Thước đo an toàn cho loại thay đổi này: hash phải giữ nguyên `f1b6d8ac0b0c`** — nếu đổi thì đó không còn là tăng tốc thuần.
+- ⚠️ **Profile dưới jest bị thổi.** `_iterableToArray` / `_arrayWithoutHoles` / `_objectSpread` là helper babel sinh ra khi transpile spread — Node/Deno thật có spread native, không có mấy hàm đó. Đọc profile jest để TÌM chỗ nóng thì được; đọc con số tuyệt đối thì sai.
 
 ## Open questions
 - Beam rolling-horizon: giữ trần 12, hạ xuống ~6, hay xoá hẳn? (3 assertion đỏ trong `rolling-horizon-chain.test.ts` phụ thuộc lựa chọn này.)

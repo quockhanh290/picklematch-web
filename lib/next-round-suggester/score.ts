@@ -327,16 +327,30 @@ export type ProjectedRepeatSummary = {
   affected_players: number
 }
 
-function repeatedRelationCount(counts: Map<string, number>) {
-  return [...counts.values()].filter((count) => count >= 2).length
+// Counted, not materialised. This runs once per team split, i.e. tens of thousands of times per board,
+// and it used to clone eight count maps to increment six entries. CPU profile: the clones alone were the
+// second-hottest thing in the engine.
+function baseRelationCount(
+  state: SessionState,
+  playerId: string,
+  field: 'partner_counts' | 'opponent_counts',
+  otherId: string,
+) {
+  return state.players.get(playerId)?.[field]?.get(otherId) ?? 0
 }
 
-function cloneCountsForPlayer(
-  playerId: string,
+function baseRepeatedRelationCount(
   state: SessionState,
+  playerId: string,
   field: 'partner_counts' | 'opponent_counts',
 ) {
-  return new Map(state.players.get(playerId)?.[field] ?? [])
+  const counts = state.players.get(playerId)?.[field]
+  if (!counts) return 0
+  let repeated = 0
+  for (const count of counts.values()) {
+    if (count >= 2) repeated += 1
+  }
+  return repeated
 }
 
 function areSameGroup(
@@ -356,35 +370,14 @@ export function getProjectedRepeatSummary(
   let maxOpponentPairCount = 0
   let pairOverBy = 0
   let affectedPairs = 0
-  const playerIds = [...teamA, ...teamB]
-  const projectedPartnerCounts = new Map(playerIds.map((playerId) => [
-    playerId,
-    cloneCountsForPlayer(playerId, state, 'partner_counts'),
-  ]))
-  const projectedOpponentCounts = new Map(playerIds.map((playerId) => [
-    playerId,
-    cloneCountsForPlayer(playerId, state, 'opponent_counts'),
-  ]))
-
-  const incrementPair = (
-    playerA: string,
-    playerB: string,
-    countsByPlayer: Map<string, Map<string, number>>,
-  ) => {
-    const countsA = countsByPlayer.get(playerA)
-    const countsB = countsByPlayer.get(playerB)
-    const nextCount = (countsA?.get(playerB) ?? 0) + 1
-    if (countsA) countsA.set(playerB, nextCount)
-    if (countsB) countsB.set(playerA, nextCount)
-    return nextCount
-  }
+  const playerIds = [teamA[0], teamA[1], teamB[0], teamB[1]]
 
   const partnerPairs: Array<[string, string]> = [
     [teamA[0], teamA[1]],
     [teamB[0], teamB[1]],
   ]
   for (const [playerA, playerB] of partnerPairs) {
-    const projectedCount = incrementPair(playerA, playerB, projectedPartnerCounts)
+    const projectedCount = baseRelationCount(state, playerA, 'partner_counts', playerB) + 1
     maxPartnerPairCount = Math.max(maxPartnerPairCount, projectedCount)
     const pA = state.players.get(playerA)
     const pB = state.players.get(playerB)
@@ -398,7 +391,7 @@ export function getProjectedRepeatSummary(
 
   for (const playerA of teamA) {
     for (const playerB of teamB) {
-      const projectedCount = incrementPair(playerA, playerB, projectedOpponentCounts)
+      const projectedCount = baseRelationCount(state, playerA, 'opponent_counts', playerB) + 1
       maxOpponentPairCount = Math.max(maxOpponentPairCount, projectedCount)
       const overBy = Math.max(0, projectedCount - (caps?.opponentCap ?? MAX_PROJECTED_OPPONENT_PAIR_COUNT))
       if (overBy > 0) {
@@ -413,9 +406,19 @@ export function getProjectedRepeatSummary(
   let playerOverBy = 0
   let affectedPlayers = 0
 
-  for (const playerId of playerIds) {
-    const repeatedPartners = repeatedRelationCount(projectedPartnerCounts.get(playerId) ?? new Map())
-    const repeatedOpponents = repeatedRelationCount(projectedOpponentCounts.get(playerId) ?? new Map())
+  for (let index = 0; index < playerIds.length; index += 1) {
+    const playerId = playerIds[index]
+    const onTeamA = index < 2
+    const partnerId = onTeamA ? teamA[1 - index] : teamB[3 - index]
+    const opponents = onTeamA ? teamB : teamA
+    // A projected map differs from the base one in exactly the entries this match touches, and an entry
+    // only crosses the "repeated" line when it was sitting at 1.
+    const repeatedPartners = baseRepeatedRelationCount(state, playerId, 'partner_counts')
+      + (baseRelationCount(state, playerId, 'partner_counts', partnerId) === 1 ? 1 : 0)
+    let repeatedOpponents = baseRepeatedRelationCount(state, playerId, 'opponent_counts')
+    for (const opponentId of opponents) {
+      if (baseRelationCount(state, playerId, 'opponent_counts', opponentId) === 1) repeatedOpponents += 1
+    }
     maxRepeatedPartnersPerPlayer = Math.max(maxRepeatedPartnersPerPlayer, repeatedPartners)
     maxRepeatedOpponentsPerPlayer = Math.max(maxRepeatedOpponentsPerPlayer, repeatedOpponents)
 
