@@ -139,12 +139,35 @@ Rig: `ROLLING=1 BEAM=<n> npx tsx scratch/board-scorecard.ts 20` (20 kèo, 1008 t
 **Tôi đoán SAI một nửa:** tôi cược beam là đồ bỏ. Nó có mua được thứ thật (công bằng), chỉ là mua đắt và
 đồng thời làm xấu chất lượng bàn. Không phải "chắc chắn xoá", mà là "đánh đổi thật, cần host cân".
 
-**Ba lựa chọn cho lần sau, host chọn:**
-1. **Giữ trần 6** — không đổi gì so với hôm nay. Nhưng đang trả 93ms/sân cho một phép so sánh chưa từng
-   đổi board nào trên 1008 trận.
-2. **Hạ về 1 / xoá beam** — tiết kiệm ~93ms/sân, board y hệt. Phải xử lý unit test kia (nó đang canh
-   đúng tính năng này).
-3. **Nâng lên 12** — chấp nhận 5× độ trễ để đổi lấy công bằng tốt hơn, chất lượng bàn xấu hơn một chút.
+### HOST ĐÃ CHỐT (14/08): GIỮ BEAM. Chưa verify xong — đọc phần này trước khi đụng vào.
+
+Giữ code, giữ trần **6** = đúng hành vi prod hôm nay. **Không xoá, không nâng.** P2-5 vì thế ship sạch:
+một thay đổi tất định, không kèm bật tính năng nào.
+
+⚠️ **Ba thứ CHƯA verify — đừng coi beam là đã xong:**
+
+1. **Chưa biết beam làm gì trên prod thật.** Mọi số ở trên đo trên corpus tổng hợp + fixture test. Ở trần
+   6 nó đổi 0/1008 board trong corpus, nhưng corpus không phải kèo thật. **Cần:** một kèo chạy edge v269,
+   đọc instrument event `rolling_horizon` trong `debug_dumps` → xem `evaluated`, `calls`, `exhausted`,
+   `pick`. Nếu `pick` luôn = 0 thì beam đang tiêu ~93ms/sân cho không.
+2. **Chưa biết 93ms đó trên Deno là bao nhiêu.** Đo trên máy dev Node. Edge chậm hơn thì con số này lớn
+   hơn, và nó nằm ngay trên đường host đang chờ.
+3. **`invariantGuardRevert` vẫn chưa kết luận được** — nó cần rolling plan target đang TẮT, nên chưa
+   quan sát được lần nào.
+
+**Nếu sau này ai đó muốn đổi trần, phải chạy lại ĐÚNG bộ này (rig đã có sẵn):**
+- `ROLLING=1 BEAM=<n> npx tsx scratch/board-scorecard.ts 20` — so board_hash + cost + play-spread +
+  worst-rest + p50/p90 với bảng trên
+- `npx jest tests/next-round-suggester/simulation/rolling-horizon-chain.test.ts
+  tests/next-round-suggester/simulation/rolling-horizon-matrix.test.ts
+  tests/next-round-suggester/unit/rolling-horizon.test.ts --runInBand` — 18/18 phải xanh ở trần 6;
+  ở trần 12 thì 2 assertion `totalTeamGap/totalMatches ≤ 0.15` chuyển đỏ (0.163) — đó là hệ quả ĐÃ BIẾT
+  của việc beam hoạt động, không phải hồi quy mới
+- Trần **1 làm đỏ** unit test `prefers a slightly weaker immediate match...` → trần 1 = tắt beam, đừng
+  dùng nó như "beam gọn nhẹ"
+
+**Chỗ chỉnh:** `DEFAULT_MAX_FUTURE_SEARCHES` trong `lib/next-round-suggester/planner/rolling-horizon.ts`.
+Hook đo: `__setRollingBeamMaxFutureSearchesForTests`.
 
 **Đã thử và LOẠI:** chỉnh tỉ giá (100→50→10) KHÔNG sửa được độ trễ — ở cả ba mức ca chậm vẫn ~2.2–2.6s
 → chi phí nằm ở phần việc ngân sách không tính, không phải ở tìm kiếm (đúng, và tối ưu ở trên mới là
