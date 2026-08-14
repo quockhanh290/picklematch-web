@@ -28,7 +28,21 @@ host QA xong) và bug "Gợi ý vừa cũ sau khi có trận kết thúc".
 
 ---
 
-## P2-5 — XONG (2026-08-14), CHƯA DEPLOY. Một quyết định chờ host.
+## P2-5 — XONG + **ĐÃ DEPLOY** (2026-08-14): edge v269, **ALGO 78**
+
+⚠️ **P2-5 KHÔNG có cờ** — không như P2-2 (`SESSION_BOARD_OPTIMIZER`) hay quality-cost (allowlist). Deploy
+là đổi cho MỌI kèo ngay lập tức, không canary được. Cố ý không thêm cờ: muốn có cờ thì phải giữ song song
+cả đường-đồng-hồ lẫn đường-đếm, đúng thứ phân mảnh mà defrag đang gỡ.
+**Đường lùi:** `git checkout 9c7d226 -- lib supabase` rồi deploy lại = về ALGO 77.
+
+**CHƯA ĐO:** độ trễ thật trên Deno. Chất lượng đã cố định giữa các máy, nên thứ đổi theo máy giờ là THỜI
+GIAN. Kèo thật đầu tiên sau deploy → đọc `debug_dumps.timing_ms` để có số.
+
+**BẪY vừa vấp, đáng nhớ:** deploy lần đầu FAIL ở bước bundle — `board-optimizer/index.ts` import
+`'./constraints'` thiếu đuôi `.ts`, Deno không tìm được module. P2-2 merge sau cờ tắt nên **chưa ai bắt
+Deno bundle nó bao giờ** (đúng mục "chưa chạy thật lần nào trên edge" trong danh sách CHƯA-chứng-minh).
+Edge bundle CẢ lib bất kể cờ bật hay tắt → code sau cờ tắt vẫn phải bundle được. Đã sửa (`f82efba`).
+
 
 **Đã làm:** `lib/next-round-suggester/search-budget.ts` — ngân sách đếm được (1 đơn vị = 1 partition
 được đánh giá), lồng nhau được (con tiêu cả vào cha), không đọc đồng hồ. Thay TOÀN BỘ ngân sách
@@ -273,7 +287,9 @@ KHÔNG phải do đồng hồ** (đã bác bỏ bằng phép thử đóng băng 
 
 
 ## Trạng thái prod
-- edge `session-live-matches-suggest` **v268, ALGO 77** (xác minh qua `debug_dumps.engine_build.algorithm_version` của kèo thật, không phải suy đoán)
+- edge `session-live-matches-suggest` **v269, ALGO 78** (deploy 2026-08-14 08:49, status ACTIVE qua
+  Management API). ⚠️ Chưa xác minh bằng `debug_dumps.engine_build.algorithm_version` của kèo thật —
+  làm việc đó ở kèo đầu tiên sau deploy, cùng lúc đọc `timing_ms` để có số độ trễ Deno.
 - Canary quality-cost **TẮT** — allowlist rỗng. **BẪY:** `SESSION_QUALITY_COST_MODEL` vẫn `="1"`;
   thứ giữ nó dormant là allowlist, KHÔNG phải master flag. Đừng đọc flag rồi kết luận "đang tắt".
 - Nhánh `feat-quality-cost-model` đã push lên remote; P2-2 đã merge vào đây (ff `2b756d2` → `e741e0f`).
