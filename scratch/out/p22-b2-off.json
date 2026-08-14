@@ -1,0 +1,32 @@
+{
+  "board_hash": "b01e55eb599f",
+  "refill_batch": 2,
+  "optimizer": null,
+  "optimizer_invoked": 0,
+  "optimizer_changed": 0,
+  "optimizer_rejects": {},
+  "sessions": 60,
+  "requested": 3088,
+  "seated": 3088,
+  "fill_rate_pct": 100,
+  "hard": {
+    "avoid_partner": 0
+  },
+  "soft": {
+    "avg_cost": 2.3867,
+    "over_tol_pct": 4.63,
+    "repeat3_pct": 1.13,
+    "blowout_pct": 0.45,
+    "intra_over_cap_pct": 26.36,
+    "panel_pct": 6.51,
+    "panel_forced_pct": 0,
+    "panel_choices_pct": 6.51
+  },
+  "fair": {
+    "avg_play_spread": 0.983,
+    "avg_worst_rest": 1.267,
+    "summed_session_max_consecutive_play": 203,
+    "owed_share_of_idle_pct": 5.87,
+    "seated_at_or_past_rest_pct": 31.11
+  }
+}

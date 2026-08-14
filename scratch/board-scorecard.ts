@@ -66,6 +66,7 @@ const ROUNDS = 8
 // OPT=0 phải để MỌI thứ y như cũ: không bật cờ, không đặt tuning override, không đổi một byte nào của
 // đường greedy + sáu pass. Chỉ khi OPT=1 mới đụng vào hai hook test.
 const OPT_ON = process.env.OPT === '1'
+const REFILL_BATCH = Math.max(1, Number(process.env.REFILL_BATCH || 1))
 const OPT_MOVES = process.env.OPT_MOVES || 'bench'
 const OPT_OBJ = (process.env.OPT_OBJ || 'lex') as BoardOptimizerTuning['objective']
 if (OPT_OBJ !== 'lex' && OPT_OBJ !== 'cost') throw new Error(`OPT_OBJ không hợp lệ: ${OPT_OBJ}`)
@@ -229,7 +230,7 @@ function run(sid: string): Score | null {
   if (init.length === 0) return null
   for (const p of init) { scoreMatchInto(acc, state, p, tol); live.push(asLive(p, seq++, 0)) }
 
-  let done = 0, batch = new Set<string>(), guard = 0
+  let done = 0, batch = new Set<string>(), guard = 0, completedSinceRefill = 0
   while (done < courts * ROUNDS && guard++ < courts * ROUNDS * 4) {
     for (let c = 0; c < courts; c++) {
       if ((lane.get(c) ?? 0) >= ROUNDS) continue
@@ -241,6 +242,14 @@ function run(sid: string): Score | null {
         state = { ...buildProjectedStateAfterCompletedLiveRound(state, batch), current_round: Math.floor(done / courts) + 1 } as never
         batch = new Set()
       }
+      // REFILL_BATCH=k: giữ lại k sân xong TRƯỚC khi lấp, để tạo ra hình dạng "lấp nhiều sân cùng lúc
+      // trong khi sân khác đang chạy". Cờ MULTI=1 trước đây không ăn vì vòng lặp lấp ngay sau mỗi sân
+      // xong, nên idle.length không bao giờ > 1 — phải đổi cấu trúc chứ không phải thêm cờ.
+      // Hình dạng này CÓ THẬT trên prod: dump kèo 260878a4 có request court_idxs=[2,1] và [5,4].
+      // k=1 giữ nguyên hành vi cũ (điều kiện dưới không bao giờ đúng) → hash baseline không đổi.
+      completedSinceRefill += 1
+      if (completedSinceRefill < REFILL_BATCH && c < courts - 1) continue
+      completedSinceRefill = 0
       const idle = Array.from({ length: courts }, (_, i) => i)
         .filter(i => (lane.get(i) ?? 0) < ROUNDS && !live.some(r => r.status === 'live' && r.court_idx === i))
       // Owed share: how many idle players carry consecutive_rest >= 1, the condition classify.ts turns
@@ -255,7 +264,9 @@ function run(sid: string): Score | null {
       // when two or more courts are filled together WHILE others are live, and the default loop never
       // produces that shape — its only multi-court request is the opening fill on an empty board. So the
       // pass has only ever been measured in the situation where it cannot help.
-      const groups = process.env.MULTI === '1' && idle.length > 1 ? [idle] : idle.map(ic => [ic])
+      const groups = (process.env.MULTI === '1' || REFILL_BATCH > 1) && idle.length > 1
+        ? [idle]
+        : idle.map(ic => [ic])
       for (const group of groups) {
         acc.requested += group.length
         const n = suggest(state, live, group.length, courts, group)
@@ -288,6 +299,7 @@ const pct = (n: number) => totals.seated ? (100 * n / totals.seated) : 0
 const boardHash = crypto.createHash('sha1').update(totals.lineups.join(',')).digest('hex').slice(0, 12)
 const report = {
   board_hash: boardHash,
+  refill_batch: REFILL_BATCH,
   optimizer: OPT_ON ? { moves: OPT_MOVES, objective: OPT_OBJ } : null,
   // Số lần optimizer THỰC SỰ vào (nhãn 'optimizer:entered') và số board nó đổi. Trước khi tin bất kỳ
   // con số chất lượng nào của một lượt OPT=1: invoked phải > 0, nếu không là phép đo hỏng.

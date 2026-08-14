@@ -1,0 +1,42 @@
+{
+  "board_hash": "cf76faba4f1a",
+  "refill_batch": 2,
+  "optimizer": {
+    "moves": "bench_norot",
+    "objective": "lex"
+  },
+  "optimizer_invoked": 1502,
+  "optimizer_changed": 1407,
+  "optimizer_rejects": {
+    "intra_cap": 390404,
+    "over_tol_increase": 308331,
+    "seat_integrity": 91575,
+    "owed_rank": 32327,
+    "stranded_outlier": 9712,
+    "new_repeat3": 8377
+  },
+  "sessions": 60,
+  "requested": 3088,
+  "seated": 3088,
+  "fill_rate_pct": 100,
+  "hard": {
+    "avoid_partner": 0
+  },
+  "soft": {
+    "avg_cost": 1.6484,
+    "over_tol_pct": 2.07,
+    "repeat3_pct": 0.97,
+    "blowout_pct": 0.65,
+    "intra_over_cap_pct": 14.54,
+    "panel_pct": 3.79,
+    "panel_forced_pct": 0,
+    "panel_choices_pct": 3.79
+  },
+  "fair": {
+    "avg_play_spread": 1.25,
+    "avg_worst_rest": 1.233,
+    "summed_session_max_consecutive_play": 254,
+    "owed_share_of_idle_pct": 4.82,
+    "seated_at_or_past_rest_pct": 32.97
+  }
+}
