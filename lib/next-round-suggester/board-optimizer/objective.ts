@@ -7,10 +7,14 @@
 // Spec cố ý KHÔNG chọn trước cái nào. Cả hai chạy trên corpus 60 phiên rồi mới chốt bằng bảng số.
 
 // @ts-ignore Deno-style extension: the edge runtime resolves .ts, tsc strips it
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { INTRA_TEAM_PVNA_GAP_LIMIT } from '../score.ts'
-import type { BoardSnapshot, ConstraintContext } from './constraints'
-import { courtCost, courtMetrics } from './court-metrics'
-import type { BoardMetrics, CourtCostCache } from './court-metrics'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { BoardSnapshot, ConstraintContext } from './constraints.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { courtCost, courtMetrics } from './court-metrics.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { BoardMetrics, CourtCostCache } from './court-metrics.ts'
 
 /** Vector từ điển: so phần tử đầu trước, hoà mới xét phần tử sau. */
 export type BoardScore = number[]

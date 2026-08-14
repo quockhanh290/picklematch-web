@@ -13,15 +13,22 @@
 // là chưa đủ, vì người bạn cùng trình còn trên ghế lúc này có thể bị đẩy đi ở nước sau.
 
 // @ts-ignore Deno-style extension: the edge runtime resolves .ts, tsc strips it
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { hasAvoidedPartnerPair } from '../board-metrics.ts'
 // @ts-ignore
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { INTRA_TEAM_PVNA_GAP_LIMIT } from '../score.ts'
 // @ts-ignore
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { getEffectivePvna } from '../state.ts'
-import type { SessionState } from '../types'
-import type { SuggestedMatchPayload } from '../live-preview'
-import { courtMetrics } from './court-metrics'
-import type { BoardMetrics } from './court-metrics'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { SessionState } from '../types.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { SuggestedMatchPayload } from '../live-preview.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { courtMetrics } from './court-metrics.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { BoardMetrics } from './court-metrics.ts'
 
 export type CourtSnapshot = {
   court_idx: number

@@ -7,18 +7,29 @@
 // Ngân sách là SỐ VÒNG LẶP, không phải đồng hồ. Engine hiện không tất định vì deadline theo Date.now()
 // — đó là một nửa nguyên nhân bug flicker, nên optimizer không được phép mang lại đúng cái bệnh đó.
 
-import { firstViolation } from './constraints'
-import type { BoardSnapshot, ConstraintContext, ConstraintRejection } from './constraints'
-import { isBetter, scoreBoard } from './objective'
-import type { ObjectiveName } from './objective'
-import { generateMoves, MOVE_SET_NO_ROTATION } from './moves'
-import { boardMetrics, createCourtCostCache } from './court-metrics'
-import type { MoveSet } from './moves'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { firstViolation } from './constraints.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { BoardSnapshot, ConstraintContext, ConstraintRejection } from './constraints.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { isBetter, scoreBoard } from './objective.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { ObjectiveName } from './objective.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { generateMoves, MOVE_SET_NO_ROTATION } from './moves.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import { boardMetrics, createCourtCostCache } from './court-metrics.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { MoveSet } from './moves.ts'
 
-export { MOVE_SET_NO_ROTATION, MOVE_SET_SPLIT_ONLY, MOVE_SET_WITH_BENCH } from './moves'
-export type { BoardSnapshot, ConstraintContext, ConstraintRejection } from './constraints'
-export type { ObjectiveName } from './objective'
-export type { MoveKind, MoveSet } from './moves'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+export { MOVE_SET_NO_ROTATION, MOVE_SET_SPLIT_ONLY, MOVE_SET_WITH_BENCH } from './moves.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+export type { BoardSnapshot, ConstraintContext, ConstraintRejection } from './constraints.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+export type { ObjectiveName } from './objective.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+export type { MoveKind, MoveSet } from './moves.ts'
 
 /** Ngưỡng chống-lắc, lấy đúng con số hai pass kéo băng ghế đang dùng (`bestScore - 0.01`). */
 export const OPTIMIZER_EPSILON = 0.01

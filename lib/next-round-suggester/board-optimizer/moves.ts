@@ -8,7 +8,8 @@
 // TẤT ĐỊNH là hợp đồng, không phải ý tốt: sân theo court_idx tăng dần, ghế theo chỉ số 0..3, băng
 // ghế được sort MỘT LẦN ở đây thay vì tin vào thứ tự người gọi truyền vào.
 
-import type { BoardSnapshot, CourtSnapshot } from './constraints'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { BoardSnapshot, CourtSnapshot } from './constraints.ts'
 
 export type MoveKind = 'W1' | 'W2' | 'W3' | 'W4'
 export type MoveSet = readonly MoveKind[]

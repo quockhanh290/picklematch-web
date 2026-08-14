@@ -10,13 +10,18 @@
 // (chỉ chậm lại, không bao giờ sai).
 
 // @ts-ignore Deno-style extension: the edge runtime resolves .ts, tsc strips it
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { getPayloadIntraTeamGap, getPayloadProjectedMaxMeeting } from '../board-metrics.ts'
 // @ts-ignore
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { getMatchPvnaGap } from '../state.ts'
 // @ts-ignore
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
 import { computeQualityCost } from '../quality-cost.ts'
-import type { SuggestedMatchPayload } from '../live-preview'
-import type { BoardSnapshot, ConstraintContext, CourtSnapshot } from './constraints'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { SuggestedMatchPayload } from '../live-preview.ts'
+// @ts-ignore Deno edge-function bundling needs the local .ts extension.
+import type { BoardSnapshot, ConstraintContext, CourtSnapshot } from './constraints.ts'
 
 // Cost KHÔNG nằm trong đây, và đó là chủ ý. Đo được: 3304 ứng viên mỗi vòng nhưng chỉ 700 sống sót
 // ràng buộc (21%), mà computeQualityCost chiếm 70% thời gian. Tính cost cho cả 3304 là trả giá cho
