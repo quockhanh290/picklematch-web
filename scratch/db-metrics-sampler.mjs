@@ -21,7 +21,7 @@ const cpuMode = (text, mode) =>
   num(text, new RegExp(`node_cpu_seconds_total\\{[^}]*mode="${mode}"[^}]*\\}\\s+([0-9.e+]+)`))
 
 let prev = null
-const header = ['thoi_diem_utc', 'gio_VN', 'cpu_iowait_%', 'cpu_user_%', 'cpu_system_%', 'connections', 'disk_util_%', 'load1']
+const header = ['thoi_diem_utc', 'gio_VN', 'cpu_iowait_%', 'cpu_user_%', 'connections', 'disk_util_%', 'RAM_trong_MB', 'SWAP_dung_MB', 'swap_in_trang/s', 'load1']
 if (!fs.existsSync(OUT)) fs.writeFileSync(OUT, header.join('\t') + '\n')
 console.log(header.join('  |  '))
 
@@ -48,6 +48,10 @@ const tick = async () => {
     idle: cpuMode(text, 'idle'),
     io: num(text, /node_disk_io_time_seconds_total\{[^}]*device="nvme0n1"[^}]*\}\s+([0-9.e+]+)/),
     conn: num(text, /pg_stat_database_num_backends[^\s]*\s+([0-9.e+]+)/),
+    swapTotal: num(text, /node_memory_SwapTotal_bytes\{[^}]*\}\s+([0-9.e+]+)/),
+    swapFree: num(text, /node_memory_SwapFree_bytes\{[^}]*\}\s+([0-9.e+]+)/),
+    memAvail: num(text, /node_memory_MemAvailable_bytes\{[^}]*\}\s+([0-9.e+]+)/),
+    swpin: num(text, /node_vmstat_pswpin\{[^}]*\}\s+([0-9.e+]+)/),
     load1: num(text, /node_load1\s+([0-9.e+]+)/),
   }
 
@@ -60,11 +64,15 @@ const tick = async () => {
     const pct = (k) => total > 0 ? (100 * d(k) / total).toFixed(1) : 'chua-doi'
     const utc = new Date(cur.t).toISOString().slice(11, 19)
     const vn = new Date(cur.t + 7 * 3600_000).toISOString().slice(11, 19)
-    const row = [utc, vn, pct('iowait'), pct('user'), pct('system'), cur.conn ?? '-',
-      dt > 0 ? (100 * d('io') / dt).toFixed(1) : '-', cur.load1 ?? '-']
+    const mb = (b) => b == null ? '-' : Math.round(b / 1024 / 1024)
+    const swapUsed = (cur.swapTotal != null && cur.swapFree != null) ? cur.swapTotal - cur.swapFree : null
+    const row = [utc, vn, pct('iowait'), pct('user'), cur.conn ?? '-',
+      dt > 0 ? (100 * d('io') / dt).toFixed(1) : '-', mb(cur.memAvail), mb(swapUsed),
+      dt > 0 ? (d('swpin') / dt).toFixed(0) : '-', cur.load1 ?? '-']
     const line = row.join('\t')
     fs.appendFileSync(OUT, line + '\n')
-    const alarm = Number(pct('iowait')) > 20 ? '   <<< IOWAIT CAO' : ''
+    const swapRate = dt > 0 ? d('swpin') / dt : 0
+    const alarm = (Number(pct('iowait')) > 20 ? '  <<< IOWAIT CAO' : '') + (swapRate > 50 ? '  <<< DANG THRASH SWAP' : '')
     console.log(row.map(v => String(v).padStart(8)).join('  ') + alarm)
   }
   prev = cur
