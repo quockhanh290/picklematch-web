@@ -470,6 +470,26 @@ KHÔNG phải do đồng hồ** (đã bác bỏ bằng phép thử đóng băng 
 - [ ] **Vùng gate đúng cho thay đổi đường live** = `unit/property/scenario/fairness` + `host-live` + `production-chain-timing` + `production-live-chain`. Phần simulation còn lại gọi thẳng `suggestNextRound`, KHÔNG đi qua `buildSuggestedMatchPayloads` → chạy 60 phút mà không phủ được gì.
 
 
+## CANARY BOARD OPTIMIZER — BẬT 2026-08-15
+
+Kèo `8b178fb3-0270-4566-8139-157b71ca37f1`, edge v271. Hai secret:
+`SESSION_BOARD_OPTIMIZER=1` + `SESSION_BOARD_OPTIMIZER_SESSION_IDS=8b178fb3-...` (allowlist đúng MỘT kèo;
+mọi kèo khác vẫn chạy đường cũ). Phải redeploy sau khi đổi secret — isolate cũ cache biến môi trường.
+
+**Lý do bật, đo được 14/08:** optimizer kéo tỉ lệ thoả ý-muốn-giới-tính **56,79% → 72,51%** mà cost,
+vượt-tol, lặp-3, blowout, play-spread, worst-rest **đều tốt hơn cùng lúc**. Không đánh đổi. Trên corpus
+thật 65,69% người chơi có đặt ý muốn này, và engine hiện chỉ hơn ghép-bừa 6 điểm.
+
+**Cách xác minh nó CÓ chạy** (đừng tin cờ, tin instrument): trong `debug_dumps.payload
+.engine_instrumentation_events` tìm `optimizer:entered` và `optimizer:changed`. `entered = 0` nghĩa là
+canary không ăn, không phải "optimizer vô dụng".
+
+**Tắt:** đặt `SESSION_BOARD_OPTIMIZER_SESSION_IDS=''` rồi redeploy. Allowlist rỗng chặn tất cả kể cả khi
+cờ vẫn `=1`.
+
+⚠️ Optimizer **chưa từng chạy thật trên edge trước hôm nay** — đúng mục "chưa chứng minh" của P2-2. Và
+deploy đầu tiên hôm nay đã chết vì nó thiếu đuôi `.ts` (đã sửa `f82efba`).
+
 ## Trạng thái prod
 - edge `session-plan-shadow` **v42** (deploy 14/08 10:03) — khớp nhánh, tham số đổi tên
   `max_round_runtime_ms` → `max_round_search_candidates`. Shadow, ngoài đường live.
