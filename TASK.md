@@ -300,6 +300,36 @@ ngưỡng danh nghĩa.
 **Rig:** `GPREF=<n> OPREF=<n> npx tsx scratch/board-scorecard.ts 20` — scorecard giờ in cả ba dòng
 (thực tế · trần-không-tệ-hơn · trần-bỏ-qua-cân-bằng).
 
+### ĐÃ ĐO HƯỚNG (b): +21 điểm gender mà MỌI chỉ số khác đều TỐT HƠN
+
+`scratch/p-gender-foursome.ts` (20 kèo · 1008 trận · 2578 lượt kiểm). Giữ NGUYÊN tập người ngồi mỗi vòng
+(không đụng luân phiên nghỉ, không đụng số trận), chỉ xếp lại họ vào sân/đội bằng leo dốc đổi-chỗ, và
+**chỉ nhận nước đi nào không làm xấu đi BẤT KỲ thứ gì**: vượt-tol, đội vượt intra, tổng lặp, lặp-3.
+
+| | thoả ý muốn | vượt-tol | đội vượt intra | tổng lặp | lặp-3 |
+|---|---|---|---|---|---|
+| thực tế (engine) | 52,13% | 2,88% | 83 | 799 | 88 |
+| **(b) xếp lại, không xấu đi thứ nào** | **73,27%** | **1,69%** | **73** | **664** | **62** |
+| xếp lại tự do, giữ intra | 93,25% | 32,14% | — | — | — |
+| xếp lại tự do, bỏ hết | 97,13% | 32,54% | — | — | — |
+
+**Đây không phải đánh đổi — là Pareto.** +21 điểm gender, đồng thời vượt-tol giảm, intra giảm, lặp giảm,
+lặp-3 giảm. Engine đang bỏ lại từng đó trên bàn.
+
+Hai dòng dưới cùng cho thấy phần CÒN LẠI (73% → 93%) mới là phần phải trả giá: nó đẩy vượt-tol từ 2,88%
+lên 32%. Nên điểm dừng hợp lý nằm quanh 73%, không phải 93%.
+
+⚠️ **Ba giới hạn của phép đo này, đọc trước khi hứa hẹn:**
+- Đây là xếp lại HẬU KỲ trên bàn engine đã dựng, **nhìn thấy cả vòng**. Engine thật lấp từng sân một
+  (rolling), nhiều lúc không có tầm nhìn cả vòng đó.
+- Replay dùng shape **lấp cả bàn mỗi vòng** — shape dễ hơn đường live.
+- Leo dốc greedy = **cận dưới**: tối ưu tử tế còn tìm được hơn.
+
+**Gợi ý triển khai — có thể KHÔNG cần máy móc mới:** hình dạng của (b) đúng là thứ `board-optimizer`
+(P2-2) đã làm — leo dốc cả bàn với guard ràng buộc, đã viết xong, đã test, đang nằm sau cờ
+`SESSION_BOARD_OPTIMIZER`. Thêm gender vào hàm mục tiêu của nó nhiều khả năng rẻ hơn hẳn viết tầng mới.
+**Chưa thử — đây là giả thuyết, không phải kết quả đo.**
+
 ## GOM SÂN (REFILL_BATCH) — ĐÃ ĐO, HOST CHỐT KHÔNG LÀM (2026-08-14)
 
 Sửa `scratch/board-scorecard.ts` để giữ lại k sân xong trước khi lấp (`REFILL_BATCH=k`) — đây là thứ
