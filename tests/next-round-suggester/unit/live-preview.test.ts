@@ -1,3 +1,4 @@
+import { createSearchBudget } from '@/lib/next-round-suggester/search-budget'
 import {
   buildPreviewBatchKey,
   buildSuggestedMatchPayloads,
@@ -2101,7 +2102,7 @@ describe('findStrictCleanLiveAlternative', () => {
         'soft-rest-1': Tier.SHOULD_REST,
         'soft-rest-2': Tier.SHOULD_REST,
       },
-      searchUnits: 30_000,
+      searchBudget: createSearchBudget(30_000),
     })
 
     expect(rescued).not.toBeNull()

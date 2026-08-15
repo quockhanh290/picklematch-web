@@ -105,6 +105,10 @@ const LIVE_STRICT_RESCUE_ELIGIBLE_LIMIT = 20
 // Every budget below is counted in search units (one partition evaluated), not milliseconds: the board
 // a host gets must not depend on how loaded the machine was. The numbers are the old ms values at the
 // measured exchange rate, so the amount of search bought is unchanged on a nominal machine.
+// Trần thời gian cho CẢ lượt, chỉ là lưới an toàn — ngân sách chính vẫn là số đơn vị. Đo trên kèo kẹt
+// thật: cùng một bàn, engine cũ 2806ms, ngân sách đếm được 14157ms, vì cuối kèo mỗi đơn vị đắt hơn nhiều
+// so với tỉ giá đo trên corpus.
+const LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3000
 const LIVE_STRICT_RESCUE_SEARCH_UNITS = 300 * SEARCH_UNITS_PER_LEGACY_MS
 const LIVE_PREVIEW_BATCH_SEARCH_UNITS = 3800 * SEARCH_UNITS_PER_LEGACY_MS
 const LIVE_PREVIEW_MIN_COURT_SEARCH_UNITS = 350 * SEARCH_UNITS_PER_LEGACY_MS
@@ -585,7 +589,10 @@ type StrictRescueOptions = {
   tierOverrides: Record<string, Tier>
   warnings?: string[]
   maxEligiblePlayers?: number
-  searchUnits?: number
+  // Ngân sách CON của lượt, không phải ngân sách rời. Trước đây nó tự dựng một ngân sách không cha, nên
+  // trần thời gian của cả lượt không với tới được — và đây là một trong những chỗ rò làm ca kẹt vẫn 6,4s
+  // dù lưới an toàn đặt ở 3,8s.
+  searchBudget?: SearchBudget
   seedSalt?: string
 }
 
@@ -3406,7 +3413,7 @@ export function findStrictCleanLiveAlternative(
   options: StrictRescueOptions,
 ): SuggestionAlternative | null {
   const maxEligiblePlayers = Math.max(4, Math.floor(options.maxEligiblePlayers ?? LIVE_STRICT_RESCUE_ELIGIBLE_LIMIT))
-  const budget = createSearchBudget(options.searchUnits ?? LIVE_STRICT_RESCUE_SEARCH_UNITS)
+  const budget = options.searchBudget ?? createSearchBudget(LIVE_STRICT_RESCUE_SEARCH_UNITS)
   const allPresent = [...state.players.values()]
     .filter(player => player.checked_out_at === null)
     .sort((left, right) => left.player_id.localeCompare(right.player_id))
@@ -4311,7 +4318,11 @@ export function buildSuggestedMatchPayloads({
 }: BuildSuggestedMatchPayloadsParams): SuggestedMatchPayload[] {
   // One countable budget for the whole batch, and named slices carved out of it. Nothing below reads a
   // clock to decide how much search a court gets, so the same request produces the same board.
-  const batchBudget = createSearchBudget(LIVE_PREVIEW_BATCH_SEARCH_UNITS)
+  const batchBudget = createSearchBudget(
+    LIVE_PREVIEW_BATCH_SEARCH_UNITS,
+    [],
+    Date.now() + LIVE_PREVIEW_BATCH_TIMEOUT_MS,
+  )
   const forceRescueBudget = subSearchBudget(batchBudget, FORCE_RESCUE_TOTAL_SEARCH_UNITS)
   const rescueCourtBudget = subSearchBudget(batchBudget, LIVE_RESCUE_TOTAL_SEARCH_UNITS)
   const baseSuggestionState = options.stateOverride ?? state
@@ -4992,6 +5003,7 @@ export function buildSuggestedMatchPayloads({
         tierOverrides,
         warnings: result.warnings,
         seedSalt: previewSeed,
+        searchBudget: courtSearchBudget(LIVE_STRICT_RESCUE_SEARCH_UNITS),
       })
       if (strictAlternative && containsForcedRequired(strictAlternative)) {
         try { options.onInstrumentEvent?.({ event: 'rescue', detail: 'strict_clean', court_count: courtCount, available: availableForBatch }) } catch { /* noop */ }
