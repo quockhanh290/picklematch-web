@@ -21,6 +21,7 @@ import { createSearchBudget } from '../../../lib/next-round-suggester/search-bud
 import { SEARCH_UNITS_PER_LEGACY_MS } from '../../../lib/next-round-suggester/suggest.ts'
 import { mapRowsToSessionState } from '../../../lib/next-round-suggester/state.ts'
 import { resolveQualityCostEnabledForSession } from '../../../lib/next-round-suggester/quality-cost-flag.ts'
+import { resolveBoardOptimizerEnabledForSession } from '../../../lib/next-round-suggester/board-optimizer-flag.ts'
 import {
   plannedBoardEqualsLiveBoard,
   plannedMatchEqualsLiveMatch,
@@ -923,6 +924,12 @@ Deno.serve(async (request) => {
     // so every engine gate (scoring + joint) reads the same per-session decision. Strict allowlist
     // (SESSION_QUALITY_COST_MODEL=1 AND SESSION_QUALITY_COST_SESSION_IDS lists the session or '*').
     state.config.quality_cost_enabled = resolveQualityCostEnabledForSession(sessionId)
+    // Same shape for the board optimizer (P2-2). This line was missing: the flag, the allowlist and the
+    // optimizer all existed, but nothing resolved them at the request boundary, so
+    // isBoardOptimizerEnabled(state) read an undefined config field and always returned false. Setting
+    // the secrets appeared to work — hashes verified, deploy succeeded — and the optimizer still never
+    // entered. That is why P2-2 had "never actually run on the edge" open against it.
+    state.config.board_optimizer_enabled = resolveBoardOptimizerEnabledForSession(sessionId)
     const completedRoundsCount = state.rounds.filter(round => round.status === 'completed').length
     timingMs.state_build = roundedDuration(stageStartedAt)
     if (plannedTotalRounds != null && completedRoundsCount >= plannedTotalRounds) {
