@@ -188,7 +188,9 @@ thứ sửa được nó). Và **tính 1 đơn vị mỗi SÂN thay vì mỗi pa
 ### Trạng thái bàn giao P2-2 (2026-08-14)
 
 - **ĐÃ MERGE** vào `feat-quality-cost-model` (fast-forward `2b756d2` → `e741e0f`, 14/08). Worktree
-  `.claude/worktrees/p2-2-optimizer` còn trên đĩa nhưng đã thừa — xoá được.
+  `.claude/worktrees/p2-2-optimizer` **ĐÃ XOÁ 14/08** — nó làm Metro báo `Duplicated files or mocks`
+  (hai `package.json` cùng tên `picklematch-vn` trong project root). ⚠️ Lệnh xoá kéo theo cả
+  `node_modules` của repo chính; xem gotcha đầu SCRATCHPAD.md trước khi xoá worktree khác.
 - **Kiểm sau merge: `board_hash f1b6d8ac0b0c`** = đúng baseline trước P2-2 → toàn bộ code mới nằm sau
   cờ tắt, đường cũ chạy y nguyên từng bit. `tsc` sạch.
 - Cờ `SESSION_BOARD_OPTIMIZER` **TẮT**, allowlist rỗng. Chưa canary, chưa deploy. Prod vẫn ALGO 77.
