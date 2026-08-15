@@ -39,6 +39,7 @@ export type OptimizeOptions = {
   objective: ObjectiveName
   moveSet: MoveSet
   maxIterations: number
+  genderTerm?: boolean
   onReject?: (reason: ConstraintRejection) => void
   onAccept?: (iteration: number) => void
 }
@@ -57,6 +58,8 @@ export type BoardOptimizerTuning = {
   objective: ObjectiveName
   moveSet: MoveSet
   maxIterations: number
+  /** Thêm một bậc "số lượt trượt ý-muốn-giới-tính" ngay trước cost. Đang ĐO, chưa bật mặc định. */
+  genderTerm?: boolean
 }
 
 // Chốt bằng bảng corpus 60 phiên, không bằng lập luận (spec §8):
@@ -98,7 +101,7 @@ export function optimizeBoard(
   const costCache = createCourtCostCache()
   let current = seed
   let currentMetrics = current === ctx.seed ? seedMetrics : boardMetrics(current, ctx)
-  let currentScore = scoreBoard(current, ctx, opts.objective, currentMetrics, costCache)
+  let currentScore = scoreBoard(current, ctx, opts.objective, currentMetrics, costCache, opts.genderTerm)
 
   for (let iteration = 0; iteration < opts.maxIterations; iteration++) {
     let best: BoardSnapshot | null = null
@@ -116,7 +119,7 @@ export function optimizeBoard(
         opts.onReject?.(rejection)
         continue
       }
-      const score = scoreBoard(candidate, ctx, opts.objective, candidateMetrics, costCache)
+      const score = scoreBoard(candidate, ctx, opts.objective, candidateMetrics, costCache, opts.genderTerm)
       if (!isBetter(score, bestScore, OPTIMIZER_EPSILON)) continue
       best = candidate
       bestMetrics = candidateMetrics

@@ -325,10 +325,32 @@ lên 32%. Nên điểm dừng hợp lý nằm quanh 73%, không phải 93%.
 - Replay dùng shape **lấp cả bàn mỗi vòng** — shape dễ hơn đường live.
 - Leo dốc greedy = **cận dưới**: tối ưu tử tế còn tìm được hơn.
 
-**Gợi ý triển khai — có thể KHÔNG cần máy móc mới:** hình dạng của (b) đúng là thứ `board-optimizer`
-(P2-2) đã làm — leo dốc cả bàn với guard ràng buộc, đã viết xong, đã test, đang nằm sau cờ
-`SESSION_BOARD_OPTIMIZER`. Thêm gender vào hàm mục tiêu của nó nhiều khả năng rẻ hơn hẳn viết tầng mới.
-**Chưa thử — đây là giả thuyết, không phải kết quả đo.**
+### ĐÃ ĐO GIẢ THUYẾT (b) = board-optimizer: ĐÚNG, và optimizer LÀM SẴN RỒI
+
+20 kèo, cùng harness, cùng replay:
+
+| cấu hình | gender đồng đội | gender đối thủ | cost | vượt-tol | intra | lặp-3 | blowout | spread | worst-rest |
+|---|---|---|---|---|---|---|---|---|---|
+| cờ TẮT (prod hôm nay) | 56,79% | 51,08% | 2,5907 | 11,71% | 19,74% | 2,48% | 1,59% | 1,45 | 1,55 |
+| **optimizer, KHÔNG đụng gì tới gender** | **72,51%** | **59,72%** | **1,7863** | **3,47%** | 16,77% | **2,18%** | **0,79%** | **1,30** | **1,25** |
+| optimizer + thêm bậc gender | 80,48% | 57,71% | 1,7931 | 3,37% | **15,08%** | 2,78% | **0,69%** | 1,45 | 1,25 |
+
+**Kết luận mạnh nhất của cả đợt đo này: `board-optimizer` của P2-2 đã thu gần trọn 21 điểm gender như một
+TÁC DỤNG PHỤ, không cần thêm dòng nào.** 56,79% → 72,51%, trong khi cost, vượt-tol, lặp-3, blowout,
+play-spread, worst-rest **đều tốt hơn cùng lúc**. Nó không đánh đổi gì cả — nó chỉ đơn giản nhìn cả bàn,
+đúng chỗ mà 21 điểm kia nằm.
+
+**Thêm bậc gender mua thêm 8 điểm nữa (72,51% → 80,48%) nhưng KHÔNG miễn phí:** lặp-3 xấu đi
+(2,18% → 2,78%), panel nhiều hơn (4,17% → 6,15%), play-spread lùi về 1,45, và gender ĐỐI THỦ còn tụt
+(59,72% → 57,71%). Đây là đánh đổi thật, cần host cân — khác hẳn dòng giữa vốn là Pareto thuần.
+
+**Việc này đổi trọng số của quyết định canary optimizer.** Trước đây lý do bật optimizer là "gộp 6
+post-pass + board sạch hơn". Giờ có thêm: **nó sửa luôn một tính năng 65,69% người chơi đang dùng mà
+engine phục vụ chỉ nhỉnh hơn ngẫu nhiên 6 điểm.**
+
+**Chỗ code:** bậc gender là tuỳ chọn `genderTerm` trong `BoardOptimizerTuning`, mặc định TẮT, đứng ngay
+trước `cost` trong O-lex (`board-optimizer/objective.ts`). Đường cờ-tắt không đổi: hash vẫn
+`4379ec294601`, 475 unit test xanh. Rig: `OPT=1 [OPT_GENDER=1] npx tsx scratch/board-scorecard.ts 20`.
 
 ## GOM SÂN (REFILL_BATCH) — ĐÃ ĐO, HOST CHỐT KHÔNG LÀM (2026-08-14)
 

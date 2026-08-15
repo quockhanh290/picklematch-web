@@ -38,6 +38,27 @@ const restDebtCount = (board: BoardSnapshot, ctx: ConstraintContext): number => 
   return owed
 }
 
+/**
+ * Số lượt ý-muốn-giới-tính KHÔNG được thoả trên cả bàn. Đo được (14/08): engine đang thoả 52% trong khi
+ * xếp lại cùng tập người — không làm xấu đi tolerance, intra, lặp hay lặp-3 — đạt 73%. Phần chênh đó
+ * nằm ở tầng CHỌN BỘ TỨ, chỗ optimizer này làm việc, chứ không nằm ở trọng số chấm điểm từng trận
+ * (ép trọng số lên 250 lần chỉ mua thêm 1,9 điểm).
+ */
+const genderMissCount = (board: BoardSnapshot, ctx: ConstraintContext): number => {
+  let misses = 0
+  for (const court of board) {
+    for (const team of [court.team_a, court.team_b]) {
+      for (const [playerId, mateId] of [[team[0], team[1]], [team[1], team[0]]] as const) {
+        const self = ctx.state.players.get(playerId)
+        if (!self || self.partner_gender_pref === 'any') continue
+        const mate = ctx.state.players.get(mateId)
+        if (mate?.gender && mate.gender !== self.partner_gender_pref) misses += 1
+      }
+    }
+  }
+  return misses
+}
+
 export function scoreBoard(
   board: BoardSnapshot,
   ctx: ConstraintContext,
@@ -45,6 +66,7 @@ export function scoreBoard(
   /** Số đo dựng sẵn (court-metrics). Bỏ trống thì tính tại chỗ — kết quả y hệt, chỉ chậm hơn. */
   precomputed?: BoardMetrics,
   costCache?: CourtCostCache,
+  genderTerm = false,
 ): BoardScore {
   const metrics = precomputed ?? board.map(court => courtMetrics(court, ctx))
   let cost = 0
@@ -63,7 +85,12 @@ export function scoreBoard(
     }
     intraExcessTotal += Math.max(0, metric.intra - INTRA_TEAM_PVNA_GAP_LIMIT)
   }
-  return [repeat3Courts, overTolCourts, overTolTotal, restDebtCount(board, ctx), intraExcessTotal, cost]
+  const lex = [repeat3Courts, overTolCourts, overTolTotal, restDebtCount(board, ctx), intraExcessTotal]
+  // Gender đứng NGAY TRƯỚC cost: nó chỉ được lên tiếng khi mọi ràng buộc phía trên đã hoà, tức là đúng
+  // luật "chỉ nhận nước đi không làm xấu đi thứ gì" mà phép đo dùng để tìm ra 21 điểm kia.
+  return genderTerm
+    ? [...lex, genderMissCount(board, ctx), cost]
+    : [...lex, cost]
 }
 
 /**

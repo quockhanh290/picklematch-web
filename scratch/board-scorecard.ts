@@ -99,6 +99,9 @@ if (OPT_ON) {
       ? MOVE_SET_SPLIT_ONLY
       : OPT_MOVES === 'bench_norot' ? MOVE_SET_NO_ROTATION : MOVE_SET_WITH_BENCH,
     maxIterations: OPT_MOVES === 'bench_unbounded' ? 10_000 : 30,
+    // OPT_GENDER=1: thêm bậc "trượt ý-muốn-giới-tính" ngay trước cost trong O-lex. Đang ĐO giả thuyết
+    // rằng 21 điểm gender tìm thấy ở scratch/p-gender-foursome.ts lấy được bằng chính optimizer này.
+    genderTerm: process.env.OPT_GENDER === '1',
   })
 }
 
