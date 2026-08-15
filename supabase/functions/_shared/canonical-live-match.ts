@@ -25,3 +25,24 @@ export function findCanonicalSuggestedMatch(
       && candidatePlayers.every((playerId, index) => playerId === requestedPlayers[index])
   }) ?? null
 }
+
+/**
+ * Which match id a rejected start should be retried against, or null for "do not retry".
+ *
+ * The start handler used to inline this as `canonicalMatch?.id !== requestedMatchId` and then read
+ * `canonicalMatch.id` in the body — but `?.` makes the guard TRUE precisely when the value is null, so
+ * the null reached the dereference. A host tapping Start on a card whose lineup had been re-suggested
+ * saw "Cannot read properties of null (reading 'id')" and a court that would not start.
+ *
+ * Returning an id-or-null keeps the null from ever reaching a property access.
+ */
+export function resolveCanonicalRetryMatchId(
+  requestedMatchId: string,
+  matches: LiveMatchIdentity[],
+): string | null {
+  const requested = matches.find(candidate => candidate.id === requestedMatchId)
+  if (!requested) return null
+  const canonical = findCanonicalSuggestedMatch(requested, matches)
+  if (!canonical || canonical.id === requestedMatchId) return null
+  return canonical.id
+}

@@ -1,6 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { findCanonicalSuggestedMatch } from '../_shared/canonical-live-match.ts'
+import { resolveCanonicalRetryMatchId } from '../_shared/canonical-live-match.ts'
 import { getSessionId, handleCorsPreflight, jsonResponse, readJson, writeSessionAuditEvent } from '../_shared/live-session.ts'
 
 function createUserClient(request: Request) {
@@ -69,13 +69,10 @@ Deno.serve(async (request) => {
           .eq('id', sessionId)
           .single(),
       ])
-      const requestedMatch = matchRows?.find(match => match.id === requestedMatchId)
-      const canonicalMatch = requestedMatch
-        ? findCanonicalSuggestedMatch(requestedMatch, matchRows ?? [])
-        : null
+      const retryMatchId = resolveCanonicalRetryMatchId(requestedMatchId, matchRows ?? [])
       const canonicalVersion = Number(sessionRow?.live_state_version)
-      if (!matchesError && !sessionError && canonicalMatch?.id !== requestedMatchId && Number.isFinite(canonicalVersion)) {
-        canonicalMatchId = canonicalMatch.id
+      if (!matchesError && !sessionError && retryMatchId && Number.isFinite(canonicalVersion)) {
+        canonicalMatchId = retryMatchId
         canonicalized = true
         const retry = await supabase.rpc('start_live_session_match_versioned', {
           p_session_id: sessionId,
