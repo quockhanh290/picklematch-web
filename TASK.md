@@ -100,6 +100,16 @@ bằng `cp` chỉ chữa worktree; index vẫn giữ bản cũ và `git commit` 
 `git diff --stat HEAD -- <file>` KHÔNG bắt được vì nó so worktree với HEAD, mù với index.
 Phải kiểm bằng `git status --short` (thấy `MM`) hoặc `git diff --cached`.
 
+**BẪY của chính bộ chẩn đoán vừa deploy (ALGO 81):** trong khối `engine`, `budget_units`/`spent_units`/
+`timed_out` bị **lần gọi lồng cuối cùng ghi đè** (`finalizeDiagnostics` chạy ở mọi lượt
+`suggestNextRound`, kể cả đường dự phòng). Đã gặp cảnh `budget_units: 0` trong khi `evaluated: 1200` —
+hai số mâu thuẫn nhau. Các bộ đếm chiến lược (`candidates`/`evaluated`/`accepted`/`failed_partitions`)
+thì cộng dồn nên tin được. Đọc khối đó phải nhớ điều này.
+
+**BẪY harness scratch:** `DEFAULT_SCORING_WEIGHTS` nằm ở `state.ts`, KHÔNG phải `score.ts`. Import sai
+trả `undefined`, `{...undefined}` ra `{}` — trọng số rỗng, mọi trận bị loại, harness báo 0 sân trông y
+hệt một phát hiện thật. `tsx` không typecheck và `scratch/` bị loại khỏi `tsconfig` nên không ai chặn.
+
 **⚠️ BẪY ĐO gặp phải:** `Bash` timeout KHÔNG giết tiến trình node, `TaskStop` giết shell chứ không giết
 worker con. Có lúc 3 suite chạy song song (51 tiến trình) làm mọi khẳng định-theo-đồng-hồ đỏ giả, và tôi
 đã suýt kết luận nhầm "hồi quy 47×". Luôn `Get-Process node | Stop-Process` trước khi đo thời gian.

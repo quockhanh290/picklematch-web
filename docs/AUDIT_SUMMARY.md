@@ -136,10 +136,27 @@ của hai phiên gần nhất.
 
 - `tests/next-round-suggester/simulation/{targets,stress,ab-comparison}` — đường `suggestNextRound`
   nhiều sân, chưa phủ.
-- Kèo **40 người / 10 sân**. Test `production-chain large` tiêu **20 giây** cho một `suggestNextRound`
-  vì gọi không truyền `search_budget` (mặc định 100k đơn vị, **không có trần đồng hồ**). Prod có trần
-  `LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3000`, nên ở cỡ đó thứ chặn 20 giây là **cái trần** — search bị cắt
-  và bảng đấu tệ đi **âm thầm**, không phải chậm. Dữ liệu hiện có chỉ tới 33 người / 6 sân.
+- ~~Kèo 40 người / 10 sân~~ — **ĐÃ ĐO 16/8, nỗi lo bị bác bỏ.** Chạy đúng đường live
+  (`buildSuggestedMatchPayloads`), 40 người / 10 sân / 8 vòng, hai lượt trên cùng đầu vào — đồng hồ thật
+  (trần 3000ms nổ như prod) và đồng hồ đóng băng (trần không thể nổ, vì trần kiểm bằng `Date.now()`):
+
+  | | không trần | có trần 3s |
+  |---|---|---|
+  | sân lấp được | 80/80 | 80/80 |
+  | vượt tolerance | 0% | 0% |
+  | chênh TB | 0.111 | 0.111 |
+  | `board_hash` | **db9bcfe** | **db9bcfe** |
+
+  Bảng đấu **giống hệt** → trần không cắt gì. Cả bàn 10 sân giải xong ~571ms/vòng.
+
+  **Vì sao con số 13.5s của sim không mâu thuẫn:** sim gọi `suggestNextRound` giải **10 sân cùng lúc**,
+  production **chỉ** dùng `suggestNextMatch` lấp từng sân. Đường prod nhanh hơn ~24 lần ở cùng cỡ. Mấy
+  test `PERFORMANCE_TARGETS` đang đỏ vì thế đang đo **một đường production không đi** khi lấp bàn.
+
+  ⚠️ Giới hạn: pool của fixture hẹp (pvna 2.53–4.48), 8 vòng chứ không phải 15, lấp đồng bộ cả bàn chứ
+  không phải rolling async như prod, và chạy trên máy dev chứ không phải Deno. Pool lệch hai cực hoặc
+  nhiều avoid-pair có thể vẫn chạm trần.
+  Đo bằng: `scratch/scale-40x10.ts`.
 - RC5 magnitude (trôi trạng thái rolling-lane).
 - #15 rest bookkeeping: cần một phiên thật chạy qua để có dữ liệu.
 
