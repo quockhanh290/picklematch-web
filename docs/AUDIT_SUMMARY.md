@@ -67,10 +67,39 @@ hai trong một lần chạy.
 | **RC2** generator đẻ ra pool lệch trình trước khi ghép | `classifyPlayer` mù pvna; `mustPlayAt` cố định 1 còn `mustRestAt` co giãn → pool owed phình mỗi vòng; corrector ép MUST_PLAY không kiểm khả thi | **đã trị tại gốc** — ALGO 49→50 generator band-cap, corrector bỏ relax toàn cục |
 | **RC6** ngân sách + required quá chặt đẻ ra NO_VALID_MATCH giả | | **đã trị**: budget reserve; và hai lỗi ở §1 chính là phần còn lại của RC6 |
 | **RC1** greedy per-court commit không thể cắt lại partition | sân cuối thừa hưởng cặn của các sân trước | **giảm nhẹ**, chưa trị gốc: `repairPayloadBatch*FromPool` kéo người từ ghế dự bị (ALGO 47/48); joint re-partition chỉ chạy khi ≥2 sân |
-| **RC3** năm cổng INFINITY định giá cân bằng thấp nhất | `pvnaDiff` weight 1, trong khi recent-repeat 28/80/80, avoid-opponent 300 | **CÒN NGUYÊN**, nhưng **đã đo được độ lớn** (16/8, 60 kèo / 3088 trận): 31,3% số trận chọn cách chia lệch hơn cách tốt nhất của cùng bộ tứ, TB nhường 0,313; **4,15% chọn cách vượt tolerance dù có cách trong tolerance** — tức >1/3 số trận vượt tolerance (11,46%) tránh được mà không đổi ai chơi. CHƯA đo: chia lại thì mất bao nhiêu lặp/gender |
+| **RC3** năm cổng INFINITY định giá cân bằng thấp nhất | `pvnaDiff` weight 1, trong khi recent-repeat 28/80/80, avoid-opponent 300 | **ĐÃ ĐO XONG 16/8 — dư địa bằng không, xem §3.1** |
 | **RC4** ~16 repair rời rạc không hội tụ | mỗi cái bảo vệ một metric bằng thang riêng | **một phần**: P2-2 gộp thành 1 optimizer nhưng **cờ đang TẮT**, chưa canary |
 | **RC5** dựng lại trạng thái rolling-lane bị trôi | 4 nơi dựng lại logical round, không nơi nào khớp nhau | **CÒN NGUYÊN**, và **magnitude chưa đo** — audit tự ghi là mechanism mạnh, độ lớn chưa chứng minh |
 | **RC7** avoid/group/gender vừa là generator vừa là cổng cứng | | **CÒN NGUYÊN** — audit tự ghi là blind spot |
+
+### 3.1 RC3 — đo xong, và kết luận ngược với trực giác
+
+60 kèo / 3088 trận. Chỉ đọc thêm, `board_hash` giữ nguyên `fe413c452181`.
+
+**Độ lớn** (audit chỉ chứng minh cơ chế, chưa ai đo): 31,3% số trận chọn cách chia lệch hơn cách cân
+nhất của **cùng bộ tứ**, TB nhường 0,313; 4,15% (128 trận) chọn cách vượt tolerance dù có cách nằm
+trong tolerance.
+
+**Nhưng ép chia lại 128 trận đó là LỖ** — không đổi ai chơi, chỉ đổi ai cùng đội:
+
+| được | mất |
+|---|---|
+| cắt 93,2 tổng chênh đội (TB 0,728/trận) | +86 lặp đối, +17 lặp bạn |
+| 1 ca lặp-3 tự khỏi | **27** ca lặp-3 tạo ra mới |
+| | gender −12/1002 lượt kiểm |
+| | intra +46,6; **61/128** trận vượt trần intra mới |
+
+**Tập con đổi mà trội hơn hoàn toàn** (không sinh lặp-3, không vượt trần intra, gender không giảm, lặp
+không tăng): **6 trận / 3088 = 0,19%**, cắt tổng cộng 1,94 chênh đội.
+
+**Kết luận:** trong đúng bộ tứ đã chọn, engine gần như không còn chỗ cải thiện cân bằng — phần lớn các
+cuộc đổi là đúng. Không đáng viết bước hậu kiểm, càng không đáng đụng thang điểm. Muốn bảng cân hơn
+phải đổi **ai vào bộ tứ** (RC2/RC1), không phải đổi cách chia.
+
+⚠️ Phép đo xét **từng trận độc lập**. Đổi thật thì lịch sử lặp đổi theo và các trận sau nhìn khác đi;
+hiệu ứng dây chuyền chưa nằm trong số này. Nhưng với dư địa 0,19% thì không đáng đo tiếp.
+
+Đo bằng: `scratch/board-scorecard.ts`, các chỉ số `split_*` và `resplit_*`.
 
 Kết quả gender hiện tại: tỉ lệ thoả mãn **0.6111**, dưới ngưỡng test 0.7. Đây là **đánh đổi cố ý**
 (repeat-3 thắng gender-pref theo chỉ đạo), không phải hồi quy — con số không xê dịch qua mọi thay đổi
