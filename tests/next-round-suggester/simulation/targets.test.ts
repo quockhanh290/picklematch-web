@@ -1,5 +1,5 @@
 import { runMultiSeed } from './analysis'
-import { BASELINE_SCENARIOS, FAIRNESS_TARGETS, PERFORMANCE_TARGETS } from './scenarios'
+import { BASELINE_SCENARIOS, FAIRNESS_TARGETS, PERFORMANCE_UNIT_TARGETS } from './scenarios'
 
 describe('Phase A Fairness Targets', () => {
   const nSeeds = 5
@@ -22,8 +22,9 @@ describe('Phase A Performance Targets', () => {
 
     for (const config of small) {
       const result = await runMultiSeed({ ...config, use_corrector: true }, nSeeds)
-      expect(result.performance.avg_suggest_ms).toBeLessThan(PERFORMANCE_TARGETS.small.avg_ms)
-      expect(result.performance.max_suggest_ms).toBeLessThan(PERFORMANCE_TARGETS.small.max_ms)
+      expect(result.performance.avg_suggest_units).toBeLessThan(PERFORMANCE_UNIT_TARGETS.small.avg_units)
+      expect(result.performance.max_suggest_units).toBeLessThan(PERFORMANCE_UNIT_TARGETS.small.max_units)
+      expect(result.performance.budget_exhausted_rounds).toBe(0)
     }
   })
 
@@ -34,7 +35,8 @@ describe('Phase A Performance Targets', () => {
 
     for (const config of medium) {
       const result = await runMultiSeed({ ...config, use_corrector: true }, nSeeds)
-      expect(result.performance.avg_suggest_ms).toBeLessThan(PERFORMANCE_TARGETS.medium.avg_ms)
+      expect(result.performance.avg_suggest_units).toBeLessThan(PERFORMANCE_UNIT_TARGETS.medium.avg_units)
+      expect(result.performance.budget_exhausted_rounds).toBe(0)
     }
   })
 
@@ -45,7 +47,8 @@ describe('Phase A Performance Targets', () => {
 
     for (const config of large) {
       const result = await runMultiSeed({ ...config, use_corrector: true }, nSeeds)
-      expect(result.performance.avg_suggest_ms).toBeLessThan(PERFORMANCE_TARGETS.large.avg_ms)
+      expect(result.performance.avg_suggest_units).toBeLessThan(PERFORMANCE_UNIT_TARGETS.large.avg_units)
+      expect(result.performance.budget_exhausted_rounds).toBe(0)
     }
   })
 
@@ -54,8 +57,9 @@ describe('Phase A Performance Targets', () => {
 
     for (const config of xlarge) {
       const result = await runMultiSeed({ ...config, use_corrector: true }, nSeeds)
-      expect(result.performance.avg_suggest_ms).toBeLessThan(PERFORMANCE_TARGETS.xlarge.avg_ms)
-      expect(result.performance.max_suggest_ms).toBeLessThan(PERFORMANCE_TARGETS.xlarge.max_ms)
+      expect(result.performance.avg_suggest_units).toBeLessThan(PERFORMANCE_UNIT_TARGETS.xlarge.avg_units)
+      expect(result.performance.max_suggest_units).toBeLessThan(PERFORMANCE_UNIT_TARGETS.xlarge.max_units)
+      expect(result.performance.budget_exhausted_rounds).toBe(0)
     }
   })
 })

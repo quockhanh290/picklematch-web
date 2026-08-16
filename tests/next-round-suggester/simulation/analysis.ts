@@ -22,6 +22,9 @@ export type AggregatedResult = {
     avg_post_processing_ms: number
     p95_post_processing_ms: number
     max_post_processing_ms: number
+    avg_suggest_units: number
+    max_suggest_units: number
+    budget_exhausted_rounds: number
   }
   engine_behavior: {
     avg_adjustments_per_session: number
@@ -121,6 +124,9 @@ function aggregatePerformance(results: SimulationResult[]): AggregatedResult['pe
     avg_post_processing_ms: average(avgPostTimes),
     p95_post_processing_ms: percentile(avgPostTimes, 0.95),
     max_post_processing_ms: Math.max(0, ...results.map((result) => result.max_post_processing_ms)),
+    avg_suggest_units: average(results.map((result) => result.avg_suggest_units)),
+    max_suggest_units: Math.max(0, ...results.map((result) => result.max_suggest_units)),
+    budget_exhausted_rounds: results.reduce((sum, result) => sum + result.budget_exhausted_rounds, 0),
   }
 }
 

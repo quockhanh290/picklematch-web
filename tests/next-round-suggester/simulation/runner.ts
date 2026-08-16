@@ -16,7 +16,7 @@ import {
   type SessionFairnessScore,
 } from '../../../lib/next-round-suggester/fairness/metrics'
 import { buildFairnessPreview, buildLatestFairnessAudit } from '../../../lib/next-round-suggester/fairness/audit'
-import { createSearchBudget } from '../../../lib/next-round-suggester/search-budget'
+import { createSearchBudget, searchBudgetExhausted, searchBudgetSpent } from '../../../lib/next-round-suggester/search-budget'
 import { SEARCH_UNITS_PER_LEGACY_MS, suggestNextRound } from '../../../lib/next-round-suggester/suggest'
 import type {
   Match,
@@ -84,6 +84,11 @@ export type SimulationResult = {
   total_suggest_time_ms: number
   avg_suggest_time_ms: number
   max_suggest_time_ms: number
+  // Đơn vị tìm kiếm đã tiêu. Sau P2-5 engine dừng theo ĐƠN VỊ chứ không theo đồng hồ, nên đây mới là
+  // đại lượng tất định giữa các máy; mili-giây chỉ còn đo tốc độ máy.
+  avg_suggest_units: number
+  max_suggest_units: number
+  budget_exhausted_rounds: number
   total_post_processing_ms: number
   avg_post_processing_ms: number
   max_post_processing_ms: number
@@ -113,6 +118,9 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
   const warningsCount = new Map<WarningType, number>()
   let totalSuggestTimeMs = 0
   let maxSuggestTimeMs = 0
+  let totalSuggestUnits = 0
+  let maxSuggestUnits = 0
+  let budgetExhaustedRounds = 0
   let totalPostProcessingMs = 0
   let maxPostProcessingMs = 0
 
@@ -130,13 +138,18 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
         : undefined
     const effectiveState = adjustment ? applyFairnessAdjustment(state, adjustment) : state
     const altIdx = roundNo === 1 ? (config.first_round_alt_idx ?? 0) : 0
+    const roundBudget = createSearchBudget(SIM_SUGGEST_SEARCH_UNITS)
     const suggestion = suggestNextRound(effectiveState, {
       tier_overrides: adjustment?.tier_overrides ?? {},
-      search_budget: createSearchBudget(SIM_SUGGEST_SEARCH_UNITS),
+      search_budget: roundBudget,
     })
     const elapsedMs = performance.now() - startedAt
     totalSuggestTimeMs += elapsedMs
     maxSuggestTimeMs = Math.max(maxSuggestTimeMs, elapsedMs)
+    const unitsSpent = searchBudgetSpent(roundBudget)
+    totalSuggestUnits += unitsSpent
+    maxSuggestUnits = Math.max(maxSuggestUnits, unitsSpent)
+    if (searchBudgetExhausted(roundBudget)) budgetExhaustedRounds += 1
 
     const postStart = performance.now()
     computeSessionFairness(effectiveState)
@@ -201,6 +214,11 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
       total: totalSuggestTimeMs,
       max: maxSuggestTimeMs,
       avg: roundResults.length === 0 ? 0 : totalSuggestTimeMs / roundResults.length,
+    },
+    units: {
+      max: maxSuggestUnits,
+      avg: roundResults.length === 0 ? 0 : totalSuggestUnits / roundResults.length,
+      exhaustedRounds: budgetExhaustedRounds,
     },
     postProcessing: {
       total: totalPostProcessingMs,
@@ -328,6 +346,7 @@ function buildResult(input: {
   warnings_count: Map<WarningType, number>
   invariant_violations: string[]
   timing: { total: number; avg: number; max: number }
+  units: { avg: number; max: number; exhaustedRounds: number }
   postProcessing: { total: number; avg: number; max: number }
 }): SimulationResult {
   return {
@@ -347,6 +366,9 @@ function buildResult(input: {
     total_suggest_time_ms: input.timing.total,
     avg_suggest_time_ms: input.timing.avg,
     max_suggest_time_ms: input.timing.max,
+    avg_suggest_units: input.units.avg,
+    max_suggest_units: input.units.max,
+    budget_exhausted_rounds: input.units.exhaustedRounds,
     total_post_processing_ms: input.postProcessing.total,
     avg_post_processing_ms: input.postProcessing.avg,
     max_post_processing_ms: input.postProcessing.max,

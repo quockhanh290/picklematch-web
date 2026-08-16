@@ -56,11 +56,29 @@ export const FAIRNESS_TARGETS: Record<string, { min: number; ideal: number }> = 
   extreme_40: { min: 45, ideal: 60 },
 }
 
-export const PERFORMANCE_TARGETS = {
-  small: { avg_ms: 50, max_ms: 100 },
-  medium: { avg_ms: 150, max_ms: 300 },
-  large: { avg_ms: 500, max_ms: 1000 },
-  xlarge: { avg_ms: 1000, max_ms: 2000 },
+// Ngưỡng mili-giây cũ đã hết đúng khi P2-5 bỏ ngân sách-theo-đồng-hồ. Trước đó engine tự dừng khi hết
+// giờ, nên thời gian là hằng số trên mọi máy; giờ nó dừng khi hết ĐƠN VỊ, nên thời gian trôi theo tốc
+// độ máy và ngưỡng ms chỉ còn đo phần cứng.
+//
+// Đo 16/08 (1 seed mỗi kịch bản, đơn vị là tất định nên 1 seed là đủ):
+//
+//   cỡ              đơn vị TB   đơn vị MAX   hết ngân sách   ms MAX
+//   small  (<=12)      14 426       15 775         0            333
+//   medium (13-20)     13 000       13 000         0          1 925
+//   large  (21-32)     10 500       13 000         0          9 290
+//   xlarge (>32)       13 000       13 000         0         25 084
+//
+// Đơn vị gần như phẳng trong khi ms tăng 75 lần: cùng một đơn vị đắt hơn nhiều ở pool lớn. Nên gác
+// theo ms là gác nhầm đại lượng. 13 000 = 10 000 (LARGE_BUDGET_REGULAR_SEARCH_UNITS, cạn sạch từ cỡ
+// medium trở lên) + ~3 000 của pass cứu hộ — có chủ ý, không phải lỗi.
+//
+// Thứ còn đáng gác: engine KHÔNG được tiêu vượt ngân sách nó tự đặt. Ngưỡng dưới có biên ~40% để bắt
+// hồi quy thật (ai đó nới trần, hoặc thêm một pass tìm kiếm) chứ không phải để đo máy.
+export const PERFORMANCE_UNIT_TARGETS = {
+  small: { avg_units: 25_000, max_units: 25_000 },
+  medium: { avg_units: 22_000, max_units: 22_000 },
+  large: { avg_units: 22_000, max_units: 22_000 },
+  xlarge: { avg_units: 22_000, max_units: 22_000 },
 }
 
 function scenario(

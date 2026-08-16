@@ -187,6 +187,10 @@ const suggestInner = (s: SessionState, live: SessionLiveMatchRow[], count: numbe
 
 type Score = {
   requested: number; seated: number
+  splitGaveAway: number; splitGaveAwayTotal: number; splitGaveAwayOverTol: number; splitCleanAvailable: number
+  reGap: number; reIntra: number; rePartnerRep: number; reOppRep: number; reGenderSat: number
+  reGenderChecked: number; reNewRepeat3: number; reFixedRepeat3: number; reNewIntraOver: number
+  reFreeWin: number; reFreeWinGap: number
   cost: number
   hardAvoidPartner: number; intraOverCap: number
   overTol: number; repeat3: number; blowout: number
@@ -225,6 +229,9 @@ type Score = {
 
 const emptyScore = (): Score => ({
   requested: 0, seated: 0, cost: 0,
+  splitGaveAway: 0, splitGaveAwayTotal: 0, splitGaveAwayOverTol: 0, splitCleanAvailable: 0,
+  reGap: 0, reIntra: 0, rePartnerRep: 0, reOppRep: 0, reGenderSat: 0, reGenderChecked: 0,
+  reNewRepeat3: 0, reFixedRepeat3: 0, reNewIntraOver: 0, reFreeWin: 0, reFreeWinGap: 0,
   hardAvoidPartner: 0, intraOverCap: 0,
   overTol: 0, repeat3: 0, blowout: 0, panels: 0, lineups: [],
   playSpread: 0, worstRest: 0, panelsForced: 0, panelsChoices: 0, worstPlay: 0, seatedTired: 0,
@@ -286,6 +293,92 @@ function scoreMatchInto(acc: Score, s: SessionState, p: SuggestedMatchPayload, t
           const opp = s.players.get(oppId)
           if (!opp?.gender || opp.gender === self.opponent_gender_pref) acc.opponentPrefSatisfied += 1
         }
+      }
+    }
+  }
+  // RC3 cua ENGINE_SCORING_AUDIT noi pvnaDiff mang weight 1 trong khi repeat la 28/80/80, gender 4/2,
+  // avoid-opponent 300 — nen chon split se co he thong nhuong can bang de ne mot cai lap/gender. Audit
+  // chung minh CO CHE nhung khong ai do XEM NHUONG BAO NHIEU. Do o day: cung bo tu do, split nao cho
+  // chenh doi nho nhat, va engine da chon cach xa no bao nhieu.
+  {
+    const four = [A[0], A[1], B[0], B[1]]
+    const pv = (id: string) => getEffectivePvna(P(id))
+    let bestGap = Infinity
+    for (const [i, j] of [[0, 1], [0, 2], [0, 3]] as const) {
+      const t1 = pv(four[i]) + pv(four[j])
+      const t2 = pv(four[0]) + pv(four[1]) + pv(four[2]) + pv(four[3]) - t1
+      bestGap = Math.min(bestGap, Math.abs(t1 - t2))
+    }
+    const givenAway = qc.gap - bestGap
+    if (givenAway > 0.05) {
+      acc.splitGaveAway += 1
+      acc.splitGaveAwayTotal += givenAway
+      if (givenAway > tol) acc.splitGaveAwayOverTol += 1
+    }
+    // Truong hop dat nhat: split can bang nhat NAM TRONG tolerance ma engine van chon cai vuot ra.
+    if (bestGap <= tol && qc.gap > tol) {
+      acc.splitCleanAvailable += 1
+      // "Nhuong can bang" chua chac la sai — engine doi no lay tranh-lap/gender/nhom. Cau hoi that la
+      // DOI LAI THI MAT GI. Cham ca hai cach chia tren cung mot thang roi tru.
+      const SPL: Array<[number, number, number, number]> = [[0, 1, 2, 3], [0, 2, 1, 3], [0, 3, 1, 2]]
+      const measure = (a1: number, a2: number, b1: number, b2: number) => {
+        const TA = [four[a1], four[a2]], TB = [four[b1], four[b2]]
+        const cnt = (x: string, y: string, kind: 'partner_counts' | 'opponent_counts') =>
+          Number(s.players.get(x)?.[kind]?.get(y) ?? 0)
+        let partnerRep = cnt(TA[0], TA[1], 'partner_counts') + cnt(TB[0], TB[1], 'partner_counts')
+        let oppRep = 0
+        let maxMeet = 0
+        for (const x of TA) for (const y of TB) {
+          oppRep += cnt(x, y, 'opponent_counts')
+          maxMeet = Math.max(maxMeet, cnt(x, y, 'opponent_counts') + 1)
+        }
+        maxMeet = Math.max(maxMeet, cnt(TA[0], TA[1], 'partner_counts') + 1, cnt(TB[0], TB[1], 'partner_counts') + 1)
+        let gSat = 0, gChecked = 0
+        for (const [team, other] of [[TA, TB], [TB, TA]] as const) {
+          for (const [id, mate] of [[team[0], team[1]], [team[1], team[0]]] as const) {
+            const self = s.players.get(id)
+            if (!self) continue
+            if (self.partner_gender_pref !== 'any') {
+              gChecked += 1
+              const partner = s.players.get(mate)
+              if (!partner?.gender || partner.gender === self.partner_gender_pref) gSat += 1
+            }
+            if (self.opponent_gender_pref !== 'any') {
+              for (const oppId of other) {
+                gChecked += 1
+                const opp = s.players.get(oppId)
+                if (!opp?.gender || opp.gender === self.opponent_gender_pref) gSat += 1
+              }
+            }
+          }
+        }
+        const gp = Math.abs(pv(TA[0]) + pv(TA[1]) - pv(TB[0]) - pv(TB[1]))
+        const it = Math.max(Math.abs(pv(TA[0]) - pv(TA[1])), Math.abs(pv(TB[0]) - pv(TB[1])))
+        return { partnerRep, oppRep, maxMeet, gSat, gChecked, gap: gp, intra: it }
+      }
+      let bal = null as ReturnType<typeof measure> | null
+      for (const [a1, a2, b1, b2] of SPL) {
+        const m = measure(a1, a2, b1, b2)
+        if (!bal || m.gap < bal.gap) bal = m
+      }
+      const cur = measure(0, 1, 2, 3)
+      if (bal) {
+        acc.reGap += cur.gap - bal.gap
+        acc.reIntra += bal.intra - cur.intra
+        acc.rePartnerRep += bal.partnerRep - cur.partnerRep
+        acc.reOppRep += bal.oppRep - cur.oppRep
+        acc.reGenderSat += bal.gSat - cur.gSat
+        acc.reGenderChecked += cur.gChecked
+        // So tong che mat phan phoi: co the mot TAP CON doi duoc ma khong mat gi. Do la thu dang sua,
+        // chu khong phai ca 128 tran.
+        if (bal.maxMeet < 3 && bal.intra <= INTRA_TEAM_PVNA_GAP_LIMIT && bal.gSat >= cur.gSat
+          && bal.partnerRep <= cur.partnerRep && bal.oppRep <= cur.oppRep) {
+          acc.reFreeWin += 1
+          acc.reFreeWinGap += cur.gap - bal.gap
+        }
+        if (bal.maxMeet >= 3 && cur.maxMeet < 3) acc.reNewRepeat3 += 1
+        if (cur.maxMeet >= 3 && bal.maxMeet < 3) acc.reFixedRepeat3 += 1
+        if (bal.intra > INTRA_TEAM_PVNA_GAP_LIMIT && cur.intra <= INTRA_TEAM_PVNA_GAP_LIMIT) acc.reNewIntraOver += 1
       }
     }
   }
@@ -419,6 +512,24 @@ const report = {
   soft: {
     avg_cost: +(totals.cost / Math.max(1, totals.seated)).toFixed(4),
     over_tol_pct: +pct(totals.overTol).toFixed(2),
+    // RC3 do duoc, khong phai suy luan:
+    split_gave_away_pct: +pct(totals.splitGaveAway).toFixed(2),
+    split_gave_away_avg: +(totals.splitGaveAwayTotal / Math.max(1, totals.splitGaveAway)).toFixed(3),
+    split_gave_away_over_tol_pct: +pct(totals.splitGaveAwayOverTol).toFixed(2),
+    split_clean_available_pct: +pct(totals.splitCleanAvailable).toFixed(2),
+    // Neu ep chia lai DUNG nhung tran do (khong doi ai choi voi ai), thi duoc gi va mat gi:
+    resplit_n: totals.splitCleanAvailable,
+    resplit_gap_saved_total: +totals.reGap.toFixed(2),
+    resplit_intra_added_total: +totals.reIntra.toFixed(2),
+    resplit_partner_repeats_added: totals.rePartnerRep,
+    resplit_opponent_repeats_added: totals.reOppRep,
+    resplit_gender_satisfied_delta: totals.reGenderSat,
+    resplit_gender_checked: totals.reGenderChecked,
+    resplit_new_repeat3: totals.reNewRepeat3,
+    resplit_fixed_repeat3: totals.reFixedRepeat3,
+    resplit_new_intra_over_cap: totals.reNewIntraOver,
+    resplit_free_win_n: totals.reFreeWin,
+    resplit_free_win_gap_saved: +totals.reFreeWinGap.toFixed(2),
     repeat3_pct: +pct(totals.repeat3).toFixed(2),
     blowout_pct: +pct(totals.blowout).toFixed(2),
     intra_over_cap_pct: +pct(totals.intraOverCap).toFixed(2),
