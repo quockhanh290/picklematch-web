@@ -490,10 +490,60 @@ cờ vẫn `=1`.
 ⚠️ Optimizer **chưa từng chạy thật trên edge trước hôm nay** — đúng mục "chưa chứng minh" của P2-2. Và
 deploy đầu tiên hôm nay đã chết vì nó thiếu đuôi `.ts` (đã sửa `f82efba`).
 
+## P2-5 GÂY HỒI QUY ĐỘ TRỄ — ĐÃ SỬA (2026-08-15), edge v275 ALGO 79
+
+**Hồi quy:** P2-5 đổi ngân sách tìm kiếm sang đếm đơn vị, dựa trên giả định "một đơn vị tốn thời gian
+gần như cố định". **Giả định đó SAI.** Cuối kèo, bản đồ đếm cặp dài hơn nhiều nên mỗi lần đánh giá đắt
+hơn hẳn — 380k đơn vị lẽ ra mua 3800ms thì mua tới 14 giây.
+
+Đo trên đúng bàn kèo `3e31e9a7` bị kẹt (32 người rảnh, 6 sân trống, 8 vòng lịch sử), cùng máy:
+
+| | thời gian | lấp |
+|---|---|---|
+| trước P2-5 (ngân sách đồng hồ) | 2806 ms | 6/6 |
+| P2-5 chỉ có đơn vị | **14157 ms** | 6/6 |
+| + trần thời gian 3800ms | 4624 ms | 6/6 |
+| **+ bịt chỗ rò, trần 3000ms** | **3664 ms** | 6/6 |
+
+**Fix:** `deadlineAt` trên ngân sách batch, con thừa hưởng qua chuỗi cha. Lấy mẫu **1 lần mỗi 512 lượt
+tiêu**, không đọc đồng hồ mỗi lần đánh giá — đọc mỗi lần chính là chi phí P2-5 sinh ra để bỏ đi.
+
+Hai thứ phép đo dạy, không suy ra được:
+- `findStrictCleanLiveAlternative` tự dựng ngân sách **không cha** nên trần không với tới. Nối vào ngân
+  sách sân: 6473 → 4624ms.
+- **Trần 2200ms chỉ lấp 2/6 sân** — siết quá tay thì chính cái trần đẻ ra đúng bệnh sân-kẹt đang đi chữa.
+  3000 là mốc ĐO được, không phải mốc đoán.
+
+**Ca bình thường không đổi:** corpus 20 kèo với đồng hồ THẬT ra `4379ec294601`, đúng bằng khi đóng băng
+đồng hồ → trần **không bung lần nào trong 902 request**. Tính tất định của P2-5 giữ nguyên; trần chỉ bung
+khi tỉ giá đơn vị sụp, và ở đó nó đổi tất định lấy việc không treo.
+
+## ⚠️ CHƯA GIẢI THÍCH ĐƯỢC: prod trả 0/6 sân trong 2,9 giây
+
+Kèo `3e31e9a7` vòng 9: xin 6 sân, 32 người rảnh, engine trả **0 sân**, `raw_payloads_before_final_board
+_count = 0`. Sân 0,1,2 (Sân 1,2,3 trên màn hình) không hề có trận.
+
+**Dựng lại từ dump với MỌI đầu vào trích được — đều lấp 6/6, không tái hiện được:**
+ngân sách thật/vô hạn · optimizer bật/tắt · rolling bật/tắt · exact-fill 24 người cho 24 ghế ·
+tier_overrides thật (7 MUST_PLAY) · 8 vòng lịch sử · 56 dòng live thật gồm 8 dòng cancelled.
+
+→ **optimizer vô can, và ngân sách không phải thứ CHẶN engine tìm ra trận** (nó chỉ làm chậm).
+
+**Tín hiệu duy nhất còn hở:** prod ghi `busy=8` ở CẢ 6 sân và không tăng dần (tức không sân nào ngồi được
+ai). Repro luôn ra `busy=0`. `courtRoundBusyIds` dựng từ trận đã-tính của vòng đang chiếu, mà vòng 8 không
+có trận nào được tính (cancelled bị loại) — nên 8 người đó từ đâu ra thì chưa trả lời được.
+
+**Việc tiếp theo, đừng vá mù:** thêm vào dump đúng ba trường ở chỗ quyết định — `busyIds` gồm những ai,
+`requiredPlayerIds` gồm những ai, `slots` bằng bao nhiêu. Vài trăm byte, chỉ ghi khi bất thường. Lần sau
+nó xảy ra thì dump tự khai.
+
 ## Trạng thái prod
 - edge `session-plan-shadow` **v42** (deploy 14/08 10:03) — khớp nhánh, tham số đổi tên
   `max_round_runtime_ms` → `max_round_search_candidates`. Shadow, ngoài đường live.
-- edge `session-live-matches-suggest` **v269, ALGO 78** (deploy 2026-08-14 08:49, status ACTIVE qua
+- edge `session-live-matches-suggest` **v275, ALGO 79** (trần thời gian; canary optimizer cho kèo
+  `3e31e9a7` qua allowlist)
+- edge `session-live-matches-start` **v32** (fix crash khi bấm Start trên thẻ đã bị thay)
+- ~~edge `session-live-matches-suggest` v269, ALGO 78~~ (deploy 2026-08-14 08:49, status ACTIVE qua
   Management API). ⚠️ Chưa xác minh bằng `debug_dumps.engine_build.algorithm_version` của kèo thật —
   làm việc đó ở kèo đầu tiên sau deploy, cùng lúc đọc `timing_ms` để có số độ trễ Deno.
 - Canary quality-cost **TẮT** — allowlist rỗng. **BẪY:** `SESSION_QUALITY_COST_MODEL` vẫn `="1"`;
