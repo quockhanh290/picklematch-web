@@ -53,7 +53,7 @@ hai trong một lần chạy.
 
 | # | lỗi | vì sao chưa sửa |
 |---|---|---|
-| **14** | `last_played_round` lưu round **per-court** → `select.ts` ưu tiên **ngược** người chơi | chưa làm. Đây là cùng họ với các bug round-numbering đã sửa ở tầng SQL, nhưng tầng engine còn nguyên |
+| ~~14~~ | `last_played_round` per-court | **KHÔNG PHẢI BUG BỎ QUÊN — nhãn audit đã cũ.** `last_played_seq` từng được xây, deploy, đo rồi loại: xếp theo vị trí trong phiên làm `intra>1` 19,66%→22,12% và `repeat3` 11,53%→13,28%, `spread` không đổi (1,433). Số liệu nằm ngay trong comment `select.ts`. Khoảng trống còn lại: corpus luôn bắt đầu từ phiên rỗng, chưa quan sát phiên nối lại giữa chừng từ DB |
 | **42** | 0 `accessibilityLabel` trên 376 touchable | UI/UX, không chặn engine |
 | 15 | rest bookkeeping | **đã áp, chưa chạy**: cột `rest_seat_misses > 0` ở **0/5657** hàng — không có dữ liệu nào chứng minh nó chạy đúng |
 | 23 | rolling-lane ghi đè `playerIdsByRound` | **không phải lỗi** — đã kết luận, đừng điều tra lại |
@@ -67,7 +67,7 @@ hai trong một lần chạy.
 | **RC2** generator đẻ ra pool lệch trình trước khi ghép | `classifyPlayer` mù pvna; `mustPlayAt` cố định 1 còn `mustRestAt` co giãn → pool owed phình mỗi vòng; corrector ép MUST_PLAY không kiểm khả thi | **đã trị tại gốc** — ALGO 49→50 generator band-cap, corrector bỏ relax toàn cục |
 | **RC6** ngân sách + required quá chặt đẻ ra NO_VALID_MATCH giả | | **đã trị**: budget reserve; và hai lỗi ở §1 chính là phần còn lại của RC6 |
 | **RC1** greedy per-court commit không thể cắt lại partition | sân cuối thừa hưởng cặn của các sân trước | **giảm nhẹ**, chưa trị gốc: `repairPayloadBatch*FromPool` kéo người từ ghế dự bị (ALGO 47/48); joint re-partition chỉ chạy khi ≥2 sân |
-| **RC3** năm cổng INFINITY định giá cân bằng thấp nhất | `pvnaDiff` weight 1, trong khi recent-repeat 28/80/80, avoid-opponent 300 | **CÒN NGUYÊN** — Bước 4 (đổi thang điểm) hoãn có lý do |
+| **RC3** năm cổng INFINITY định giá cân bằng thấp nhất | `pvnaDiff` weight 1, trong khi recent-repeat 28/80/80, avoid-opponent 300 | **CÒN NGUYÊN**, nhưng **đã đo được độ lớn** (16/8, 60 kèo / 3088 trận): 31,3% số trận chọn cách chia lệch hơn cách tốt nhất của cùng bộ tứ, TB nhường 0,313; **4,15% chọn cách vượt tolerance dù có cách trong tolerance** — tức >1/3 số trận vượt tolerance (11,46%) tránh được mà không đổi ai chơi. CHƯA đo: chia lại thì mất bao nhiêu lặp/gender |
 | **RC4** ~16 repair rời rạc không hội tụ | mỗi cái bảo vệ một metric bằng thang riêng | **một phần**: P2-2 gộp thành 1 optimizer nhưng **cờ đang TẮT**, chưa canary |
 | **RC5** dựng lại trạng thái rolling-lane bị trôi | 4 nơi dựng lại logical round, không nơi nào khớp nhau | **CÒN NGUYÊN**, và **magnitude chưa đo** — audit tự ghi là mechanism mạnh, độ lớn chưa chứng minh |
 | **RC7** avoid/group/gender vừa là generator vừa là cổng cứng | | **CÒN NGUYÊN** — audit tự ghi là blind spot |
