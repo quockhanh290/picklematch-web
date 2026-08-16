@@ -87,6 +87,18 @@ C(7,4). Chính bộ đếm vừa thêm ở việc 2 đã bác bỏ nó trong m�
 `suggestNextMatchExhaustiveFallback` (bước cắt cũ xếp hạng thuần nên có thể vứt đúng người caller ép).
 
 **Sweep sau khi sửa cả hai: 21 → 1 → 0 / 155.** 90 suite / 779 test nhanh xanh; gender vẫn 0.6111.
+Scorecard 60 kèo qua đường live: `board_hash` **fe413c452181 trước = sau**, mọi chỉ số HARD/SOFT y hệt,
+chỉ latency lệch ±1% (nhiễu). Tức hai fix inert với phần còn lại của engine — nhưng cũng có nghĩa corpus
+KHÔNG chứa hình dạng gây kẹt, nên scorecard chứng minh "không gây hại", không chứng minh "fix chạy".
+
+Repro: `scratch/sweep-stuck-courts.ts` (lỗi 1+2, cần chạy `SRK=<key> node scratch/pull-sweep-dumps.mjs`
+trước — 15MB dump không giữ trong cây làm việc), `scratch/probe-last-why.ts` (lỗi 2, đọc
+`scratch/out/stuck-court4-dump.json`).
+
+⚠️ **BẪY GIT:** `git checkout <commit> -- <file>` trong script A/B **stage** luôn file đó. Khôi phục
+bằng `cp` chỉ chữa worktree; index vẫn giữ bản cũ và `git commit` kế tiếp sẽ lặng lẽ lùi fix.
+`git diff --stat HEAD -- <file>` KHÔNG bắt được vì nó so worktree với HEAD, mù với index.
+Phải kiểm bằng `git status --short` (thấy `MM`) hoặc `git diff --cached`.
 
 **⚠️ BẪY ĐO gặp phải:** `Bash` timeout KHÔNG giết tiến trình node, `TaskStop` giết shell chứ không giết
 worker con. Có lúc 3 suite chạy song song (51 tiến trình) làm mọi khẳng định-theo-đồng-hồ đỏ giả, và tôi
