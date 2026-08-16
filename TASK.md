@@ -66,6 +66,19 @@ Vì sao complete sân khác thì hết kẹt: pool đổi → xếp hạng đổ
 - `ab-comparison` / `stress` / `targets` KHÔNG chạy: chúng không đụng `buildSuggestedMatchPayloads` lẫn
   `forced_required_player_ids` nên thay đổi này là no-op với chúng (danh sách rỗng ⇒ hai bản giống hệt).
 
+**Quét 106 dump / 155 lượt xin sân của 2 kèo thật (`scratch/sweep-stuck-courts.ts`):**
+số lần sân trả về RỖNG **21 → 1**. Đã deploy edge **v279 / ALGO 80** (2026-08-16).
+
+⚠️ **BẪY:** sau khi commit, `git checkout -- suggest.ts` khôi phục về bản ĐÃ SỬA, nên nhánh "gốc" của
+A/B thành ra cũng là bản sửa và hai nhánh ra số giống hệt. Phải dùng `git checkout 064aacc~1 -- ...`.
+
+**CÒN 1 CA CHƯA HẾT — lỗi thứ hai, khác cái vừa sửa, CHƯA ĐÀO:**
+`3e31e9a7-044` sân 4: 7 người rảnh, 2 bắt buộc (4.75 + 3.42), tolerance 0.5.
+- Có **5 bộ tứ hợp lệ**, tốt nhất chênh **0.03**; chỉ tính trong nhóm tier-0 vẫn còn 2 cái (0.12 và 0.37).
+- Không ép → engine trả 1 phương án (thiếu người bắt buộc). Ép → **0**, cảnh báo `MUST_PLAY_OVER_CAPACITY`.
+- Tức khâu SINH ứng viên không đẻ ra bộ tứ chứa cả 2 người bắt buộc, dù chỉ có C(7,4)=35 khả năng.
+  Nghi `getPriorityCandidates` bó quá hẹp. Repro: `scratch/probe-last-why.ts`.
+
 **⚠️ BẪY ĐO gặp phải:** `Bash` timeout KHÔNG giết tiến trình node, `TaskStop` giết shell chứ không giết
 worker con. Có lúc 3 suite chạy song song (51 tiến trình) làm mọi khẳng định-theo-đồng-hồ đỏ giả, và tôi
 đã suýt kết luận nhầm "hồi quy 47×". Luôn `Get-Process node | Stop-Process` trước khi đo thời gian.
