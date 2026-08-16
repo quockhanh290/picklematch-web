@@ -580,10 +580,14 @@ export function suggestNextRound(
         requiredPlayerIds.add(playerId)
       }
     }
-    for (const playerId of options.forced_required_player_ids ?? []) {
-      if (eligiblePlayers.some((player) => player.player_id === playerId)) {
-        requiredPlayerIds.add(playerId)
-      }
+  }
+  // suggestNextMatch filters its OUTPUT by this same list unconditionally, so dropping it from the
+  // SEARCH only produces lineups the filter then throws away — the court sits empty while a valid
+  // lineup exists. Over-capacity relief belongs to the tier-derived set above, not to a list the
+  // caller has already trimmed to fit one court.
+  for (const playerId of options.forced_required_player_ids ?? []) {
+    if (eligiblePlayers.some((player) => player.player_id === playerId)) {
+      requiredPlayerIds.add(playerId)
     }
   }
 
@@ -1104,10 +1108,12 @@ function suggestNextMatchExhaustiveFallback(
         requiredPlayerIds.add(playerId)
       }
     }
-    for (const playerId of options.forced_required_player_ids ?? []) {
-      if (eligiblePlayers.some((player) => player.player_id === playerId)) {
-        requiredPlayerIds.add(playerId)
-      }
+  }
+  // Same contract as the main pass: the caller's forced list is enforced on the result, so the
+  // fallback has to search under it too.
+  for (const playerId of options.forced_required_player_ids ?? []) {
+    if (eligiblePlayers.some((player) => player.player_id === playerId)) {
+      requiredPlayerIds.add(playerId)
     }
   }
   if (requiredPlayerIds.size > 4) {

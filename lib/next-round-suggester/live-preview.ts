@@ -154,7 +154,7 @@ export function getRescueBudgetShareUnits(totalUnits: number, courtCount: number
 const BLOWOUT_DEGRADE_GAP_FLOOR = 1.5
 const BLOWOUT_DEGRADE_GAP_TOLERANCE_MARGIN = 1
 const RESCUE_FIXED_GAP_CEILING_MARGIN = 0.5
-export const LIVE_PREVIEW_ALGORITHM_VERSION = 79
+export const LIVE_PREVIEW_ALGORITHM_VERSION = 80
 
 const BEAM_K = 3
 const ROLLING_BEAM_MAX_K = 5
@@ -1727,6 +1727,32 @@ function hasRecentRepeatPressure(alternative: SuggestionAlternative | undefined,
     const cost = getRecentRepeatCost(match.team_a, match.team_b, state)
     return cost.partner > 0 || cost.opponent > 0 || cost.overlap2 > 0 || cost.overlap3 > 0 || cost.exact4 > 0
   })
+}
+
+// Một sân trống chỉ nói được "không tìm thấy". Engine đã đếm sẵn từng chiến lược duyệt bao nhiêu, bỏ
+// bao nhiêu và vì sao, nhưng chưa ai đọc — gộp lại đưa ra dump thì lần kẹt sau tự khai cổng nào loại
+// sạch, khỏi phải dựng lại state để đoán.
+function summarizeCourtDiagnostics(diagnostics: SuggestionDiagnostic | undefined) {
+  if (!diagnostics) return null
+  const strategies = Object.values(diagnostics.strategies ?? {})
+  const total = (pick: (strategy: (typeof strategies)[number]) => number) =>
+    strategies.reduce((sum, strategy) => sum + pick(strategy), 0)
+  return {
+    slots: diagnostics.slots,
+    eligible_count: diagnostics.eligible_count,
+    must_play_over_capacity: diagnostics.must_play_over_capacity,
+    required_player_ids: diagnostics.required_player_ids,
+    budget_units: diagnostics.budget_units,
+    spent_units: diagnostics.spent_units,
+    timed_out: diagnostics.timed_out,
+    candidates: total(strategy => strategy.candidates),
+    evaluated: total(strategy => strategy.evaluated),
+    accepted: total(strategy => strategy.accepted),
+    skipped_seen: total(strategy => strategy.skipped_seen),
+    skipped_required: total(strategy => strategy.skipped_required),
+    failed_partitions: total(strategy => strategy.failed_partitions),
+    relaxed_partitions: total(strategy => strategy.relaxed_partitions),
+  }
 }
 
 export function selectRequiredIdsForCourt(
@@ -3844,7 +3870,7 @@ export type CourtSelectionDebug = {
     spent_units?: number
     timed_out?: boolean
   } | null
-  outcome?: 'selected' | 'no_match'
+  outcome?: 'selected' | 'no_match_filtered' | 'no_match_beam'
   forced_debug?: Record<string, unknown>
   eligible_players: Array<{
     id: string
@@ -5199,16 +5225,8 @@ export function buildSuggestedMatchPayloads({
           busy_count: busyIds.size,
           busy_ids: [...busyIds],
           required_for_court: requiredForThisCourt,
-          engine: courtDiagnostics ? {
-            slots: courtDiagnostics.slots,
-            eligible_count: courtDiagnostics.eligible_count,
-            must_play_over_capacity: courtDiagnostics.must_play_over_capacity,
-            required_player_ids: courtDiagnostics.required_player_ids,
-            budget_units: courtDiagnostics.budget_units,
-            spent_units: courtDiagnostics.spent_units,
-            timed_out: courtDiagnostics.timed_out,
-          } : null,
-          outcome: 'no_match',
+          engine: summarizeCourtDiagnostics(courtDiagnostics),
+          outcome: 'no_match_filtered',
           eligible_players: debugEligible,
           selected: [],
         })
@@ -5314,8 +5332,10 @@ export function buildSuggestedMatchPayloads({
         debugOut.push({
           court_idx: courtIdx,
           busy_count: busyIds.size,
+          busy_ids: [...busyIds],
           required_for_court: requiredForThisCourt,
-          outcome: 'no_match',
+          engine: summarizeCourtDiagnostics(courtDiagnostics),
+          outcome: 'no_match_beam',
           eligible_players: debugEligible,
           selected: [],
         })

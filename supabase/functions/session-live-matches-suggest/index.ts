@@ -1664,6 +1664,9 @@ Deno.serve(async (request) => {
         // Ai bị coi là bận, và engine nhìn thấy gì tại điểm quyết định. Thiếu hai thứ này thì một sân
         // trống chỉ nói được "không tìm thấy" — đúng chỗ bí khi kèo 3e31e9a7 trả 0/6 dù 32 người rảnh.
         busy_ids: [...(court.busy_ids ?? [])],
+        // Hai đường làm sân trống trông giống hệt nhau trong dump cũ: engine không tìm ra gì, và engine
+        // tìm ra rồi bị lọc bỏ. `outcome` tách được chúng mà không phải dựng lại state.
+        outcome: court.outcome ?? null,
         engine: court.engine ?? null,
         forced_debug: court.forced_debug ?? null,
         eligible_players: (court.eligible_players ?? []).map((player: any) => ({

@@ -28,6 +28,74 @@ host QA xong) và bug "Gợi ý vừa cũ sau khi có trận kết thúc".
 
 ---
 
+## Kèo 893b1427 — hai chẩn đoán 15/08 (chưa sửa, chưa deploy)
+
+### 1. Sân kẹt — ĐÃ SỬA 15/08 (chưa deploy)
+
+**Chẩn đoán cuối** (bản đầu tôi viết ở đây SAI: tưởng live-preview và engine cãi nhau; thật ra lỗi nằm
+gọn trong `suggest.ts`). `suggestNextMatch` lọc kết quả bằng `containsForcedRequired` **vô điều kiện**
+(dòng ~929-963), trong khi `suggestNextRound` bên trong **xoá rỗng** `requiredPlayerIds` khi
+`must_play_over_capacity`. Tìm không ép, lọc thì ép → 0 phương án. Bộ lọc ở `live-preview.ts:5189` chỉ
+là lớp thứ hai, thừa. Mọi repro trước thất bại vì tôi không truyền `forced_required_player_ids`.
+
+**Fix:** đưa `forced_required_player_ids` vào tập ràng buộc lúc TÌM, ở cả `suggestNextRound` lẫn
+`suggestNextMatchExhaustiveFallback`. Van xả over-capacity giữ nguyên cho tập suy-từ-tier. Caller
+(`selectRequiredIdsForCourt`) đã tự cắt danh sách ≤ số chỗ nên không thể bất khả thi.
+Trên state prod thật: **0 → 5 phương án**. Test `scenario/forced-required-over-capacity.test.ts`
+(đỏ-trước-xanh-sau, kiểm bằng git stash). ALGO 79 → **80**.
+
+**Chẩn đoán kèm theo:** hai đường làm sân trống giờ mang `outcome` khác nhau
+(`no_match_filtered` / `no_match_beam`) và cùng mang khối `engine` với 7 bộ đếm engine vốn đã tính sẵn
+mà chưa ai đọc (`candidates`, `evaluated`, `accepted`, `skipped_seen`, `skipped_required`,
+`failed_partitions`, `relaxed_partitions`). Edge chuyển tiếp `outcome`.
+
+Bằng chứng (dump 10:59:44, sân 2, 9 người rảnh / 4 chỗ, `spent_units 653/89347`, `timed_out=false`):
+- 3 người bắt buộc = 3.54 / 3.22 / 2.98. Tồn tại **3 bộ tứ chứa cả 3 và trong tolerance**, tốt nhất
+  `3.54+2.98 vs 3.22+3.04` chênh **0.26**.
+- Xin engine tới 50 phương án → nó vẫn chỉ trả 2, **không cái nào** chứa đủ 3.
+- Repro: `scratch/probe-stuck-court2.ts` (đọc `scratch/out/empty-dump.json`).
+
+Vì sao complete sân khác thì hết kẹt: pool đổi → xếp hạng đổi → tình cờ top-2 chứa đủ người bắt buộc.
+
+**Kiểm hồi quy 15/08:** 94/100 file xanh. Mọi test đỏ đều đã truy ra nguyên nhân, không cái nào là hồi quy:
+- gender 0.6111 — đánh đổi cố ý đã ghi sẵn, số không đổi.
+- `production-chain-timing` — A/B trên máy trống: small 703ms (sửa) vs 697ms (gốc); large 20152 vs 19571.
+  Đỏ sẵn, ngân sách hiệu chỉnh cho máy nhanh hơn.
+- `rolling-horizon-chain`, `live-preview-timing` — chạy riêng thì xanh cả hai nhánh; đỏ do tranh CPU.
+- 15/16 file test chạm đường đã sửa đều PASS; file thứ 16 xanh khi chạy riêng.
+- `ab-comparison` / `stress` / `targets` KHÔNG chạy: chúng không đụng `buildSuggestedMatchPayloads` lẫn
+  `forced_required_player_ids` nên thay đổi này là no-op với chúng (danh sách rỗng ⇒ hai bản giống hệt).
+
+**⚠️ BẪY ĐO gặp phải:** `Bash` timeout KHÔNG giết tiến trình node, `TaskStop` giết shell chứ không giết
+worker con. Có lúc 3 suite chạy song song (51 tiến trình) làm mọi khẳng định-theo-đồng-hồ đỏ giả, và tôi
+đã suýt kết luận nhầm "hồi quy 47×". Luôn `Get-Process node | Stop-Process` trước khi đo thời gian.
+
+**Việc mới phát hiện, CHƯA đo:** test `production-chain large` (40 người/10 sân) tiêu 20 GIÂY cho một
+`suggestNextRound` vì gọi không truyền `search_budget` → mặc định 100k đơn vị, KHÔNG có trần đồng hồ.
+Prod thì có trần `LIVE_PREVIEW_BATCH_TIMEOUT_MS = 3000`. Số prod thật (kèo 893b1427, 33 người/6 sân,
+53 lượt): engine_search p50 257ms / p95 653ms / max 972ms — chưa từng chạm trần; lần total 13s là
+persistence ghi DB. Nhưng nếu có kèo 40 người/10 sân thì thứ chặn 20 giây là cái trần đó, nghĩa là
+search bị cắt và bảng đấu tệ đi ÂM THẦM. Chưa có dữ liệu ở cỡ đó — đáng đo riêng.
+
+⚠️ KHÔNG phải lời giải cho vụ 0/6 sân cũ (`stuck-dump.json`): ở đó 4/6 sân có `required_for_court = 0`.
+
+### 2. Blowout vòng 7 sân 2 (chênh 2.53) — ĐÚNG THIẾT KẾ, không phải lỗi
+
+27/33 người bận, còn 6 người cho 4 chỗ, 3 người bắt buộc (2.35/2.13/2.32). Ghế thứ 4 chọn giữa 3 người
+vừa đá xong; luật **owed-rank** ưu tiên người ít trận nhất → 4.63 (4 trận) thắng 2.26/2.60 (5 trận).
+4.63 hơn cả pool ~2 điểm nên mọi bộ tứ chứa anh ta đều blowout.
+
+- Bỏ 4.63 khỏi pool → chênh **0.44** hoặc **0.10** (repro `scratch/probe-alts-court1.ts`).
+- Nhưng bộ chấm điểm cho hai trận sạch đó **102.5 / 159.9**, tệ hơn trận blowout **43.4** — vì phạt cho
+  đá quá lượt lớn hơn phạt lệch trình. Chuỗi `optimizer:reject:owed_rank` là cùng luật đó chặn optimizer.
+- Lát 2.09 (`2.13+4.63 vs 2.35+2.32`) không hề được sinh ra: intra 2.50 vượt trần intra.
+- Beam chọn 2.53 thay 2.47 (`worst 305.52` vs `reject_worst 684.31`) — chỉ 0.06, không phải nguyên nhân.
+
+Đây là **đánh đổi đều-số-trận vs cân-trình**, đang nghiêng hẳn về đều-số-trận. Đổi được nhưng là quyết
+định sản phẩm, cần host chốt.
+
+---
+
 ## P2-5 — XONG + **ĐÃ DEPLOY** (2026-08-14): edge v269, **ALGO 78**
 
 ⚠️ **P2-5 KHÔNG có cờ** — không như P2-2 (`SESSION_BOARD_OPTIMIZER`) hay quality-cost (allowlist). Deploy
