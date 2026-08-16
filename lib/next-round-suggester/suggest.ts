@@ -118,6 +118,13 @@ export type SuggestionDiagnostic = {
   timed_out?: boolean
   budget_units?: number
   spent_units?: number
+  // Trạng thái tại ĐIỂM QUYẾT ĐỊNH. Thêm sau khi một kèo thật trả về 0 sân dù 32 người rảnh, và dựng lại
+  // từ dump với mọi đầu vào trích được đều lấp 6/6 — tức thứ quyết định KHÔNG nằm trong dump. Bốn con số
+  // dưới đây là bốn thứ duy nhất còn thiếu để lần sau tự khai.
+  slots?: number
+  eligible_count?: number
+  must_play_over_capacity?: boolean
+  required_player_ids?: string[]
 }
 
 function combinationKey(players: PlayerSessionState[]): string {
@@ -624,6 +631,10 @@ export function suggestNextRound(
     diagnostics.budget_units = maxSearchUnits
     diagnostics.spent_units = searchBudgetSpent(overallBudget)
     diagnostics.timed_out = timedOut()
+    diagnostics.slots = slots
+    diagnostics.eligible_count = eligiblePlayers.length
+    diagnostics.must_play_over_capacity = mustPlayOverCapacity
+    diagnostics.required_player_ids = [...requiredPlayerIds]
   }
   const partitioningCache = options.partition_cache === false
     ? undefined

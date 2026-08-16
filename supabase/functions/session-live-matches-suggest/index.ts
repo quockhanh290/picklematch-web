@@ -1661,6 +1661,10 @@ Deno.serve(async (request) => {
         court_idx: court.court_idx,
         busy_count: court.busy_count,
         required_for_court: [...(court.required_for_court ?? [])],
+        // Ai bị coi là bận, và engine nhìn thấy gì tại điểm quyết định. Thiếu hai thứ này thì một sân
+        // trống chỉ nói được "không tìm thấy" — đúng chỗ bí khi kèo 3e31e9a7 trả 0/6 dù 32 người rảnh.
+        busy_ids: [...(court.busy_ids ?? [])],
+        engine: court.engine ?? null,
         forced_debug: court.forced_debug ?? null,
         eligible_players: (court.eligible_players ?? []).map((player: any) => ({
           id: player.id,

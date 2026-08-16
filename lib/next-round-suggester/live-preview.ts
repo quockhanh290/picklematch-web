@@ -30,6 +30,7 @@ import {
   suggestNextMatch,
   type EngineInstrumentEvent,
   type ExhaustiveFallbackDiagnostic,
+  type SuggestionDiagnostic,
   // @ts-ignore Deno edge-function bundling needs the local .ts extension.
 } from './suggest.ts'
 import {
@@ -3831,7 +3832,18 @@ export function buildLiveTierOverrides({
 export type CourtSelectionDebug = {
   court_idx: number
   busy_count: number
+  busy_ids?: string[]
   required_for_court: string[]
+  /** Trạng thái engine tại điểm quyết định — xem SuggestionDiagnostic. */
+  engine?: {
+    slots?: number
+    eligible_count?: number
+    must_play_over_capacity?: boolean
+    required_player_ids?: string[]
+    budget_units?: number
+    spent_units?: number
+    timed_out?: boolean
+  } | null
   outcome?: 'selected' | 'no_match'
   forced_debug?: Record<string, unknown>
   eligible_players: Array<{
@@ -4770,6 +4782,9 @@ export function buildSuggestedMatchPayloads({
     }
     const eligibleCount = [...suggestionStateForCourt.players.values()]
       .filter(p => p.checked_out_at === null && !p.opted_rest && !busyIds.has(p.player_id)).length
+    const courtDiagnostics: SuggestionDiagnostic | undefined = debugOut
+      ? { strategies: {}, partition_count: 0, max_iterations: 0, exhaustive: false }
+      : undefined
     const suggestOptions = {
       tier_overrides: tierOverrides as any,
       busy_player_ids: busyIds,
@@ -4783,6 +4798,10 @@ export function buildSuggestedMatchPayloads({
       preview_seed: previewSeed,
       force_search_budget: forceRescueBudget,
       onInstrumentEvent: options.onInstrumentEvent,
+      // Trạng thái điểm quyết định của engine. Không có nó thì một sân trống chỉ nói được "không tìm
+      // thấy", không nói được engine nhìn thấy bao nhiêu ghế, bắt buộc những ai, và có bung guard
+      // quá-tải-MUST_PLAY hay không.
+      diagnostics: courtDiagnostics,
     }
     const debugEligible = debugOut ? [...suggestionStateForCourt.players.values()]
       .filter(p => p.checked_out_at === null && !p.opted_rest && !busyIds.has(p.player_id))
@@ -5178,7 +5197,17 @@ export function buildSuggestedMatchPayloads({
         debugOut.push({
           court_idx: courtIdx,
           busy_count: busyIds.size,
+          busy_ids: [...busyIds],
           required_for_court: requiredForThisCourt,
+          engine: courtDiagnostics ? {
+            slots: courtDiagnostics.slots,
+            eligible_count: courtDiagnostics.eligible_count,
+            must_play_over_capacity: courtDiagnostics.must_play_over_capacity,
+            required_player_ids: courtDiagnostics.required_player_ids,
+            budget_units: courtDiagnostics.budget_units,
+            spent_units: courtDiagnostics.spent_units,
+            timed_out: courtDiagnostics.timed_out,
+          } : null,
           outcome: 'no_match',
           eligible_players: debugEligible,
           selected: [],
