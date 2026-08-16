@@ -1,43 +1,7 @@
 {
-  "totalErrors": 13,
-  "filesWithErrors": 5,
-  "byCode": {
-    "TS2322": 2,
-    "TS2339": 9,
-    "TS2345": 2
-  },
-  "byFile": {
-    "Ctmptest-suggest.ts": 2,
-    "scripts/eval-weights.ts": 1,
-    "scripts/sim-beam-vs-greedy.ts": 1,
-    "scripts/sim-per-court-beam.ts": 2,
-    "scripts/test-session-suggest.ts": 7
-  },
-  "groups": [
-    {
-      "file": "Ctmptest-suggest.ts",
-      "code": "TS2339",
-      "count": 2
-    },
-    {
-      "file": "scripts/eval-weights.ts",
-      "code": "TS2322",
-      "count": 1
-    },
-    {
-      "file": "scripts/sim-beam-vs-greedy.ts",
-      "code": "TS2322",
-      "count": 1
-    },
-    {
-      "file": "scripts/sim-per-court-beam.ts",
-      "code": "TS2345",
-      "count": 2
-    },
-    {
-      "file": "scripts/test-session-suggest.ts",
-      "code": "TS2339",
-      "count": 7
-    }
-  ]
+  "totalErrors": 0,
+  "filesWithErrors": 0,
+  "byCode": {},
+  "byFile": {},
+  "groups": []
 }
