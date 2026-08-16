@@ -590,6 +590,26 @@ export function suggestNextRound(
       requiredPlayerIds.add(playerId)
     }
   }
+  // A candidate holds exactly `slots` players and the gate demands it contain the whole required set,
+  // so a set larger than that is not "strict" — it is unsatisfiable, and every candidate is thrown out
+  // while a good lineup sits there. The caller's list is the half that has to survive: suggestNextMatch
+  // enforces it on the OUTPUT as well, and selectRequiredIdsForCourt already sized it to the court. The
+  // players the engine decided are owed a match are the half that can wait a round.
+  if (requiredPlayerIds.size > slots) {
+    const callerForced = (options.forced_required_player_ids ?? [])
+      .filter((playerId) => requiredPlayerIds.has(playerId))
+      .slice(0, slots)
+    const owedRanked = eligiblePlayers
+      .filter((player) => requiredPlayerIds.has(player.player_id) && !callerForced.includes(player.player_id))
+      .sort((a, b) => b.consecutive_rest - a.consecutive_rest || a.matches_played - b.matches_played)
+    requiredPlayerIds.clear()
+    for (const playerId of callerForced) requiredPlayerIds.add(playerId)
+    for (const player of owedRanked) {
+      if (requiredPlayerIds.size >= slots) break
+      requiredPlayerIds.add(player.player_id)
+    }
+    if (!warnings.includes('MUST_PLAY_OVER_CAPACITY')) warnings.push('MUST_PLAY_OVER_CAPACITY')
+  }
 
   if (slots < 4) {
     return {
@@ -1117,12 +1137,20 @@ function suggestNextMatchExhaustiveFallback(
     }
   }
   if (requiredPlayerIds.size > 4) {
-    const ranked = eligiblePlayers
-      .filter((p) => requiredPlayerIds.has(p.player_id))
-      .sort((a, b) => b.consecutive_rest - a.consecutive_rest || a.matches_played - b.matches_played)
+    // Ranking alone could drop the caller's forced players, and the caller filters the result by them
+    // anyway — trimming them out just turns a full court into an empty one.
+    const callerForced = (options.forced_required_player_ids ?? [])
+      .filter((playerId) => requiredPlayerIds.has(playerId))
       .slice(0, 4)
+    const ranked = eligiblePlayers
+      .filter((p) => requiredPlayerIds.has(p.player_id) && !callerForced.includes(p.player_id))
+      .sort((a, b) => b.consecutive_rest - a.consecutive_rest || a.matches_played - b.matches_played)
     requiredPlayerIds.clear()
-    for (const p of ranked) requiredPlayerIds.add(p.player_id)
+    for (const playerId of callerForced) requiredPlayerIds.add(playerId)
+    for (const p of ranked) {
+      if (requiredPlayerIds.size >= 4) break
+      requiredPlayerIds.add(p.player_id)
+    }
     warnings.push('MUST_PLAY_OVER_CAPACITY')
   }
 

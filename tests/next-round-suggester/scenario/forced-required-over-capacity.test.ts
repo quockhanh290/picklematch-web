@@ -83,3 +83,59 @@ describe('forced required players under MUST_PLAY_OVER_CAPACITY', () => {
     }
   })
 })
+
+// Ca thu hai, tim ra khi quet lai 155 luot xin san cua keo that (3e31e9a7-044 san 4).
+// Engine tu suy ra tap bat buoc tu consecutive_rest, roi CONG CHONG danh sach cua caller len tren.
+// Khong ai kiem hop cua chung co vua mot san khong: 4 nguoi tu suy + 1 nguoi caller ep = 5 nguoi cho
+// 4 ghe. Cong loc doi MOI bo tu phai chua DU ca 5 => 35/35 ung vien bi loai => san trong, du bo tu
+// 4.75 + 3.42 vs 4.45 + 3.84 chi lech 0.12.
+const TIGHT: [string, number, number][] = [
+  // id, pvna, consecutive_rest — bon nguoi nghi 1 vong thanh "bat buoc" theo luat tu suy
+  ['r1', 4.70, 1],
+  ['r2', 4.45, 1],
+  ['r3', 4.75, 1],
+  ['r4', 3.84, 1],
+  ['x1', 3.42, 0],
+  ['x2', 3.15, 0],
+  ['x3', 2.37, 0],
+]
+// r3 nam san trong tap tu suy, x1 thi khong — nen hop la 5 nguoi.
+const TIGHT_FORCED = ['r3', 'x1']
+
+describe('caller forced list on top of the tier-derived required set', () => {
+  const buildTightState = () => createState({
+    courts: 1,
+    pvnaTolerance: 0.5,
+    currentRound: 6,
+    players: TIGHT.map(([id, pvna, consecutiveRest]) =>
+      createPlayer(id, {
+        pvna,
+        matches_played: 5,
+        consecutive_rest: consecutiveRest,
+        last_played_round: consecutiveRest > 0 ? 4 : 5,
+      }),
+    ),
+  })
+
+  it('derives four required players on its own for this shape', () => {
+    const diagnostics = { strategies: {}, partition_count: 0, max_iterations: 0, exhaustive: false }
+    suggestNextMatch(buildTightState(), { court_idx: 0, max_alternatives: 5, diagnostics })
+
+    expect(diagnostics).toHaveProperty('required_player_ids')
+    expect((diagnostics as { required_player_ids?: string[] }).required_player_ids).toHaveLength(4)
+  })
+
+  it('does not let the union exceed the court and empty the board', () => {
+    const result = suggestNextMatch(buildTightState(), {
+      court_idx: 0,
+      max_alternatives: 5,
+      forced_required_player_ids: TIGHT_FORCED,
+    })
+
+    expect(result.alternatives.length).toBeGreaterThan(0)
+    for (const alternative of result.alternatives) {
+      const seated = alternative.matches.flatMap(match => [...match.team_a, ...match.team_b])
+      for (const playerId of TIGHT_FORCED) expect(seated).toContain(playerId)
+    }
+  })
+})

@@ -72,12 +72,21 @@ số lần sân trả về RỖNG **21 → 1**. Đã deploy edge **v279 / ALGO 8
 ⚠️ **BẪY:** sau khi commit, `git checkout -- suggest.ts` khôi phục về bản ĐÃ SỬA, nên nhánh "gốc" của
 A/B thành ra cũng là bản sửa và hai nhánh ra số giống hệt. Phải dùng `git checkout 064aacc~1 -- ...`.
 
-**CÒN 1 CA CHƯA HẾT — lỗi thứ hai, khác cái vừa sửa, CHƯA ĐÀO:**
-`3e31e9a7-044` sân 4: 7 người rảnh, 2 bắt buộc (4.75 + 3.42), tolerance 0.5.
-- Có **5 bộ tứ hợp lệ**, tốt nhất chênh **0.03**; chỉ tính trong nhóm tier-0 vẫn còn 2 cái (0.12 và 0.37).
-- Không ép → engine trả 1 phương án (thiếu người bắt buộc). Ép → **0**, cảnh báo `MUST_PLAY_OVER_CAPACITY`.
-- Tức khâu SINH ứng viên không đẻ ra bộ tứ chứa cả 2 người bắt buộc, dù chỉ có C(7,4)=35 khả năng.
-  Nghi `getPriorityCandidates` bó quá hẹp. Repro: `scratch/probe-last-why.ts`.
+**LỖI THỨ HAI — ĐÃ SỬA (ALGO 81):** hợp của hai tập bắt buộc vượt số ghế.
+Engine tự suy tập bắt buộc từ `consecutive_rest`, rồi **cộng chồng** danh sách của caller lên trên, và
+không ai kiểm hợp có vừa một sân không. Ca `3e31e9a7-044` sân 4: tự suy 4 người (4.70/4.45/4.75/3.84)
++ caller ép thêm 3.42 = **5 người cho 4 ghế**. Cổng lọc đòi MỖI bộ tứ chứa đủ cả 5 → 35/35 ứng viên bị
+loại (`skipped_required = 175 = 35 × 5 pass`) → sân trống, dù `4.75+3.42 vs 4.45+3.84` chỉ lệch 0.12.
+
+Giả thuyết đầu của tôi (`getPriorityCandidates` bó hẹp) SAI — bộ đếm cho `candidates = 35`, sinh đủ cả
+C(7,4). Chính bộ đếm vừa thêm ở việc 2 đã bác bỏ nó trong một lần chạy.
+
+**Fix:** khi hợp > `slots`, giữ danh sách caller (thứ `suggestNextMatch` ép lại ở đầu ra, và
+`selectRequiredIdsForCourt` đã cắt vừa sân) rồi mới lấp phần còn lại bằng người engine tự suy, xếp theo
+`consecutive_rest desc, matches_played asc`. Áp cả ở `suggestNextRound` lẫn bước cắt của
+`suggestNextMatchExhaustiveFallback` (bước cắt cũ xếp hạng thuần nên có thể vứt đúng người caller ép).
+
+**Sweep sau khi sửa cả hai: 21 → 1 → 0 / 155.** 90 suite / 779 test nhanh xanh; gender vẫn 0.6111.
 
 **⚠️ BẪY ĐO gặp phải:** `Bash` timeout KHÔNG giết tiến trình node, `TaskStop` giết shell chứ không giết
 worker con. Có lúc 3 suite chạy song song (51 tiến trình) làm mọi khẳng định-theo-đồng-hồ đỏ giả, và tôi
