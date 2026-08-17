@@ -1,4 +1,15 @@
-# TỔNG HỢP AUDIT — trạng thái tại `baseline-algo-81`
+# TỔNG HỢP AUDIT — trạng thái tại `baseline-algo-81-verified`
+
+> **Mốc nền đã nghiệm thu (2026-08-17).** Suite đầy đủ chạy xong sau khi đổi `runner`/`analysis`:
+> **835/842 test xanh, 95/99 suite xanh.** Bảy test đỏ đã truy hết nguyên nhân, không cái nào là hồi quy:
+> `production-chain-timing` ×4 (ngưỡng ms, A/B chứng minh đỏ sẵn: 703 vs 697ms và 20 152 vs 19 572ms),
+> `rolling-horizon-chain` ×1 và `rolling-horizon-matrix` ×1 (`elapsedMs<2000`, chạy riêng thì xanh),
+> `full-session` ×1 (gender 0.6111, đánh đổi cố ý).
+>
+> `targets` và `stress` đã chuyển sang khẳng định theo **đơn vị tìm kiếm** và đều xanh. Ba file còn lại
+> giữ ngưỡng mili-giây theo quyết định của host — biết trước là đỏ, và biết vì sao.
+>
+> Tag `baseline-algo-81` (cũ, `70a345c`) **giữ nguyên**: báo cáo panel alternative lấy nó làm mốc đo.
 
 Gộp từ ba audit đã có, cộng hai lỗi tìm được sau chúng. Mốc: **ALGO 81 / edge v280 / tag
 `baseline-algo-81`** (2026-08-16). Cột "kết quả hiện tại" chỉ ghi thứ **đo được**; chỗ nào chưa đo thì
