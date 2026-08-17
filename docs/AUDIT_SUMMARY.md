@@ -55,7 +55,7 @@ hai trong một lần chạy.
 |---|---|---|
 | ~~14~~ | `last_played_round` per-court | **KHÔNG PHẢI BUG BỎ QUÊN — nhãn audit đã cũ.** `last_played_seq` từng được xây, deploy, đo rồi loại: xếp theo vị trí trong phiên làm `intra>1` 19,66%→22,12% và `repeat3` 11,53%→13,28%, `spread` không đổi (1,433). Số liệu nằm ngay trong comment `select.ts`. Khoảng trống còn lại: corpus luôn bắt đầu từ phiên rỗng, chưa quan sát phiên nối lại giữa chừng từ DB |
 | **42** | 0 `accessibilityLabel` trên 376 touchable | UI/UX, không chặn engine |
-| 15 | rest bookkeeping | **đã áp, chưa chạy**: cột `rest_seat_misses > 0` ở **0/5657** hàng — không có dữ liệu nào chứng minh nó chạy đúng |
+| 15 | rest bookkeeping | **ĐÃ CHẠY** (cập nhật 16/8): `rest_seat_misses > 0` ở **180/5887** hàng. Trước đây 0/5657 nên bị ghi là chưa chạy; giờ có dữ liệu. Chưa kiểm giá trị có ĐÚNG không, chỉ biết nó có ghi |
 | 23 | rolling-lane ghi đè `playerIdsByRound` | **không phải lỗi** — đã kết luận, đừng điều tra lại |
 
 ---
@@ -69,7 +69,7 @@ hai trong một lần chạy.
 | **RC1** greedy per-court commit không thể cắt lại partition | sân cuối thừa hưởng cặn của các sân trước | **giảm nhẹ**, chưa trị gốc: `repairPayloadBatch*FromPool` kéo người từ ghế dự bị (ALGO 47/48); joint re-partition chỉ chạy khi ≥2 sân |
 | **RC3** năm cổng INFINITY định giá cân bằng thấp nhất | `pvnaDiff` weight 1, trong khi recent-repeat 28/80/80, avoid-opponent 300 | **ĐÃ ĐO XONG 16/8 — dư địa bằng không, xem §3.1** |
 | **RC4** ~16 repair rời rạc không hội tụ | mỗi cái bảo vệ một metric bằng thang riêng | **một phần**: P2-2 gộp thành 1 optimizer nhưng **cờ đang TẮT**, chưa canary |
-| **RC5** dựng lại trạng thái rolling-lane bị trôi | 4 nơi dựng lại logical round, không nơi nào khớp nhau | **CÒN NGUYÊN**, và **magnitude chưa đo** — audit tự ghi là mechanism mạnh, độ lớn chưa chứng minh |
+| **RC5** dựng lại trạng thái rolling-lane bị trôi | 4 nơi dựng lại logical round, không nơi nào khớp nhau | **ĐÃ ĐO 16/8 — không thấy drift, xem §3.2** |
 | **RC7** avoid/group/gender vừa là generator vừa là cổng cứng | | **CÒN NGUYÊN** — audit tự ghi là blind spot |
 
 ### 3.1 RC3 — đo xong, và kết luận ngược với trực giác
@@ -100,6 +100,32 @@ phải đổi **ai vào bộ tứ** (RC2/RC1), không phải đổi cách chia.
 hiệu ứng dây chuyền chưa nằm trong số này. Nhưng với dư địa 0,19% thì không đáng đo tiếp.
 
 Đo bằng: `scratch/board-scorecard.ts`, các chỉ số `split_*` và `resplit_*`.
+
+### 3.2 RC5 — đo xong, không thấy drift
+
+Audit tự ghi: "cơ chế được verify bằng code, nhưng ĐỘ LỚN của drift trong một phiên thật thì không có
+replay nào chứng minh". Đo 16/8 trên **104 dump prod / 2 kèo**, và mở rộng ra toàn bộ `session_player_state`.
+
+**Nửa thứ nhất — `matches_played` engine lấy từ snapshot DB có lệch với sự thật trong các dòng trận không?**
+
+| | |
+|---|---|
+| lượt kiểm | 3 380 (người × dump) |
+| lệch | **0 (0,0%)** |
+| dump có thứ tự ưu tiên đổi | **0/104** |
+
+Kiểm chứng phép đo có chạy: mẫu in ra `db=6 / tính-lại=6` trên 48 dòng completed. Không phải harness rỗng.
+
+**Nửa thứ hai — bộ đếm nghỉ có "chết đứng" như RC5 mô tả không?** Không. Toàn bộ 5 887 hàng
+`session_player_state`: 0 → 76,0% · 1 → 20,6% · 2 → 1,9% · 3 → 0,6% · 4-6 → 0,9%, **max 6**.
+Bộ đếm tăng bình thường. (Mẫu 2 kèo của tôi max 1 chỉ vì hai kèo đó xoay vòng tốt — đừng đọc mẫu hẹp
+thành kết luận.)
+
+**Kết luận:** trên dữ liệu hiện có, RC5 không quan sát được. ⚠️ Chưa chứng minh là *không tồn tại*:
+tôi so `matches_played` chứ chưa tự tính lại chuỗi nghỉ từ round records, và hai kèo mẫu đều khoẻ. Mối
+lo gốc của audit là phiên **dài / nối lại giữa chừng** — chưa có dữ liệu ở hình dạng đó.
+
+Đo bằng: `scratch/measure-rc5-drift.ts`.
 
 Kết quả gender hiện tại: tỉ lệ thoả mãn **0.6111**, dưới ngưỡng test 0.7. Đây là **đánh đổi cố ý**
 (repeat-3 thắng gender-pref theo chỉ đạo), không phải hồi quy — con số không xê dịch qua mọi thay đổi
