@@ -68,7 +68,7 @@ hai trong một lần chạy.
 | **RC6** ngân sách + required quá chặt đẻ ra NO_VALID_MATCH giả | | **đã trị**: budget reserve; và hai lỗi ở §1 chính là phần còn lại của RC6 |
 | **RC1** greedy per-court commit không thể cắt lại partition | sân cuối thừa hưởng cặn của các sân trước | **giảm nhẹ**, chưa trị gốc: `repairPayloadBatch*FromPool` kéo người từ ghế dự bị (ALGO 47/48); joint re-partition chỉ chạy khi ≥2 sân |
 | **RC3** năm cổng INFINITY định giá cân bằng thấp nhất | `pvnaDiff` weight 1, trong khi recent-repeat 28/80/80, avoid-opponent 300 | **ĐÃ ĐO XONG 16/8 — dư địa bằng không, xem §3.1** |
-| **RC4** ~16 repair rời rạc không hội tụ | mỗi cái bảo vệ một metric bằng thang riêng | **một phần**: P2-2 gộp thành 1 optimizer nhưng **cờ đang TẮT**, chưa canary |
+| **RC4** ~16 repair rời rạc không hội tụ | mỗi cái bảo vệ một metric bằng thang riêng | **một phần**: P2-2 gộp thành 1 optimizer, cờ vẫn TẮT — nhưng **đã có bảng quyết định canary, xem §3.4** |
 | **RC5** dựng lại trạng thái rolling-lane bị trôi | 4 nơi dựng lại logical round, không nơi nào khớp nhau | **ĐÃ ĐO 16/8 — không thấy drift, xem §3.2** |
 | **RC7** avoid/group/gender vừa là generator vừa là cổng cứng | | **ĐÃ ĐO 16/8 — hai cổng cứng nó nêu tên đều chết trên prod, xem §3.3** |
 
@@ -147,6 +147,34 @@ còn **0,2pp** dư địa miễn phí. Nó đã sát trần không-tốn-gì.
 
 ⚠️ avoid-pair và group là tính năng **có tồn tại**. Nếu host bật chúng lên thì lo ngại của RC7 thành
 thật, và lúc đó phải đo lại — kết luận này gắn với thực tế sử dụng hôm nay, không phải với code.
+
+### 3.4 P2-2 / RC4 — bảng quyết định canary (đo 16/8, corpus 60 kèo)
+
+`OPT=1` so với nền cờ-tắt. Optimizer can thiệp **2 157 / 2 762 bàn (78%)**.
+`board_hash` fe413c452181 → c5f00de4017f (đổi là đúng — nó có việc phải làm).
+
+| | TẮT | BẬT | |
+|---|---|---|---|
+| **HARD** avoid_partner | 0 | **0** | không vi phạm mới |
+| sân lấp | 3088/3088 | **3088/3088** | không mất sân |
+| over_tol_pct | 11,46 | **3,47** | **−70%** |
+| avg_cost | 2,576 | **1,746** | −32% |
+| blowout_pct | 1,42 | **0,97** | −32% |
+| intra_over_cap_pct | 19,56 | **16,42** | −16% |
+| avg_play_spread | 1,367 | **1,217** | tốt hơn |
+| avg_worst_rest | 1,55 | **1,167** | tốt hơn |
+| owed_share_of_idle_pct | 4,5 | **2,92** | tốt hơn |
+| repeat3_pct | 1,91 | 2,01 | +0,1pp |
+| **summed_max_consecutive_play** | 195 | **254** | **+30% — xấu rõ** |
+| seated_at_or_past_rest_pct | 32,46 | 34,29 | +1,8pp |
+
+**Đánh đổi một dòng:** chất lượng bàn đấu tốt lên nhiều, ràng buộc cứng sạch, không mất sân — đổi lại
+người chơi **bị đá liền nhiều hơn 30%**. Đúng trục mà panel chống-kiệt-sức (ALGO 59) sinh ra để bảo vệ.
+
+**Nếu canary:** bật 1 kèo qua allowlist, và thứ phải theo dõi là **mệt**, không phải cân bằng — cân bằng
+chắc chắn tốt lên. Hỏi host sau kèo: có ai kêu bị xếp liên tục không.
+
+⚠️ Không so độ trễ ở lần chạy này: máy đang chạy suite song song. Các chỉ số trên miễn nhiễm với tải.
 
 Kết quả gender hiện tại: tỉ lệ thoả mãn **0.6111**, dưới ngưỡng test 0.7. Đây là **đánh đổi cố ý**
 (repeat-3 thắng gender-pref theo chỉ đạo), không phải hồi quy — con số không xê dịch qua mọi thay đổi
