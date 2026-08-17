@@ -70,7 +70,7 @@ hai trong một lần chạy.
 | **RC3** năm cổng INFINITY định giá cân bằng thấp nhất | `pvnaDiff` weight 1, trong khi recent-repeat 28/80/80, avoid-opponent 300 | **ĐÃ ĐO XONG 16/8 — dư địa bằng không, xem §3.1** |
 | **RC4** ~16 repair rời rạc không hội tụ | mỗi cái bảo vệ một metric bằng thang riêng | **một phần**: P2-2 gộp thành 1 optimizer nhưng **cờ đang TẮT**, chưa canary |
 | **RC5** dựng lại trạng thái rolling-lane bị trôi | 4 nơi dựng lại logical round, không nơi nào khớp nhau | **ĐÃ ĐO 16/8 — không thấy drift, xem §3.2** |
-| **RC7** avoid/group/gender vừa là generator vừa là cổng cứng | | **CÒN NGUYÊN** — audit tự ghi là blind spot |
+| **RC7** avoid/group/gender vừa là generator vừa là cổng cứng | | **ĐÃ ĐO 16/8 — hai cổng cứng nó nêu tên đều chết trên prod, xem §3.3** |
 
 ### 3.1 RC3 — đo xong, và kết luận ngược với trực giác
 
@@ -126,6 +126,27 @@ tôi so `matches_played` chứ chưa tự tính lại chuỗi nghỉ từ round 
 lo gốc của audit là phiên **dài / nối lại giữa chừng** — chưa có dữ liệu ở hình dạng đó.
 
 Đo bằng: `scratch/measure-rc5-drift.ts`.
+
+### 3.3 RC7 — đo xong, gộp ba thứ có sức nặng rất khác nhau
+
+Audit tự gọi RC7 là blind spot: avoid-pair / group / gender vừa là bộ sinh vừa là **cổng cứng** làm teo
+tập nghiệm. Đo trên prod 16/8:
+
+| modality | dùng thật | vai trò trong scoring |
+|---|---|---|
+| **avoid-pair** | **0 hàng / 0 kèo** trong `session_avoid_pairs` — chưa từng bật | avoid-partner = **Infinity** (cổng cứng), avoid-opponent = 300× |
+| **group** | **6 / 5 887** hàng `session_player_state` (0,1%), 2 nhóm | `hasRecentGroupRematch` = **Infinity** (cổng cứng), group_bonus 6 |
+| **gender** | **66,2%** đòi hỏi về bạn, **60,4%** về đối thủ (11 534 người) | phạt **mềm** 4/2 — KHÔNG phải cổng |
+
+**Kết luận:** hai cổng cứng mà RC7 nêu tên đều gần như không bao giờ nổ trên production. Thứ duy nhất có
+sức nặng thật là gender, và nó là phạt mềm. Cơ chế "cổng cứng làm teo tập nghiệm" vì thế **không vận
+hành** ở dữ liệu hiện tại.
+
+Gender thì đã đo riêng: thoả mãn 55,28%, trần đạt được **mà không làm xấu cân bằng** là 55,48% — tức chỉ
+còn **0,2pp** dư địa miễn phí. Nó đã sát trần không-tốn-gì.
+
+⚠️ avoid-pair và group là tính năng **có tồn tại**. Nếu host bật chúng lên thì lo ngại của RC7 thành
+thật, và lúc đó phải đo lại — kết luận này gắn với thực tế sử dụng hôm nay, không phải với code.
 
 Kết quả gender hiện tại: tỉ lệ thoả mãn **0.6111**, dưới ngưỡng test 0.7. Đây là **đánh đổi cố ý**
 (repeat-3 thắng gender-pref theo chỉ đạo), không phải hồi quy — con số không xê dịch qua mọi thay đổi
