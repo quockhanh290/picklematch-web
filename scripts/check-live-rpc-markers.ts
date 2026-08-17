@@ -25,18 +25,25 @@ const FUNCTION_SIGNATURES = [
   },
 ] as const;
 
-// Checked against production before being trusted. Two markers taken from the audit's description did
-// not survive that check:
-//   suggestion_metadata is no longer written by the persist RPC — P1-12 moved it to a dedicated
-//     sync_live_suggestion_hints, and 2141 of 2141 rows in the last 30 days carry it. Asserting it on
-//     the persist RPC failed on a function that is behaving correctly, so the rule now points at the
-//     RPC that actually owns the column.
-//   cycle_no has NO writer anywhere in the database (851 of those same 2141 rows still carry a value,
+// Checked against production before being trusted.
+//   suggestion_metadata is required on BOTH RPCs that write it. An earlier revision of this file
+//     dropped the rule from the persist RPC, reasoning that P1-12 had deliberately moved the column to
+//     sync_live_suggestion_hints and that "2141 of 2141 rows in the last 30 days carry it". Both halves
+//     were wrong, and re-measured on 2026-08-16: the column is NOT NULL DEFAULT '{}', so "every row
+//     carries it" is true of every row that has ever existed and can never be false — the check proved
+//     nothing. Of 1775 rows in the trailing 30 days only 95 held any content, all of them older than
+//     2026-07-25. And sync_live_suggestion_hints was not created until 2026-08-09, three weeks AFTER
+//     the persist RPC stopped writing the column, so it cannot have been the destination of a move.
+//     What actually happened: 20260712000002 patched the column in by rewriting the live function's
+//     TEXT, and the next full CREATE OR REPLACE silently reverted it. Removing this rule is what let
+//     that go unnoticed for three weeks, so it stays on both functions.
+//   cycle_no has NO writer anywhere in the database (851 of those same rows still carry a value,
 //     all older). That is real, and it is BUG #4's data-loss half — but requiring a writer here would
 //     assert an intent nobody has decided on: round_no is per-court since 20260808000001, which is what
 //     cycle_no meant, so the column is now redundant rather than broken. Tracked as BUG #39 (its dead
 //     reader in live-rounds.ts) instead of guarded here.
 const REQUIRED_MARKERS: ReadonlyArray<{ functionName: string; marker: string }> = [
+  { functionName: 'replace_live_session_suggestions_versioned', marker: 'suggestion_metadata' },
   { functionName: 'sync_live_suggestion_hints', marker: 'suggestion_metadata' },
   { functionName: 'start_live_session_match_versioned', marker: 'is not distinct from' },
   { functionName: 'start_live_session_match_from_payload_versioned', marker: 'is not distinct from' },

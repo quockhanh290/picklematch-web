@@ -5,10 +5,13 @@ const START = 'start_live_session_match_versioned';
 const START_FROM_PAYLOAD = 'start_live_session_match_from_payload_versioned';
 const HINTS = 'sync_live_suggestion_hints';
 
-// The rules these fixtures exercise were checked against production before being trusted, and two taken
-// from the audit's wording did not survive: suggestion_metadata moved to its own RPC under P1-12, and
-// cycle_no has no writer anywhere — deliberately, since round_no became per-court and that is what
-// cycle_no meant. The rules changed to match what the database actually does; these fixtures follow.
+// The rules these fixtures exercise were checked against production before being trusted. One earlier
+// correction here was itself wrong and has been reversed: suggestion_metadata was said to have "moved"
+// to sync_live_suggestion_hints under P1-12, but that function did not exist until three weeks after
+// the persist RPC stopped writing the column, and the evidence offered ("every row carries it") is
+// unfalsifiable on a NOT NULL DEFAULT '{}' column. The rule is required on both writers again.
+// cycle_no still has no writer anywhere — deliberately, since round_no became per-court and that is
+// what cycle_no meant.
 
 function cleanDefinitions(): Record<string, string> {
   return {
@@ -16,8 +19,8 @@ function cleanDefinitions(): Record<string, string> {
       'create or replace function public.replace_live_session_suggestions_versioned()',
       'returns jsonb',
       'as $function$',
-      'insert into public.session_live_matches (round_no, court_idx)',
-      "values (v_round_no, (match.value ->> 'court_idx')::int);",
+      'insert into public.session_live_matches (round_no, court_idx, suggestion_metadata)',
+      "values (v_round_no, (match.value ->> 'court_idx')::int, match.value - 'team_a');",
       '$function$;',
     ].join('\n'),
     [START]: [
@@ -57,6 +60,23 @@ describe('checkRpcMarkers', () => {
     expect(checkRpcMarkers(definitions)).toContainEqual(
       expect.objectContaining({
         functionName: HINTS,
+        marker: 'suggestion_metadata',
+        rule: 'missing-required-marker',
+      }),
+    );
+  });
+
+  // The persist RPC is where the host-facing tradeoff panel enters the row. A full CREATE OR REPLACE
+  // that omits the column drops the panel silently and nothing else notices: the column is NOT NULL
+  // DEFAULT '{}', so every row keeps "carrying" it while carrying nothing. That is exactly how the
+  // panel died on 2026-07-25 and stayed dead for three weeks.
+  it('fails when the persist RPC stops writing suggestion_metadata', () => {
+    const definitions = cleanDefinitions();
+    definitions[REPLACE] = definitions[REPLACE].replace(/suggestion_metadata/g, 'metadata_alias');
+
+    expect(checkRpcMarkers(definitions)).toContainEqual(
+      expect.objectContaining({
+        functionName: REPLACE,
         marker: 'suggestion_metadata',
         rule: 'missing-required-marker',
       }),
